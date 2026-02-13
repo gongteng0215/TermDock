@@ -12,6 +12,7 @@ export interface SessionRecord {
   remark?: string;
   favorite: boolean;
   hasSecret: boolean;
+  lastConnectedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

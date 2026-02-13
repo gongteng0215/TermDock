@@ -13,6 +13,11 @@ This repository now includes the initial development baseline:
 - OS credential-store adapter (`keytar` with in-memory fallback)
 - Real SSH terminal pipeline (`ssh2` + `xterm`) with multi-tab sessions
 - Terminal IPC channels (`connect/write/resize/close`) and status events
+- macOS-first keyboard shortcuts with Windows-compatible `Ctrl` fallback (`Cmd/Ctrl+T/W/C/V/F`)
+- SFTP directory listing via the active terminal tab connection (path input / refresh / up-level)
+- SFTP single-file upload/download with stream-based transfer progress events
+- SFTP drag-and-drop file upload into current remote directory
+- Compact-first UI baseline (high information density, reduced spacing/padding)
 
 ## Run locally
 
@@ -48,6 +53,7 @@ TERMDOCK_DISABLE_GPU=1 pnpm dev
 
 If UI shows `Terminal bridge is not ready`, fully restart the dev process (`Ctrl+C` then `pnpm dev`) so Electron preload/main and renderer stay in sync.
 The preload is now emitted as CommonJS (`preload.cjs`) for better Electron compatibility.
+Dev mode now auto-restarts Electron when `dist-electron/main/main.js` or `dist-electron/main/preload.cjs` changes.
 
 If Vite says `Port 5273 is in use`, stop the old process first. Electron dev mode is pinned to `http://localhost:5273`.
 On macOS/Linux you can check and stop the listener with:
@@ -75,8 +81,9 @@ src/shared    # Shared type contracts between main and renderer
 
 ## Next milestones
 
-- Complete SFTP channel + file manager workflow (upload/download/queue)
+- Complete SFTP transfer and file operation workflow (upload/download/queue/rename/delete/new-folder)
 - Replace JSON persistence with SQLite migration layer (`sessions/groups/recent_sessions`)
-- Add reconnect UX and macOS-first keyboard shortcuts
+- Add reconnect UX for dropped SSH sessions
 - Allow opening the same saved session in multiple terminal tabs
 - Add extensible terminal right-click context menu in MVP (with a Clear item), then configurable clear hotkey in V2
+- Keep compact layout as a hard requirement for all new screens/interactions

@@ -14,6 +14,15 @@ interface SessionDbSchema {
 
 const EMPTY_DB: SessionDbSchema = { sessions: [] };
 
+function compareSessionRecency(left: SessionRecord, right: SessionRecord): number {
+  const leftRecent = left.lastConnectedAt ?? "";
+  const rightRecent = right.lastConnectedAt ?? "";
+  if (leftRecent !== rightRecent) {
+    return leftRecent < rightRecent ? 1 : -1;
+  }
+  return left.updatedAt < right.updatedAt ? 1 : left.updatedAt > right.updatedAt ? -1 : 0;
+}
+
 export class SessionStore {
   private readonly dbPath: string;
 
@@ -23,9 +32,7 @@ export class SessionStore {
 
   async list(): Promise<SessionRecord[]> {
     const db = await this.readDb();
-    return [...db.sessions].sort((a, b) =>
-      a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0
-    );
+    return [...db.sessions].sort(compareSessionRecency);
   }
 
   async getById(id: string): Promise<SessionRecord | null> {
@@ -103,6 +110,22 @@ export class SessionStore {
     }
     db.sessions = nextSessions;
     await this.writeDb(db);
+  }
+
+  async markConnected(id: string): Promise<SessionRecord> {
+    const db = await this.readDb();
+    const index = db.sessions.findIndex((session) => session.id === id);
+    if (index === -1) {
+      throw new Error("Session not found");
+    }
+    const existing = db.sessions[index];
+    const updated: SessionRecord = {
+      ...existing,
+      lastConnectedAt: new Date().toISOString()
+    };
+    db.sessions[index] = updated;
+    await this.writeDb(db);
+    return updated;
   }
 
   private async readDb(): Promise<SessionDbSchema> {

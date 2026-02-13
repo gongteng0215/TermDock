@@ -1,7 +1,9 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, Menu } from "electron";
+import type { MenuItemConstructorOptions } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { registerSftpHandlers } from "./ipc/register-sftp-handlers.js";
 import { registerSessionHandlers } from "./ipc/register-session-handlers.js";
 import { registerSystemHandlers } from "./ipc/register-system-handlers.js";
 import { registerTerminalHandlers } from "./ipc/register-terminal-handlers.js";
@@ -18,6 +20,7 @@ const shouldDisableGpu =
 const shouldOpenDevtools =
   process.env.TERMDOCK_OPEN_DEVTOOLS === "1" ||
   process.env.TERMDOCK_OPEN_DEVTOOLS === "true";
+const OPEN_SETTINGS_CHANNEL = "app:openSettings";
 
 if (shouldDisableGpu) {
   app.disableHardwareAcceleration();
@@ -39,6 +42,7 @@ function createWindow(): void {
       nodeIntegration: false
     }
   });
+  setupApplicationMenu(mainWindow);
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
@@ -68,6 +72,62 @@ function createWindow(): void {
   void mainWindow.loadFile(join(__dirname, "..", "..", "dist", "index.html"));
 }
 
+function emitOpenSettings(targetWindow?: BrowserWindow | null): void {
+  const fallbackWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+  const windowRef = targetWindow ?? fallbackWindow;
+  if (!windowRef || windowRef.isDestroyed()) {
+    return;
+  }
+  windowRef.webContents.send(OPEN_SETTINGS_CHANNEL);
+}
+
+function setupApplicationMenu(mainWindow: BrowserWindow): void {
+  const settingsItem: MenuItemConstructorOptions = {
+    label: "Settings...",
+    accelerator: isMac ? "Command+," : "Ctrl+,",
+    click: () => {
+      emitOpenSettings(mainWindow);
+    }
+  };
+
+  const template: MenuItemConstructorOptions[] = isMac
+    ? [
+        {
+          label: app.name,
+          submenu: [
+            { role: "about" },
+            { type: "separator" },
+            settingsItem,
+            { type: "separator" },
+            { role: "services" },
+            { type: "separator" },
+            { role: "hide" },
+            { role: "hideOthers" },
+            { role: "unhide" },
+            { type: "separator" },
+            { role: "quit" }
+          ]
+        },
+        { role: "fileMenu" },
+        { role: "editMenu" },
+        { role: "viewMenu" },
+        { role: "windowMenu" },
+        { role: "help" }
+      ]
+    : [
+        {
+          label: "File",
+          submenu: [settingsItem, { type: "separator" }, { role: "quit" }]
+        },
+        { role: "editMenu" },
+        { role: "viewMenu" },
+        { role: "windowMenu" },
+        { role: "help" }
+      ];
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 async function bootstrap(): Promise<void> {
   const dbPath = join(app.getPath("userData"), "db", "sessions.json");
   const sessionStore = new SessionStore(dbPath);
@@ -77,6 +137,7 @@ async function bootstrap(): Promise<void> {
   registerSessionHandlers(sessionStore, credentialStore);
   registerSystemHandlers();
   registerTerminalHandlers(terminalService);
+  registerSftpHandlers(terminalService);
 
   await app.whenReady();
   createWindow();

@@ -4,9 +4,17 @@ import type {
   SessionTestConnectionResult,
   SessionUpdateInput
 } from "../shared/session";
+import type {
+  SftpDirectoryListResult,
+  SftpEntryKind,
+  SftpTransferEvent
+} from "../shared/sftp";
 import type { TerminalEvent } from "../shared/terminal";
 
 interface TermDockApi {
+  app: {
+    onOpenSettings: (listener: () => void) => () => void;
+  };
   sessions: {
     list: () => Promise<SessionRecord[]>;
     create: (input: SessionCreateInput) => Promise<SessionRecord>;
@@ -16,6 +24,9 @@ interface TermDockApi {
   };
   system: {
     pickPrivateKey: () => Promise<string | null>;
+    pickUploadFile: () => Promise<string | null>;
+    pickDownloadTarget: (defaultName: string) => Promise<string | null>;
+    getPathForDroppedFile: (file: File) => Promise<string | null>;
   };
   terminal: {
     connect: (tabId: string, sessionId: string) => Promise<void>;
@@ -23,6 +34,25 @@ interface TermDockApi {
     resize: (tabId: string, cols: number, rows: number) => Promise<void>;
     close: (tabId: string) => Promise<void>;
     onEvent: (listener: (event: TerminalEvent) => void) => () => void;
+  };
+  sftp: {
+    listDirectory: (tabId: string, path?: string) => Promise<SftpDirectoryListResult>;
+    createDirectory: (tabId: string, parentPath: string, name: string) => Promise<void>;
+    renamePath: (tabId: string, sourcePath: string, nextName: string) => Promise<void>;
+    deletePath: (tabId: string, targetPath: string, kind: SftpEntryKind) => Promise<void>;
+    uploadFile: (
+      tabId: string,
+      transferId: string,
+      localPath: string,
+      remoteDirectory: string
+    ) => Promise<void>;
+    downloadFile: (
+      tabId: string,
+      transferId: string,
+      remotePath: string,
+      localPath: string
+    ) => Promise<void>;
+    onTransferEvent: (listener: (event: SftpTransferEvent) => void) => () => void;
   };
 }
 
