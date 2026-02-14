@@ -15,8 +15,8 @@
     "build:main": "tsc -p tsconfig.node.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "pack": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --dir",
-    "dist:mac": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --mac dmg zip",
-    "dist:win": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --win nsis zip",
+    "dist:mac": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --mac dmg zip --publish never",
+    "dist:win": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --win nsis zip --publish never",
     "release:mac": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --mac dmg zip -p always",
     "release:win": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --win nsis zip -p always"
   },
@@ -82,7 +82,11 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "cpu-features",
       "electron",
+      "electron-winstaller",
+      "esbuild",
+      "ssh2",
       "keytar"
     ]
   }
