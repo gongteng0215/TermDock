@@ -1,89 +1,97 @@
 # TermDock
 
-TermDock is a cross-platform desktop SSH + SFTP client focused on a macOS-first experience with full Windows 11 support.
+TermDock 是一款跨平台桌面 SSH + SFTP 客户端，当前以 macOS 体验优先，并兼容 Windows 11。
 
-## Current status
+## 当前状态（2026-02-14）
 
-This repository now includes the initial development baseline:
+### 已可用功能
 
-- Electron + React + TypeScript app scaffold
-- Three-pane shell layout (Sessions / Terminal workspace / SFTP panel)
-- Session CRUD via IPC
-- Local session persistence (JSON storage; SQLite migration planned)
-- OS credential-store adapter (`keytar` with in-memory fallback)
-- Real SSH terminal pipeline (`ssh2` + `xterm`) with multi-tab sessions
-- Terminal IPC channels (`connect/write/resize/close`) and status events
-- macOS-first keyboard shortcuts with Windows-compatible `Ctrl` fallback (`Cmd/Ctrl+T/W/C/V/F`)
-- SFTP directory listing via the active terminal tab connection (path input / refresh / up-level)
-- SFTP single-file upload/download with stream-based transfer progress events
-- SFTP drag-and-drop file upload into current remote directory
-- Compact-first UI baseline (high information density, reduced spacing/padding)
+- 会话管理：创建 / 编辑 / 删除 / 测试连接
+- 认证方式：密码、私钥（支持选择私钥文件）
+- 会话体验：搜索过滤、收藏与仅收藏筛选、最近连接时间展示与排序
+- 终端：基于 xterm 的多标签连接、同会话多开
+- 终端交互：右键菜单（含 Clear）、双击会话直接打开、标签中键关闭
+- 快捷键：macOS 使用 `Cmd`，Windows 使用 `Ctrl`（支持开关）
+- 重连能力：KeepAlive + 自动重连（可配置开关与延迟）
+- 设置入口：
+  - macOS：左上角应用菜单 `Settings...`（`Command+,`）
+  - Windows：`File > Settings...`（`Ctrl+,`）与右上角 `Settings` 按钮
+- SFTP：目录浏览、进入/返回、新建目录、重命名、删除（非递归）
+- 传输：单文件上传/下载、进度事件、拖拽文件上传、传输状态列表
+- SFTP 视图优化：Loading/统计/上传信息放在内容框外下方，减少列表跳动
 
-## Run locally
+### 目前可发布判断
+
+- 可以先发：`v0.1.0-preview`（内测 / 小范围试用）
+- 暂不建议：公开 GA（正式版）
+- 发布前仍建议补齐：
+  - `P0-F3` 跨平台冒烟测试
+  - `P0-F4` 打包与安装流程（DMG/EXE）
+  - `P0-E3` 全局错误恢复提示
+
+## 快速启动
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-## Build
+## 构建
 
 ```bash
 pnpm build
 ```
 
-## Troubleshooting
+## 常见问题
 
-If Electron reports `failed to install correctly`:
+1. Electron 报 `failed to install correctly`
 
 ```bash
 pnpm install
 pnpm rebuild electron
 ```
 
-This project already allows `electron` and `keytar` build scripts through pnpm policy.
+2. `Terminal bridge is not ready`
 
-`ssh2` may print optional native build warnings on Node 24; SSH still works with its JS fallback.
+- 完全重启开发进程：`Ctrl+C` 后重新执行 `pnpm dev`
 
-If you see repeated EGL/GL driver messages (for example `eglQueryDeviceAttribEXT: Bad attribute`), run with GPU disabled:
-
-```bash
-TERMDOCK_DISABLE_GPU=1 pnpm dev
-```
-
-If UI shows `Terminal bridge is not ready`, fully restart the dev process (`Ctrl+C` then `pnpm dev`) so Electron preload/main and renderer stay in sync.
-The preload is now emitted as CommonJS (`preload.cjs`) for better Electron compatibility.
-Dev mode now auto-restarts Electron when `dist-electron/main/main.js` or `dist-electron/main/preload.cjs` changes.
-
-If Vite says `Port 5273 is in use`, stop the old process first. Electron dev mode is pinned to `http://localhost:5273`.
-On macOS/Linux you can check and stop the listener with:
+3. Vite 报 `Port 5273 is in use`
 
 ```bash
 lsof -nP -iTCP:5273 -sTCP:LISTEN
 kill <PID>
 ```
 
-If you previously exported `ELECTRON_RUN_AS_NODE`, remove it before dev. This repo now strips it automatically in `scripts/run-electron-dev.mjs`.
+4. 图形驱动报错（如 EGL）
 
-If you see console lines like `Autofill.enable wasn't found`, they come from Chromium DevTools internals. They are harmless. DevTools is now opt-in:
+```bash
+TERMDOCK_DISABLE_GPU=1 pnpm dev
+```
+
+5. 需要调试时再开 DevTools
 
 ```bash
 TERMDOCK_OPEN_DEVTOOLS=1 pnpm dev
 ```
 
-## Project structure
+## 已知限制（当前版本）
+
+- 数据持久化仍为 JSON，尚未迁移 SQLite（`P0-A3`）
+- 会话分组树、批量编辑尚未完成（`P0-B1/B2`）
+- 断线后缺少显式“手动重连”按钮（自动重连已可用）
+- SFTP 暂不支持目录拖拽上传、递归删除、并发队列策略
+- 自动打包发布链路未接入
+
+## 项目结构
 
 ```txt
 src/main      # Electron main process, IPC, local storage
 src/renderer  # React UI
-src/shared    # Shared type contracts between main and renderer
+src/shared    # Shared type contracts
 ```
 
-## Next milestones
+## 相关文档
 
-- Complete SFTP transfer and file operation workflow (upload/download/queue/rename/delete/new-folder)
-- Replace JSON persistence with SQLite migration layer (`sessions/groups/recent_sessions`)
-- Add reconnect UX for dropped SSH sessions
-- Allow opening the same saved session in multiple terminal tabs
-- Add extensible terminal right-click context menu in MVP (with a Clear item), then configurable clear hotkey in V2
-- Keep compact layout as a hard requirement for all new screens/interactions
+- `TASKS.md`：任务拆解与状态
+- `PROGRESS.md`：里程碑进度与发版判断
+- `PRD.md`：产品需求文档
