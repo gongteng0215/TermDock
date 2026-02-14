@@ -208,7 +208,7 @@ TermDock 是一款面向开发者和运维人员的跨平台桌面 SSH + SFTP �
 ## 12. 当前实现映射（2026-02-14）
 
 - `DONE`：`P0-A1/A2/A4/B3/C1/C2/C3/C4/C6/C7/C8/D1`
-- `PARTIAL`：`P0-A3/B1/B2/B4/B5/C5/D2/D3/D4/D5/D6`
-- `TODO`：`P0-A5/E1/E2/E3/E4/F1/F2/F3/F4`
+- `PARTIAL`：`P0-A3/B1/B2/B4/B5/C5/D2/D3/D4/D5/D6/F4`
+- `TODO`：`P0-A5/E1/E2/E3/E4/F1/F2/F3`
 
 结论：当前适合发 `v0.1.0-preview` 内测版，不建议直接公开 GA。

@@ -9,8 +9,8 @@ Last updated: 2026-02-14
   - `M1` (MVP alpha): in progress
 - P0 totals:
   - `DONE`: 12
-  - `PARTIAL`: 11
-  - `TODO`: 9
+  - `PARTIAL`: 12
+  - `TODO`: 8
 - Global UI policy: `Compact-first` remains mandatory
 
 ## Release Readiness
@@ -19,7 +19,7 @@ Last updated: 2026-02-14
 - Not recommended yet: public GA rollout
 - Minimum gates before public release:
   - `P0-F3` cross-platform smoke tests (macOS + Windows 11)
-  - `P0-F4` packaging/install flow (DMG/EXE)
+  - `P0-F4` packaged installer validation + signing strategy
   - `P0-E3` recoverable global error guidance
 
 ## P0 Task Matrix
@@ -57,7 +57,7 @@ Last updated: 2026-02-14
 | P0-F1 | TODO | Unit tests not added |
 | P0-F2 | TODO | Integration tests not added |
 | P0-F3 | TODO | Cross-platform smoke tests not done |
-| P0-F4 | TODO | Packaging pipeline not implemented |
+| P0-F4 | PARTIAL | electron-builder + GitHub Release workflow is in place; install/signing validation pending |
 
 ## Recent Product-Facing Improvements
 
@@ -67,9 +67,10 @@ Last updated: 2026-02-14
 - Modal dialogs close only through explicit controls (no accidental outside-click close)
 - SFTP panel loading indicator and transfer/status summaries moved below content frame to avoid list jump
 - Session recency sorting now uses `lastConnectedAt` and Selected Session displays last connected time
+- GitHub Actions release workflow now builds macOS + Windows packages and publishes Draft/Prerelease assets
 
 ## Main Risks
 
 - No automated test safety net yet
-- No end-user packaging/install channel yet
+- Packaging pipeline exists but still lacks full installer/signing verification
 - SFTP still lacks queue scheduling + recursive folder workflows

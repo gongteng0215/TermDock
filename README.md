@@ -42,6 +42,25 @@ pnpm dev
 pnpm build
 ```
 
+## 发布测试版到 GitHub Release（macOS + Windows）
+
+已内置工作流：`.github/workflows/release.yml`。
+
+1. 提交并推送代码到远端分支。
+2. 打测试标签并推送：
+
+```bash
+git tag v0.1.0-test.1
+git push origin v0.1.0-test.1
+```
+
+3. GitHub Actions 会自动执行 `Release` 工作流，构建：
+- macOS：`dmg` + `zip`
+- Windows：`nsis(.exe)` + `zip`
+4. 工作流会自动创建 `Draft + Prerelease` 的 GitHub Release，并上传安装包附件。
+
+也可在 Actions 里手动运行 `Release`（`workflow_dispatch`），输入已存在的 tag。
+
 ## 常见问题
 
 1. Electron 报 `failed to install correctly`
@@ -80,7 +99,7 @@ TERMDOCK_OPEN_DEVTOOLS=1 pnpm dev
 - 会话分组树、批量编辑尚未完成（`P0-B1/B2`）
 - 断线后缺少显式“手动重连”按钮（自动重连已可用）
 - SFTP 暂不支持目录拖拽上传、递归删除、并发队列策略
-- 自动打包发布链路未接入
+- Windows 与 macOS 打包依赖 GitHub Actions 环境，建议以 CI 构建产物为准
 
 ## 项目结构
 
