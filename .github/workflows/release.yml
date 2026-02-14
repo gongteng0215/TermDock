@@ -22,9 +22,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - os: macos-13
+            platform: mac-x64
+            script: dist:mac:x64
           - os: macos-14
-            platform: mac
-            script: dist:mac
+            platform: mac-arm64
+            script: dist:mac:arm64
           - os: windows-2022
             platform: win
             script: dist:win
@@ -63,9 +66,6 @@ jobs:
             release/*.zip
             release/*.exe
             release/*.blockmap
-            release/latest*.yml
-            release/app-update.yml
-            release/builder-debug.yml
           if-no-files-found: error
 
   publish:
@@ -90,7 +90,6 @@ jobs:
             release-assets/*.zip
             release-assets/*.exe
             release-assets/*.blockmap
-            release-assets/latest*.yml
           draft: false
           prerelease: true
           generate_release_notes: true

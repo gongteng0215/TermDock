@@ -55,7 +55,7 @@ git push origin v0.1.0-test.1
 ```
 
 3. GitHub Actions 会自动执行 `Release` 工作流，构建：
-- macOS：`universal dmg` + `universal zip`（Intel + Apple Silicon）
+- macOS：`arm64 dmg/zip`（Apple Silicon） + `x64 dmg/zip`（Intel）
 - Windows：`nsis(.exe)` + `zip`
 4. 工作流会自动创建可见的 `Prerelease`，并上传安装包附件。
 
