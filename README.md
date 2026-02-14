@@ -58,6 +58,7 @@ git push origin v0.1.0-test.1
 - macOS：`arm64 dmg/zip`（Apple Silicon） + `x64 dmg/zip`（Intel）
 - Windows：`nsis(.exe)` + `zip`
 4. 工作流会自动创建可见的 `Prerelease`，并上传安装包附件。
+5. Intel + macOS 12 用户请下载文件名包含 `x64` 的 mac 包。
 
 也可在 Actions 里手动运行 `Release`（`workflow_dispatch`），输入已存在的 tag。
 
