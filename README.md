@@ -55,9 +55,9 @@ git push origin v0.1.0-test.1
 ```
 
 3. GitHub Actions 会自动执行 `Release` 工作流，构建：
-- macOS：`dmg` + `zip`
+- macOS：`universal dmg` + `universal zip`（Intel + Apple Silicon）
 - Windows：`nsis(.exe)` + `zip`
-4. 工作流会自动创建 `Draft + Prerelease` 的 GitHub Release，并上传安装包附件。
+4. 工作流会自动创建可见的 `Prerelease`，并上传安装包附件。
 
 也可在 Actions 里手动运行 `Release`（`workflow_dispatch`），输入已存在的 tag。
 
