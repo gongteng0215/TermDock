@@ -26,6 +26,17 @@ interface TermDockApi {
     pickPrivateKey: () => Promise<string | null>;
     pickUploadFile: () => Promise<string | null>;
     pickDownloadTarget: (defaultName: string) => Promise<string | null>;
+    pickOpenProgram: () => Promise<string | null>;
+    createTempOpenFilePath: (defaultName: string) => Promise<string>;
+    openLocalPath: (localPath: string, preferredProgramPath?: string | null) => Promise<void>;
+    expandUploadPaths: (
+      inputPaths: string[]
+    ) => Promise<
+      Array<{
+        localPath: string;
+        relativeDirectory: string;
+      }>
+    >;
     getPathForDroppedFile: (file: File) => Promise<string | null>;
   };
   terminal: {
@@ -46,6 +57,8 @@ interface TermDockApi {
       localPath: string,
       remoteDirectory: string
     ) => Promise<void>;
+    cancelUpload: (tabId: string, transferId: string) => Promise<boolean>;
+    cancelDownload: (tabId: string, transferId: string) => Promise<boolean>;
     downloadFile: (
       tabId: string,
       transferId: string,

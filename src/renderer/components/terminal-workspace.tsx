@@ -85,6 +85,7 @@ export function TerminalWorkspace({
   const reconnectAttemptsRef = useRef(new Map<string, number>());
   const reconnectTimersRef = useRef(new Map<string, number>());
   const tabsByIdRef = useRef(new Map<string, TerminalTab>());
+  const tabStatusesRef = useRef<Record<string, TabUiStatus>>({});
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabUiStatus>>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -95,6 +96,9 @@ export function TerminalWorkspace({
   useEffect(() => {
     tabsByIdRef.current = tabsById;
   }, [tabsById]);
+  useEffect(() => {
+    tabStatusesRef.current = tabStatuses;
+  }, [tabStatuses]);
 
   const setTabStatus = useCallback((tabId: string, status: TabUiStatus) => {
     setTabStatuses((prev) => ({ ...prev, [tabId]: status }));
@@ -112,26 +116,6 @@ export function TerminalWorkspace({
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
-
-  // Keep actions declarative so future right-click items can be appended here.
-  const contextActions = useMemo<TerminalContextAction[]>(
-    () => [
-      {
-        id: "clear",
-        label: "Clear",
-        run: (tabId: string) => {
-          const instance = terminalRefs.current.get(tabId);
-          if (!instance) {
-            return;
-          }
-          instance.terminal.clear();
-          instance.terminal.focus();
-        },
-        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
-      }
-    ],
-    []
-  );
 
   const openContextMenu = useCallback(
     (event: MouseEvent, tabId: string) => {
@@ -212,6 +196,51 @@ export function TerminalWorkspace({
         });
     },
     [clearReconnectState, fitTerminal, onError, setTabStatus, terminalApi]
+  );
+
+  const reconnectTabNow = useCallback(
+    (tabId: string) => {
+      const tab = tabsByIdRef.current.get(tabId);
+      const instance = terminalRefs.current.get(tabId);
+      if (!tab || !instance) {
+        return;
+      }
+      instance.terminal.writeln("\r\n[reconnect] Manual reconnect...");
+      clearReconnectState(tabId);
+      void connectTab(tab);
+    },
+    [clearReconnectState, connectTab]
+  );
+
+  // Keep actions declarative so future right-click items can be appended here.
+  const contextActions = useMemo<TerminalContextAction[]>(
+    () => [
+      {
+        id: "reconnect",
+        label: "Reconnect",
+        run: (tabId: string) => {
+          reconnectTabNow(tabId);
+        },
+        isDisabled: (tabId: string) =>
+          !tabsByIdRef.current.has(tabId) ||
+          !terminalRefs.current.has(tabId) ||
+          tabStatusesRef.current[tabId]?.status === "connecting"
+      },
+      {
+        id: "clear",
+        label: "Clear",
+        run: (tabId: string) => {
+          const instance = terminalRefs.current.get(tabId);
+          if (!instance) {
+            return;
+          }
+          instance.terminal.clear();
+          instance.terminal.focus();
+        },
+        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
+      }
+    ],
+    [reconnectTabNow]
   );
 
   const scheduleReconnect = useCallback(
@@ -677,7 +706,16 @@ export function TerminalWorkspace({
               />
               {state ? (
                 <div className={`terminal-pane__status is-${state.status}`}>
-                  {getStatusText(state, tabsById.get(tab.id)?.title ?? tab.title)}
+                  <span>{getStatusText(state, tabsById.get(tab.id)?.title ?? tab.title)}</span>
+                  {(state.status === "closed" || state.status === "error") ? (
+                    <button
+                      className="terminal-pane__status-action"
+                      onClick={() => reconnectTabNow(tab.id)}
+                      type="button"
+                    >
+                      Reconnect
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>

@@ -1,6 +1,6 @@
 # TermDock Progress
 
-Last updated: 2026-02-14
+Last updated: 2026-02-15
 
 ## Snapshot
 
@@ -19,7 +19,7 @@ Last updated: 2026-02-14
 - Not recommended yet: public GA rollout
 - Minimum gates before public release:
   - `P0-F3` cross-platform smoke tests (macOS + Windows 11)
-  - `P0-F4` packaged installer validation + signing strategy
+  - `P0-F4` packaged installer validation + signing/notarization strategy
   - `P0-E3` recoverable global error guidance
 
 ## P0 Task Matrix
@@ -47,7 +47,7 @@ Last updated: 2026-02-14
 | P0-D1 | DONE | SFTP channel available via active tab connection |
 | P0-D2 | PARTIAL | SFTP panel is usable; fold/collapse polish pending |
 | P0-D3 | PARTIAL | Directory browse/open/up + compact row metadata available; error-state polish pending |
-| P0-D4 | PARTIAL | Single-file upload/download with progress events available; queue/concurrency policy pending |
+| P0-D4 | PARTIAL | Single-file upload/download + upload cancel available; queue/concurrency policy pending |
 | P0-D5 | PARTIAL | Create folder / rename / delete implemented (non-recursive); advanced safety flows pending |
 | P0-D6 | PARTIAL | Drag-and-drop file upload works; folder drag/bulk polish pending |
 | P0-E1 | TODO | Startup optimization benchmark not done |
@@ -57,7 +57,7 @@ Last updated: 2026-02-14
 | P0-F1 | TODO | Unit tests not added |
 | P0-F2 | TODO | Integration tests not added |
 | P0-F3 | TODO | Cross-platform smoke tests not done |
-| P0-F4 | PARTIAL | electron-builder + GitHub Release workflow is in place; install/signing validation pending |
+| P0-F4 | PARTIAL | electron-builder + GitHub Release workflow is in place (mac arm64/x64 + win); install/signing validation pending |
 
 ## Recent Product-Facing Improvements
 
@@ -66,8 +66,17 @@ Last updated: 2026-02-14
 - Settings moved into app menu (`Command+,` on macOS, `Ctrl+,` on Windows) and Windows top-right button
 - Modal dialogs close only through explicit controls (no accidental outside-click close)
 - SFTP panel loading indicator and transfer/status summaries moved below content frame to avoid list jump
+- SFTP upload now supports cancel; canceled transfers are no longer surfaced as failure errors
 - Session recency sorting now uses `lastConnectedAt` and Selected Session displays last connected time
-- GitHub Actions release workflow now builds macOS + Windows packages and publishes Draft/Prerelease assets
+- GitHub Actions release workflow now builds macOS + Windows packages and publishes Prerelease assets
+- Release blank-screen issue fixed by switching production asset path to relative (`./assets/...`)
+- Runtime icon configuration landed for packaged builds, plus dev-mode icon fallback handling
+
+## Next Focus
+
+1. Run and document full cross-platform smoke checklist (`P0-F3`)
+2. Finalize installer signing/notarization strategy (`P0-F4`)
+3. Implement recoverable global error actions (`P0-E3`)
 
 ## Main Risks
 

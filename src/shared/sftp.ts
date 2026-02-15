@@ -1,6 +1,11 @@
 export type SftpEntryKind = "directory" | "file" | "symlink" | "other";
 export type SftpTransferDirection = "upload" | "download";
-export type SftpTransferStatus = "queued" | "running" | "completed" | "failed";
+export type SftpTransferStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "canceled";
 
 export interface SftpEntry {
   name: string;

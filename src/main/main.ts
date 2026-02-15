@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu } from "electron";
-import type { MenuItemConstructorOptions } from "electron";
+import type { BrowserWindowConstructorOptions, MenuItemConstructorOptions } from "electron";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +15,7 @@ import { TerminalService } from "./terminal/terminal-service.js";
 const isMac = process.platform === "darwin";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const projectRoot = join(__dirname, "..", "..");
 const shouldDisableGpu =
   process.env.TERMDOCK_DISABLE_GPU === "1" ||
   process.env.TERMDOCK_DISABLE_GPU === "true";
@@ -21,6 +23,8 @@ const shouldOpenDevtools =
   process.env.TERMDOCK_OPEN_DEVTOOLS === "1" ||
   process.env.TERMDOCK_OPEN_DEVTOOLS === "true";
 const OPEN_SETTINGS_CHANNEL = "app:openSettings";
+const runtimeIconCandidates = resolveRuntimeIconCandidates();
+const runtimeWindowIconPath = runtimeIconCandidates[0] ?? null;
 
 if (shouldDisableGpu) {
   app.disableHardwareAcceleration();
@@ -28,7 +32,7 @@ if (shouldDisableGpu) {
 }
 
 function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+  const windowOptions: BrowserWindowConstructorOptions = {
     width: 1440,
     height: 920,
     minWidth: 1080,
@@ -41,7 +45,11 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false
     }
-  });
+  };
+  if (!isMac && runtimeWindowIconPath) {
+    windowOptions.icon = runtimeWindowIconPath;
+  }
+  const mainWindow = new BrowserWindow(windowOptions);
   setupApplicationMenu(mainWindow);
   mainWindow.webContents.on(
     "did-fail-load",
@@ -148,6 +156,9 @@ async function bootstrap(): Promise<void> {
   registerSftpHandlers(terminalService);
 
   await app.whenReady();
+  if (isMac) {
+    await applyMacDockIcon();
+  }
   createWindow();
 
   app.on("activate", () => {
@@ -163,4 +174,32 @@ app.on("window-all-closed", () => {
   }
 });
 
-void bootstrap();
+void bootstrap().catch((error: Error) => {
+  console.error("[TermDock] bootstrap failed:", error.message);
+});
+
+function resolveRuntimeIconCandidates(): string[] {
+  const candidates =
+    process.platform === "darwin"
+      ? [join(projectRoot, "build", "icon-source.png"), join(projectRoot, "build", "icon.icns")]
+      : process.platform === "win32"
+        ? [join(projectRoot, "build", "icon.ico"), join(projectRoot, "build", "icon-source.png")]
+        : [join(projectRoot, "build", "icon-source.png")];
+  return candidates.filter((candidate) => existsSync(candidate));
+}
+
+async function applyMacDockIcon(): Promise<void> {
+  if (!app.dock || runtimeIconCandidates.length === 0) {
+    return;
+  }
+  for (const iconPath of runtimeIconCandidates) {
+    try {
+      await Promise.resolve(app.dock.setIcon(iconPath));
+      return;
+    } catch (error) {
+      console.warn(
+        `[TermDock] Failed to set dock icon from ${iconPath}: ${(error as Error).message}`
+      );
+    }
+  }
+}

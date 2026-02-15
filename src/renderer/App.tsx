@@ -1,4 +1,13 @@
-import { DragEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DragEvent,
+  FormEvent,
+  MouseEvent as ReactMouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 
 import type {
   SessionCreateInput,
@@ -31,6 +40,7 @@ const EMPTY_FORM: SessionCreateInput = {
 
 const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
+const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
@@ -42,9 +52,45 @@ const DEFAULT_HOTKEY_PREFERENCES: HotkeyPreferences = {
   terminalPaste: true,
   terminalSearch: true
 };
+interface FileOpenPreferences {
+  preferredProgramPath: string;
+}
+
+const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
+  preferredProgramPath: ""
+};
 
 interface SftpTransferItem extends SftpTransferEvent {
   updatedAt: number;
+}
+
+interface PendingUploadJob {
+  tabId: string;
+  transferId: string;
+  localPath: string;
+  remoteDirectory: string;
+  remotePath: string;
+  name: string;
+}
+
+const UPLOAD_MAX_CONCURRENCY = 2;
+
+interface LocalUploadPathEntry {
+  localPath: string;
+  relativeDirectory: string;
+}
+
+interface SftpContextMenuState {
+  x: number;
+  y: number;
+  entryPath: string | null;
+}
+
+interface SftpContextAction {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  run: () => void;
 }
 
 function getSafeTabInstance(value: unknown): number {
@@ -133,8 +179,61 @@ function isTabNotConnectedError(message: string): boolean {
   return /not connected/i.test(message);
 }
 
+function isTransferCanceledMessage(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /\bcancel(?:ed|led)?\b/i.test(message);
+}
+
 function createTransferId(prefix: "up" | "down"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function getPathBaseName(pathValue: string): string {
+  const normalized = pathValue.replaceAll("\\", "/");
+  const marker = normalized.lastIndexOf("/");
+  if (marker < 0) {
+    return normalized;
+  }
+  return normalized.slice(marker + 1);
+}
+
+function joinRemotePath(parentPath: string, name: string): string {
+  if (!parentPath || parentPath === ".") {
+    return name;
+  }
+  if (parentPath.endsWith("/")) {
+    return `${parentPath}${name}`;
+  }
+  return `${parentPath}/${name}`;
+}
+
+function normalizeRemoteDirectoryPath(pathValue: string): string {
+  if (!pathValue) {
+    return "";
+  }
+  const normalized = pathValue.replaceAll("\\", "/").trim();
+  if (!normalized || normalized === ".") {
+    return "";
+  }
+  const hasLeadingSlash = normalized.startsWith("/");
+  const compacted = normalized
+    .split("/")
+    .filter((segment) => segment.length > 0 && segment !== ".")
+    .join("/");
+  if (!compacted) {
+    return hasLeadingSlash ? "/" : "";
+  }
+  return hasLeadingSlash ? `/${compacted}` : compacted;
+}
+
+function normalizeRelativeDirectoryPath(pathValue: string): string {
+  const normalized = normalizeRemoteDirectoryPath(pathValue);
+  if (normalized.startsWith("/")) {
+    return normalized.slice(1);
+  }
+  return normalized;
 }
 
 function formatTransferBytes(bytes: number): string {
@@ -164,6 +263,12 @@ function formatTransferProgress(transfer: SftpTransferItem): string {
   const ratio = total > 0 ? Math.min(1, transfer.transferredBytes / total) : 0;
   const percent =
     transfer.status === "completed" ? 100 : Math.max(0, Math.round(ratio * 100));
+  if (transfer.status === "canceled") {
+    if (total <= 0) {
+      return "Canceled";
+    }
+    return `Canceled ${formatTransferBytes(transfer.transferredBytes)}/${formatTransferBytes(total)}`;
+  }
   if (total <= 0) {
     return `${percent}%`;
   }
@@ -256,6 +361,27 @@ function readHotkeyPreferences(): HotkeyPreferences {
     };
   } catch {
     return DEFAULT_HOTKEY_PREFERENCES;
+  }
+}
+
+function readFileOpenPreferences(): FileOpenPreferences {
+  if (typeof window === "undefined") {
+    return DEFAULT_FILE_OPEN_PREFERENCES;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(FILE_OPEN_PREFERENCES_STORAGE_KEY);
+    if (!rawValue) {
+      return DEFAULT_FILE_OPEN_PREFERENCES;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<FileOpenPreferences>;
+    return {
+      preferredProgramPath:
+        typeof parsed.preferredProgramPath === "string"
+          ? parsed.preferredProgramPath
+          : DEFAULT_FILE_OPEN_PREFERENCES.preferredProgramPath
+    };
+  } catch {
+    return DEFAULT_FILE_OPEN_PREFERENCES;
   }
 }
 
@@ -360,6 +486,9 @@ export function App() {
   const [hotkeyPreferences, setHotkeyPreferences] = useState<HotkeyPreferences>(
     () => readHotkeyPreferences()
   );
+  const [fileOpenPreferences, setFileOpenPreferences] = useState<FileOpenPreferences>(
+    () => readFileOpenPreferences()
+  );
   const [testConnectionResult, setTestConnectionResult] = useState<{
     ok: boolean;
     message: string;
@@ -371,9 +500,15 @@ export function App() {
   const [sftpDropActive, setSftpDropActive] = useState(false);
   const [selectedSftpPath, setSelectedSftpPath] = useState<string | null>(null);
   const [sftpTransfers, setSftpTransfers] = useState<SftpTransferItem[]>([]);
+  const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null);
   const [sftpError, setSftpError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const connectedTabIdsRef = useRef<Set<string>>(new Set());
+  const uploadQueueRef = useRef<PendingUploadJob[]>([]);
+  const runningUploadIdsRef = useRef<Set<string>>(new Set());
+  const isDrainingUploadQueueRef = useRef(false);
+  const ensuredRemoteDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
+  const sftpContextMenuRef = useRef<HTMLDivElement | null>(null);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
@@ -419,6 +554,12 @@ export function App() {
     }
     return sftpDirectory.entries.find((entry) => entry.path === selectedSftpPath) ?? null;
   }, [selectedSftpPath, sftpDirectory]);
+  const sftpContextEntry = useMemo<SftpEntry | null>(() => {
+    if (!sftpDirectory || !sftpContextMenu?.entryPath) {
+      return null;
+    }
+    return sftpDirectory.entries.find((entry) => entry.path === sftpContextMenu.entryPath) ?? null;
+  }, [sftpContextMenu?.entryPath, sftpDirectory]);
   const activeSftpTransfers = useMemo(() => {
     if (!activeTabId) {
       return [];
@@ -426,6 +567,21 @@ export function App() {
     return sftpTransfers
       .filter((transfer) => transfer.tabId === activeTabId)
       .slice(0, 8);
+  }, [activeTabId, sftpTransfers]);
+  const activeUploadQueueStats = useMemo(() => {
+    if (!activeTabId) {
+      return {
+        queued: 0,
+        running: 0
+      };
+    }
+    const tabTransfers = sftpTransfers.filter(
+      (transfer) => transfer.tabId === activeTabId && transfer.direction === "upload"
+    );
+    return {
+      queued: tabTransfers.filter((transfer) => transfer.status === "queued").length,
+      running: tabTransfers.filter((transfer) => transfer.status === "running").length
+    };
   }, [activeTabId, sftpTransfers]);
   const canDownloadSelectedSftpEntry =
     !!selectedSftpEntry && selectedSftpEntry.kind !== "directory";
@@ -451,6 +607,121 @@ export function App() {
       totalSize
     };
   }, [sftpDirectory]);
+
+  const applySftpTransferEvent = useCallback((event: SftpTransferEvent) => {
+    setSftpTransfers((prev) => {
+      const nextItem: SftpTransferItem = {
+        ...event,
+        updatedAt: Date.now()
+      };
+      const existingIndex = prev.findIndex(
+        (transfer) => transfer.transferId === event.transferId
+      );
+      if (existingIndex < 0) {
+        return [nextItem, ...prev].slice(0, 160);
+      }
+      const next = [...prev];
+      next[existingIndex] = {
+        ...next[existingIndex],
+        ...nextItem
+      };
+      next.sort((left, right) => right.updatedAt - left.updatedAt);
+      return next;
+    });
+  }, []);
+
+  const ensureRemoteDirectoryForUpload = useCallback(
+    async (tabId: string, remoteDirectory: string) => {
+      if (!sftpApi) {
+        throw new Error("SFTP bridge unavailable. Restart `pnpm dev`.");
+      }
+      const normalized = normalizeRemoteDirectoryPath(remoteDirectory);
+      if (!normalized) {
+        return;
+      }
+      const cache = ensuredRemoteDirectoriesRef.current.get(tabId) ?? new Set<string>();
+      ensuredRemoteDirectoriesRef.current.set(tabId, cache);
+      if (cache.has(normalized)) {
+        return;
+      }
+
+      const isAbsolute = normalized.startsWith("/");
+      const segments = normalized.split("/").filter(Boolean);
+      let currentPath = isAbsolute ? "/" : ".";
+      for (const segment of segments) {
+        const nextPath = joinRemotePath(currentPath, segment);
+        if (cache.has(nextPath)) {
+          currentPath = nextPath;
+          continue;
+        }
+        try {
+          await sftpApi.createDirectory(tabId, currentPath, segment);
+        } catch (caughtError) {
+          try {
+            await sftpApi.listDirectory(tabId, nextPath);
+          } catch {
+            throw caughtError;
+          }
+        }
+        cache.add(nextPath);
+        currentPath = nextPath;
+      }
+      cache.add(normalized);
+    },
+    [sftpApi]
+  );
+
+  const drainUploadQueue = useCallback(() => {
+    if (!sftpApi || isDrainingUploadQueueRef.current) {
+      return;
+    }
+    isDrainingUploadQueueRef.current = true;
+    try {
+      while (runningUploadIdsRef.current.size < UPLOAD_MAX_CONCURRENCY) {
+        const nextIndex = uploadQueueRef.current.findIndex((job) =>
+          connectedTabIdsRef.current.has(job.tabId)
+        );
+        if (nextIndex < 0) {
+          break;
+        }
+        const [nextJob] = uploadQueueRef.current.splice(nextIndex, 1);
+        runningUploadIdsRef.current.add(nextJob.transferId);
+        void (async () => {
+          await ensureRemoteDirectoryForUpload(nextJob.tabId, nextJob.remoteDirectory);
+          await sftpApi.uploadFile(
+            nextJob.tabId,
+            nextJob.transferId,
+            nextJob.localPath,
+            nextJob.remoteDirectory
+          );
+        })()
+          .catch((caughtError) => {
+            const message = (caughtError as Error)?.message ?? "Upload failed.";
+            if (!isTransferCanceledMessage(message)) {
+              setSftpError(message);
+              applySftpTransferEvent({
+                tabId: nextJob.tabId,
+                transferId: nextJob.transferId,
+                direction: "upload",
+                status: "failed",
+                name: nextJob.name,
+                localPath: nextJob.localPath,
+                remotePath: nextJob.remotePath,
+                transferredBytes: 0,
+                totalBytes: 0,
+                message
+              });
+            }
+          })
+          .finally(() => {
+            runningUploadIdsRef.current.delete(nextJob.transferId);
+            drainUploadQueue();
+          });
+      }
+    } finally {
+      isDrainingUploadQueueRef.current = false;
+    }
+  }, [applySftpTransferEvent, ensureRemoteDirectoryForUpload, sftpApi]);
 
   const loadSftpDirectory = useCallback(
     async (
@@ -501,6 +772,26 @@ export function App() {
       }
     },
     [activeTabId, sftpApi]
+  );
+
+  const closeSftpContextMenu = useCallback(() => {
+    setSftpContextMenu(null);
+  }, []);
+
+  const openSftpContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>, entry?: SftpEntry) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (entry) {
+        setSelectedSftpPath(entry.path);
+      }
+      setSftpContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        entryPath: entry?.path ?? null
+      });
+    },
+    []
   );
 
   useEffect(() => {
@@ -572,6 +863,17 @@ export function App() {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
   }, [hotkeyPreferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FILE_OPEN_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(fileOpenPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [fileOpenPreferences]);
 
   useEffect(() => {
     if (!appApi) {
@@ -648,6 +950,7 @@ export function App() {
       if (event.type === "status") {
         if (event.status === "connected") {
           connectedTabIdsRef.current.add(event.tabId);
+          drainUploadQueue();
           const tab = terminalTabs.find((item) => item.id === event.tabId);
           if (tab) {
             const connectedAt = new Date().toISOString();
@@ -684,7 +987,7 @@ export function App() {
     return () => {
       stopListening();
     };
-  }, [activeTabId, loadSftpDirectory, terminalApi, terminalTabs]);
+  }, [activeTabId, drainUploadQueue, loadSftpDirectory, terminalApi, terminalTabs]);
 
   useEffect(() => {
     if (!sftpApi) {
@@ -693,31 +996,22 @@ export function App() {
     const currentCwd = sftpDirectory?.cwd;
 
     const stopListening = sftpApi.onTransferEvent((event) => {
-      setSftpTransfers((prev) => {
-        const nextItem: SftpTransferItem = {
-          ...event,
-          updatedAt: Date.now()
-        };
-        const existingIndex = prev.findIndex(
-          (transfer) => transfer.transferId === event.transferId
-        );
-        if (existingIndex < 0) {
-          return [nextItem, ...prev].slice(0, 80);
-        }
-        const next = [...prev];
-        next[existingIndex] = {
-          ...next[existingIndex],
-          ...nextItem
-        };
-        next.sort((left, right) => right.updatedAt - left.updatedAt);
-        return next;
-      });
+      applySftpTransferEvent(event);
 
-      if (event.status === "failed" && event.tabId === activeTabId && event.message) {
+      if (
+        event.status === "failed" &&
+        event.tabId === activeTabId &&
+        event.message &&
+        !isTransferCanceledMessage(event.message)
+      ) {
         setSftpError(event.message);
       }
 
-      if (event.status === "completed" && event.tabId === activeTabId && currentCwd) {
+      if (
+        (event.status === "completed" || event.status === "canceled") &&
+        event.tabId === activeTabId &&
+        currentCwd
+      ) {
         void loadSftpDirectory(currentCwd, {
           tabId: event.tabId,
           suppressDisconnectedError: true
@@ -728,7 +1022,74 @@ export function App() {
     return () => {
       stopListening();
     };
-  }, [activeTabId, loadSftpDirectory, sftpApi, sftpDirectory?.cwd]);
+  }, [activeTabId, applySftpTransferEvent, loadSftpDirectory, sftpApi, sftpDirectory?.cwd]);
+
+  useEffect(() => {
+    if (!sftpContextMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (sftpContextMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeSftpContextMenu();
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeSftpContextMenu();
+      }
+    };
+
+    const onWindowLayoutChange = () => {
+      closeSftpContextMenu();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", onWindowLayoutChange);
+    window.addEventListener("scroll", onWindowLayoutChange, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("resize", onWindowLayoutChange);
+      window.removeEventListener("scroll", onWindowLayoutChange, true);
+    };
+  }, [closeSftpContextMenu, sftpContextMenu]);
+
+  useEffect(() => {
+    if (!sftpContextMenu) {
+      return;
+    }
+    if (!activeTerminalTab) {
+      closeSftpContextMenu();
+      return;
+    }
+    if (!sftpContextMenu.entryPath) {
+      return;
+    }
+    const hasEntry = !!sftpDirectory?.entries.some(
+      (entry) => entry.path === sftpContextMenu.entryPath
+    );
+    if (!hasEntry) {
+      closeSftpContextMenu();
+    }
+  }, [activeTerminalTab, closeSftpContextMenu, sftpContextMenu, sftpDirectory]);
+
+  useEffect(() => {
+    drainUploadQueue();
+  }, [drainUploadQueue]);
+
+  useEffect(() => {
+    return () => {
+      uploadQueueRef.current = [];
+      runningUploadIdsRef.current.clear();
+      isDrainingUploadQueueRef.current = false;
+      ensuredRemoteDirectoriesRef.current.clear();
+    };
+  }, []);
 
   const openCreateModal = () => {
     setForm(EMPTY_FORM);
@@ -888,6 +1249,26 @@ export function App() {
 
   const closeTerminalTab = useCallback((tabId: string) => {
     connectedTabIdsRef.current.delete(tabId);
+    ensuredRemoteDirectoriesRef.current.delete(tabId);
+    const queuedJobs = uploadQueueRef.current.filter((job) => job.tabId === tabId);
+    if (queuedJobs.length > 0) {
+      uploadQueueRef.current = uploadQueueRef.current.filter((job) => job.tabId !== tabId);
+      for (const job of queuedJobs) {
+        applySftpTransferEvent({
+          tabId: job.tabId,
+          transferId: job.transferId,
+          direction: "upload",
+          status: "canceled",
+          name: job.name,
+          localPath: job.localPath,
+          remotePath: job.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "canceled"
+        });
+      }
+      drainUploadQueue();
+    }
     if (terminalApi) {
       void terminalApi.close(tabId);
     }
@@ -899,7 +1280,7 @@ export function App() {
       return;
     }
     setActiveTabId(nextTabs.length > 0 ? nextTabs[nextTabs.length - 1].id : null);
-  }, [activeTabId, terminalApi, terminalTabs]);
+  }, [activeTabId, applySftpTransferEvent, drainUploadQueue, terminalApi, terminalTabs]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1019,6 +1400,13 @@ export function App() {
     }));
   };
 
+  const setPreferredOpenProgramPath = (value: string) => {
+    setFileOpenPreferences((prev) => ({
+      ...prev,
+      preferredProgramPath: value
+    }));
+  };
+
   const copyClashDirectRules = async (session: SessionRecord) => {
     const text = buildClashDirectRules(session);
     try {
@@ -1048,6 +1436,21 @@ export function App() {
         ...prev,
         privateKeyPath: filePath
       }));
+    } catch (caughtError) {
+      setError((caughtError as Error).message);
+    }
+  };
+
+  const pickPreferredOpenProgram = async () => {
+    try {
+      if (!systemApi) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const programPath = await systemApi.pickOpenProgram();
+      if (!programPath) {
+        return;
+      }
+      setPreferredOpenProgramPath(programPath);
     } catch (caughtError) {
       setError((caughtError as Error).message);
     }
@@ -1085,7 +1488,7 @@ export function App() {
     }
   };
 
-  const renameSelectedSftpEntry = async () => {
+  const renameSelectedSftpEntry = async (entry?: SftpEntry | null) => {
     if (!sftpApi) {
       setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
       return;
@@ -1094,12 +1497,13 @@ export function App() {
       setSftpError("Open a terminal tab before managing SFTP files.");
       return;
     }
-    if (!selectedSftpEntry) {
+    const targetEntry = entry ?? selectedSftpEntry;
+    if (!targetEntry) {
       setSftpError("Select a file or directory first.");
       return;
     }
 
-    const nameInput = window.prompt("Rename to", selectedSftpEntry.name);
+    const nameInput = window.prompt("Rename to", targetEntry.name);
     if (nameInput === null) {
       return;
     }
@@ -1112,7 +1516,7 @@ export function App() {
     setSftpActionLoading(true);
     setSftpError(null);
     try {
-      await sftpApi.renamePath(activeTabId, selectedSftpEntry.path, trimmedName);
+      await sftpApi.renamePath(activeTabId, targetEntry.path, trimmedName);
       setSelectedSftpPath(null);
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
@@ -1122,7 +1526,7 @@ export function App() {
     }
   };
 
-  const deleteSelectedSftpEntry = async () => {
+  const deleteSelectedSftpEntry = async (entry?: SftpEntry | null) => {
     if (!sftpApi) {
       setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
       return;
@@ -1131,13 +1535,14 @@ export function App() {
       setSftpError("Open a terminal tab before managing SFTP files.");
       return;
     }
-    if (!selectedSftpEntry) {
+    const targetEntry = entry ?? selectedSftpEntry;
+    if (!targetEntry) {
       setSftpError("Select a file or directory first.");
       return;
     }
 
     const accepted = window.confirm(
-      `Delete ${selectedSftpEntry.kind === "directory" ? "directory" : "file"} "${selectedSftpEntry.name}"?`
+      `Delete ${targetEntry.kind === "directory" ? "directory" : "file"} "${targetEntry.name}"?`
     );
     if (!accepted) {
       return;
@@ -1146,7 +1551,7 @@ export function App() {
     setSftpActionLoading(true);
     setSftpError(null);
     try {
-      await sftpApi.deletePath(activeTabId, selectedSftpEntry.path, selectedSftpEntry.kind);
+      await sftpApi.deletePath(activeTabId, targetEntry.path, targetEntry.kind);
       setSelectedSftpPath(null);
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
@@ -1178,7 +1583,7 @@ export function App() {
     await uploadLocalPathsToSftp([localPath]);
   };
 
-  const downloadSelectedSftpEntry = async () => {
+  const openSftpEntryFile = async (entry?: SftpEntry | null) => {
     if (!systemApi) {
       setSftpError("System bridge unavailable. Restart `pnpm dev`.");
       return;
@@ -1191,12 +1596,51 @@ export function App() {
       setSftpError("Open a terminal tab before managing SFTP files.");
       return;
     }
-    if (!selectedSftpEntry || selectedSftpEntry.kind === "directory") {
+    const targetEntry = entry ?? selectedSftpEntry;
+    if (!targetEntry || targetEntry.kind === "directory") {
       setSftpError("Select a file first.");
       return;
     }
 
-    const localPath = await systemApi.pickDownloadTarget(selectedSftpEntry.name);
+    try {
+      setSftpError(null);
+      const tempLocalPath = await systemApi.createTempOpenFilePath(targetEntry.name);
+      await sftpApi.downloadFile(
+        activeTabId,
+        createTransferId("down"),
+        targetEntry.path,
+        tempLocalPath
+      );
+      const preferredProgramPath = fileOpenPreferences.preferredProgramPath.trim();
+      await systemApi.openLocalPath(
+        tempLocalPath,
+        preferredProgramPath.length > 0 ? preferredProgramPath : null
+      );
+    } catch (caughtError) {
+      setSftpError((caughtError as Error).message);
+    }
+  };
+
+  const downloadSelectedSftpEntry = async (entry?: SftpEntry | null) => {
+    if (!systemApi) {
+      setSftpError("System bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!sftpApi) {
+      setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!activeTabId) {
+      setSftpError("Open a terminal tab before managing SFTP files.");
+      return;
+    }
+    const targetEntry = entry ?? selectedSftpEntry;
+    if (!targetEntry || targetEntry.kind === "directory") {
+      setSftpError("Select a file first.");
+      return;
+    }
+
+    const localPath = await systemApi.pickDownloadTarget(targetEntry.name);
     if (!localPath) {
       return;
     }
@@ -1206,7 +1650,7 @@ export function App() {
       await sftpApi.downloadFile(
         activeTabId,
         createTransferId("down"),
-        selectedSftpEntry.path,
+        targetEntry.path,
         localPath
       );
     } catch (caughtError) {
@@ -1215,6 +1659,10 @@ export function App() {
   };
 
   const uploadLocalPathsToSftp = async (paths: string[]) => {
+    if (!systemApi) {
+      setSftpError("System bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
     if (!sftpApi) {
       setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
       return;
@@ -1228,21 +1676,104 @@ export function App() {
     }
 
     setSftpError(null);
-    const results = await Promise.allSettled(
-      paths.map((localPath) =>
-        sftpApi.uploadFile(
-          activeTabId,
-          createTransferId("up"),
-          localPath,
-          sftpDirectory.cwd
-        )
-      )
-    );
-    const failed = results.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected"
-    );
-    if (failed) {
-      setSftpError((failed.reason as Error)?.message ?? "Some uploads failed.");
+    const expandedPaths = await systemApi.expandUploadPaths(paths);
+    if (expandedPaths.length === 0) {
+      setSftpError("No valid files to upload.");
+      return;
+    }
+
+    const queuedJobs: PendingUploadJob[] = [];
+    for (const pathEntry of expandedPaths as LocalUploadPathEntry[]) {
+      const localPath = pathEntry.localPath.trim();
+      const name = getPathBaseName(localPath);
+      if (!name) {
+        continue;
+      }
+      const relativeDirectory = normalizeRelativeDirectoryPath(pathEntry.relativeDirectory);
+      const transferId = createTransferId("up");
+      const remoteDirectory = relativeDirectory
+        ? joinRemotePath(sftpDirectory.cwd, relativeDirectory)
+        : sftpDirectory.cwd;
+      const remotePath = joinRemotePath(remoteDirectory, name);
+      const nextJob: PendingUploadJob = {
+        tabId: activeTabId,
+        transferId,
+        localPath,
+        remoteDirectory,
+        remotePath,
+        name
+      };
+      queuedJobs.push(nextJob);
+      applySftpTransferEvent({
+        tabId: nextJob.tabId,
+        transferId: nextJob.transferId,
+        direction: "upload",
+        status: "queued",
+        name: nextJob.name,
+        localPath: nextJob.localPath,
+        remotePath: nextJob.remotePath,
+        transferredBytes: 0,
+        totalBytes: 0,
+        message: "queued"
+      });
+    }
+    if (queuedJobs.length === 0) {
+      setSftpError("No valid files to upload.");
+      return;
+    }
+    uploadQueueRef.current.push(...queuedJobs);
+    drainUploadQueue();
+  };
+
+  const cancelSftpUpload = async (transfer: SftpTransferItem) => {
+    if (transfer.direction === "upload" && transfer.status === "queued") {
+      const queueIndex = uploadQueueRef.current.findIndex(
+        (job) => job.tabId === transfer.tabId && job.transferId === transfer.transferId
+      );
+      if (queueIndex >= 0) {
+        const [queuedJob] = uploadQueueRef.current.splice(queueIndex, 1);
+        applySftpTransferEvent({
+          tabId: queuedJob.tabId,
+          transferId: queuedJob.transferId,
+          direction: "upload",
+          status: "canceled",
+          name: queuedJob.name,
+          localPath: queuedJob.localPath,
+          remotePath: queuedJob.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "canceled"
+        });
+        drainUploadQueue();
+        return;
+      }
+    }
+    if (!sftpApi) {
+      setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    try {
+      await sftpApi.cancelUpload(transfer.tabId, transfer.transferId);
+    } catch (caughtError) {
+      const message = (caughtError as Error).message;
+      if (!isTransferCanceledMessage(message)) {
+        setSftpError(message);
+      }
+    }
+  };
+
+  const cancelSftpDownload = async (transfer: SftpTransferItem) => {
+    if (!sftpApi) {
+      setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    try {
+      await sftpApi.cancelDownload(transfer.tabId, transfer.transferId);
+    } catch (caughtError) {
+      const message = (caughtError as Error).message;
+      if (!isTransferCanceledMessage(message)) {
+        setSftpError(message);
+      }
     }
   };
 
@@ -1281,6 +1812,121 @@ export function App() {
       await uploadLocalPathsToSftp(localPaths);
     })();
   };
+
+  const runSftpContextAction = (action: SftpContextAction) => {
+    if (action.disabled) {
+      return;
+    }
+    closeSftpContextMenu();
+    action.run();
+  };
+
+  const sftpContextActions: SftpContextAction[] = [];
+  const isSftpActionDisabled = sftpLoading || sftpActionLoading;
+  if (sftpContextEntry?.kind === "directory") {
+    sftpContextActions.push({
+      id: "open-directory",
+      label: "Open Directory",
+      run: () => {
+        void loadSftpDirectory(sftpContextEntry.path);
+      }
+    });
+  }
+  if (sftpContextEntry && sftpContextEntry.kind !== "directory") {
+    sftpContextActions.push({
+      id: "open-file",
+      label: "Open File",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void openSftpEntryFile(sftpContextEntry);
+      }
+    });
+    sftpContextActions.push({
+      id: "download-file",
+      label: "Download File",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void downloadSelectedSftpEntry(sftpContextEntry);
+      }
+    });
+  }
+  sftpContextActions.push({
+    id: "upload-file",
+    label: "Upload File",
+    disabled: isSftpActionDisabled,
+    run: () => {
+      void uploadLocalFileToSftp();
+    }
+  });
+  sftpContextActions.push({
+    id: "create-directory",
+    label: "New Folder",
+    disabled: isSftpActionDisabled,
+    run: () => {
+      void createSftpDirectory();
+    }
+  });
+  sftpContextActions.push({
+    id: "refresh-directory",
+    label: "Refresh",
+    disabled: isSftpActionDisabled,
+    run: () => {
+      void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
+    }
+  });
+  if (sftpContextEntry) {
+    sftpContextActions.push({
+      id: "rename-entry",
+      label: "Rename",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void renameSelectedSftpEntry(sftpContextEntry);
+      }
+    });
+    sftpContextActions.push({
+      id: "delete-entry",
+      label: "Delete",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void deleteSelectedSftpEntry(sftpContextEntry);
+      }
+    });
+    sftpContextActions.push({
+      id: "copy-entry-path",
+      label: "Copy Path",
+      run: () => {
+        void (async () => {
+          try {
+            const copied = await copyTextToClipboard(sftpContextEntry.path);
+            if (copied) {
+              return;
+            }
+          } catch {
+            // Fallback to prompt for manual copy.
+          }
+          window.prompt("Copy remote path", sftpContextEntry.path);
+        })();
+      }
+    });
+  } else if (sftpDirectory?.cwd) {
+    sftpContextActions.push({
+      id: "copy-current-path",
+      label: "Copy Current Path",
+      run: () => {
+        void (async () => {
+          try {
+            const copied = await copyTextToClipboard(sftpDirectory.cwd);
+            if (copied) {
+              return;
+            }
+          } catch {
+            // Fallback to prompt for manual copy.
+          }
+          window.prompt("Copy current path", sftpDirectory.cwd);
+        })();
+      }
+    });
+  }
 
   return (
     <div className={isMacPlatform ? "app app--mac" : "app"}>
@@ -1444,9 +2090,12 @@ export function App() {
                   onDrop={onSftpDrop}
                 >
                   <p className="hint sftp-drop-hint">
-                    Drop files into this box to upload to current directory.
+                    Drop files or folders into this box to upload to current directory.
                   </p>
-                  <div className="sftp-drop-zone__body">
+                  <div
+                    className="sftp-drop-zone__body"
+                    onContextMenu={(event) => openSftpContextMenu(event)}
+                  >
                     <ul className="sftp-list">
                       {(sftpDirectory?.entries ?? []).map((entry) => (
                         <li
@@ -1459,6 +2108,13 @@ export function App() {
                           onClick={() => {
                             setSelectedSftpPath(entry.path);
                           }}
+                          onDoubleClick={() => {
+                            if (entry.kind === "directory") {
+                              return;
+                            }
+                            void openSftpEntryFile(entry);
+                          }}
+                          onContextMenu={(event) => openSftpContextMenu(event, entry)}
                         >
                           {entry.kind === "directory" ? (
                             <button
@@ -1507,18 +2163,41 @@ export function App() {
                   </p>
                 </div>
                 <div className="sftp-transfer-panel">
-                  <p className="hint sftp-transfer-panel__title">Upload status</p>
+                  <p className="hint sftp-transfer-panel__title">
+                    Transfer status (upload running {activeUploadQueueStats.running}, upload queued {activeUploadQueueStats.queued}, max {UPLOAD_MAX_CONCURRENCY})
+                  </p>
                   {activeSftpTransfers.length > 0 ? (
                     <ul className="sftp-transfer-list">
-                      {activeSftpTransfers.map((transfer) => (
-                        <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
-                          <span className="sftp-transfer__icon">
-                            {transfer.direction === "upload" ? "↑" : "↓"}
-                          </span>
-                          <span className="sftp-transfer__name">{transfer.name}</span>
-                          <span className="sftp-transfer__progress">{formatTransferProgress(transfer)}</span>
-                        </li>
-                      ))}
+                      {activeSftpTransfers.map((transfer) => {
+                        const canCancelTransfer =
+                          transfer.status === "queued" || transfer.status === "running";
+                        return (
+                          <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
+                            <span className="sftp-transfer__icon">
+                              {transfer.direction === "upload" ? "↑" : "↓"}
+                            </span>
+                            <span className="sftp-transfer__name">{transfer.name}</span>
+                            <span className="sftp-transfer__progress">{formatTransferProgress(transfer)}</span>
+                            {canCancelTransfer ? (
+                              <button
+                                aria-label={`Cancel ${transfer.direction}`}
+                                className="icon-button sftp-transfer__cancel"
+                                onClick={() => {
+                                  if (transfer.direction === "upload") {
+                                    void cancelSftpUpload(transfer);
+                                    return;
+                                  }
+                                  void cancelSftpDownload(transfer);
+                                }}
+                                title={`Cancel ${transfer.direction}`}
+                                type="button"
+                              >
+                                ✕
+                              </button>
+                            ) : null}
+                          </li>
+                        );
+                      })}
                     </ul>
                   ) : (
                     <p className="hint">No active transfers.</p>
@@ -1719,6 +2398,30 @@ export function App() {
         </aside>
       </main>
 
+      {sftpContextMenu ? (
+        <div
+          className="sftp-context-menu"
+          onContextMenu={(event) => event.preventDefault()}
+          ref={sftpContextMenuRef}
+          style={{
+            left: `${Math.max(8, Math.min(sftpContextMenu.x, window.innerWidth - 196))}px`,
+            top: `${Math.max(8, Math.min(sftpContextMenu.y, window.innerHeight - 232))}px`
+          }}
+        >
+          {sftpContextActions.map((action) => (
+            <button
+              className="sftp-context-menu__item"
+              disabled={action.disabled}
+              key={action.id}
+              onClick={() => runSftpContextAction(action)}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {isSettingsOpen ? (
         <div
           className="modal-backdrop"
@@ -1805,6 +2508,33 @@ export function App() {
                 />
                 <span>{hotkeyModifierLabel} + F: Search in terminal</span>
               </label>
+              <h4 className="settings-group__title">File Opening</h4>
+              <label>
+                Open Program (optional)
+                <div className="field-row">
+                  <input
+                    onChange={(event) => setPreferredOpenProgramPath(event.target.value)}
+                    placeholder={
+                      isMacPlatform
+                        ? "/Applications/TextEdit.app"
+                        : "C:\\Program Files\\Notepad++\\notepad++.exe"
+                    }
+                    value={fileOpenPreferences.preferredProgramPath}
+                  />
+                  <button
+                    className="field-row__action"
+                    onClick={() => {
+                      void pickPreferredOpenProgram();
+                    }}
+                    type="button"
+                  >
+                    Browse
+                  </button>
+                </div>
+              </label>
+              <p className="hint">
+                Leave empty to use system default app. Used by SFTP "Open File" and file double-click.
+              </p>
               <div className="modal__actions">
                 <button
                   className="primary-button"

@@ -1,7 +1,12 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir as mkdirLocalDirectory, readFile, stat as statLocalFile } from "node:fs/promises";
+import {
+  mkdir as mkdirLocalDirectory,
+  readFile,
+  stat as statLocalFile,
+  unlink as unlinkLocalFile
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename as basenamePath, dirname as dirnamePath, join as joinPath } from "node:path";
 import { posix as posixPath } from "node:path";
@@ -50,8 +55,35 @@ interface NativeTerminalConnection extends BaseTerminalConnection {
 
 type TerminalConnection = Ssh2TerminalConnection | NativeTerminalConnection;
 
+interface ActiveUploadTransfer {
+  tabId: string;
+  transferId: string;
+  remotePath: string;
+  canceled: boolean;
+  readStream?: NodeJS.ReadableStream;
+  writeStream?: NodeJS.WritableStream;
+}
+
+interface ActiveDownloadTransfer {
+  tabId: string;
+  transferId: string;
+  localPath: string;
+  canceled: boolean;
+  readStream?: NodeJS.ReadableStream;
+  writeStream?: NodeJS.WritableStream;
+}
+
+class TransferCanceledError extends Error {
+  constructor() {
+    super("Transfer canceled.");
+    this.name = "TransferCanceledError";
+  }
+}
+
 export class TerminalService {
   private readonly connections = new Map<string, TerminalConnection>();
+  private readonly activeUploadTransfers = new Map<string, ActiveUploadTransfer>();
+  private readonly activeDownloadTransfers = new Map<string, ActiveDownloadTransfer>();
 
   constructor(
     private readonly sessionStore: SessionStore,
@@ -430,51 +462,73 @@ export class TerminalService {
     const normalizedRemoteDirectory = normalizeRemotePath(remoteDirectory);
     const remotePath = posixPath.join(normalizedRemoteDirectory, fileName);
     const totalBytes = Math.max(0, localStats.size);
-
-    this.emitTransfer(
-      connection,
-      this.createTransferEvent({
-        tabId,
-        transferId: safeTransferId,
-        direction: "upload",
-        status: "queued",
-        name: fileName,
-        localPath: normalizedLocalPath,
-        remotePath,
-        transferredBytes: 0,
-        totalBytes,
-        message: "queued"
-      })
-    );
-
+    const transferKey = toTransferKey(tabId, safeTransferId);
+    if (this.activeUploadTransfers.has(transferKey)) {
+      throw new Error("Upload transfer is already running.");
+    }
+    const activeTransfer: ActiveUploadTransfer = {
+      tabId,
+      transferId: safeTransferId,
+      remotePath,
+      canceled: false
+    };
+    this.activeUploadTransfers.set(transferKey, activeTransfer);
     let transferredBytes = 0;
-    const reportProgress = () => {
+
+    try {
       this.emitTransfer(
         connection,
         this.createTransferEvent({
           tabId,
           transferId: safeTransferId,
           direction: "upload",
-          status: "running",
+          status: "queued",
           name: fileName,
           localPath: normalizedLocalPath,
           remotePath,
-          transferredBytes,
-          totalBytes
+          transferredBytes: 0,
+          totalBytes,
+          message: "queued"
         })
       );
-    };
 
-    reportProgress();
-    try {
+      const reportProgress = () => {
+        this.emitTransfer(
+          connection,
+          this.createTransferEvent({
+            tabId,
+            transferId: safeTransferId,
+            direction: "upload",
+            status: "running",
+            name: fileName,
+            localPath: normalizedLocalPath,
+            remotePath,
+            transferredBytes,
+            totalBytes
+          })
+        );
+      };
+
+      reportProgress();
+      const readStream = createReadStream(normalizedLocalPath);
+      const writeStream = sftp.createWriteStream(remotePath);
+      activeTransfer.readStream = readStream;
+      activeTransfer.writeStream = writeStream;
+      if (activeTransfer.canceled) {
+        throw new TransferCanceledError();
+      }
+
       await this.pipeWithProgress({
-        readStream: createReadStream(normalizedLocalPath),
-        writeStream: sftp.createWriteStream(remotePath),
+        readStream,
+        writeStream,
         onChunk: (chunkSize) => {
           transferredBytes += chunkSize;
           reportProgress();
         }
       });
+      if (activeTransfer.canceled) {
+        throw new TransferCanceledError();
+      }
       this.emitTransfer(
         connection,
         this.createTransferEvent({
@@ -491,6 +545,25 @@ export class TerminalService {
         })
       );
     } catch (error) {
+      if (activeTransfer.canceled || error instanceof TransferCanceledError) {
+        await this.unlinkIgnoreMissing(sftp, remotePath);
+        this.emitTransfer(
+          connection,
+          this.createTransferEvent({
+            tabId,
+            transferId: safeTransferId,
+            direction: "upload",
+            status: "canceled",
+            name: fileName,
+            localPath: normalizedLocalPath,
+            remotePath,
+            transferredBytes,
+            totalBytes,
+            message: "canceled"
+          })
+        );
+        return;
+      }
       this.emitTransfer(
         connection,
         this.createTransferEvent({
@@ -507,7 +580,41 @@ export class TerminalService {
         })
       );
       throw error;
+    } finally {
+      this.activeUploadTransfers.delete(transferKey);
     }
+  }
+
+  async cancelUpload(tabId: string, transferId: string): Promise<boolean> {
+    const safeTransferId = normalizeTransferId(transferId);
+    const transfer = this.activeUploadTransfers.get(toTransferKey(tabId, safeTransferId));
+    if (!transfer) {
+      return false;
+    }
+    if (transfer.canceled) {
+      return true;
+    }
+    transfer.canceled = true;
+    const cancelError = new TransferCanceledError();
+    this.destroyStream(transfer.readStream, cancelError);
+    this.destroyStream(transfer.writeStream, cancelError);
+    return true;
+  }
+
+  async cancelDownload(tabId: string, transferId: string): Promise<boolean> {
+    const safeTransferId = normalizeTransferId(transferId);
+    const transfer = this.activeDownloadTransfers.get(toTransferKey(tabId, safeTransferId));
+    if (!transfer) {
+      return false;
+    }
+    if (transfer.canceled) {
+      return true;
+    }
+    transfer.canceled = true;
+    const cancelError = new TransferCanceledError();
+    this.destroyStream(transfer.readStream, cancelError);
+    this.destroyStream(transfer.writeStream, cancelError);
+    return true;
   }
 
   async downloadFile(
@@ -534,53 +641,75 @@ export class TerminalService {
       typeof remoteStats.size === "number" && remoteStats.size > 0
         ? remoteStats.size
         : 0;
+    const transferKey = toTransferKey(tabId, safeTransferId);
+    if (this.activeDownloadTransfers.has(transferKey)) {
+      throw new Error("Download transfer is already running.");
+    }
+    const activeTransfer: ActiveDownloadTransfer = {
+      tabId,
+      transferId: safeTransferId,
+      localPath: normalizedLocalPath,
+      canceled: false
+    };
+    this.activeDownloadTransfers.set(transferKey, activeTransfer);
 
     await mkdirLocalDirectory(dirnamePath(normalizedLocalPath), { recursive: true });
 
-    this.emitTransfer(
-      connection,
-      this.createTransferEvent({
-        tabId,
-        transferId: safeTransferId,
-        direction: "download",
-        status: "queued",
-        name: fileName,
-        localPath: normalizedLocalPath,
-        remotePath: normalizedRemotePath,
-        transferredBytes: 0,
-        totalBytes,
-        message: "queued"
-      })
-    );
-
     let transferredBytes = 0;
-    const reportProgress = () => {
+    try {
       this.emitTransfer(
         connection,
         this.createTransferEvent({
           tabId,
           transferId: safeTransferId,
           direction: "download",
-          status: "running",
+          status: "queued",
           name: fileName,
           localPath: normalizedLocalPath,
           remotePath: normalizedRemotePath,
-          transferredBytes,
-          totalBytes
+          transferredBytes: 0,
+          totalBytes,
+          message: "queued"
         })
       );
-    };
 
-    reportProgress();
-    try {
+      const reportProgress = () => {
+        this.emitTransfer(
+          connection,
+          this.createTransferEvent({
+            tabId,
+            transferId: safeTransferId,
+            direction: "download",
+            status: "running",
+            name: fileName,
+            localPath: normalizedLocalPath,
+            remotePath: normalizedRemotePath,
+            transferredBytes,
+            totalBytes
+          })
+        );
+      };
+
+      reportProgress();
+      const readStream = sftp.createReadStream(normalizedRemotePath);
+      const writeStream = createWriteStream(normalizedLocalPath);
+      activeTransfer.readStream = readStream;
+      activeTransfer.writeStream = writeStream;
+      if (activeTransfer.canceled) {
+        throw new TransferCanceledError();
+      }
+
       await this.pipeWithProgress({
-        readStream: sftp.createReadStream(normalizedRemotePath),
-        writeStream: createWriteStream(normalizedLocalPath),
+        readStream,
+        writeStream,
         onChunk: (chunkSize) => {
           transferredBytes += chunkSize;
           reportProgress();
         }
       });
+      if (activeTransfer.canceled) {
+        throw new TransferCanceledError();
+      }
       this.emitTransfer(
         connection,
         this.createTransferEvent({
@@ -597,6 +726,25 @@ export class TerminalService {
         })
       );
     } catch (error) {
+      if (activeTransfer.canceled || error instanceof TransferCanceledError) {
+        await this.unlinkLocalIgnoreMissing(normalizedLocalPath);
+        this.emitTransfer(
+          connection,
+          this.createTransferEvent({
+            tabId,
+            transferId: safeTransferId,
+            direction: "download",
+            status: "canceled",
+            name: fileName,
+            localPath: normalizedLocalPath,
+            remotePath: normalizedRemotePath,
+            transferredBytes,
+            totalBytes: totalBytes || transferredBytes,
+            message: "canceled"
+          })
+        );
+        return;
+      }
       this.emitTransfer(
         connection,
         this.createTransferEvent({
@@ -613,6 +761,8 @@ export class TerminalService {
         })
       );
       throw error;
+    } finally {
+      this.activeDownloadTransfers.delete(transferKey);
     }
   }
 
@@ -765,6 +915,22 @@ export class TerminalService {
     });
   }
 
+  private async unlinkIgnoreMissing(sftp: SFTPWrapper, targetPath: string): Promise<void> {
+    try {
+      await this.unlink(sftp, targetPath);
+    } catch {
+      // Best-effort cleanup for canceled uploads; ignore missing/permission errors.
+    }
+  }
+
+  private async unlinkLocalIgnoreMissing(targetPath: string): Promise<void> {
+    try {
+      await unlinkLocalFile(targetPath);
+    } catch {
+      // Best-effort cleanup for canceled downloads; ignore missing/permission errors.
+    }
+  }
+
   private async rmdir(sftp: SFTPWrapper, targetPath: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       sftp.rmdir(targetPath, (error) => {
@@ -775,6 +941,16 @@ export class TerminalService {
         resolve();
       });
     });
+  }
+
+  private destroyStream(stream: NodeJS.ReadableStream | NodeJS.WritableStream | undefined, error: Error): void {
+    if (!stream) {
+      return;
+    }
+    const destroyable = stream as NodeJS.ReadableStream & {
+      destroy?: (reason?: Error) => void;
+    };
+    destroyable.destroy?.(error);
   }
 
   private async pipeWithProgress(options: {
@@ -942,6 +1118,10 @@ function normalizeTransferId(transferId: string): string {
     return trimmed;
   }
   return `tx-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function toTransferKey(tabId: string, transferId: string): string {
+  return `${tabId}:${transferId}`;
 }
 
 function normalizeEntryName(name: string, label: string): string {

@@ -2,7 +2,7 @@
 
 TermDock 是一款跨平台桌面 SSH + SFTP 客户端，当前以 macOS 体验优先，并兼容 Windows 11。
 
-## 当前状态（2026-02-14）
+## 当前状态（2026-02-15）
 
 ### 已可用功能
 
@@ -18,7 +18,10 @@ TermDock 是一款跨平台桌面 SSH + SFTP 客户端，当前以 macOS 体验�
   - Windows：`File > Settings...`（`Ctrl+,`）与右上角 `Settings` 按钮
 - SFTP：目录浏览、进入/返回、新建目录、重命名、删除（非递归）
 - 传输：单文件上传/下载、进度事件、拖拽文件上传、传输状态列表
+- 上传取消：运行中/排队中的上传任务可取消，取消后不再作为错误提示
 - SFTP 视图优化：Loading/统计/上传信息放在内容框外下方，减少列表跳动
+- 打包可用性：已修复发布版空白页（`file://` 资源路径），并支持 macOS `arm64/x64` + Windows 产物
+- 图标配置：已显式配置 `build.mac.icon` / `build.win.icon`，并支持开发态图标回退
 
 ### 目前可发布判断
 
@@ -26,7 +29,7 @@ TermDock 是一款跨平台桌面 SSH + SFTP 客户端，当前以 macOS 体验�
 - 暂不建议：公开 GA（正式版）
 - 发布前仍建议补齐：
   - `P0-F3` 跨平台冒烟测试
-  - `P0-F4` 打包与安装流程（DMG/EXE）
+  - `P0-F4` 安装包签名/公证与安装验证（DMG/EXE）
   - `P0-E3` 全局错误恢复提示
 
 ## 快速启动
@@ -61,6 +64,12 @@ git push origin v0.1.0-test.1
 5. Intel + macOS 12 用户请下载文件名包含 `x64` 的 mac 包。
 
 也可在 Actions 里手动运行 `Release`（`workflow_dispatch`），输入已存在的 tag。
+
+## 图标资源
+
+- 源图：`build/icon-source.png`（建议 `1024x1024`）
+- mac：`build/icon.icns`
+- windows：`build/icon.ico`
 
 ## 常见问题
 
@@ -100,6 +109,7 @@ TERMDOCK_OPEN_DEVTOOLS=1 pnpm dev
 - 会话分组树、批量编辑尚未完成（`P0-B1/B2`）
 - 断线后缺少显式“手动重连”按钮（自动重连已可用）
 - SFTP 暂不支持目录拖拽上传、递归删除、并发队列策略
+- 当前仅支持“上传取消”，下载取消尚未实现
 - Windows 与 macOS 打包依赖 GitHub Actions 环境，建议以 CI 构建产物为准
 
 ## 项目结构

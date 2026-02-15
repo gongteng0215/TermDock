@@ -43,6 +43,19 @@ const api = {
       ipcRenderer.invoke("system:pickUploadFile") as Promise<string | null>,
     pickDownloadTarget: (defaultName: string) =>
       ipcRenderer.invoke("system:pickDownloadTarget", defaultName) as Promise<string | null>,
+    pickOpenProgram: () =>
+      ipcRenderer.invoke("system:pickOpenProgram") as Promise<string | null>,
+    createTempOpenFilePath: (defaultName: string) =>
+      ipcRenderer.invoke("system:createTempOpenFilePath", defaultName) as Promise<string>,
+    openLocalPath: (localPath: string, preferredProgramPath?: string | null) =>
+      ipcRenderer.invoke("system:openLocalPath", localPath, preferredProgramPath) as Promise<void>,
+    expandUploadPaths: (inputPaths: string[]) =>
+      ipcRenderer.invoke("system:expandUploadPaths", inputPaths) as Promise<
+        Array<{
+          localPath: string;
+          relativeDirectory: string;
+        }>
+      >,
     getPathForDroppedFile: async (file: unknown) => {
       try {
         const pathValue = webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]);
@@ -96,6 +109,10 @@ const api = {
         localPath,
         remoteDirectory
       ) as Promise<void>,
+    cancelUpload: (tabId: string, transferId: string) =>
+      ipcRenderer.invoke("sftp:cancelUpload", tabId, transferId) as Promise<boolean>,
+    cancelDownload: (tabId: string, transferId: string) =>
+      ipcRenderer.invoke("sftp:cancelDownload", tabId, transferId) as Promise<boolean>,
     downloadFile: (
       tabId: string,
       transferId: string,
