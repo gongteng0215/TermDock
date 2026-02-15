@@ -43,6 +43,14 @@ function createWindow(): void {
     }
   });
   setupApplicationMenu(mainWindow);
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, errorDescription, validatedURL) => {
+      console.error(
+        `[TermDock] Renderer load failed (${errorCode}): ${errorDescription} | ${validatedURL}`
+      );
+    }
+  );
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
