@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.1.0-test.1)"
+        description: "Tag to release (e.g. v0.1.0 or v0.1.0-test.1)"
         required: true
         type: string
 
@@ -15,8 +15,35 @@ permissions:
   contents: write
 
 jobs:
+  meta:
+    name: Resolve Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+    steps:
+      - name: Resolve tag and release type
+        id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_NAME="${{ inputs.tag }}"
+          else
+            TAG_NAME="${{ github.ref_name }}"
+          fi
+
+          if [[ "$TAG_NAME" == *-* ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build ${{ matrix.platform }}
+    needs: meta
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -36,7 +63,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: refs/tags/${{ needs.meta.outputs.tag_name }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -70,7 +97,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [meta, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -83,15 +110,15 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          name: TermDock ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.meta.outputs.tag_name }}
+          name: TermDock ${{ needs.meta.outputs.tag_name }}
           files: |
             release-assets/*.dmg
             release-assets/*.zip
             release-assets/*.exe
             release-assets/*.blockmap
           draft: false
-          prerelease: true
+          prerelease: ${{ needs.meta.outputs.is_prerelease == 'true' }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

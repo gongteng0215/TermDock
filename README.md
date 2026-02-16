@@ -50,12 +50,21 @@ pnpm dev
 pnpm build
 ```
 
-### Publish Test Release to GitHub (macOS + Windows)
+### Publish Release to GitHub (macOS + Windows)
 
 Workflow file: `.github/workflows/release.yml`
 
 1. Commit and push your code.
 2. Create and push a version tag:
+
+Stable release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Prerelease (test/rc):
 
 ```bash
 git tag v0.1.0-test.1
@@ -65,7 +74,9 @@ git push origin v0.1.0-test.1
 3. GitHub Actions `Release` workflow will build:
 - macOS: `arm64 dmg/zip` + `x64 dmg/zip`
 - Windows: `nsis(.exe)` + `zip`
-4. Workflow publishes a visible `Prerelease` with artifacts.
+4. Release type is automatic:
+- Tag without `-` (for example `v0.1.0`) => official release
+- Tag with `-` (for example `v0.1.0-test.1`, `v0.1.0-rc.1`) => prerelease
 5. Intel + macOS 12 users should download the `x64` mac package.
 
 You can also trigger it manually in Actions (`workflow_dispatch`) with an existing tag.
@@ -181,12 +192,21 @@ pnpm dev
 pnpm build
 ```
 
-### 发布测试版到 GitHub Release（macOS + Windows）
+### 发布到 GitHub Release（macOS + Windows）
 
 工作流：`.github/workflows/release.yml`
 
 1. 提交并推送代码。
 2. 打 tag 并推送：
+
+正式版：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+测试/预发布版：
 
 ```bash
 git tag v0.1.0-test.1
@@ -196,7 +216,9 @@ git push origin v0.1.0-test.1
 3. GitHub Actions 会自动执行 `Release`，构建：
 - macOS：`arm64 dmg/zip` + `x64 dmg/zip`
 - Windows：`nsis(.exe)` + `zip`
-4. 工作流会自动发布 `Prerelease` 并上传附件。
+4. 发布类型自动判断：
+- 不带 `-` 的 tag（例如 `v0.1.0`）=> 正式版 Release
+- 带 `-` 的 tag（例如 `v0.1.0-test.1`、`v0.1.0-rc.1`）=> Prerelease
 5. Intel + macOS 12 用户请下载带 `x64` 的 mac 包。
 
 也可在 Actions 页面手动触发（`workflow_dispatch`），输入已存在的 tag。
