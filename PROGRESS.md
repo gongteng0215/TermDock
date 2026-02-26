@@ -1,6 +1,6 @@
 # TermDock Progress
 
-Last updated: 2026-02-15
+Last updated: 2026-02-20
 
 ## Snapshot
 
@@ -8,7 +8,7 @@ Last updated: 2026-02-15
   - `M0` (tech validation): effectively complete
   - `M1` (MVP alpha): in progress
 - P0 totals:
-  - `DONE`: 12
+  - `DONE`: 13
   - `PARTIAL`: 12
   - `TODO`: 8
 - Global UI policy: `Compact-first` remains mandatory
@@ -58,6 +58,7 @@ Last updated: 2026-02-15
 | P0-F2 | TODO | Integration tests not added |
 | P0-F3 | TODO | Cross-platform smoke tests not done |
 | P0-F4 | PARTIAL | electron-builder + GitHub Release workflow is in place (mac arm64/x64 + win); install/signing validation pending |
+| P0-G1 | DONE | Server health panel is available (CPU/memory/disk/network/load/uptime + auto refresh) |
 
 ## Recent Product-Facing Improvements
 
@@ -71,15 +72,49 @@ Last updated: 2026-02-15
 - GitHub Actions release workflow now builds macOS + Windows packages and publishes Prerelease assets
 - Release blank-screen issue fixed by switching production asset path to relative (`./assets/...`)
 - Runtime icon configuration landed for packaged builds, plus dev-mode icon fallback handling
+- Server health baseline shipped in right panel (active-tab metrics + manual/auto refresh)
+- Monitoring detail toggle added: trend chart is now expandable on demand
 
 ## Next Focus
 
-1. Run and document full cross-platform smoke checklist (`P0-F3`)
-2. Finalize installer signing/notarization strategy (`P0-F4`)
-3. Implement recoverable global error actions (`P0-E3`)
+1. Extend server health with alert thresholds and process/service drill-down (`P1-J1/J2`)
+2. Run and document full cross-platform smoke checklist (`P0-F3`)
+3. Finalize installer signing/notarization strategy (`P0-F4`)
+4. Implement recoverable global error actions (`P0-E3`)
+
+## Product Scope Updates (2026-02-20)
+
+- Added into product planning:
+  - Server health baseline panel (CPU/memory/disk/network/load/uptime) is now implemented
+  - SSH config import (`~/.ssh/config`)
+  - Port forwarding UI (local/remote)
+  - Remote file quick edit (download-edit-upload)
+  - Recursive SFTP directory download
+  - Snippets + command palette (`Cmd/Ctrl+K`)
+  - Connection quality panel (RTT/reconnect/failure rate)
+  - Host key trust + fingerprint change alerts (TOFU)
+  - Multi-host command broadcast
+- New extra candidates for future exploration:
+  - Session templates + environment variables
+  - Jump host / multi-hop (`ProxyJump`)
+  - Transfer history and retry center
+  - Local/remote directory sync
+  - Runbook workflows
+  - Sensitive command guard
+  - Audit mode
+  - Scheduled runbooks
+  - Workspace snapshot restore (tabs/path/layout)
+  - Transfer integrity verification (`sha256`)
+  - Resumable transfer
+  - Transfer bandwidth limit
+  - SFTP recycle bin
+  - Production safeguard mode
+  - Log observability panel
+  - In-app update channel
 
 ## Main Risks
 
 - No automated test safety net yet
 - Packaging pipeline exists but still lacks full installer/signing verification
 - SFTP still lacks queue scheduling + recursive folder workflows
+- Server health currently depends on Linux `/proc` + single-root disk sampling (no process/service drill-down yet)

@@ -12,7 +12,11 @@ import type {
   SftpEntryKind,
   SftpTransferEvent
 } from "../shared/sftp.js";
-import type { TerminalEvent } from "../shared/terminal.js";
+import type {
+  ServerHealthSnapshot,
+  ServerProcessSnapshot,
+  TerminalEvent
+} from "../shared/terminal.js";
 
 const api = {
   app: {
@@ -72,6 +76,10 @@ const api = {
       ipcRenderer.invoke("terminal:write", tabId, data) as Promise<void>,
     resize: (tabId: string, cols: number, rows: number) =>
       ipcRenderer.invoke("terminal:resize", tabId, cols, rows) as Promise<void>,
+    getServerHealth: (tabId: string) =>
+      ipcRenderer.invoke("terminal:getServerHealth", tabId) as Promise<ServerHealthSnapshot>,
+    getServerProcesses: (tabId: string) =>
+      ipcRenderer.invoke("terminal:getServerProcesses", tabId) as Promise<ServerProcessSnapshot>,
     close: (tabId: string) =>
       ipcRenderer.invoke("terminal:close", tabId) as Promise<void>,
     onEvent: (listener: (event: TerminalEvent) => void) => {

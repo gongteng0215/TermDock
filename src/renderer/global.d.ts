@@ -9,7 +9,11 @@ import type {
   SftpEntryKind,
   SftpTransferEvent
 } from "../shared/sftp";
-import type { TerminalEvent } from "../shared/terminal";
+import type {
+  ServerHealthSnapshot,
+  ServerProcessSnapshot,
+  TerminalEvent
+} from "../shared/terminal";
 
 interface TermDockApi {
   app: {
@@ -43,6 +47,8 @@ interface TermDockApi {
     connect: (tabId: string, sessionId: string) => Promise<void>;
     write: (tabId: string, data: string) => Promise<void>;
     resize: (tabId: string, cols: number, rows: number) => Promise<void>;
+    getServerHealth: (tabId: string) => Promise<ServerHealthSnapshot>;
+    getServerProcesses: (tabId: string) => Promise<ServerProcessSnapshot>;
     close: (tabId: string) => Promise<void>;
     onEvent: (listener: (event: TerminalEvent) => void) => () => void;
   };

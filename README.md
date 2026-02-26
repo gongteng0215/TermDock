@@ -7,7 +7,7 @@ It combines session management, multi-tab terminal, and file transfer in one wor
 
 ## English
 
-### Current Status (2026-02-15)
+### Current Status (2026-02-20)
 
 ### Available Features
 
@@ -18,6 +18,7 @@ It combines session management, multi-tab terminal, and file transfer in one wor
 - Terminal interactions: right-click menu (`Clear`, `Reconnect`), double-click session to open, middle-click tab to close
 - Hotkeys: `Cmd` on macOS, `Ctrl` on Windows (toggleable)
 - Connection resilience: KeepAlive + configurable auto reconnect
+- Server health monitor: active-tab metrics (CPU / memory / disk / network / load / uptime), auto refresh, detail toggle for trend view
 - Settings entry:
   - macOS: app menu `Settings...` (`Command+,`)
   - Windows: `File > Settings...` (`Ctrl+,`) and top-right `Settings` button
@@ -36,6 +37,40 @@ It combines session management, multi-tab terminal, and file transfer in one wor
   - Cross-platform smoke tests (`P0-F3`)
   - Installer signing/notarization and install verification (`P0-F4`)
   - Better global error recovery UX (`P0-E3`)
+
+### Product Roadmap (Planned)
+
+- SSH config import (`~/.ssh/config`)
+- Port forwarding UI (local/remote)
+- Remote file quick edit (download-edit-upload)
+- Recursive directory download in SFTP
+- Snippets + command palette (`Cmd/Ctrl+K`)
+- Connection quality panel (RTT/reconnect/failure rate)
+- Server monitor enhancements (alert thresholds, service/process drill-down, custom checks)
+- Host key trust + fingerprint change alerts (TOFU)
+- Multi-host command broadcast
+
+### Additional Ideas (Backlog)
+
+- Session templates with environment variables
+- Jump host / multi-hop connection (`ProxyJump`)
+- Transfer history and retry center
+- Local/remote directory sync
+- Runbook workflows (multi-step tasks)
+- Sensitive command guard (dangerous command confirmation)
+- Audit mode (command/transfer logs export)
+- Scheduled runbooks (time-based execution)
+- Workspace snapshot restore (tabs/path/layout)
+- Transfer integrity verification (`sha256` after upload/download)
+- Resumable transfer for large files
+- Transfer bandwidth limit (global/per-task)
+- SFTP recycle bin (recover deleted files)
+- Production safeguard mode (extra confirmation)
+- Log observability panel (subscribe/highlight/auto-scroll)
+- In-app update channel (stable/beta)
+- Server health alerts and badge notifications
+- Service/process drill-down (`top`/`systemctl` level)
+- Metrics export (`csv/json`) for ops reports
 
 ### Quick Start
 
@@ -126,6 +161,7 @@ TERMDOCK_OPEN_DEVTOOLS=1 pnpm dev
 - SFTP delete is currently non-recursive
 - Directory download is not supported yet
 - Opened remote files are downloaded to local temp path before launching
+- Server health currently targets Linux `/proc` data and single-root disk view (`/`)
 
 ### Project Structure
 
@@ -149,7 +185,7 @@ MIT (`LICENSE`)
 
 ## 中文
 
-### 当前状态（2026-02-15）
+### 当前状态（2026-02-20）
 
 ### 已可用功能
 
@@ -160,6 +196,7 @@ MIT (`LICENSE`)
 - 终端交互：右键菜单（`Clear`、`Reconnect`）、双击会话直接打开、标签中键关闭
 - 快捷键：macOS 使用 `Cmd`，Windows 使用 `Ctrl`（支持开关）
 - 稳定性：KeepAlive + 自动重连（可配置）
+- 服务器监控：按当前激活标签采集 CPU/内存/磁盘/网络/负载/运行时长，支持自动刷新与详情趋势
 - 设置入口：
   - macOS：应用菜单 `Settings...`（`Command+,`）
   - Windows：`File > Settings...`（`Ctrl+,`）与右上角 `Settings`
@@ -178,6 +215,40 @@ MIT (`LICENSE`)
   - `P0-F3` 跨平台冒烟测试
   - `P0-F4` 安装包签名/公证与安装验证
   - `P0-E3` 全局错误恢复体验
+
+### 产品路线图（待排期）
+
+- SSH config 导入（`~/.ssh/config`）
+- 端口转发 UI（本地/远程）
+- 远程文件快速编辑（下载-编辑-回传）
+- SFTP 目录递归下载
+- Snippets + 命令面板（`Cmd/Ctrl+K`）
+- 连接质量面板（RTT/重连次数/失败率）
+- 服务器监控增强（告警阈值、服务/进程下钻、自定义检查）
+- 主机指纹信任与变更告警（TOFU）
+- 多主机命令广播
+
+### 更多可选方向（Backlog）
+
+- 会话模板与环境变量
+- 跳板机/多跳连接（`ProxyJump`）
+- 传输历史与重试中心
+- 本地与远程目录同步
+- Runbook 任务流（多步骤）
+- 敏感命令保护（高危命令二次确认）
+- 审计模式（命令/传输日志导出）
+- 任务调度（定时执行 Runbook）
+- 工作区快照恢复（标签/路径/布局）
+- 传输完整性校验（上传/下载后 `sha256`）
+- 传输断点续传（大文件失败续传）
+- 传输限速（全局/单任务）
+- SFTP 回收站（删除可恢复）
+- 生产环境保护模式（高危操作双确认）
+- 日志观察台（订阅/高亮/自动滚动）
+- 应用内更新通道（stable/beta）
+- 服务器监控告警与状态角标
+- 服务/进程下钻（`top`/`systemctl` 级别）
+- 监控数据导出（`csv/json` 运维报表）
 
 ### 快速启动
 
@@ -268,6 +339,7 @@ TERMDOCK_OPEN_DEVTOOLS=1 pnpm dev
 - SFTP 删除当前是非递归
 - 暂不支持目录下载
 - 打开远程文件时会先下载到本地临时目录再拉起程序
+- 服务器监控当前基于 Linux `/proc` 与单根分区（`/`）采样
 
 ### 项目结构
 

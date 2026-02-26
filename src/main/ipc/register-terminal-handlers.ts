@@ -16,8 +16,13 @@ export function registerTerminalHandlers(terminalService: TerminalService): void
     async (_event, tabId: string, cols: number, rows: number) =>
       terminalService.resize(tabId, cols, rows)
   );
+  ipcMain.handle("terminal:getServerHealth", async (_event, tabId: string) =>
+    terminalService.getServerHealth(tabId)
+  );
+  ipcMain.handle("terminal:getServerProcesses", async (_event, tabId: string) =>
+    terminalService.getServerProcesses(tabId)
+  );
   ipcMain.handle("terminal:close", async (_event, tabId: string) =>
     terminalService.close(tabId)
   );
 }
-

@@ -19,6 +19,10 @@ import type {
   SftpEntry,
   SftpTransferEvent
 } from "../shared/sftp";
+import type {
+  ServerHealthSnapshot,
+  ServerProcessSnapshot
+} from "../shared/terminal";
 import { TerminalWorkspace } from "./components/terminal-workspace";
 import type {
   ConnectionPreferences,
@@ -41,6 +45,7 @@ const EMPTY_FORM: SessionCreateInput = {
 const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
+const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
@@ -56,12 +61,45 @@ interface FileOpenPreferences {
   preferredProgramPath: string;
 }
 
+interface ServerHealthAlertPreferences {
+  enabled: boolean;
+  cpuWarnPercent: number;
+  memoryWarnPercent: number;
+  diskWarnPercent: number;
+}
+
 const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
   preferredProgramPath: ""
 };
+const DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES: ServerHealthAlertPreferences = {
+  enabled: true,
+  cpuWarnPercent: 85,
+  memoryWarnPercent: 85,
+  diskWarnPercent: 90
+};
+const SERVER_HEALTH_POLL_INTERVAL_MS = 5000;
+const SERVER_PROCESS_POLL_INTERVAL_MS = 10000;
+const SERVER_HEALTH_HISTORY_LIMIT = 24;
 
 interface SftpTransferItem extends SftpTransferEvent {
   updatedAt: number;
+}
+
+interface ServerHealthDerivedMetrics {
+  cpuUsagePercent: number;
+  memoryUsagePercent: number;
+  diskUsagePercent: number;
+  rxBytesPerSecond: number;
+  txBytesPerSecond: number;
+}
+
+interface ServerHealthHistoryPoint {
+  at: number;
+  cpuUsagePercent: number;
+  memoryUsagePercent: number;
+  diskUsagePercent: number;
+  rxBytesPerSecond: number;
+  txBytesPerSecond: number;
 }
 
 interface PendingUploadJob {
@@ -275,6 +313,84 @@ function formatTransferProgress(transfer: SftpTransferItem): string {
   return `${percent}% ${formatTransferBytes(transfer.transferredBytes)}/${formatTransferBytes(total)}`;
 }
 
+function formatPercent(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0%";
+  }
+  return `${Math.max(0, Math.min(100, value)).toFixed(1)}%`;
+}
+
+function formatProcessPercent(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0.0%";
+  }
+  return `${Math.max(0, value).toFixed(1)}%`;
+}
+
+function formatServerUptime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "-";
+  }
+  const totalSeconds = Math.max(0, Math.trunc(seconds));
+  const days = Math.trunc(totalSeconds / 86400);
+  const hours = Math.trunc((totalSeconds % 86400) / 3600);
+  const minutes = Math.trunc((totalSeconds % 3600) / 60);
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`;
+  }
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+function deriveServerHealthMetrics(
+  current: ServerHealthSnapshot,
+  previous: ServerHealthSnapshot | null
+): ServerHealthDerivedMetrics {
+  const memoryUsagePercent =
+    current.memoryTotalBytes > 0
+      ? (current.memoryUsedBytes / current.memoryTotalBytes) * 100
+      : 0;
+  const diskUsagePercent =
+    current.diskTotalBytes > 0 ? (current.diskUsedBytes / current.diskTotalBytes) * 100 : 0;
+
+  let cpuUsagePercent = 0;
+  let rxBytesPerSecond = 0;
+  let txBytesPerSecond = 0;
+  if (previous && previous.tabId === current.tabId) {
+    const totalTicksDelta = current.cpuTotalTicks - previous.cpuTotalTicks;
+    const idleTicksDelta = current.cpuIdleTicks - previous.cpuIdleTicks;
+    if (totalTicksDelta > 0) {
+      cpuUsagePercent = ((totalTicksDelta - idleTicksDelta) / totalTicksDelta) * 100;
+    }
+
+    const currentMillis = new Date(current.collectedAt).getTime();
+    const previousMillis = new Date(previous.collectedAt).getTime();
+    const elapsedSeconds = (currentMillis - previousMillis) / 1000;
+    if (elapsedSeconds > 0) {
+      const rxDelta = current.networkRxBytes - previous.networkRxBytes;
+      const txDelta = current.networkTxBytes - previous.networkTxBytes;
+      rxBytesPerSecond = rxDelta > 0 ? rxDelta / elapsedSeconds : 0;
+      txBytesPerSecond = txDelta > 0 ? txDelta / elapsedSeconds : 0;
+    }
+  }
+
+  return {
+    cpuUsagePercent: Number.isFinite(cpuUsagePercent)
+      ? Math.max(0, Math.min(100, cpuUsagePercent))
+      : 0,
+    memoryUsagePercent: Number.isFinite(memoryUsagePercent)
+      ? Math.max(0, Math.min(100, memoryUsagePercent))
+      : 0,
+    diskUsagePercent: Number.isFinite(diskUsagePercent)
+      ? Math.max(0, Math.min(100, diskUsagePercent))
+      : 0,
+    rxBytesPerSecond: Number.isFinite(rxBytesPerSecond) ? Math.max(0, rxBytesPerSecond) : 0,
+    txBytesPerSecond: Number.isFinite(txBytesPerSecond) ? Math.max(0, txBytesPerSecond) : 0
+  };
+}
+
 async function getLocalPathsFromDroppedFiles(
   files: FileList,
   resolvePath?: (file: File) => Promise<string | null>
@@ -303,6 +419,13 @@ function parseReconnectDelaySeconds(value: unknown): number {
     return DEFAULT_CONNECTION_PREFERENCES.reconnectDelaySeconds;
   }
   return Math.min(60, Math.max(1, Math.trunc(value)));
+}
+
+function parseAlertThresholdPercent(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(100, Math.max(50, Math.trunc(value)));
 }
 
 function readConnectionPreferences(): ConnectionPreferences {
@@ -382,6 +505,41 @@ function readFileOpenPreferences(): FileOpenPreferences {
     };
   } catch {
     return DEFAULT_FILE_OPEN_PREFERENCES;
+  }
+}
+
+function readServerHealthAlertPreferences(): ServerHealthAlertPreferences {
+  if (typeof window === "undefined") {
+    return DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(
+      SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY
+    );
+    if (!rawValue) {
+      return DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<ServerHealthAlertPreferences>;
+    return {
+      enabled:
+        typeof parsed.enabled === "boolean"
+          ? parsed.enabled
+          : DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES.enabled,
+      cpuWarnPercent: parseAlertThresholdPercent(
+        parsed.cpuWarnPercent,
+        DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES.cpuWarnPercent
+      ),
+      memoryWarnPercent: parseAlertThresholdPercent(
+        parsed.memoryWarnPercent,
+        DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES.memoryWarnPercent
+      ),
+      diskWarnPercent: parseAlertThresholdPercent(
+        parsed.diskWarnPercent,
+        DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES.diskWarnPercent
+      )
+    };
+  } catch {
+    return DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES;
   }
 }
 
@@ -489,6 +647,9 @@ export function App() {
   const [fileOpenPreferences, setFileOpenPreferences] = useState<FileOpenPreferences>(
     () => readFileOpenPreferences()
   );
+  const [serverHealthAlertPreferences, setServerHealthAlertPreferences] = useState<ServerHealthAlertPreferences>(
+    () => readServerHealthAlertPreferences()
+  );
   const [testConnectionResult, setTestConnectionResult] = useState<{
     ok: boolean;
     message: string;
@@ -502,6 +663,15 @@ export function App() {
   const [sftpTransfers, setSftpTransfers] = useState<SftpTransferItem[]>([]);
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null);
   const [sftpError, setSftpError] = useState<string | null>(null);
+  const [serverHealth, setServerHealth] = useState<ServerHealthSnapshot | null>(null);
+  const [serverHealthMetrics, setServerHealthMetrics] = useState<ServerHealthDerivedMetrics | null>(null);
+  const [serverHealthHistory, setServerHealthHistory] = useState<ServerHealthHistoryPoint[]>([]);
+  const [serverProcessSnapshot, setServerProcessSnapshot] = useState<ServerProcessSnapshot | null>(null);
+  const [serverHealthLoading, setServerHealthLoading] = useState(false);
+  const [serverProcessLoading, setServerProcessLoading] = useState(false);
+  const [serverHealthError, setServerHealthError] = useState<string | null>(null);
+  const [serverProcessError, setServerProcessError] = useState<string | null>(null);
+  const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const connectedTabIdsRef = useRef<Set<string>>(new Set());
   const uploadQueueRef = useRef<PendingUploadJob[]>([]);
@@ -509,6 +679,7 @@ export function App() {
   const isDrainingUploadQueueRef = useRef(false);
   const ensuredRemoteDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
   const sftpContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const previousServerHealthRef = useRef<ServerHealthSnapshot | null>(null);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
@@ -548,6 +719,7 @@ export function App() {
     () => terminalTabs.find((tab) => tab.id === activeTabId) ?? null,
     [activeTabId, terminalTabs]
   );
+  const isActiveTabConnected = !!(activeTabId && connectedTabIdsRef.current.has(activeTabId));
   const selectedSftpEntry = useMemo<SftpEntry | null>(() => {
     if (!sftpDirectory || !selectedSftpPath) {
       return null;
@@ -607,6 +779,41 @@ export function App() {
       totalSize
     };
   }, [sftpDirectory]);
+  const serverHealthUpdatedLabel = useMemo(() => {
+    if (!serverHealth) {
+      return "-";
+    }
+    const timestamp = new Date(serverHealth.collectedAt);
+    if (!Number.isFinite(timestamp.getTime())) {
+      return "-";
+    }
+    return timestamp.toLocaleTimeString();
+  }, [serverHealth]);
+  const recentServerHealthPoints = useMemo(
+    () => serverHealthHistory.slice(-10),
+    [serverHealthHistory]
+  );
+  const serverHealthAlertStatus = useMemo(() => {
+    const safeMetrics = serverHealthMetrics;
+    if (!safeMetrics || !serverHealthAlertPreferences.enabled) {
+      return {
+        cpuHigh: false,
+        memoryHigh: false,
+        diskHigh: false,
+        hasAny: false
+      };
+    }
+    const cpuHigh = safeMetrics.cpuUsagePercent >= serverHealthAlertPreferences.cpuWarnPercent;
+    const memoryHigh =
+      safeMetrics.memoryUsagePercent >= serverHealthAlertPreferences.memoryWarnPercent;
+    const diskHigh = safeMetrics.diskUsagePercent >= serverHealthAlertPreferences.diskWarnPercent;
+    return {
+      cpuHigh,
+      memoryHigh,
+      diskHigh,
+      hasAny: cpuHigh || memoryHigh || diskHigh
+    };
+  }, [serverHealthAlertPreferences, serverHealthMetrics]);
 
   const applySftpTransferEvent = useCallback((event: SftpTransferEvent) => {
     setSftpTransfers((prev) => {
@@ -774,6 +981,105 @@ export function App() {
     [activeTabId, sftpApi]
   );
 
+  const resetServerHealth = useCallback((message?: string | null) => {
+    previousServerHealthRef.current = null;
+    setServerHealth(null);
+    setServerHealthMetrics(null);
+    setServerHealthHistory([]);
+    setServerHealthLoading(false);
+    setServerHealthError(message ?? null);
+  }, []);
+
+  const refreshServerHealth = useCallback(
+    async (options?: { tabId?: string; silent?: boolean }) => {
+      if (!terminalApi) {
+        resetServerHealth("Terminal bridge unavailable. Restart `pnpm dev`.");
+        return;
+      }
+      const targetTabId = options?.tabId ?? activeTabId;
+      if (!targetTabId) {
+        resetServerHealth(null);
+        return;
+      }
+      if (!connectedTabIdsRef.current.has(targetTabId)) {
+        resetServerHealth("Terminal tab is not connected.");
+        return;
+      }
+
+      if (!options?.silent) {
+        setServerHealthLoading(true);
+      }
+      try {
+        const snapshot = await terminalApi.getServerHealth(targetTabId);
+        const previousSnapshot =
+          previousServerHealthRef.current?.tabId === targetTabId
+            ? previousServerHealthRef.current
+            : null;
+        const nextMetrics = deriveServerHealthMetrics(snapshot, previousSnapshot);
+        setServerHealth(snapshot);
+        setServerHealthMetrics(nextMetrics);
+        setServerHealthHistory((previousHistory) => {
+          const baseHistory = previousSnapshot ? previousHistory : [];
+          const nextPoint: ServerHealthHistoryPoint = {
+            at: Date.now(),
+            ...nextMetrics
+          };
+          return [...baseHistory, nextPoint].slice(-SERVER_HEALTH_HISTORY_LIMIT);
+        });
+        setServerHealthError(null);
+        previousServerHealthRef.current = snapshot;
+      } catch (caughtError) {
+        const message = (caughtError as Error).message;
+        setServerHealthError(message);
+      } finally {
+        if (!options?.silent) {
+          setServerHealthLoading(false);
+        }
+      }
+    },
+    [activeTabId, resetServerHealth, terminalApi]
+  );
+
+  const resetServerProcesses = useCallback((message?: string | null) => {
+    setServerProcessSnapshot(null);
+    setServerProcessLoading(false);
+    setServerProcessError(message ?? null);
+  }, []);
+
+  const refreshServerProcesses = useCallback(
+    async (options?: { tabId?: string; silent?: boolean }) => {
+      if (!terminalApi) {
+        resetServerProcesses("Terminal bridge unavailable. Restart `pnpm dev`.");
+        return;
+      }
+      const targetTabId = options?.tabId ?? activeTabId;
+      if (!targetTabId) {
+        resetServerProcesses(null);
+        return;
+      }
+      if (!connectedTabIdsRef.current.has(targetTabId)) {
+        resetServerProcesses("Terminal tab is not connected.");
+        return;
+      }
+      if (!options?.silent) {
+        setServerProcessLoading(true);
+      }
+      try {
+        const snapshot = await terminalApi.getServerProcesses(targetTabId);
+        setServerProcessSnapshot(snapshot);
+        setServerProcessError(null);
+      } catch (caughtError) {
+        const message = (caughtError as Error).message;
+        setServerProcessError(message);
+      } finally {
+        if (!options?.silent) {
+          setServerProcessLoading(false);
+        }
+      }
+    },
+    [activeTabId, resetServerProcesses, terminalApi]
+  );
+
   const closeSftpContextMenu = useCallback(() => {
     setSftpContextMenu(null);
   }, []);
@@ -876,6 +1182,17 @@ export function App() {
   }, [fileOpenPreferences]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(serverHealthAlertPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [serverHealthAlertPreferences]);
+
+  useEffect(() => {
     if (!appApi) {
       return;
     }
@@ -938,6 +1255,76 @@ export function App() {
   }, [activeTabId, loadSftpDirectory, sftpApi]);
 
   useEffect(() => {
+    resetServerHealth(null);
+    if (!activeTabId) {
+      return;
+    }
+    if (!connectedTabIdsRef.current.has(activeTabId)) {
+      return;
+    }
+    void refreshServerHealth({
+      tabId: activeTabId
+    });
+  }, [activeTabId, refreshServerHealth, resetServerHealth]);
+
+  useEffect(() => {
+    resetServerProcesses(null);
+    if (!isServerHealthDetailOpen) {
+      return;
+    }
+    if (!activeTabId) {
+      return;
+    }
+    if (!connectedTabIdsRef.current.has(activeTabId)) {
+      return;
+    }
+    void refreshServerProcesses({
+      tabId: activeTabId
+    });
+  }, [
+    activeTabId,
+    isServerHealthDetailOpen,
+    refreshServerProcesses,
+    resetServerProcesses
+  ]);
+
+  useEffect(() => {
+    if (!activeTabId || !terminalApi) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (!connectedTabIdsRef.current.has(activeTabId)) {
+        return;
+      }
+      void refreshServerHealth({
+        tabId: activeTabId,
+        silent: true
+      });
+    }, SERVER_HEALTH_POLL_INTERVAL_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [activeTabId, refreshServerHealth, terminalApi]);
+
+  useEffect(() => {
+    if (!isServerHealthDetailOpen || !activeTabId || !terminalApi) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (!connectedTabIdsRef.current.has(activeTabId)) {
+        return;
+      }
+      void refreshServerProcesses({
+        tabId: activeTabId,
+        silent: true
+      });
+    }, SERVER_PROCESS_POLL_INTERVAL_MS);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [activeTabId, isServerHealthDetailOpen, refreshServerProcesses, terminalApi]);
+
+  useEffect(() => {
     connectedTabIdsRef.current.clear();
   }, [terminalApi]);
 
@@ -965,12 +1352,30 @@ export function App() {
               )
             );
           }
+          if (event.tabId === activeTabId) {
+            void refreshServerHealth({
+              tabId: event.tabId
+            });
+            if (isServerHealthDetailOpen) {
+              void refreshServerProcesses({
+                tabId: event.tabId
+              });
+            }
+          }
         } else {
           connectedTabIdsRef.current.delete(event.tabId);
+          if (event.tabId === activeTabId) {
+            resetServerHealth("Terminal tab is not connected.");
+            resetServerProcesses("Terminal tab is not connected.");
+          }
         }
       }
       if (event.type === "error") {
         connectedTabIdsRef.current.delete(event.tabId);
+        if (event.tabId === activeTabId) {
+          resetServerHealth(event.message);
+          resetServerProcesses(event.message);
+        }
       }
       if (event.type !== "status" || event.status !== "connected") {
         return;
@@ -987,7 +1392,18 @@ export function App() {
     return () => {
       stopListening();
     };
-  }, [activeTabId, drainUploadQueue, loadSftpDirectory, terminalApi, terminalTabs]);
+  }, [
+    activeTabId,
+    drainUploadQueue,
+    isServerHealthDetailOpen,
+    loadSftpDirectory,
+    refreshServerHealth,
+    refreshServerProcesses,
+    resetServerHealth,
+    resetServerProcesses,
+    terminalApi,
+    terminalTabs
+  ]);
 
   useEffect(() => {
     if (!sftpApi) {
@@ -1404,6 +1820,24 @@ export function App() {
     setFileOpenPreferences((prev) => ({
       ...prev,
       preferredProgramPath: value
+    }));
+  };
+
+  const setServerHealthAlertEnabled = (value: boolean) => {
+    setServerHealthAlertPreferences((prev) => ({
+      ...prev,
+      enabled: value
+    }));
+  };
+
+  const setServerHealthAlertThreshold = (
+    key: "cpuWarnPercent" | "memoryWarnPercent" | "diskWarnPercent",
+    rawValue: string
+  ) => {
+    const parsed = Number(rawValue);
+    setServerHealthAlertPreferences((prev) => ({
+      ...prev,
+      [key]: parseAlertThresholdPercent(parsed, prev[key])
     }));
   };
 
@@ -2395,6 +2829,249 @@ export function App() {
               <p className="hint">Pick a session from the right panel.</p>
             )}
           </section>
+
+          <section className="panel__section">
+            <div className="panel__heading">
+              <h2>Server Health</h2>
+              <div className="server-health__actions">
+                <button
+                  aria-label="Toggle server health details"
+                  className={
+                    isServerHealthDetailOpen
+                      ? "icon-button server-health__detail-toggle is-active"
+                      : "icon-button server-health__detail-toggle"
+                  }
+                  disabled={!activeTerminalTab}
+                  onClick={() => setIsServerHealthDetailOpen((prev) => !prev)}
+                  title={isServerHealthDetailOpen ? "Hide details" : "Show details"}
+                  type="button"
+                >
+                  {isServerHealthDetailOpen ? "▴" : "▾"}
+                </button>
+                <button
+                  aria-label="Refresh server metrics"
+                  className="icon-button"
+                  disabled={
+                    !activeTerminalTab ||
+                    !isActiveTabConnected ||
+                    serverHealthLoading ||
+                    (isServerHealthDetailOpen && serverProcessLoading)
+                  }
+                  onClick={() => {
+                    void refreshServerHealth();
+                    if (isServerHealthDetailOpen) {
+                      void refreshServerProcesses();
+                    }
+                  }}
+                  title="Refresh"
+                  type="button"
+                >
+                  ⟳
+                </button>
+                <span
+                  className={
+                    serverHealthAlertStatus.hasAny
+                      ? "server-health__state server-health__state--alert"
+                      : "server-health__state"
+                  }
+                  title={
+                    serverHealthAlertStatus.hasAny
+                      ? "One or more metrics exceeded alert threshold."
+                      : "No alert triggered."
+                  }
+                >
+                  {serverHealthAlertStatus.hasAny ? "ALERT" : "OK"}
+                </span>
+              </div>
+            </div>
+            {activeTerminalTab ? (
+              <>
+                <p className="hint server-health__binding">
+                  Monitoring tab: <strong>{activeTerminalTab.title}</strong>
+                </p>
+                {!isActiveTabConnected ? (
+                  <p className="hint">Connect the active terminal tab to collect metrics.</p>
+                ) : null}
+                {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
+                {serverHealthAlertStatus.hasAny ? (
+                  <p className="hint server-health__alert-text">
+                    Threshold reached:
+                    {serverHealthAlertStatus.cpuHigh ? " CPU" : ""}
+                    {serverHealthAlertStatus.memoryHigh ? " Memory" : ""}
+                    {serverHealthAlertStatus.diskHigh ? " Disk" : ""}
+                  </p>
+                ) : null}
+                {serverHealthLoading ? (
+                  <p className="hint" role="status" aria-live="polite">
+                    Collecting server metrics...
+                  </p>
+                ) : null}
+                {serverHealth ? (
+                  <>
+                    <div className="server-health-grid">
+                      <div
+                        className={
+                          serverHealthAlertStatus.cpuHigh
+                            ? "server-health-card is-alert"
+                            : "server-health-card"
+                        }
+                      >
+                        <span className="server-health-card__label">CPU</span>
+                        <strong className="server-health-card__value">
+                          {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
+                        </strong>
+                      </div>
+                      <div
+                        className={
+                          serverHealthAlertStatus.memoryHigh
+                            ? "server-health-card is-alert"
+                            : "server-health-card"
+                        }
+                      >
+                        <span className="server-health-card__label">Memory</span>
+                        <strong className="server-health-card__value">
+                          {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
+                        </strong>
+                        <span className="server-health-card__meta">
+                          {formatTransferBytes(serverHealth.memoryUsedBytes)}/
+                          {formatTransferBytes(serverHealth.memoryTotalBytes)}
+                        </span>
+                      </div>
+                      <div
+                        className={
+                          serverHealthAlertStatus.diskHigh
+                            ? "server-health-card is-alert"
+                            : "server-health-card"
+                        }
+                      >
+                        <span className="server-health-card__label">Disk</span>
+                        <strong className="server-health-card__value">
+                          {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
+                        </strong>
+                        <span className="server-health-card__meta">
+                          {serverHealth.diskPath} · {formatTransferBytes(serverHealth.diskUsedBytes)}/
+                          {formatTransferBytes(serverHealth.diskTotalBytes)}
+                        </span>
+                      </div>
+                      <div className="server-health-card">
+                        <span className="server-health-card__label">Network</span>
+                        <strong className="server-health-card__value">
+                          ↓ {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
+                        </strong>
+                        <span className="server-health-card__meta">
+                          ↑ {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
+                        </span>
+                      </div>
+                      <div className="server-health-card">
+                        <span className="server-health-card__label">Load</span>
+                        <strong className="server-health-card__value">
+                          {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
+                          {serverHealth.load15.toFixed(2)}
+                        </strong>
+                      </div>
+                      <div className="server-health-card">
+                        <span className="server-health-card__label">Uptime</span>
+                        <strong className="server-health-card__value">
+                          {formatServerUptime(serverHealth.uptimeSeconds)}
+                        </strong>
+                        <span className="server-health-card__meta">{serverHealth.hostname}</span>
+                      </div>
+                    </div>
+                    {isServerHealthDetailOpen ? (
+                      <div className="server-health-details">
+                        {recentServerHealthPoints.length > 0 ? (
+                          <div className="server-health-trend">
+                            <p className="hint server-health-trend__title">
+                              Recent trend (last {recentServerHealthPoints.length} samples)
+                            </p>
+                            <div className="server-health-trend__bars" aria-hidden="true">
+                              {recentServerHealthPoints.map((point, index) => (
+                                <div className="server-health-trend__sample" key={`${point.at}-${index}`}>
+                                  <span
+                                    className="server-health-trend__bar server-health-trend__bar--cpu"
+                                    style={{ height: `${Math.max(4, point.cpuUsagePercent)}%` }}
+                                    title={`CPU ${formatPercent(point.cpuUsagePercent)}`}
+                                  />
+                                  <span
+                                    className="server-health-trend__bar server-health-trend__bar--memory"
+                                    style={{ height: `${Math.max(4, point.memoryUsagePercent)}%` }}
+                                    title={`Memory ${formatPercent(point.memoryUsagePercent)}`}
+                                  />
+                                  <span
+                                    className="server-health-trend__bar server-health-trend__bar--disk"
+                                    style={{ height: `${Math.max(4, point.diskUsagePercent)}%` }}
+                                    title={`Disk ${formatPercent(point.diskUsagePercent)}`}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {serverProcessError ? (
+                          <p className="hint sftp-error">{serverProcessError}</p>
+                        ) : null}
+                        {serverProcessLoading ? (
+                          <p className="hint" role="status" aria-live="polite">
+                            Collecting process details...
+                          </p>
+                        ) : null}
+                        <div className="server-health-processes">
+                          <p className="hint server-health-processes__title">Top processes (CPU)</p>
+                          {serverProcessSnapshot?.processes?.length ? (
+                            <ul className="server-health-processes__list">
+                              {serverProcessSnapshot.processes.map((entry) => (
+                                <li
+                                  className="server-health-processes__item"
+                                  key={`${entry.pid}-${entry.command}`}
+                                >
+                                  <span className="server-health-processes__pid">{entry.pid}</span>
+                                  <span className="server-health-processes__command" title={entry.command}>
+                                    {entry.command}
+                                  </span>
+                                  <span className="server-health-processes__cpu">
+                                    {formatProcessPercent(entry.cpuPercent)}
+                                  </span>
+                                  <span className="server-health-processes__mem">
+                                    {formatProcessPercent(entry.memoryPercent)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="hint">No process data yet.</p>
+                          )}
+                        </div>
+                        <div className="server-health-services">
+                          <p className="hint server-health-processes__title">Failed services</p>
+                          {serverProcessSnapshot?.failedServices?.length ? (
+                            <ul className="server-health-services__list">
+                              {serverProcessSnapshot.failedServices.map((name) => (
+                                <li className="server-health-services__item" key={name}>
+                                  {name}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="hint">No failed services detected.</p>
+                          )}
+                        </div>
+                        <p className="hint server-health__footnote">
+                          Updated: {serverHealthUpdatedLabel} · RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
+                          {formatTransferBytes(serverHealth.networkTxBytes)}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="hint server-health__footnote">
+                        Updated: {serverHealthUpdatedLabel}
+                      </p>
+                    )}
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <p className="hint">Open and connect a terminal tab to monitor server status.</p>
+            )}
+          </section>
         </aside>
       </main>
 
@@ -2508,6 +3185,59 @@ export function App() {
                 />
                 <span>{hotkeyModifierLabel} + F: Search in terminal</span>
               </label>
+              <h4 className="settings-group__title">Server Health Alerts</h4>
+              <label className="settings-checkbox">
+                <input
+                  checked={serverHealthAlertPreferences.enabled}
+                  onChange={(event) => setServerHealthAlertEnabled(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>Enable threshold alerts in monitor panel</span>
+              </label>
+              <div className="settings-threshold-grid">
+                <label>
+                  CPU Alert (%)
+                  <input
+                    disabled={!serverHealthAlertPreferences.enabled}
+                    max={100}
+                    min={50}
+                    onChange={(event) =>
+                      setServerHealthAlertThreshold("cpuWarnPercent", event.target.value)
+                    }
+                    type="number"
+                    value={serverHealthAlertPreferences.cpuWarnPercent}
+                  />
+                </label>
+                <label>
+                  Memory Alert (%)
+                  <input
+                    disabled={!serverHealthAlertPreferences.enabled}
+                    max={100}
+                    min={50}
+                    onChange={(event) =>
+                      setServerHealthAlertThreshold("memoryWarnPercent", event.target.value)
+                    }
+                    type="number"
+                    value={serverHealthAlertPreferences.memoryWarnPercent}
+                  />
+                </label>
+                <label>
+                  Disk Alert (%)
+                  <input
+                    disabled={!serverHealthAlertPreferences.enabled}
+                    max={100}
+                    min={50}
+                    onChange={(event) =>
+                      setServerHealthAlertThreshold("diskWarnPercent", event.target.value)
+                    }
+                    type="number"
+                    value={serverHealthAlertPreferences.diskWarnPercent}
+                  />
+                </label>
+              </div>
+              <p className="hint">
+                Threshold range is 50-100. Alerts are evaluated on each monitor refresh.
+              </p>
               <h4 className="settings-group__title">File Opening</h4>
               <label>
                 Open Program (optional)

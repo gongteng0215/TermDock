@@ -29,7 +29,12 @@ import type {
   SftpTransferDirection,
   SftpTransferEvent
 } from "../../shared/sftp.js";
-import type { TerminalEvent } from "../../shared/terminal.js";
+import type {
+  ServerHealthSnapshot,
+  ServerProcessEntry,
+  ServerProcessSnapshot,
+  TerminalEvent
+} from "../../shared/terminal.js";
 import type { CredentialStore } from "../security/credential-store.js";
 import { SessionStore } from "../storage/session-store.js";
 
@@ -383,6 +388,32 @@ export class TerminalService {
     }
 
     this.emitClosed(connection);
+  }
+
+  async getServerHealth(tabId: string): Promise<ServerHealthSnapshot> {
+    const connection = this.getConnectedSsh2Connection(tabId, "Server monitor");
+    const rawOutput = await this.executeRemoteCommand(connection.client, SERVER_HEALTH_COMMAND, 10_000);
+    const parsed = parseServerHealthOutput(rawOutput);
+    return {
+      tabId,
+      collectedAt: new Date().toISOString(),
+      ...parsed
+    };
+  }
+
+  async getServerProcesses(tabId: string): Promise<ServerProcessSnapshot> {
+    const connection = this.getConnectedSsh2Connection(tabId, "Server monitor");
+    const rawOutput = await this.executeRemoteCommand(
+      connection.client,
+      SERVER_PROCESS_COMMAND,
+      10_000
+    );
+    const parsed = parseServerProcessOutput(rawOutput);
+    return {
+      tabId,
+      collectedAt: new Date().toISOString(),
+      ...parsed
+    };
   }
 
   async listDirectory(tabId: string, targetPath?: string): Promise<SftpDirectoryListResult> {
@@ -818,6 +849,65 @@ export class TerminalService {
     return sftp;
   }
 
+  private async executeRemoteCommand(
+    client: Client,
+    command: string,
+    timeoutMs: number
+  ): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      let stdout = "";
+      let stderr = "";
+      let settled = false;
+      let channelRef: ClientChannel | null = null;
+
+      const finalize = (error?: Error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stdout);
+      };
+
+      const timer = setTimeout(() => {
+        channelRef?.close();
+        finalize(new Error("Server monitor command timed out."));
+      }, timeoutMs);
+
+      client.exec(command, (error, channel) => {
+        if (error) {
+          finalize(error);
+          return;
+        }
+        channelRef = channel;
+
+        channel.on("data", (chunk: Buffer) => {
+          stdout += chunk.toString("utf-8");
+        });
+        channel.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString("utf-8");
+        });
+        channel.once("error", (channelError: Error) => {
+          finalize(channelError);
+        });
+        channel.once("close", (code: number | null) => {
+          if (code && code !== 0) {
+            const message = stderr.trim();
+            finalize(new Error(message || `Remote command failed with code ${code}.`));
+            return;
+          }
+          finalize();
+        });
+      });
+    });
+  }
+
   private getConnectedConnection(tabId: string): TerminalConnection {
     const connection = this.connections.get(tabId);
     if (!connection || connection.closed) {
@@ -826,11 +916,14 @@ export class TerminalService {
     return connection;
   }
 
-  private getConnectedSsh2Connection(tabId: string): Ssh2TerminalConnection {
+  private getConnectedSsh2Connection(
+    tabId: string,
+    featureName = "SFTP"
+  ): Ssh2TerminalConnection {
     const connection = this.getConnectedConnection(tabId);
     if (connection.mode !== "ssh2") {
       throw new Error(
-        "SFTP is unavailable in system ssh fallback mode. Reconnect when direct SSH is available."
+        `${featureName} is unavailable in system ssh fallback mode. Reconnect when direct SSH is available.`
       );
     }
     return connection;
@@ -1087,6 +1180,364 @@ export class TerminalService {
       status: "closed"
     });
   }
+}
+
+const SERVER_HEALTH_COMMAND = [
+  "echo '__TD_HOST__'",
+  "hostname 2>/dev/null || uname -n || echo unknown",
+  "echo '__TD_UPTIME__'",
+  "cat /proc/uptime 2>/dev/null || echo '0 0'",
+  "echo '__TD_LOAD__'",
+  "cat /proc/loadavg 2>/dev/null || echo '0 0 0'",
+  "echo '__TD_MEM__'",
+  "cat /proc/meminfo 2>/dev/null || echo ''",
+  "echo '__TD_DISK__'",
+  "df -B1 -P / 2>/dev/null || echo ''",
+  "echo '__TD_CPU__'",
+  "cat /proc/stat 2>/dev/null || echo ''",
+  "echo '__TD_NET__'",
+  "cat /proc/net/dev 2>/dev/null || echo ''",
+  "echo '__TD_END__'"
+].join("; ");
+
+const SERVER_PROCESS_COMMAND = [
+  "echo '__TD_PROC__'",
+  "ps -eo pid,user,pcpu,pmem,comm --sort=-pcpu 2>/dev/null | sed -n '2,11p'",
+  "echo '__TD_FAILED__'",
+  "(command -v systemctl >/dev/null 2>&1 && systemctl --failed --no-legend --no-pager --plain 2>/dev/null | head -n 8) || true",
+  "echo '__TD_END__'"
+].join("; ");
+
+type ServerHealthSectionName =
+  | "__TD_HOST__"
+  | "__TD_UPTIME__"
+  | "__TD_LOAD__"
+  | "__TD_MEM__"
+  | "__TD_DISK__"
+  | "__TD_CPU__"
+  | "__TD_NET__";
+
+const SERVER_HEALTH_SECTION_NAMES: ServerHealthSectionName[] = [
+  "__TD_HOST__",
+  "__TD_UPTIME__",
+  "__TD_LOAD__",
+  "__TD_MEM__",
+  "__TD_DISK__",
+  "__TD_CPU__",
+  "__TD_NET__"
+];
+const SERVER_HEALTH_SECTION_SET = new Set<string>(SERVER_HEALTH_SECTION_NAMES);
+
+type ServerProcessSectionName = "__TD_PROC__" | "__TD_FAILED__";
+const SERVER_PROCESS_SECTION_NAMES: ServerProcessSectionName[] = [
+  "__TD_PROC__",
+  "__TD_FAILED__"
+];
+const SERVER_PROCESS_SECTION_SET = new Set<string>(SERVER_PROCESS_SECTION_NAMES);
+
+function parseServerHealthOutput(
+  rawOutput: string
+): Omit<ServerHealthSnapshot, "tabId" | "collectedAt"> {
+  const sectionLines = new Map<ServerHealthSectionName, string[]>(
+    SERVER_HEALTH_SECTION_NAMES.map((name) => [name, []])
+  );
+  let activeSection: ServerHealthSectionName | null = null;
+
+  for (const rawLine of rawOutput.replaceAll("\r", "").split("\n")) {
+    const line = rawLine.trimEnd();
+    if (line === "__TD_END__") {
+      break;
+    }
+    if (SERVER_HEALTH_SECTION_SET.has(line)) {
+      activeSection = line as ServerHealthSectionName;
+      continue;
+    }
+    if (!activeSection) {
+      continue;
+    }
+    sectionLines.get(activeSection)?.push(line);
+  }
+
+  const host = getFirstNonEmptyLine(sectionLines.get("__TD_HOST__")) ?? "unknown";
+  const uptimeParts = (getFirstNonEmptyLine(sectionLines.get("__TD_UPTIME__")) ?? "0").split(/\s+/);
+  const uptimeSeconds = toSafeInteger(Number.parseFloat(uptimeParts[0] ?? "0"));
+
+  const loadParts = (getFirstNonEmptyLine(sectionLines.get("__TD_LOAD__")) ?? "0 0 0")
+    .trim()
+    .split(/\s+/);
+  const load1 = toSafeNumber(Number.parseFloat(loadParts[0] ?? "0"));
+  const load5 = toSafeNumber(Number.parseFloat(loadParts[1] ?? "0"));
+  const load15 = toSafeNumber(Number.parseFloat(loadParts[2] ?? "0"));
+
+  const memory = parseMemInfoSection(sectionLines.get("__TD_MEM__") ?? []);
+  const disk = parseDiskSection(sectionLines.get("__TD_DISK__") ?? []);
+  const cpu = parseCpuSection(sectionLines.get("__TD_CPU__") ?? []);
+  const network = parseNetworkSection(sectionLines.get("__TD_NET__") ?? []);
+
+  return {
+    hostname: host,
+    uptimeSeconds,
+    load1,
+    load5,
+    load15,
+    memoryTotalBytes: memory.totalBytes,
+    memoryUsedBytes: memory.usedBytes,
+    diskPath: disk.path,
+    diskTotalBytes: disk.totalBytes,
+    diskUsedBytes: disk.usedBytes,
+    diskAvailableBytes: disk.availableBytes,
+    cpuTotalTicks: cpu.totalTicks,
+    cpuIdleTicks: cpu.idleTicks,
+    networkRxBytes: network.rxBytes,
+    networkTxBytes: network.txBytes
+  };
+}
+
+function parseServerProcessOutput(
+  rawOutput: string
+): Omit<ServerProcessSnapshot, "tabId" | "collectedAt"> {
+  const sectionLines = new Map<ServerProcessSectionName, string[]>(
+    SERVER_PROCESS_SECTION_NAMES.map((name) => [name, []])
+  );
+  let activeSection: ServerProcessSectionName | null = null;
+
+  for (const rawLine of rawOutput.replaceAll("\r", "").split("\n")) {
+    const line = rawLine.trimEnd();
+    if (line === "__TD_END__") {
+      break;
+    }
+    if (SERVER_PROCESS_SECTION_SET.has(line)) {
+      activeSection = line as ServerProcessSectionName;
+      continue;
+    }
+    if (!activeSection) {
+      continue;
+    }
+    sectionLines.get(activeSection)?.push(line);
+  }
+
+  return {
+    processes: parseProcessRows(sectionLines.get("__TD_PROC__") ?? []),
+    failedServices: parseFailedServiceRows(sectionLines.get("__TD_FAILED__") ?? [])
+  };
+}
+
+function parseProcessRows(lines: string[]): ServerProcessEntry[] {
+  const result: ServerProcessEntry[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const fields = line.split(/\s+/);
+    if (fields.length < 5) {
+      continue;
+    }
+    const pid = Number.parseInt(fields[0], 10);
+    const user = fields[1];
+    const cpuPercent = Number.parseFloat(fields[2]);
+    const memoryPercent = Number.parseFloat(fields[3]);
+    const command = fields.slice(4).join(" ");
+    if (!Number.isFinite(pid) || pid <= 0 || !command) {
+      continue;
+    }
+    result.push({
+      pid: Math.trunc(pid),
+      user: user || "-",
+      cpuPercent: Number.isFinite(cpuPercent) ? Math.max(0, cpuPercent) : 0,
+      memoryPercent: Number.isFinite(memoryPercent) ? Math.max(0, memoryPercent) : 0,
+      command
+    });
+  }
+  return result.slice(0, 8);
+}
+
+function parseFailedServiceRows(lines: string[]): string[] {
+  const result: string[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    const name = line.split(/\s+/)[0];
+    if (!name || !name.includes(".")) {
+      continue;
+    }
+    if (!result.includes(name)) {
+      result.push(name);
+    }
+  }
+  return result.slice(0, 8);
+}
+
+function parseMemInfoSection(lines: string[]): {
+  totalBytes: number;
+  usedBytes: number;
+} {
+  let totalKb = 0;
+  let availableKb = 0;
+  let freeKb = 0;
+  let bufferKb = 0;
+  let cachedKb = 0;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const match = line.match(/^([A-Za-z()]+):\s+(\d+)/);
+    if (!match) {
+      continue;
+    }
+    const value = toSafeInteger(Number.parseInt(match[2], 10));
+    switch (match[1]) {
+      case "MemTotal":
+        totalKb = value;
+        break;
+      case "MemAvailable":
+        availableKb = value;
+        break;
+      case "MemFree":
+        freeKb = value;
+        break;
+      case "Buffers":
+        bufferKb = value;
+        break;
+      case "Cached":
+        cachedKb = value;
+        break;
+      default:
+        break;
+    }
+  }
+  if (availableKb <= 0) {
+    availableKb = freeKb + bufferKb + cachedKb;
+  }
+  const totalBytes = toSafeInteger(totalKb * 1024);
+  const availableBytes = toSafeInteger(availableKb * 1024);
+  const usedBytes = Math.max(0, totalBytes - availableBytes);
+  return {
+    totalBytes,
+    usedBytes
+  };
+}
+
+function parseDiskSection(lines: string[]): {
+  path: string;
+  totalBytes: number;
+  usedBytes: number;
+  availableBytes: number;
+} {
+  const dataLine = lines.find((line) =>
+    /^\S+\s+\d+\s+\d+\s+\d+\s+\d+%\s+\S+/.test(line.trim())
+  );
+  if (!dataLine) {
+    return {
+      path: "/",
+      totalBytes: 0,
+      usedBytes: 0,
+      availableBytes: 0
+    };
+  }
+  const tokens = dataLine.trim().split(/\s+/);
+  return {
+    path: tokens[tokens.length - 1] || "/",
+    totalBytes: toSafeInteger(Number.parseInt(tokens[1] ?? "0", 10)),
+    usedBytes: toSafeInteger(Number.parseInt(tokens[2] ?? "0", 10)),
+    availableBytes: toSafeInteger(Number.parseInt(tokens[3] ?? "0", 10))
+  };
+}
+
+function parseCpuSection(lines: string[]): {
+  totalTicks: number;
+  idleTicks: number;
+} {
+  const cpuLine = lines.find((line) => line.trimStart().startsWith("cpu "));
+  if (!cpuLine) {
+    return {
+      totalTicks: 0,
+      idleTicks: 0
+    };
+  }
+  const fields = cpuLine
+    .trim()
+    .split(/\s+/)
+    .slice(1)
+    .map((part) => toSafeInteger(Number.parseInt(part, 10)));
+  const totalTicks = fields.reduce((sum, value) => sum + value, 0);
+  const idleTicks = (fields[3] ?? 0) + (fields[4] ?? 0);
+  return {
+    totalTicks: toSafeInteger(totalTicks),
+    idleTicks: toSafeInteger(idleTicks)
+  };
+}
+
+function parseNetworkSection(lines: string[]): {
+  rxBytes: number;
+  txBytes: number;
+} {
+  let rxBytes = 0;
+  let txBytes = 0;
+  let loopbackRxBytes = 0;
+  let loopbackTxBytes = 0;
+  let nonLoopbackCount = 0;
+
+  for (const rawLine of lines) {
+    if (!rawLine.includes(":")) {
+      continue;
+    }
+    const [interfaceNameRaw, payloadRaw] = rawLine.split(":");
+    if (!payloadRaw) {
+      continue;
+    }
+    const interfaceName = interfaceNameRaw.trim();
+    const values = payloadRaw.trim().split(/\s+/);
+    if (values.length < 9) {
+      continue;
+    }
+    const lineRxBytes = toSafeInteger(Number.parseInt(values[0] ?? "0", 10));
+    const lineTxBytes = toSafeInteger(Number.parseInt(values[8] ?? "0", 10));
+    if (interfaceName === "lo") {
+      loopbackRxBytes += lineRxBytes;
+      loopbackTxBytes += lineTxBytes;
+      continue;
+    }
+    nonLoopbackCount += 1;
+    rxBytes += lineRxBytes;
+    txBytes += lineTxBytes;
+  }
+
+  if (nonLoopbackCount === 0) {
+    rxBytes = loopbackRxBytes;
+    txBytes = loopbackTxBytes;
+  }
+  return {
+    rxBytes: toSafeInteger(rxBytes),
+    txBytes: toSafeInteger(txBytes)
+  };
+}
+
+function getFirstNonEmptyLine(lines: string[] | undefined): string | null {
+  if (!lines || lines.length === 0) {
+    return null;
+  }
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function toSafeNumber(value: number): number {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return value;
+}
+
+function toSafeInteger(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  return Math.trunc(value);
 }
 
 function expandHomePath(filePath: string): string {

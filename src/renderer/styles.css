@@ -222,6 +222,14 @@ body::before {
   overflow: auto;
 }
 
+.panel--right .panel__section {
+  padding: 6px;
+}
+
+.panel--right .panel__heading {
+  margin-bottom: 4px;
+}
+
 .panel--center {
   display: grid;
   grid-template-rows: 40px 1fr;
@@ -244,11 +252,20 @@ body::before {
   gap: 4px;
 }
 
+.panel--right .session-list {
+  gap: 3px;
+}
+
 .session-filter-bar {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 4px;
   margin-bottom: 6px;
+}
+
+.panel--right .session-filter-bar {
+  gap: 3px;
+  margin-bottom: 4px;
 }
 
 .session-filter-input {
@@ -261,6 +278,12 @@ body::before {
   font-size: 12px;
   outline: none;
   transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.panel--right .session-filter-input {
+  height: 22px;
+  font-size: 11px;
+  padding: 0 7px;
 }
 
 .session-filter-input:focus {
@@ -312,9 +335,17 @@ body::before {
   gap: 1px;
 }
 
+.panel--right .session-list__main {
+  padding: 5px;
+}
+
 .session-list__name {
   font-size: 13px;
   font-weight: 600;
+}
+
+.panel--right .session-list__name {
+  font-size: 12px;
 }
 
 .session-list__host {
@@ -322,10 +353,19 @@ body::before {
   color: var(--text-soft);
 }
 
+.panel--right .session-list__host {
+  font-size: 10px;
+}
+
 .session-list__actions {
   padding: 4px 6px 6px;
   display: flex;
   gap: 4px;
+}
+
+.panel--right .session-list__actions {
+  padding: 3px 5px 5px;
+  gap: 3px;
 }
 
 .session-list__action {
@@ -335,6 +375,11 @@ body::before {
   align-items: center;
   justify-content: center;
   line-height: 1;
+}
+
+.panel--right .session-list__action {
+  min-width: 22px;
+  padding: 0 5px;
 }
 
 .icon-button {
@@ -978,6 +1023,10 @@ body::before {
   gap: 8px;
 }
 
+.panel--right .session-meta {
+  gap: 5px;
+}
+
 .session-detail-actions {
   display: inline-flex;
   align-items: center;
@@ -999,6 +1048,233 @@ body::before {
 .session-meta dd {
   margin: 0;
   font-size: 13px;
+}
+
+.panel--right .session-meta dd {
+  font-size: 12px;
+}
+
+.server-health__binding {
+  margin-bottom: 6px;
+}
+
+.server-health__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.server-health__state {
+  height: 20px;
+  min-width: 34px;
+  border: 1px solid rgba(79, 128, 172, 0.45);
+  border-radius: 999px;
+  background: rgba(16, 30, 44, 0.68);
+  color: #a8c7e4;
+  font-size: 10px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+}
+
+.server-health__state--alert {
+  border-color: rgba(179, 81, 105, 0.8);
+  background: rgba(61, 20, 34, 0.72);
+  color: #ffc4d2;
+}
+
+.server-health__detail-toggle {
+  min-width: 24px;
+  padding: 0 6px;
+}
+
+.server-health__detail-toggle.is-active {
+  border-color: #79bcff;
+  background: linear-gradient(180deg, #254966 0%, #1d3e5a 100%);
+}
+
+.server-health-grid {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.panel--right .server-health-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.server-health-card {
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(79, 128, 172, 0.35);
+  border-radius: 7px;
+  background: rgba(16, 30, 44, 0.62);
+  padding: 6px 7px;
+}
+
+.server-health-card.is-alert {
+  border-color: rgba(179, 81, 105, 0.72);
+  background: linear-gradient(
+      180deg,
+      rgba(112, 36, 58, 0.24) 0%,
+      rgba(67, 24, 38, 0) 70%
+    ),
+    rgba(30, 16, 23, 0.72);
+}
+
+.panel--right .server-health-card {
+  padding: 5px 6px;
+}
+
+.server-health-card__label {
+  font-size: 10px;
+  letter-spacing: 0.65px;
+  text-transform: uppercase;
+  color: #91b5d8;
+}
+
+.server-health-card__value {
+  font-size: 13px;
+  color: #d9ecff;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.panel--right .server-health-card__value {
+  font-size: 12px;
+}
+
+.server-health-card__meta {
+  font-size: 11px;
+  color: #9ab8d4;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.panel--right .server-health-card__meta {
+  font-size: 10px;
+}
+
+.server-health-trend {
+  margin-top: 6px;
+}
+
+.server-health-details {
+  margin-top: 6px;
+}
+
+.server-health-processes,
+.server-health-services {
+  margin-top: 6px;
+  border: 1px solid rgba(79, 128, 172, 0.35);
+  border-radius: 7px;
+  background: rgba(16, 30, 44, 0.62);
+  padding: 5px 6px;
+}
+
+.server-health-processes__title {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #aac7e3;
+}
+
+.server-health-processes__list,
+.server-health-services__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.server-health-processes__item {
+  display: grid;
+  grid-template-columns: 38px 1fr 52px 52px;
+  gap: 4px;
+  align-items: center;
+  font-size: 10px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  color: #bed4ea;
+}
+
+.server-health-processes__pid,
+.server-health-processes__cpu,
+.server-health-processes__mem {
+  text-align: right;
+}
+
+.server-health-processes__command {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.server-health-services__item {
+  font-size: 10px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  color: #ffc4d2;
+}
+
+.server-health-trend__title {
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.server-health-trend__bars {
+  height: 74px;
+  border: 1px solid rgba(79, 128, 172, 0.35);
+  border-radius: 7px;
+  background: rgba(16, 30, 44, 0.62);
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  align-items: end;
+  padding: 4px;
+}
+
+.server-health-trend__sample {
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  align-items: end;
+}
+
+.server-health-trend__bar {
+  width: 100%;
+  min-height: 3px;
+  border-radius: 999px;
+}
+
+.server-health-trend__bar--cpu {
+  background: linear-gradient(180deg, #8bc4ff, #2f7dd9);
+}
+
+.server-health-trend__bar--memory {
+  background: linear-gradient(180deg, #a9f2bc, #3ea86a);
+}
+
+.server-health-trend__bar--disk {
+  background: linear-gradient(180deg, #ffd7a5, #d78a34);
+}
+
+.server-health__footnote {
+  margin-top: 6px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.server-health__alert-text {
+  color: #ffc4d2;
+}
+
+.settings-threshold-grid {
+  display: grid;
+  gap: 6px;
 }
 
 .hint {
