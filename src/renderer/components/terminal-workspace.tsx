@@ -606,9 +606,22 @@ export function TerminalWorkspace({
       const isTerminalFocused = targetNode
         ? (stageRef.current?.contains(targetNode) ?? false)
         : false;
+      const activeElementNode = document.activeElement instanceof Node ? document.activeElement : null;
+      const isTerminalActiveElement = activeElementNode
+        ? (stageRef.current?.contains(activeElementNode) ?? false)
+        : false;
+      const bodyFocused = document.activeElement === document.body;
+      const altShortcutTriggered =
+        (copyMatches && usesAltModifier(copyBinding)) ||
+        (pasteMatches && usesAltModifier(pasteBinding)) ||
+        (searchMatches && usesAltModifier(searchBinding));
+      const treatAsTerminalFocused =
+        isTerminalFocused ||
+        isTerminalActiveElement ||
+        (bodyFocused && altShortcutTriggered);
       const activeSelection = getActiveInstance()?.terminal.getSelection() ?? "";
       const canCopySelection = copyMatches && activeSelection.length > 0;
-      if (!isTerminalFocused && !canCopySelection) {
+      if (!treatAsTerminalFocused && !canCopySelection) {
         return;
       }
 
@@ -883,6 +896,10 @@ function getStatusText(state: TabUiStatus, title: string): string {
 
 function shouldSendInterruptOnCopyHotkey(binding: HotkeyBindingPreference): boolean {
   return binding.modifier === "primary" && normalizeHotkeyKey(binding.key) === "c";
+}
+
+function usesAltModifier(binding: HotkeyBindingPreference): boolean {
+  return binding.modifier === "alt" || binding.modifier === "altShift";
 }
 
 function hasPrimaryShortcutModifier(event: KeyboardEvent): boolean {

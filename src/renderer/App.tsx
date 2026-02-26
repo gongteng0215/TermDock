@@ -97,12 +97,22 @@ function isMacPlatformRuntime(): boolean {
 
 function createDefaultHotkeyPreferences(): HotkeyPreferences {
   const isMac = isMacPlatformRuntime();
+  if (!isMac) {
+    // Windows: avoid Ctrl conflicts with terminal SIGINT and avoid common Alt menu mnemonics.
+    return {
+      openSessionTab: { enabled: true, modifier: "alt", key: "t" },
+      closeActiveTab: { enabled: true, modifier: "altShift", key: "w" },
+      terminalCopy: { enabled: true, modifier: "alt", key: "c" },
+      terminalPaste: { enabled: true, modifier: "altShift", key: "v" },
+      terminalSearch: { enabled: true, modifier: "altShift", key: "f" }
+    };
+  }
   return {
     openSessionTab: { enabled: true, modifier: "primary", key: "t" },
     closeActiveTab: { enabled: true, modifier: "primary", key: "w" },
     terminalCopy: {
       enabled: true,
-      modifier: isMac ? "primary" : "alt",
+      modifier: "primary",
       key: "c"
     },
     terminalPaste: { enabled: true, modifier: "primary", key: "v" },
@@ -277,6 +287,29 @@ function parseHotkeyBindingPreference(
     modifier: isHotkeyModifier(candidate.modifier) ? candidate.modifier : fallback.modifier,
     key: normalizeHotkeyKey(candidate.key, fallback.key)
   };
+}
+
+function isLegacyWindowsPrimaryHotkeyDefaults(preferences: HotkeyPreferences): boolean {
+  if (isMacPlatformRuntime()) {
+    return false;
+  }
+  return (
+    preferences.openSessionTab.enabled &&
+    preferences.openSessionTab.modifier === "primary" &&
+    preferences.openSessionTab.key === "t" &&
+    preferences.closeActiveTab.enabled &&
+    preferences.closeActiveTab.modifier === "primary" &&
+    preferences.closeActiveTab.key === "w" &&
+    preferences.terminalCopy.enabled &&
+    preferences.terminalCopy.modifier === "primary" &&
+    preferences.terminalCopy.key === "c" &&
+    preferences.terminalPaste.enabled &&
+    preferences.terminalPaste.modifier === "primary" &&
+    preferences.terminalPaste.key === "v" &&
+    preferences.terminalSearch.enabled &&
+    preferences.terminalSearch.modifier === "primary" &&
+    preferences.terminalSearch.key === "f"
+  );
 }
 
 function matchesHotkeyBinding(event: KeyboardEvent, binding: HotkeyBindingPreference): boolean {
@@ -669,13 +702,17 @@ function readHotkeyPreferences(): HotkeyPreferences {
     }
     const parsed = JSON.parse(rawValue) as Partial<HotkeyPreferences>;
     const defaults = createDefaultHotkeyPreferences();
-    return {
+    const nextPreferences: HotkeyPreferences = {
       openSessionTab: parseHotkeyBindingPreference(parsed.openSessionTab, defaults.openSessionTab),
       closeActiveTab: parseHotkeyBindingPreference(parsed.closeActiveTab, defaults.closeActiveTab),
       terminalCopy: parseHotkeyBindingPreference(parsed.terminalCopy, defaults.terminalCopy),
       terminalPaste: parseHotkeyBindingPreference(parsed.terminalPaste, defaults.terminalPaste),
       terminalSearch: parseHotkeyBindingPreference(parsed.terminalSearch, defaults.terminalSearch)
     };
+    if (isLegacyWindowsPrimaryHotkeyDefaults(nextPreferences)) {
+      return createDefaultHotkeyPreferences();
+    }
+    return nextPreferences;
   } catch {
     return createDefaultHotkeyPreferences();
   }
@@ -3634,9 +3671,10 @@ export function App() {
                       })}
                     </div>
                     <p className="hint">
-                      Windows default terminal copy is <code>Alt + C</code> to avoid conflict
-                      with terminal interrupt (<code>Ctrl + C</code>). macOS keeps the existing
-                      copy shortcut behavior.
+                      Windows defaults use Alt-based hotkeys to avoid terminal <code>Ctrl + C</code>
+                      conflicts. Some keys use <code>Alt + Shift</code> to avoid Windows menu
+                      shortcuts (for example <code>Alt + F</code>/<code>Alt + V</code>). macOS
+                      keeps the existing Cmd-based behavior.
                     </p>
                     <div className="modal__actions">
                       <button
