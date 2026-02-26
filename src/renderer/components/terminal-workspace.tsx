@@ -18,12 +18,20 @@ export interface ConnectionPreferences {
   reconnectDelaySeconds: number;
 }
 
+export type HotkeyModifier = "primary" | "primaryShift" | "alt" | "altShift";
+
+export interface HotkeyBindingPreference {
+  enabled: boolean;
+  modifier: HotkeyModifier;
+  key: string;
+}
+
 export interface HotkeyPreferences {
-  openSessionTab: boolean;
-  closeActiveTab: boolean;
-  terminalCopy: boolean;
-  terminalPaste: boolean;
-  terminalSearch: boolean;
+  openSessionTab: HotkeyBindingPreference;
+  closeActiveTab: HotkeyBindingPreference;
+  terminalCopy: HotkeyBindingPreference;
+  terminalPaste: HotkeyBindingPreference;
+  terminalSearch: HotkeyBindingPreference;
 }
 
 interface TerminalWorkspaceProps {
@@ -157,6 +165,14 @@ export function TerminalWorkspace({
     }
   }, [terminalApi]);
 
+  const focusTerminal = useCallback((tabId: string) => {
+    const instance = terminalRefs.current.get(tabId);
+    if (!instance) {
+      return;
+    }
+    instance.terminal.focus();
+  }, []);
+
   const setContainerRef = useCallback((tabId: string, node: HTMLDivElement | null) => {
     if (node) {
       containerRefs.current.set(tabId, node);
@@ -212,37 +228,6 @@ export function TerminalWorkspace({
     [clearReconnectState, connectTab]
   );
 
-  // Keep actions declarative so future right-click items can be appended here.
-  const contextActions = useMemo<TerminalContextAction[]>(
-    () => [
-      {
-        id: "reconnect",
-        label: "Reconnect",
-        run: (tabId: string) => {
-          reconnectTabNow(tabId);
-        },
-        isDisabled: (tabId: string) =>
-          !tabsByIdRef.current.has(tabId) ||
-          !terminalRefs.current.has(tabId) ||
-          tabStatusesRef.current[tabId]?.status === "connecting"
-      },
-      {
-        id: "clear",
-        label: "Clear",
-        run: (tabId: string) => {
-          const instance = terminalRefs.current.get(tabId);
-          if (!instance) {
-            return;
-          }
-          instance.terminal.clear();
-          instance.terminal.focus();
-        },
-        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
-      }
-    ],
-    [reconnectTabNow]
-  );
-
   const scheduleReconnect = useCallback(
     (tabId: string) => {
       if (!terminalApi || !connectionPreferences.autoReconnect) {
@@ -285,11 +270,15 @@ export function TerminalWorkspace({
     [clearReconnectState, connectTab, connectionPreferences, terminalApi]
   );
 
-  const copySelectionOrSendInterrupt = useCallback(async () => {
-    if (!activeTabId || !terminalApi) {
+  const copySelectionOrSendInterrupt = useCallback(async (
+    allowInterruptFallback = true,
+    targetTabId?: string
+  ) => {
+    const tabId = targetTabId ?? activeTabId;
+    if (!tabId || !terminalApi) {
       return;
     }
-    const instance = getActiveInstance();
+    const instance = terminalRefs.current.get(tabId) ?? null;
     if (!instance) {
       return;
     }
@@ -309,14 +298,19 @@ export function TerminalWorkspace({
       return;
     }
 
-    void terminalApi.write(activeTabId, "\u0003");
-  }, [activeTabId, getActiveInstance, onError, terminalApi]);
-
-  const pasteClipboardToTerminal = useCallback(async () => {
-    if (!activeTabId || !terminalApi) {
+    if (!allowInterruptFallback) {
       return;
     }
-    const instance = getActiveInstance();
+
+    void terminalApi.write(tabId, "\u0003");
+  }, [activeTabId, onError, terminalApi]);
+
+  const pasteClipboardToTerminal = useCallback(async (targetTabId?: string) => {
+    const tabId = targetTabId ?? activeTabId;
+    if (!tabId || !terminalApi) {
+      return;
+    }
+    const instance = terminalRefs.current.get(tabId) ?? null;
     if (!instance) {
       return;
     }
@@ -329,23 +323,24 @@ export function TerminalWorkspace({
       if (!text) {
         return;
       }
-      void terminalApi.write(activeTabId, text);
+      void terminalApi.write(tabId, text);
       instance.terminal.focus();
     } catch {
       onError("Paste failed. Clipboard permission may be blocked.");
     }
-  }, [activeTabId, getActiveInstance, onError, terminalApi]);
+  }, [activeTabId, onError, terminalApi]);
 
-  const searchInTerminal = useCallback(() => {
-    if (!activeTabId) {
+  const searchInTerminal = useCallback((targetTabId?: string) => {
+    const tabId = targetTabId ?? activeTabId;
+    if (!tabId) {
       return;
     }
-    const instance = getActiveInstance();
+    const instance = terminalRefs.current.get(tabId) ?? null;
     if (!instance) {
       return;
     }
 
-    const previous = searchStateRef.current.get(activeTabId);
+    const previous = searchStateRef.current.get(tabId);
     const rawQuery = window.prompt("Find in terminal", previous?.query ?? "");
     if (!rawQuery) {
       return;
@@ -368,12 +363,130 @@ export function TerminalWorkspace({
     instance.terminal.select(match.column, match.row, query.length);
     instance.terminal.scrollToLine(Math.max(0, match.row - Math.floor(instance.terminal.rows / 2)));
     instance.terminal.focus();
-    searchStateRef.current.set(activeTabId, {
+    searchStateRef.current.set(tabId, {
       query,
       row: match.row,
       column: match.column
     });
-  }, [activeTabId, getActiveInstance, onError]);
+  }, [activeTabId, onError]);
+
+  const interruptTerminal = useCallback(
+    (tabId: string) => {
+      if (!terminalApi) {
+        return;
+      }
+      if (!terminalRefs.current.has(tabId)) {
+        return;
+      }
+      void terminalApi.write(tabId, "\u0003");
+      terminalRefs.current.get(tabId)?.terminal.focus();
+    },
+    [terminalApi]
+  );
+
+  const selectAllTerminal = useCallback((tabId: string) => {
+    const instance = terminalRefs.current.get(tabId);
+    if (!instance) {
+      return;
+    }
+    instance.terminal.selectAll();
+    instance.terminal.focus();
+  }, []);
+
+  const hasTerminalSelection = useCallback((tabId: string) => {
+    const instance = terminalRefs.current.get(tabId);
+    if (!instance) {
+      return false;
+    }
+    return instance.terminal.getSelection().length > 0;
+  }, []);
+
+  // Keep actions declarative so future right-click items can be appended here.
+  const contextActions = useMemo<TerminalContextAction[]>(
+    () => [
+      {
+        id: "copy",
+        label: "Copy",
+        run: (tabId: string) => {
+          void copySelectionOrSendInterrupt(false, tabId);
+        },
+        isDisabled: (tabId: string) => !hasTerminalSelection(tabId)
+      },
+      {
+        id: "cut",
+        label: "Cut",
+        run: (tabId: string) => {
+          void copySelectionOrSendInterrupt(false, tabId);
+        },
+        isDisabled: (tabId: string) => !hasTerminalSelection(tabId)
+      },
+      {
+        id: "paste",
+        label: "Paste",
+        run: (tabId: string) => {
+          void pasteClipboardToTerminal(tabId);
+        },
+        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
+      },
+      {
+        id: "select-all",
+        label: "Select All",
+        run: (tabId: string) => {
+          selectAllTerminal(tabId);
+        },
+        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
+      },
+      {
+        id: "search",
+        label: "Find...",
+        run: (tabId: string) => {
+          searchInTerminal(tabId);
+        },
+        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
+      },
+      {
+        id: "interrupt",
+        label: "Interrupt (Ctrl+C)",
+        run: (tabId: string) => {
+          interruptTerminal(tabId);
+        },
+        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
+      },
+      {
+        id: "reconnect",
+        label: "Reconnect",
+        run: (tabId: string) => {
+          reconnectTabNow(tabId);
+        },
+        isDisabled: (tabId: string) =>
+          !tabsByIdRef.current.has(tabId) ||
+          !terminalRefs.current.has(tabId) ||
+          tabStatusesRef.current[tabId]?.status === "connecting"
+      },
+      {
+        id: "clear",
+        label: "Clear",
+        run: (tabId: string) => {
+          const instance = terminalRefs.current.get(tabId);
+          if (!instance) {
+            return;
+          }
+          instance.terminal.clear();
+          instance.terminal.focus();
+        },
+        isDisabled: (tabId: string) => !terminalRefs.current.has(tabId)
+      }
+    ],
+    [
+      copySelectionOrSendInterrupt,
+      hasTerminalSelection,
+      interruptTerminal,
+      pasteClipboardToTerminal,
+      reconnectTabNow,
+      searchInTerminal,
+      selectAllTerminal
+    ]
+  );
 
   useEffect(() => {
     if (connectionPreferences.autoReconnect) {
@@ -479,41 +592,37 @@ export function TerminalWorkspace({
       if (isEditableTarget(event.target)) {
         return;
       }
-      if (!hasPrimaryShortcutModifier(event) || event.altKey) {
+      const copyBinding = hotkeyPreferences.terminalCopy;
+      const pasteBinding = hotkeyPreferences.terminalPaste;
+      const searchBinding = hotkeyPreferences.terminalSearch;
+      const copyMatches = matchesHotkeyBinding(event, copyBinding);
+      const pasteMatches = matchesHotkeyBinding(event, pasteBinding);
+      const searchMatches = matchesHotkeyBinding(event, searchBinding);
+      if (!copyMatches && !pasteMatches && !searchMatches) {
         return;
       }
 
-      const key = event.key.toLowerCase();
       const targetNode = event.target instanceof Node ? event.target : null;
       const isTerminalFocused = targetNode
         ? (stageRef.current?.contains(targetNode) ?? false)
         : false;
       const activeSelection = getActiveInstance()?.terminal.getSelection() ?? "";
-      const canCopySelection = key === "c" && activeSelection.length > 0;
+      const canCopySelection = copyMatches && activeSelection.length > 0;
       if (!isTerminalFocused && !canCopySelection) {
         return;
       }
 
-      if (key === "c") {
-        if (!hotkeyPreferences.terminalCopy) {
-          return;
-        }
+      if (copyMatches) {
         event.preventDefault();
-        void copySelectionOrSendInterrupt();
+        void copySelectionOrSendInterrupt(shouldSendInterruptOnCopyHotkey(copyBinding));
         return;
       }
-      if (key === "v") {
-        if (!hotkeyPreferences.terminalPaste) {
-          return;
-        }
+      if (pasteMatches) {
         event.preventDefault();
         void pasteClipboardToTerminal();
         return;
       }
-      if (key === "f") {
-        if (!hotkeyPreferences.terminalSearch) {
-          return;
-        }
+      if (searchMatches) {
         event.preventDefault();
         searchInTerminal();
       }
@@ -599,11 +708,15 @@ export function TerminalWorkspace({
         dataDisposable
       });
 
+      if (tab.id === activeTabId) {
+        terminal.focus();
+      }
+
       setTabStatus(tab.id, { status: "connecting" });
       terminal.writeln(`Connecting to ${tab.title}...`);
       void connectTab(tab);
     }
-  }, [clearReconnectState, connectTab, setTabStatus, tabs, terminalApi]);
+  }, [activeTabId, clearReconnectState, connectTab, setTabStatus, tabs, terminalApi]);
 
   useEffect(() => {
     if (!activeTabId) {
@@ -612,12 +725,13 @@ export function TerminalWorkspace({
 
     const timeout = setTimeout(() => {
       fitTerminal(activeTabId);
+      focusTerminal(activeTabId);
     }, 0);
 
     return () => {
       clearTimeout(timeout);
     };
-  }, [activeTabId, fitTerminal]);
+  }, [activeTabId, fitTerminal, focusTerminal]);
 
   useEffect(() => {
     if (!activeTabId || !stageRef.current) {
@@ -726,8 +840,11 @@ export function TerminalWorkspace({
             className="terminal-context-menu"
             ref={menuRef}
             style={{
-              left: `${Math.max(8, Math.min(contextMenu.x, window.innerWidth - 180))}px`,
-              top: `${Math.max(8, Math.min(contextMenu.y, window.innerHeight - 120))}px`
+              left: `${Math.max(8, Math.min(contextMenu.x, window.innerWidth - 236))}px`,
+              top: `${Math.max(
+                8,
+                Math.min(contextMenu.y, window.innerHeight - (contextActions.length * 26 + 16))
+              )}px`
             }}
           >
             {contextActions.map((action) => {
@@ -764,9 +881,57 @@ function getStatusText(state: TabUiStatus, title: string): string {
   return `${title}: ${state.message ?? "error"}`;
 }
 
+function shouldSendInterruptOnCopyHotkey(binding: HotkeyBindingPreference): boolean {
+  return binding.modifier === "primary" && normalizeHotkeyKey(binding.key) === "c";
+}
+
 function hasPrimaryShortcutModifier(event: KeyboardEvent): boolean {
   const isMac = /mac/i.test(navigator.platform);
   return isMac ? event.metaKey : event.ctrlKey;
+}
+
+function matchesHotkeyBinding(event: KeyboardEvent, binding: HotkeyBindingPreference): boolean {
+  if (!binding.enabled) {
+    return false;
+  }
+
+  const normalizedEventKey = normalizeHotkeyKey(event.key);
+  if (!normalizedEventKey) {
+    return false;
+  }
+  if (normalizedEventKey !== normalizeHotkeyKey(binding.key)) {
+    return false;
+  }
+
+  const requiresPrimary = binding.modifier === "primary" || binding.modifier === "primaryShift";
+  const requiresAlt = binding.modifier === "alt" || binding.modifier === "altShift";
+  const requiresShift = binding.modifier === "primaryShift" || binding.modifier === "altShift";
+  const isMac = /mac/i.test(navigator.platform);
+  const primaryPressed = hasPrimaryShortcutModifier(event);
+  if (primaryPressed !== requiresPrimary) {
+    return false;
+  }
+  if (event.altKey !== requiresAlt) {
+    return false;
+  }
+  if (event.shiftKey !== requiresShift) {
+    return false;
+  }
+
+  // Disallow extra platform modifier beyond the configured "primary" key.
+  if (isMac ? event.ctrlKey : event.metaKey) {
+    return false;
+  }
+
+  return true;
+}
+
+function normalizeHotkeyKey(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length !== 1) {
+    return "";
+  }
+  return normalized.toLowerCase();
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {

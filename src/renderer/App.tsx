@@ -26,6 +26,8 @@ import type {
 import { TerminalWorkspace } from "./components/terminal-workspace";
 import type {
   ConnectionPreferences,
+  HotkeyBindingPreference,
+  HotkeyModifier,
   HotkeyPreferences,
   TerminalTab
 } from "./components/terminal-workspace";
@@ -50,13 +52,24 @@ const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
 };
-const DEFAULT_HOTKEY_PREFERENCES: HotkeyPreferences = {
-  openSessionTab: true,
-  closeActiveTab: true,
-  terminalCopy: true,
-  terminalPaste: true,
-  terminalSearch: true
+type SettingsSectionId = "connection" | "hotkeys" | "serverHealth" | "fileOpening";
+
+type HotkeyActionId = keyof HotkeyPreferences;
+
+type HotkeyModifierOption = {
+  value: HotkeyModifier;
+  label: string;
 };
+
+const HOTKEY_ACTION_ORDER: HotkeyActionId[] = [
+  "openSessionTab",
+  "closeActiveTab",
+  "terminalCopy",
+  "terminalPaste",
+  "terminalSearch"
+];
+
+const HOTKEY_KEY_PLACEHOLDER = "A-Z";
 interface FileOpenPreferences {
   preferredProgramPath: string;
 }
@@ -77,6 +90,26 @@ const DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES: ServerHealthAlertPreferences = {
   memoryWarnPercent: 85,
   diskWarnPercent: 90
 };
+
+function isMacPlatformRuntime(): boolean {
+  return typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+}
+
+function createDefaultHotkeyPreferences(): HotkeyPreferences {
+  const isMac = isMacPlatformRuntime();
+  return {
+    openSessionTab: { enabled: true, modifier: "primary", key: "t" },
+    closeActiveTab: { enabled: true, modifier: "primary", key: "w" },
+    terminalCopy: {
+      enabled: true,
+      modifier: isMac ? "primary" : "alt",
+      key: "c"
+    },
+    terminalPaste: { enabled: true, modifier: "primary", key: "v" },
+    terminalSearch: { enabled: true, modifier: "primary", key: "f" }
+  };
+}
+
 const SERVER_HEALTH_POLL_INTERVAL_MS = 5000;
 const SERVER_PROCESS_POLL_INTERVAL_MS = 10000;
 const SERVER_HEALTH_HISTORY_LIMIT = 24;
@@ -124,10 +157,29 @@ interface SftpContextMenuState {
   entryPath: string | null;
 }
 
+interface SftpToolbarMenuState {
+  x: number;
+  y: number;
+}
+
 interface SftpContextAction {
   id: string;
   label: string;
   disabled?: boolean;
+  run: () => void;
+}
+
+interface SessionContextMenuState {
+  x: number;
+  y: number;
+  sessionId: string;
+}
+
+interface SessionContextAction {
+  id: string;
+  label: string;
+  disabled?: boolean;
+  danger?: boolean;
   run: () => void;
 }
 
@@ -178,6 +230,162 @@ function isEditableTarget(target: EventTarget | null): boolean {
 function hasPrimaryShortcutModifier(event: KeyboardEvent): boolean {
   const isMac = /mac/i.test(navigator.platform);
   return isMac ? event.metaKey : event.ctrlKey;
+}
+
+function isHotkeyModifier(value: unknown): value is HotkeyModifier {
+  return (
+    value === "primary" ||
+    value === "primaryShift" ||
+    value === "alt" ||
+    value === "altShift"
+  );
+}
+
+function normalizeHotkeyKey(rawValue: unknown, fallback: string): string {
+  if (typeof rawValue !== "string") {
+    return fallback;
+  }
+  const normalized = rawValue.trim().slice(0, 1).toLowerCase();
+  return normalized || fallback;
+}
+
+function normalizeEventHotkeyKey(rawValue: string): string {
+  const normalized = rawValue.trim();
+  if (normalized.length !== 1) {
+    return "";
+  }
+  return normalized.toLowerCase();
+}
+
+function parseHotkeyBindingPreference(
+  rawValue: unknown,
+  fallback: HotkeyBindingPreference
+): HotkeyBindingPreference {
+  if (typeof rawValue === "boolean") {
+    return {
+      ...fallback,
+      enabled: rawValue
+    };
+  }
+  if (!rawValue || typeof rawValue !== "object") {
+    return fallback;
+  }
+
+  const candidate = rawValue as Partial<HotkeyBindingPreference>;
+  return {
+    enabled: typeof candidate.enabled === "boolean" ? candidate.enabled : fallback.enabled,
+    modifier: isHotkeyModifier(candidate.modifier) ? candidate.modifier : fallback.modifier,
+    key: normalizeHotkeyKey(candidate.key, fallback.key)
+  };
+}
+
+function matchesHotkeyBinding(event: KeyboardEvent, binding: HotkeyBindingPreference): boolean {
+  if (!binding.enabled) {
+    return false;
+  }
+
+  const key = normalizeEventHotkeyKey(event.key);
+  if (!key || key !== binding.key) {
+    return false;
+  }
+
+  const requiresPrimary = binding.modifier === "primary" || binding.modifier === "primaryShift";
+  const requiresAlt = binding.modifier === "alt" || binding.modifier === "altShift";
+  const requiresShift = binding.modifier === "primaryShift" || binding.modifier === "altShift";
+  const isMac = isMacPlatformRuntime();
+  const primaryPressed = hasPrimaryShortcutModifier(event);
+
+  if (primaryPressed !== requiresPrimary) {
+    return false;
+  }
+  if (event.altKey !== requiresAlt) {
+    return false;
+  }
+  if (event.shiftKey !== requiresShift) {
+    return false;
+  }
+  if (isMac ? event.ctrlKey : event.metaKey) {
+    return false;
+  }
+  return true;
+}
+
+function getHotkeyModifierLabel(modifier: HotkeyModifier, isMacPlatform: boolean): string {
+  const primary = isMacPlatform ? "Cmd" : "Ctrl";
+  const alt = isMacPlatform ? "Option" : "Alt";
+  switch (modifier) {
+    case "primary":
+      return primary;
+    case "primaryShift":
+      return `${primary}+Shift`;
+    case "alt":
+      return alt;
+    case "altShift":
+      return `${alt}+Shift`;
+    default:
+      return primary;
+  }
+}
+
+function formatHotkeyBindingLabel(
+  binding: HotkeyBindingPreference,
+  isMacPlatform: boolean
+): string {
+  const key = binding.key.toUpperCase();
+  return `${getHotkeyModifierLabel(binding.modifier, isMacPlatform)} + ${key}`;
+}
+
+function getHotkeyModifierOptions(isMacPlatform: boolean): HotkeyModifierOption[] {
+  return [
+    {
+      value: "primary",
+      label: isMacPlatform ? "Cmd" : "Ctrl"
+    },
+    {
+      value: "primaryShift",
+      label: isMacPlatform ? "Cmd + Shift" : "Ctrl + Shift"
+    },
+    {
+      value: "alt",
+      label: isMacPlatform ? "Option" : "Alt"
+    },
+    {
+      value: "altShift",
+      label: isMacPlatform ? "Option + Shift" : "Alt + Shift"
+    }
+  ];
+}
+
+function getHotkeyActionDescription(action: HotkeyActionId): string {
+  switch (action) {
+    case "openSessionTab":
+      return "Open selected session in new tab";
+    case "closeActiveTab":
+      return "Close active terminal tab";
+    case "terminalCopy":
+      return "Terminal copy (macOS keeps copy / interrupt behavior; Windows default uses Alt+C)";
+    case "terminalPaste":
+      return "Paste to terminal";
+    case "terminalSearch":
+      return "Search in terminal";
+    default:
+      return action;
+  }
+}
+
+function getSettingsSectionTitle(section: SettingsSectionId): string {
+  switch (section) {
+    case "connection":
+      return "Connection";
+    case "hotkeys":
+      return "Hotkeys";
+    case "serverHealth":
+      return "Server Health Alerts";
+    case "fileOpening":
+      return "File Opening";
+    default:
+      return "Settings";
+  }
 }
 
 function formatSftpSizeForLs(size: number): string {
@@ -452,38 +660,24 @@ function readConnectionPreferences(): ConnectionPreferences {
 
 function readHotkeyPreferences(): HotkeyPreferences {
   if (typeof window === "undefined") {
-    return DEFAULT_HOTKEY_PREFERENCES;
+    return createDefaultHotkeyPreferences();
   }
   try {
     const rawValue = window.localStorage.getItem(HOTKEY_PREFERENCES_STORAGE_KEY);
     if (!rawValue) {
-      return DEFAULT_HOTKEY_PREFERENCES;
+      return createDefaultHotkeyPreferences();
     }
     const parsed = JSON.parse(rawValue) as Partial<HotkeyPreferences>;
+    const defaults = createDefaultHotkeyPreferences();
     return {
-      openSessionTab:
-        typeof parsed.openSessionTab === "boolean"
-          ? parsed.openSessionTab
-          : DEFAULT_HOTKEY_PREFERENCES.openSessionTab,
-      closeActiveTab:
-        typeof parsed.closeActiveTab === "boolean"
-          ? parsed.closeActiveTab
-          : DEFAULT_HOTKEY_PREFERENCES.closeActiveTab,
-      terminalCopy:
-        typeof parsed.terminalCopy === "boolean"
-          ? parsed.terminalCopy
-          : DEFAULT_HOTKEY_PREFERENCES.terminalCopy,
-      terminalPaste:
-        typeof parsed.terminalPaste === "boolean"
-          ? parsed.terminalPaste
-          : DEFAULT_HOTKEY_PREFERENCES.terminalPaste,
-      terminalSearch:
-        typeof parsed.terminalSearch === "boolean"
-          ? parsed.terminalSearch
-          : DEFAULT_HOTKEY_PREFERENCES.terminalSearch
+      openSessionTab: parseHotkeyBindingPreference(parsed.openSessionTab, defaults.openSessionTab),
+      closeActiveTab: parseHotkeyBindingPreference(parsed.closeActiveTab, defaults.closeActiveTab),
+      terminalCopy: parseHotkeyBindingPreference(parsed.terminalCopy, defaults.terminalCopy),
+      terminalPaste: parseHotkeyBindingPreference(parsed.terminalPaste, defaults.terminalPaste),
+      terminalSearch: parseHotkeyBindingPreference(parsed.terminalSearch, defaults.terminalSearch)
     };
   } catch {
-    return DEFAULT_HOTKEY_PREFERENCES;
+    return createDefaultHotkeyPreferences();
   }
 }
 
@@ -623,7 +817,20 @@ export function App() {
   const terminalApi = bridge?.terminal ?? null;
   const sftpApi = bridge?.sftp ?? null;
   const isMacPlatform = /mac/i.test(navigator.platform);
-  const hotkeyModifierLabel = isMacPlatform ? "Cmd" : "Ctrl";
+  const hotkeyModifierOptions = useMemo(
+    () => getHotkeyModifierOptions(isMacPlatform),
+    [isMacPlatform]
+  );
+  const settingsSections = useMemo(
+    () =>
+      [
+        { id: "connection", label: "Connection" },
+        { id: "hotkeys", label: "Hotkeys" },
+        { id: "serverHealth", label: "Monitor" },
+        { id: "fileOpening", label: "File Open" }
+      ] as Array<{ id: SettingsSectionId; label: string }>,
+    []
+  );
 
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [form, setForm] = useState<SessionCreateInput>(EMPTY_FORM);
@@ -638,6 +845,7 @@ export function App() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("connection");
   const [connectionPreferences, setConnectionPreferences] = useState<ConnectionPreferences>(
     () => readConnectionPreferences()
   );
@@ -662,6 +870,8 @@ export function App() {
   const [selectedSftpPath, setSelectedSftpPath] = useState<string | null>(null);
   const [sftpTransfers, setSftpTransfers] = useState<SftpTransferItem[]>([]);
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null);
+  const [sftpToolbarMenu, setSftpToolbarMenu] = useState<SftpToolbarMenuState | null>(null);
+  const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
   const [sftpError, setSftpError] = useState<string | null>(null);
   const [serverHealth, setServerHealth] = useState<ServerHealthSnapshot | null>(null);
   const [serverHealthMetrics, setServerHealthMetrics] = useState<ServerHealthDerivedMetrics | null>(null);
@@ -679,11 +889,17 @@ export function App() {
   const isDrainingUploadQueueRef = useRef(false);
   const ensuredRemoteDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
   const sftpContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const sftpToolbarMenuRef = useRef<HTMLDivElement | null>(null);
+  const sessionContextMenuRef = useRef<HTMLDivElement | null>(null);
   const previousServerHealthRef = useRef<ServerHealthSnapshot | null>(null);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [sessions, selectedSessionId]
+  );
+  const sessionContextTarget = useMemo(
+    () => sessions.find((session) => session.id === sessionContextMenu?.sessionId) ?? null,
+    [sessionContextMenu?.sessionId, sessions]
   );
   const filteredSessions = useMemo(() => {
     const normalizedQuery = sessionFilterQuery.trim().toLowerCase();
@@ -1084,10 +1300,15 @@ export function App() {
     setSftpContextMenu(null);
   }, []);
 
+  const closeSftpToolbarMenu = useCallback(() => {
+    setSftpToolbarMenu(null);
+  }, []);
+
   const openSftpContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLElement>, entry?: SftpEntry) => {
       event.preventDefault();
       event.stopPropagation();
+      closeSftpToolbarMenu();
       if (entry) {
         setSelectedSftpPath(entry.path);
       }
@@ -1097,7 +1318,26 @@ export function App() {
         entryPath: entry?.path ?? null
       });
     },
-    []
+    [closeSftpToolbarMenu]
+  );
+
+  const toggleSftpToolbarMenu = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const triggerRect = event.currentTarget.getBoundingClientRect();
+      closeSftpContextMenu();
+      setSftpToolbarMenu((prev) => {
+        if (prev) {
+          return null;
+        }
+        return {
+          x: Math.round(triggerRect.left),
+          y: Math.round(triggerRect.bottom + 4)
+        };
+      });
+    },
+    [closeSftpContextMenu]
   );
 
   useEffect(() => {
@@ -1197,6 +1437,7 @@ export function App() {
       return;
     }
     const stopListening = appApi.onOpenSettings(() => {
+      setActiveSettingsSection("connection");
       setIsSettingsOpen(true);
     });
     return () => {
@@ -1476,6 +1717,103 @@ export function App() {
   }, [closeSftpContextMenu, sftpContextMenu]);
 
   useEffect(() => {
+    if (!sftpToolbarMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (sftpToolbarMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeSftpToolbarMenu();
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeSftpToolbarMenu();
+      }
+    };
+
+    const onWindowLayoutChange = () => {
+      closeSftpToolbarMenu();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", onWindowLayoutChange);
+    window.addEventListener("scroll", onWindowLayoutChange, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("resize", onWindowLayoutChange);
+      window.removeEventListener("scroll", onWindowLayoutChange, true);
+    };
+  }, [closeSftpToolbarMenu, sftpToolbarMenu]);
+
+  const closeSessionContextMenu = useCallback(() => {
+    setSessionContextMenu(null);
+  }, []);
+
+  const openSessionContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>, sessionId: string) => {
+      event.preventDefault();
+      setSelectedSessionId(sessionId);
+      setSessionContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        sessionId
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!sessionContextMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (sessionContextMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeSessionContextMenu();
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeSessionContextMenu();
+      }
+    };
+
+    const onWindowLayoutChange = () => {
+      closeSessionContextMenu();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", onWindowLayoutChange);
+    window.addEventListener("scroll", onWindowLayoutChange, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("resize", onWindowLayoutChange);
+      window.removeEventListener("scroll", onWindowLayoutChange, true);
+    };
+  }, [closeSessionContextMenu, sessionContextMenu]);
+
+  useEffect(() => {
+    if (!sessionContextMenu) {
+      return;
+    }
+    const exists = sessions.some((session) => session.id === sessionContextMenu.sessionId);
+    if (!exists) {
+      closeSessionContextMenu();
+    }
+  }, [closeSessionContextMenu, sessionContextMenu, sessions]);
+
+  useEffect(() => {
     if (!sftpContextMenu) {
       return;
     }
@@ -1700,20 +2038,16 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!hasPrimaryShortcutModifier(event) || event.altKey) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
       if (isEditableTarget(event.target)) {
         return;
       }
+      const openMatches = matchesHotkeyBinding(event, hotkeyPreferences.openSessionTab);
+      const closeMatches = matchesHotkeyBinding(event, hotkeyPreferences.closeActiveTab);
+      if (!openMatches && !closeMatches) {
+        return;
+      }
 
-      if (key === "t") {
-        if (!hotkeyPreferences.openSessionTab) {
-          event.preventDefault();
-          return;
-        }
+      if (openMatches) {
         if (!selectedSession) {
           return;
         }
@@ -1722,11 +2056,7 @@ export function App() {
         return;
       }
 
-      if (key === "w") {
-        if (!hotkeyPreferences.closeActiveTab) {
-          event.preventDefault();
-          return;
-        }
+      if (closeMatches) {
         if (!activeTabId) {
           return;
         }
@@ -1809,10 +2139,33 @@ export function App() {
     }));
   };
 
-  const setHotkeyPreference = (key: keyof HotkeyPreferences, value: boolean) => {
+  const setHotkeyBindingEnabled = (action: HotkeyActionId, value: boolean) => {
     setHotkeyPreferences((prev) => ({
       ...prev,
-      [key]: value
+      [action]: {
+        ...prev[action],
+        enabled: value
+      }
+    }));
+  };
+
+  const setHotkeyBindingModifier = (action: HotkeyActionId, modifier: HotkeyModifier) => {
+    setHotkeyPreferences((prev) => ({
+      ...prev,
+      [action]: {
+        ...prev[action],
+        modifier
+      }
+    }));
+  };
+
+  const setHotkeyBindingKey = (action: HotkeyActionId, rawValue: string) => {
+    setHotkeyPreferences((prev) => ({
+      ...prev,
+      [action]: {
+        ...prev[action],
+        key: normalizeHotkeyKey(rawValue, prev[action].key)
+      }
     }));
   };
 
@@ -1840,6 +2193,15 @@ export function App() {
       [key]: parseAlertThresholdPercent(parsed, prev[key])
     }));
   };
+
+  const openSettingsPanel = useCallback((section: SettingsSectionId = "connection") => {
+    setActiveSettingsSection(section);
+    setIsSettingsOpen(true);
+  }, []);
+
+  const closeSettingsPanel = useCallback(() => {
+    setIsSettingsOpen(false);
+  }, []);
 
   const copyClashDirectRules = async (session: SessionRecord) => {
     const text = buildClashDirectRules(session);
@@ -2255,8 +2617,136 @@ export function App() {
     action.run();
   };
 
-  const sftpContextActions: SftpContextAction[] = [];
+  const runSessionContextAction = (action: SessionContextAction) => {
+    if (action.disabled) {
+      return;
+    }
+    closeSessionContextMenu();
+    action.run();
+  };
+
+  const runSftpToolbarAction = (action: SftpContextAction) => {
+    if (action.disabled) {
+      return;
+    }
+    closeSftpToolbarMenu();
+    action.run();
+  };
+
+  const sessionContextActions: SessionContextAction[] = [];
+  if (sessionContextTarget) {
+    sessionContextActions.push({
+      id: "open-session",
+      label: "Open Terminal Tab",
+      run: () => {
+        openTerminalTab(sessionContextTarget);
+      }
+    });
+    sessionContextActions.push({
+      id: "toggle-favorite",
+      label: sessionContextTarget.favorite ? "Unfavorite" : "Favorite",
+      run: () => {
+        void patchSession(sessionContextTarget.id, {
+          favorite: !sessionContextTarget.favorite
+        });
+      }
+    });
+    sessionContextActions.push({
+      id: "copy-clash-rules",
+      label: "Copy Clash Direct Rules",
+      run: () => {
+        void copyClashDirectRules(sessionContextTarget);
+      }
+    });
+    sessionContextActions.push({
+      id: "edit-session",
+      label: "Edit Session",
+      run: () => {
+        openEditModal(sessionContextTarget);
+      }
+    });
+    sessionContextActions.push({
+      id: "delete-session",
+      label: "Delete Session",
+      danger: true,
+      run: () => {
+        void removeSession(sessionContextTarget.id);
+      }
+    });
+  }
+
   const isSftpActionDisabled = sftpLoading || sftpActionLoading;
+  const sftpToolbarActions: SftpContextAction[] = [
+    {
+      id: "go-to-path",
+      label: "Go to Path",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void loadSftpDirectory(sftpPath);
+      }
+    },
+    {
+      id: "go-parent",
+      label: "Go Up",
+      disabled: isSftpActionDisabled || !sftpDirectory?.parent,
+      run: () => {
+        if (!sftpDirectory?.parent) {
+          return;
+        }
+        void loadSftpDirectory(sftpDirectory.parent);
+      }
+    },
+    {
+      id: "refresh-directory",
+      label: "Refresh",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
+      }
+    },
+    {
+      id: "new-folder",
+      label: "New Folder",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void createSftpDirectory();
+      }
+    },
+    {
+      id: "upload-file",
+      label: "Upload File",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void uploadLocalFileToSftp();
+      }
+    },
+    {
+      id: "download-selected",
+      label: "Download Selected",
+      disabled: isSftpActionDisabled || !canDownloadSelectedSftpEntry,
+      run: () => {
+        void downloadSelectedSftpEntry();
+      }
+    },
+    {
+      id: "rename-selected",
+      label: "Rename Selected",
+      disabled: isSftpActionDisabled || !selectedSftpEntry,
+      run: () => {
+        void renameSelectedSftpEntry();
+      }
+    },
+    {
+      id: "delete-selected",
+      label: "Delete Selected",
+      disabled: isSftpActionDisabled || !selectedSftpEntry,
+      run: () => {
+        void deleteSelectedSftpEntry();
+      }
+    }
+  ];
+
+  const sftpContextActions: SftpContextAction[] = [];
   if (sftpContextEntry?.kind === "directory") {
     sftpContextActions.push({
       id: "open-directory",
@@ -2379,7 +2869,7 @@ export function App() {
           {!isMacPlatform ? (
             <button
               className="icon-button topbar__settings-button"
-              onClick={() => setIsSettingsOpen(true)}
+              onClick={() => openSettingsPanel("connection")}
               type="button"
             >
               Settings
@@ -2414,103 +2904,17 @@ export function App() {
                     value={sftpPath}
                   />
                   <button
-                    aria-label="Go to path"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading}
-                    onClick={() => {
-                      void loadSftpDirectory(sftpPath);
-                    }}
-                    title="Go to path"
+                    aria-label="SFTP actions"
+                    className="icon-button sftp-toolbar__button sftp-toolbar__button--menu"
+                    onClick={toggleSftpToolbarMenu}
+                    title="SFTP actions"
                     type="button"
                   >
-                    ➜
-                  </button>
-                  <button
-                    aria-label="Go to parent directory"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading || !sftpDirectory?.parent}
-                    onClick={() => {
-                      if (!sftpDirectory?.parent) {
-                        return;
-                      }
-                      void loadSftpDirectory(sftpDirectory.parent);
-                    }}
-                    title="Go up"
-                    type="button"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    aria-label="Refresh current directory"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading}
-                    onClick={() => {
-                      void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
-                    }}
-                    title="Refresh"
-                    type="button"
-                  >
-                    ⟳
-                  </button>
-                  <button
-                    aria-label="Create directory"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading}
-                    onClick={() => {
-                      void createSftpDirectory();
-                    }}
-                    title="New folder"
-                    type="button"
-                  >
-                    📁
-                  </button>
-                  <button
-                    aria-label="Upload file"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading}
-                    onClick={() => {
-                      void uploadLocalFileToSftp();
-                    }}
-                    title="Upload file"
-                    type="button"
-                  >
-                    ⇧
-                  </button>
-                  <button
-                    aria-label="Download selected file"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading || !canDownloadSelectedSftpEntry}
-                    onClick={() => {
-                      void downloadSelectedSftpEntry();
-                    }}
-                    title="Download selected"
-                    type="button"
-                  >
-                    ⇩
-                  </button>
-                  <button
-                    aria-label="Rename selected entry"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading || !selectedSftpEntry}
-                    onClick={() => {
-                      void renameSelectedSftpEntry();
-                    }}
-                    title="Rename selected"
-                    type="button"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    aria-label="Delete selected entry"
-                    className="icon-button icon-button--danger sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading || !selectedSftpEntry}
-                    onClick={() => {
-                      void deleteSelectedSftpEntry();
-                    }}
-                    title="Delete selected"
-                    type="button"
-                  >
-                    🗑
+                    <span className="sftp-toolbar__menu-bars" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
                   </button>
                 </div>
                 <p className="hint sftp-current-path">
@@ -2714,58 +3118,18 @@ export function App() {
                       ? "session-list__item is-selected"
                       : "session-list__item"
                   }
+                  onContextMenu={(event) => openSessionContextMenu(event, session.id)}
                 >
                   <button
                     className="session-list__main"
                     onClick={() => setSelectedSessionId(session.id)}
                     onDoubleClick={() => openTerminalTab(session)}
+                    title={`${session.username}@${session.host}:${session.port}`}
                     type="button"
                   >
                     <span className="session-list__name">{session.name}</span>
-                    <span className="session-list__host">
-                      {session.username}@{session.host}:{session.port}
-                    </span>
+                    <span className="session-list__host">{session.host}</span>
                   </button>
-                  <div className="session-list__actions">
-                    <button
-                      aria-label={session.favorite ? "Unfavorite session" : "Favorite session"}
-                      className="icon-button session-list__action"
-                      onClick={() =>
-                        void patchSession(session.id, { favorite: !session.favorite })
-                      }
-                      title={session.favorite ? "Unfavorite" : "Favorite"}
-                      type="button"
-                    >
-                      {session.favorite ? "★" : "☆"}
-                    </button>
-                    <button
-                      aria-label="Open terminal tab"
-                      className="icon-button session-list__action"
-                      onClick={() => openTerminalTab(session)}
-                      title="Open terminal tab"
-                      type="button"
-                    >
-                      ▶
-                    </button>
-                    <button
-                      aria-label="Edit session"
-                      className="icon-button session-list__action"
-                      onClick={() => openEditModal(session)}
-                      title="Edit session"
-                      type="button"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      aria-label="Delete session"
-                      className="icon-button icon-button--danger session-list__action"
-                      onClick={() => void removeSession(session.id)}
-                      title="Delete session"
-                      type="button"
-                    >
-                      ✕
-                    </button>
-                  </div>
                 </li>
               ))}
             </ul>
@@ -2774,26 +3138,6 @@ export function App() {
           <section className="panel__section">
             <div className="panel__heading">
               <h2>Selected Session</h2>
-              {selectedSession ? (
-                <div className="session-detail-actions">
-                  <button
-                    className="icon-button"
-                    onClick={() => void copyClashDirectRules(selectedSession)}
-                    title="Copy Clash direct rules"
-                    type="button"
-                  >
-                    Clash
-                  </button>
-                  <button
-                    className="icon-button"
-                    onClick={() => openEditModal(selectedSession)}
-                    title="Edit selected session"
-                    type="button"
-                  >
-                    Edit
-                  </button>
-                </div>
-              ) : null}
             </div>
             {selectedSession ? (
               <dl className="session-meta">
@@ -3075,6 +3419,37 @@ export function App() {
         </aside>
       </main>
 
+      {sftpToolbarMenu ? (
+        <div
+          className="sftp-context-menu"
+          onContextMenu={(event) => event.preventDefault()}
+          ref={sftpToolbarMenuRef}
+          style={{
+            left: `${Math.max(8, Math.min(sftpToolbarMenu.x, window.innerWidth - 236))}px`,
+            top: `${Math.max(
+              8,
+              Math.min(sftpToolbarMenu.y, window.innerHeight - (sftpToolbarActions.length * 26 + 16))
+            )}px`
+          }}
+        >
+          {sftpToolbarActions.map((action) => (
+            <button
+              className={
+                action.id === "delete-selected"
+                  ? "sftp-context-menu__item is-danger"
+                  : "sftp-context-menu__item"
+              }
+              disabled={action.disabled}
+              key={action.id}
+              onClick={() => runSftpToolbarAction(action)}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {sftpContextMenu ? (
         <div
           className="sftp-context-menu"
@@ -3099,13 +3474,37 @@ export function App() {
         </div>
       ) : null}
 
+      {sessionContextMenu && sessionContextActions.length > 0 ? (
+        <div
+          className="sftp-context-menu"
+          onContextMenu={(event) => event.preventDefault()}
+          ref={sessionContextMenuRef}
+          style={{
+            left: `${Math.max(8, Math.min(sessionContextMenu.x, window.innerWidth - 236))}px`,
+            top: `${Math.max(8, Math.min(sessionContextMenu.y, window.innerHeight - 196))}px`
+          }}
+        >
+          {sessionContextActions.map((action) => (
+            <button
+              className={action.danger ? "sftp-context-menu__item is-danger" : "sftp-context-menu__item"}
+              disabled={action.disabled}
+              key={action.id}
+              onClick={() => runSessionContextAction(action)}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {isSettingsOpen ? (
         <div
           className="modal-backdrop"
           role="presentation"
         >
           <div
-            className="modal modal--compact"
+            className="modal modal--settings"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -3115,166 +3514,242 @@ export function App() {
               <h3>Settings</h3>
               <button
                 className="icon-button"
-                onClick={() => setIsSettingsOpen(false)}
+                onClick={closeSettingsPanel}
                 type="button"
               >
                 Close
               </button>
             </div>
-            <form className="session-form">
-              <h4 className="settings-group__title">Connection</h4>
-              <label className="settings-checkbox">
-                <input
-                  checked={connectionPreferences.autoReconnect}
-                  onChange={(event) => setAutoReconnect(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>Auto reconnect disconnected tabs</span>
-              </label>
-              <label>
-                Reconnect Delay (seconds)
-                <input
-                  max={60}
-                  min={1}
-                  onChange={(event) => setReconnectDelaySeconds(event.target.value)}
-                  type="number"
-                  value={connectionPreferences.reconnectDelaySeconds}
-                />
-              </label>
-              <p className="hint">
-                Applies when a terminal tab closes unexpectedly. Delay range: 1-60 seconds.
-              </p>
-              <h4 className="settings-group__title">Hotkeys</h4>
-              <label className="settings-checkbox">
-                <input
-                  checked={hotkeyPreferences.openSessionTab}
-                  onChange={(event) => setHotkeyPreference("openSessionTab", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{hotkeyModifierLabel} + T: Open selected session in new tab</span>
-              </label>
-              <label className="settings-checkbox">
-                <input
-                  checked={hotkeyPreferences.closeActiveTab}
-                  onChange={(event) => setHotkeyPreference("closeActiveTab", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{hotkeyModifierLabel} + W: Close active terminal tab</span>
-              </label>
-              <label className="settings-checkbox">
-                <input
-                  checked={hotkeyPreferences.terminalCopy}
-                  onChange={(event) => setHotkeyPreference("terminalCopy", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{hotkeyModifierLabel} + C: Copy selection / send interrupt</span>
-              </label>
-              <label className="settings-checkbox">
-                <input
-                  checked={hotkeyPreferences.terminalPaste}
-                  onChange={(event) => setHotkeyPreference("terminalPaste", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{hotkeyModifierLabel} + V: Paste to terminal</span>
-              </label>
-              <label className="settings-checkbox">
-                <input
-                  checked={hotkeyPreferences.terminalSearch}
-                  onChange={(event) => setHotkeyPreference("terminalSearch", event.target.checked)}
-                  type="checkbox"
-                />
-                <span>{hotkeyModifierLabel} + F: Search in terminal</span>
-              </label>
-              <h4 className="settings-group__title">Server Health Alerts</h4>
-              <label className="settings-checkbox">
-                <input
-                  checked={serverHealthAlertPreferences.enabled}
-                  onChange={(event) => setServerHealthAlertEnabled(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>Enable threshold alerts in monitor panel</span>
-              </label>
-              <div className="settings-threshold-grid">
-                <label>
-                  CPU Alert (%)
-                  <input
-                    disabled={!serverHealthAlertPreferences.enabled}
-                    max={100}
-                    min={50}
-                    onChange={(event) =>
-                      setServerHealthAlertThreshold("cpuWarnPercent", event.target.value)
-                    }
-                    type="number"
-                    value={serverHealthAlertPreferences.cpuWarnPercent}
-                  />
-                </label>
-                <label>
-                  Memory Alert (%)
-                  <input
-                    disabled={!serverHealthAlertPreferences.enabled}
-                    max={100}
-                    min={50}
-                    onChange={(event) =>
-                      setServerHealthAlertThreshold("memoryWarnPercent", event.target.value)
-                    }
-                    type="number"
-                    value={serverHealthAlertPreferences.memoryWarnPercent}
-                  />
-                </label>
-                <label>
-                  Disk Alert (%)
-                  <input
-                    disabled={!serverHealthAlertPreferences.enabled}
-                    max={100}
-                    min={50}
-                    onChange={(event) =>
-                      setServerHealthAlertThreshold("diskWarnPercent", event.target.value)
-                    }
-                    type="number"
-                    value={serverHealthAlertPreferences.diskWarnPercent}
-                  />
-                </label>
-              </div>
-              <p className="hint">
-                Threshold range is 50-100. Alerts are evaluated on each monitor refresh.
-              </p>
-              <h4 className="settings-group__title">File Opening</h4>
-              <label>
-                Open Program (optional)
-                <div className="field-row">
-                  <input
-                    onChange={(event) => setPreferredOpenProgramPath(event.target.value)}
-                    placeholder={
-                      isMacPlatform
-                        ? "/Applications/TextEdit.app"
-                        : "C:\\Program Files\\Notepad++\\notepad++.exe"
-                    }
-                    value={fileOpenPreferences.preferredProgramPath}
-                  />
+            <div className="settings-layout">
+              <div className="settings-nav" aria-label="Settings sections" role="tablist">
+                {settingsSections.map((section) => (
                   <button
-                    className="field-row__action"
-                    onClick={() => {
-                      void pickPreferredOpenProgram();
-                    }}
+                    key={section.id}
+                    className={
+                      activeSettingsSection === section.id
+                        ? "settings-nav__button is-active"
+                        : "settings-nav__button"
+                    }
+                    onClick={() => setActiveSettingsSection(section.id)}
+                    role="tab"
                     type="button"
                   >
-                    Browse
+                    {section.label}
+                  </button>
+                ))}
+              </div>
+              <div className="session-form settings-panel">
+                <div className="settings-panel__header">
+                  <h4 className="settings-group__title">
+                    {getSettingsSectionTitle(activeSettingsSection)}
+                  </h4>
+                </div>
+
+                {activeSettingsSection === "connection" ? (
+                  <>
+                    <label className="settings-checkbox">
+                      <input
+                        checked={connectionPreferences.autoReconnect}
+                        onChange={(event) => setAutoReconnect(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>Auto reconnect disconnected tabs</span>
+                    </label>
+                    <label>
+                      Reconnect Delay (seconds)
+                      <input
+                        max={60}
+                        min={1}
+                        onChange={(event) => setReconnectDelaySeconds(event.target.value)}
+                        type="number"
+                        value={connectionPreferences.reconnectDelaySeconds}
+                      />
+                    </label>
+                    <p className="hint">
+                      Applies when a terminal tab closes unexpectedly. Delay range: 1-60 seconds.
+                    </p>
+                  </>
+                ) : null}
+
+                {activeSettingsSection === "hotkeys" ? (
+                  <>
+                    <div className="settings-hotkey-list">
+                      {HOTKEY_ACTION_ORDER.map((action) => {
+                        const binding = hotkeyPreferences[action];
+                        return (
+                          <div className="settings-hotkey-row" key={action}>
+                            <label className="settings-checkbox settings-hotkey-row__toggle">
+                              <input
+                                checked={binding.enabled}
+                                onChange={(event) =>
+                                  setHotkeyBindingEnabled(action, event.target.checked)
+                                }
+                                type="checkbox"
+                              />
+                              <span className="settings-hotkey-row__label">
+                                <span>{getHotkeyActionDescription(action)}</span>
+                                <span className="settings-hotkey-row__binding-inline hint">
+                                  {binding.enabled
+                                    ? formatHotkeyBindingLabel(binding, isMacPlatform)
+                                    : "Disabled"}
+                                </span>
+                              </span>
+                            </label>
+                            <div className="settings-hotkey-row__controls">
+                              <label>
+                                Modifier
+                                <select
+                                  disabled={!binding.enabled}
+                                  onChange={(event) =>
+                                    setHotkeyBindingModifier(
+                                      action,
+                                      event.target.value as HotkeyModifier
+                                    )
+                                  }
+                                  value={binding.modifier}
+                                >
+                                  {hotkeyModifierOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                Key
+                                <input
+                                  className="settings-hotkey-row__key"
+                                  disabled={!binding.enabled}
+                                  maxLength={1}
+                                  onChange={(event) =>
+                                    setHotkeyBindingKey(action, event.target.value)
+                                  }
+                                  placeholder={HOTKEY_KEY_PLACEHOLDER}
+                                  value={binding.key.toUpperCase()}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="hint">
+                      Windows default terminal copy is <code>Alt + C</code> to avoid conflict
+                      with terminal interrupt (<code>Ctrl + C</code>). macOS keeps the existing
+                      copy shortcut behavior.
+                    </p>
+                    <div className="modal__actions">
+                      <button
+                        className="secondary-button"
+                        onClick={() => setHotkeyPreferences(createDefaultHotkeyPreferences())}
+                        type="button"
+                      >
+                        Reset Hotkeys
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+
+                {activeSettingsSection === "serverHealth" ? (
+                  <>
+                    <label className="settings-checkbox">
+                      <input
+                        checked={serverHealthAlertPreferences.enabled}
+                        onChange={(event) => setServerHealthAlertEnabled(event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>Enable threshold alerts in monitor panel</span>
+                    </label>
+                    <div className="settings-threshold-grid">
+                      <label>
+                        CPU Alert (%)
+                        <input
+                          disabled={!serverHealthAlertPreferences.enabled}
+                          max={100}
+                          min={50}
+                          onChange={(event) =>
+                            setServerHealthAlertThreshold("cpuWarnPercent", event.target.value)
+                          }
+                          type="number"
+                          value={serverHealthAlertPreferences.cpuWarnPercent}
+                        />
+                      </label>
+                      <label>
+                        Memory Alert (%)
+                        <input
+                          disabled={!serverHealthAlertPreferences.enabled}
+                          max={100}
+                          min={50}
+                          onChange={(event) =>
+                            setServerHealthAlertThreshold("memoryWarnPercent", event.target.value)
+                          }
+                          type="number"
+                          value={serverHealthAlertPreferences.memoryWarnPercent}
+                        />
+                      </label>
+                      <label>
+                        Disk Alert (%)
+                        <input
+                          disabled={!serverHealthAlertPreferences.enabled}
+                          max={100}
+                          min={50}
+                          onChange={(event) =>
+                            setServerHealthAlertThreshold("diskWarnPercent", event.target.value)
+                          }
+                          type="number"
+                          value={serverHealthAlertPreferences.diskWarnPercent}
+                        />
+                      </label>
+                    </div>
+                    <p className="hint">
+                      Threshold range is 50-100. Alerts are evaluated on each monitor refresh.
+                    </p>
+                  </>
+                ) : null}
+
+                {activeSettingsSection === "fileOpening" ? (
+                  <>
+                    <label>
+                      Open Program (optional)
+                      <div className="field-row">
+                        <input
+                          onChange={(event) => setPreferredOpenProgramPath(event.target.value)}
+                          placeholder={
+                            isMacPlatform
+                              ? "/Applications/TextEdit.app"
+                              : "C:\\Program Files\\Notepad++\\notepad++.exe"
+                          }
+                          value={fileOpenPreferences.preferredProgramPath}
+                        />
+                        <button
+                          className="field-row__action"
+                          onClick={() => {
+                            void pickPreferredOpenProgram();
+                          }}
+                          type="button"
+                        >
+                          Browse
+                        </button>
+                      </div>
+                    </label>
+                    <p className="hint">
+                      Leave empty to use system default app. Used by SFTP "Open File" and file
+                      double-click.
+                    </p>
+                  </>
+                ) : null}
+
+                <div className="modal__actions settings-panel__footer">
+                  <button
+                    className="primary-button"
+                    onClick={closeSettingsPanel}
+                    type="button"
+                  >
+                    Done
                   </button>
                 </div>
-              </label>
-              <p className="hint">
-                Leave empty to use system default app. Used by SFTP "Open File" and file double-click.
-              </p>
-              <div className="modal__actions">
-                <button
-                  className="primary-button"
-                  onClick={() => setIsSettingsOpen(false)}
-                  type="button"
-                >
-                  Done
-                </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       ) : null}
