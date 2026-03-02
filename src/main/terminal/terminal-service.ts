@@ -89,6 +89,10 @@ export class TerminalService {
   private readonly connections = new Map<string, TerminalConnection>();
   private readonly activeUploadTransfers = new Map<string, ActiveUploadTransfer>();
   private readonly activeDownloadTransfers = new Map<string, ActiveDownloadTransfer>();
+  private readonly pendingUploadCancelKeys = new Set<string>();
+  private readonly pendingUploadCancelIds = new Set<string>();
+  private readonly pendingDownloadCancelKeys = new Set<string>();
+  private readonly pendingDownloadCancelIds = new Set<string>();
 
   constructor(
     private readonly sessionStore: SessionStore,
@@ -374,6 +378,16 @@ export class TerminalService {
     }
 
     this.connections.delete(tabId);
+    for (const key of this.pendingUploadCancelKeys) {
+      if (key.startsWith(`${tabId}:`)) {
+        this.pendingUploadCancelKeys.delete(key);
+      }
+    }
+    for (const key of this.pendingDownloadCancelKeys) {
+      if (key.startsWith(`${tabId}:`)) {
+        this.pendingDownloadCancelKeys.delete(key);
+      }
+    }
     if (connection.mode === "ssh2") {
       connection.shell?.end();
       connection.sftp?.end();
@@ -461,14 +475,19 @@ export class TerminalService {
 
   async deletePath(tabId: string, targetPath: string, kind: SftpEntryKind): Promise<void> {
     const connection = this.getConnectedSsh2Connection(tabId);
-    const sftp = await this.ensureSftp(connection);
     const normalizedTargetPath = normalizeRemotePath(targetPath);
     assertPathIsNotRoot(normalizedTargetPath);
-    if (kind === "directory") {
-      await this.rmdir(sftp, normalizedTargetPath);
-      return;
+    assertPathIsSafeForDelete(normalizedTargetPath);
+    try {
+      if (kind === "directory") {
+        await this.deleteDirectoryViaRemoteCommand(connection, normalizedTargetPath);
+        return;
+      }
+      const sftp = await this.ensureSftp(connection);
+      await this.unlink(sftp, normalizedTargetPath);
+    } catch (error) {
+      throw new Error(toDeletePathErrorMessage(normalizedTargetPath, kind, error));
     }
-    await this.unlink(sftp, normalizedTargetPath);
   }
 
   async uploadFile(
@@ -477,155 +496,55 @@ export class TerminalService {
     localPath: string,
     remoteDirectory: string
   ): Promise<void> {
-    const connection = this.getConnectedSsh2Connection(tabId);
-    const sftp = await this.ensureSftp(connection);
-    const safeTransferId = normalizeTransferId(transferId);
     const normalizedLocalPath = normalizeLocalPath(localPath, "Local upload file path");
+    const normalizedRemoteDirectory = normalizeRemotePath(remoteDirectory);
     const fileName = basenamePath(normalizedLocalPath);
     if (!fileName) {
       throw new Error("Upload file name is invalid.");
     }
-    const localStats = await statLocalFile(normalizedLocalPath);
-    if (!localStats.isFile()) {
-      throw new Error("Upload source must be a file.");
-    }
-
-    const normalizedRemoteDirectory = normalizeRemotePath(remoteDirectory);
     const remotePath = posixPath.join(normalizedRemoteDirectory, fileName);
-    const totalBytes = Math.max(0, localStats.size);
-    const transferKey = toTransferKey(tabId, safeTransferId);
-    if (this.activeUploadTransfers.has(transferKey)) {
-      throw new Error("Upload transfer is already running.");
-    }
-    const activeTransfer: ActiveUploadTransfer = {
+    await this.uploadLocalFileToRemotePath(tabId, transferId, normalizedLocalPath, remotePath);
+  }
+
+  async uploadFileToPath(
+    tabId: string,
+    transferId: string,
+    localPath: string,
+    remotePath: string
+  ): Promise<void> {
+    const normalizedLocalPath = normalizeLocalPath(localPath, "Local upload file path");
+    const normalizedRemotePath = normalizeRemotePath(remotePath);
+    assertPathIsNotRoot(normalizedRemotePath);
+    await this.uploadLocalFileToRemotePath(
       tabId,
-      transferId: safeTransferId,
-      remotePath,
-      canceled: false
-    };
-    this.activeUploadTransfers.set(transferKey, activeTransfer);
-    let transferredBytes = 0;
-
-    try {
-      this.emitTransfer(
-        connection,
-        this.createTransferEvent({
-          tabId,
-          transferId: safeTransferId,
-          direction: "upload",
-          status: "queued",
-          name: fileName,
-          localPath: normalizedLocalPath,
-          remotePath,
-          transferredBytes: 0,
-          totalBytes,
-          message: "queued"
-        })
-      );
-
-      const reportProgress = () => {
-        this.emitTransfer(
-          connection,
-          this.createTransferEvent({
-            tabId,
-            transferId: safeTransferId,
-            direction: "upload",
-            status: "running",
-            name: fileName,
-            localPath: normalizedLocalPath,
-            remotePath,
-            transferredBytes,
-            totalBytes
-          })
-        );
-      };
-
-      reportProgress();
-      const readStream = createReadStream(normalizedLocalPath);
-      const writeStream = sftp.createWriteStream(remotePath);
-      activeTransfer.readStream = readStream;
-      activeTransfer.writeStream = writeStream;
-      if (activeTransfer.canceled) {
-        throw new TransferCanceledError();
-      }
-
-      await this.pipeWithProgress({
-        readStream,
-        writeStream,
-        onChunk: (chunkSize) => {
-          transferredBytes += chunkSize;
-          reportProgress();
-        }
-      });
-      if (activeTransfer.canceled) {
-        throw new TransferCanceledError();
-      }
-      this.emitTransfer(
-        connection,
-        this.createTransferEvent({
-          tabId,
-          transferId: safeTransferId,
-          direction: "upload",
-          status: "completed",
-          name: fileName,
-          localPath: normalizedLocalPath,
-          remotePath,
-          transferredBytes: totalBytes,
-          totalBytes,
-          message: "completed"
-        })
-      );
-    } catch (error) {
-      if (activeTransfer.canceled || error instanceof TransferCanceledError) {
-        await this.unlinkIgnoreMissing(sftp, remotePath);
-        this.emitTransfer(
-          connection,
-          this.createTransferEvent({
-            tabId,
-            transferId: safeTransferId,
-            direction: "upload",
-            status: "canceled",
-            name: fileName,
-            localPath: normalizedLocalPath,
-            remotePath,
-            transferredBytes,
-            totalBytes,
-            message: "canceled"
-          })
-        );
-        return;
-      }
-      this.emitTransfer(
-        connection,
-        this.createTransferEvent({
-          tabId,
-          transferId: safeTransferId,
-          direction: "upload",
-          status: "failed",
-          name: fileName,
-          localPath: normalizedLocalPath,
-          remotePath,
-          transferredBytes,
-          totalBytes,
-          message: (error as Error).message
-        })
-      );
-      throw error;
-    } finally {
-      this.activeUploadTransfers.delete(transferKey);
-    }
+      transferId,
+      normalizedLocalPath,
+      normalizedRemotePath
+    );
   }
 
   async cancelUpload(tabId: string, transferId: string): Promise<boolean> {
     const safeTransferId = normalizeTransferId(transferId);
-    const transfer = this.activeUploadTransfers.get(toTransferKey(tabId, safeTransferId));
+    const transferKey = toTransferKey(tabId, safeTransferId);
+    const transfer =
+      this.activeUploadTransfers.get(transferKey) ??
+      this.findActiveUploadTransferById(safeTransferId);
     if (!transfer) {
-      return false;
+      // Cancel may race with transfer startup; remember intent and consume it when transfer registers.
+      this.pendingUploadCancelKeys.add(transferKey);
+      this.pendingUploadCancelIds.add(safeTransferId);
+      return true;
     }
+    this.pendingUploadCancelKeys.delete(transferKey);
+    this.pendingUploadCancelIds.delete(safeTransferId);
     if (transfer.canceled) {
       return true;
     }
     transfer.canceled = true;
+    if (transfer.readStream && transfer.writeStream) {
+      this.cancelStreamPair(transfer.readStream, transfer.writeStream);
+      return true;
+    }
     const cancelError = new TransferCanceledError();
     this.destroyStream(transfer.readStream, cancelError);
     this.destroyStream(transfer.writeStream, cancelError);
@@ -634,14 +553,26 @@ export class TerminalService {
 
   async cancelDownload(tabId: string, transferId: string): Promise<boolean> {
     const safeTransferId = normalizeTransferId(transferId);
-    const transfer = this.activeDownloadTransfers.get(toTransferKey(tabId, safeTransferId));
+    const transferKey = toTransferKey(tabId, safeTransferId);
+    const transfer =
+      this.activeDownloadTransfers.get(transferKey) ??
+      this.findActiveDownloadTransferById(safeTransferId);
     if (!transfer) {
-      return false;
+      // Cancel may race with transfer startup; remember intent and consume it when transfer registers.
+      this.pendingDownloadCancelKeys.add(transferKey);
+      this.pendingDownloadCancelIds.add(safeTransferId);
+      return true;
     }
+    this.pendingDownloadCancelKeys.delete(transferKey);
+    this.pendingDownloadCancelIds.delete(safeTransferId);
     if (transfer.canceled) {
       return true;
     }
     transfer.canceled = true;
+    if (transfer.readStream && transfer.writeStream) {
+      this.cancelStreamPair(transfer.readStream, transfer.writeStream);
+      return true;
+    }
     const cancelError = new TransferCanceledError();
     this.destroyStream(transfer.readStream, cancelError);
     this.destroyStream(transfer.writeStream, cancelError);
@@ -683,6 +614,9 @@ export class TerminalService {
       canceled: false
     };
     this.activeDownloadTransfers.set(transferKey, activeTransfer);
+    if (this.consumePendingDownloadCancel(transferKey, safeTransferId)) {
+      activeTransfer.canceled = true;
+    }
 
     await mkdirLocalDirectory(dirnamePath(normalizedLocalPath), { recursive: true });
 
@@ -733,6 +667,7 @@ export class TerminalService {
       await this.pipeWithProgress({
         readStream,
         writeStream,
+        isCanceled: () => activeTransfer.canceled,
         onChunk: (chunkSize) => {
           transferredBytes += chunkSize;
           reportProgress();
@@ -794,6 +729,151 @@ export class TerminalService {
       throw error;
     } finally {
       this.activeDownloadTransfers.delete(transferKey);
+    }
+  }
+
+  private async uploadLocalFileToRemotePath(
+    tabId: string,
+    transferId: string,
+    normalizedLocalPath: string,
+    remotePath: string
+  ): Promise<void> {
+    const connection = this.getConnectedSsh2Connection(tabId);
+    const sftp = await this.ensureSftp(connection);
+    const safeTransferId = normalizeTransferId(transferId);
+    const localStats = await statLocalFile(normalizedLocalPath);
+    if (!localStats.isFile()) {
+      throw new Error("Upload source must be a file.");
+    }
+    const fileName = posixPath.basename(remotePath) || basenamePath(normalizedLocalPath);
+    if (!fileName) {
+      throw new Error("Upload file name is invalid.");
+    }
+    const totalBytes = Math.max(0, localStats.size);
+    const transferKey = toTransferKey(tabId, safeTransferId);
+    if (this.activeUploadTransfers.has(transferKey)) {
+      throw new Error("Upload transfer is already running.");
+    }
+    const activeTransfer: ActiveUploadTransfer = {
+      tabId,
+      transferId: safeTransferId,
+      remotePath,
+      canceled: false
+    };
+    this.activeUploadTransfers.set(transferKey, activeTransfer);
+    if (this.consumePendingUploadCancel(transferKey, safeTransferId)) {
+      activeTransfer.canceled = true;
+    }
+    let transferredBytes = 0;
+
+    try {
+      this.emitTransfer(
+        connection,
+        this.createTransferEvent({
+          tabId,
+          transferId: safeTransferId,
+          direction: "upload",
+          status: "queued",
+          name: fileName,
+          localPath: normalizedLocalPath,
+          remotePath,
+          transferredBytes: 0,
+          totalBytes,
+          message: "queued"
+        })
+      );
+
+      const reportProgress = () => {
+        this.emitTransfer(
+          connection,
+          this.createTransferEvent({
+            tabId,
+            transferId: safeTransferId,
+            direction: "upload",
+            status: "running",
+            name: fileName,
+            localPath: normalizedLocalPath,
+            remotePath,
+            transferredBytes,
+            totalBytes
+          })
+        );
+      };
+
+      reportProgress();
+      const readStream = createReadStream(normalizedLocalPath);
+      const writeStream = sftp.createWriteStream(remotePath);
+      activeTransfer.readStream = readStream;
+      activeTransfer.writeStream = writeStream;
+      if (activeTransfer.canceled) {
+        throw new TransferCanceledError();
+      }
+
+      await this.pipeWithProgress({
+        readStream,
+        writeStream,
+        isCanceled: () => activeTransfer.canceled,
+        onChunk: (chunkSize) => {
+          transferredBytes += chunkSize;
+          reportProgress();
+        }
+      });
+      if (activeTransfer.canceled) {
+        throw new TransferCanceledError();
+      }
+      this.emitTransfer(
+        connection,
+        this.createTransferEvent({
+          tabId,
+          transferId: safeTransferId,
+          direction: "upload",
+          status: "completed",
+          name: fileName,
+          localPath: normalizedLocalPath,
+          remotePath,
+          transferredBytes: totalBytes,
+          totalBytes,
+          message: "completed"
+        })
+      );
+    } catch (error) {
+      if (activeTransfer.canceled || error instanceof TransferCanceledError) {
+        await this.unlinkIgnoreMissing(sftp, remotePath);
+        this.emitTransfer(
+          connection,
+          this.createTransferEvent({
+            tabId,
+            transferId: safeTransferId,
+            direction: "upload",
+            status: "canceled",
+            name: fileName,
+            localPath: normalizedLocalPath,
+            remotePath,
+            transferredBytes,
+            totalBytes,
+            message: "canceled"
+          })
+        );
+        return;
+      }
+      this.emitTransfer(
+        connection,
+        this.createTransferEvent({
+          tabId,
+          transferId: safeTransferId,
+          direction: "upload",
+          status: "failed",
+          name: fileName,
+          localPath: normalizedLocalPath,
+          remotePath,
+          transferredBytes,
+          totalBytes,
+          message: (error as Error).message
+        })
+      );
+      throw error;
+    } finally {
+      this.activeUploadTransfers.delete(transferKey);
     }
   }
 
@@ -1036,31 +1116,102 @@ export class TerminalService {
     });
   }
 
-  private destroyStream(stream: NodeJS.ReadableStream | NodeJS.WritableStream | undefined, error: Error): void {
+  private async deleteDirectoryRecursively(
+    sftp: SFTPWrapper,
+    directoryPath: string
+  ): Promise<void> {
+    const rows = await this.readDirectory(sftp, directoryPath);
+    for (const row of rows) {
+      const name = typeof row.filename === "string" ? row.filename.trim() : "";
+      if (!name || name === "." || name === "..") {
+        continue;
+      }
+      const childPath = posixPath.join(directoryPath, name);
+      const kind = detectSftpEntryKind(row.attrs);
+      if (kind === "directory") {
+        await this.deleteDirectoryRecursively(sftp, childPath);
+        continue;
+      }
+      await this.unlink(sftp, childPath);
+    }
+    await this.rmdir(sftp, directoryPath);
+  }
+
+  private async deleteDirectoryViaRemoteCommand(
+    connection: Ssh2TerminalConnection,
+    directoryPath: string
+  ): Promise<void> {
+    const command = buildDeleteDirectoryCommand(directoryPath);
+    try {
+      await this.executeRemoteCommand(
+        connection.client,
+        command,
+        REMOTE_DELETE_DIRECTORY_TIMEOUT_MS
+      );
+      return;
+    } catch (error) {
+      if (!shouldFallbackToSftpDirectoryDelete(error)) {
+        throw error;
+      }
+    }
+    const sftp = await this.ensureSftp(connection);
+    await this.deleteDirectoryRecursively(sftp, directoryPath);
+  }
+
+  private destroyStream(
+    stream: NodeJS.ReadableStream | NodeJS.WritableStream | undefined,
+    error?: Error
+  ): void {
     if (!stream) {
       return;
     }
+    const withEvents = stream as NodeJS.ReadableStream & {
+      once?: (event: "error", listener: (caughtError: Error) => void) => void;
+    };
     const destroyable = stream as NodeJS.ReadableStream & {
       destroy?: (reason?: Error) => void;
     };
-    destroyable.destroy?.(error);
+    try {
+      if (error) {
+        // Keep a local error listener during destroy to avoid uncaught stream errors
+        // when canceling both sides of a pipe nearly simultaneously.
+        withEvents.once?.("error", () => {
+          // Cancellation is expected.
+        });
+        destroyable.destroy?.(error);
+        return;
+      }
+      destroyable.destroy?.();
+    } catch {
+      // Best effort cancellation.
+    }
   }
 
   private async pipeWithProgress(options: {
     readStream: NodeJS.ReadableStream;
     writeStream: NodeJS.WritableStream;
+    isCanceled?: () => boolean;
     onChunk: (chunkSize: number) => void;
   }): Promise<void> {
-    const { readStream, writeStream, onChunk } = options;
+    const { readStream, writeStream, isCanceled, onChunk } = options;
     return new Promise<void>((resolve, reject) => {
       let settled = false;
+      const cancelPollTimer = setInterval(() => {
+        if (!isCanceled?.()) {
+          return;
+        }
+        this.cancelStreamPair(readStream, writeStream);
+        close(new TransferCanceledError());
+      }, 80);
       const close = (error?: Error) => {
         if (settled) {
           return;
         }
         settled = true;
+        clearInterval(cancelPollTimer);
         readStream.removeListener("data", onData);
         readStream.removeListener("error", onReadError);
+        readStream.removeListener("close", onReadClose);
         writeStream.removeListener("error", onWriteError);
         writeStream.removeListener("finish", onDone);
         writeStream.removeListener("close", onDone);
@@ -1071,6 +1222,11 @@ export class TerminalService {
         resolve();
       };
       const onData = (chunk: Buffer | string) => {
+        if (isCanceled?.()) {
+          this.cancelStreamPair(readStream, writeStream);
+          close(new TransferCanceledError());
+          return;
+        }
         if (typeof chunk === "string") {
           onChunk(Buffer.byteLength(chunk));
           return;
@@ -1079,6 +1235,11 @@ export class TerminalService {
       };
       const onReadError = (error: Error) => {
         close(error);
+      };
+      const onReadClose = () => {
+        if (isCanceled?.()) {
+          close(new TransferCanceledError());
+        }
       };
       const onWriteError = (error: Error) => {
         close(error);
@@ -1089,11 +1250,75 @@ export class TerminalService {
 
       readStream.on("data", onData);
       readStream.once("error", onReadError);
+      readStream.once("close", onReadClose);
       writeStream.once("error", onWriteError);
       writeStream.once("finish", onDone);
       writeStream.once("close", onDone);
+      if (isCanceled?.()) {
+        this.cancelStreamPair(readStream, writeStream);
+        close(new TransferCanceledError());
+        return;
+      }
       readStream.pipe(writeStream);
     });
+  }
+
+  private cancelStreamPair(readStream: NodeJS.ReadableStream, writeStream: NodeJS.WritableStream): void {
+    const readable = readStream as NodeJS.ReadableStream & {
+      unpipe?: (destination?: NodeJS.WritableStream) => void;
+      pause?: () => void;
+    };
+    const writable = writeStream as NodeJS.WritableStream & {
+      end?: () => void;
+    };
+    try {
+      readable.unpipe?.(writeStream);
+    } catch {
+      // Best effort.
+    }
+    try {
+      readable.pause?.();
+    } catch {
+      // Best effort.
+    }
+    try {
+      writable.end?.();
+    } catch {
+      // Best effort.
+    }
+    const cancelError = new TransferCanceledError();
+    this.destroyStream(readStream, cancelError);
+    this.destroyStream(writeStream, cancelError);
+  }
+
+  private findActiveUploadTransferById(transferId: string): ActiveUploadTransfer | undefined {
+    for (const transfer of this.activeUploadTransfers.values()) {
+      if (transfer.transferId === transferId) {
+        return transfer;
+      }
+    }
+    return undefined;
+  }
+
+  private findActiveDownloadTransferById(transferId: string): ActiveDownloadTransfer | undefined {
+    for (const transfer of this.activeDownloadTransfers.values()) {
+      if (transfer.transferId === transferId) {
+        return transfer;
+      }
+    }
+    return undefined;
+  }
+
+  private consumePendingUploadCancel(transferKey: string, transferId: string): boolean {
+    const byKey = this.pendingUploadCancelKeys.delete(transferKey);
+    const byId = this.pendingUploadCancelIds.delete(transferId);
+    return byKey || byId;
+  }
+
+  private consumePendingDownloadCancel(transferKey: string, transferId: string): boolean {
+    const byKey = this.pendingDownloadCancelKeys.delete(transferKey);
+    const byId = this.pendingDownloadCancelIds.delete(transferId);
+    return byKey || byId;
   }
 
   private toSftpEntry(parentPath: string, row: FileEntryWithStats): SftpEntry {
@@ -1207,6 +1432,8 @@ const SERVER_PROCESS_COMMAND = [
   "(command -v systemctl >/dev/null 2>&1 && systemctl --failed --no-legend --no-pager --plain 2>/dev/null | head -n 8) || true",
   "echo '__TD_END__'"
 ].join("; ");
+
+const REMOTE_DELETE_DIRECTORY_TIMEOUT_MS = 30 * 60_000;
 
 type ServerHealthSectionName =
   | "__TD_HOST__"
@@ -1587,6 +1814,42 @@ function normalizeEntryName(name: string, label: string): string {
     throw new Error(`${label} cannot contain "/".`);
   }
   return trimmed;
+}
+
+function toDeletePathErrorMessage(targetPath: string, kind: SftpEntryKind, error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : String(error ?? "").trim();
+  const subject = kind === "directory" ? "directory" : "path";
+  if (!message || /^failure\.?$/i.test(message)) {
+    return `Failed to delete ${subject} "${targetPath}". Server returned a generic failure (possible permissions, lock, or unsupported entry type).`;
+  }
+  return `Failed to delete ${subject} "${targetPath}": ${message}`;
+}
+
+function assertPathIsSafeForDelete(targetPath: string): void {
+  const trimmed = targetPath.trim();
+  if (!trimmed) {
+    throw new Error("Delete path is required.");
+  }
+  if (trimmed === "." || trimmed === "..") {
+    throw new Error("Refusing to delete current or parent directory.");
+  }
+}
+
+function buildDeleteDirectoryCommand(directoryPath: string): string {
+  return `rm -rf -- ${toPosixShellSingleQuoted(directoryPath)}`;
+}
+
+function toPosixShellSingleQuoted(value: string): string {
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+function shouldFallbackToSftpDirectoryDelete(error: unknown): boolean {
+  const message = (error as Error)?.message?.toLowerCase?.() ?? String(error ?? "").toLowerCase();
+  return (
+    message.includes("not found") ||
+    message.includes("unknown command") ||
+    message.includes("not recognized")
+  );
 }
 
 function assertPathIsNotRoot(targetPath: string): void {

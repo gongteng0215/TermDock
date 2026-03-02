@@ -30,8 +30,25 @@ interface TermDockApi {
     pickPrivateKey: () => Promise<string | null>;
     pickUploadFile: () => Promise<string | null>;
     pickDownloadTarget: (defaultName: string) => Promise<string | null>;
+    pickDownloadDirectory: (defaultName?: string) => Promise<string | null>;
     pickOpenProgram: () => Promise<string | null>;
+    readClipboardText: () => Promise<string>;
+    writeClipboardText: (value: string) => Promise<void>;
     createTempOpenFilePath: (defaultName: string) => Promise<string>;
+    prepareRemoteOpenFile: (
+      tabId: string,
+      remotePath: string,
+      defaultName: string
+    ) => Promise<{
+      localPath: string;
+      alreadyOpen: boolean;
+    }>;
+    enableRemoteFileAutoSync: (
+      tabId: string,
+      remotePath: string,
+      localPath: string
+    ) => Promise<void>;
+    disposeRemoteOpenFiles: (tabId?: string | null) => Promise<void>;
     openLocalPath: (localPath: string, preferredProgramPath?: string | null) => Promise<void>;
     expandUploadPaths: (
       inputPaths: string[]
@@ -41,6 +58,14 @@ interface TermDockApi {
         relativeDirectory: string;
       }>
     >;
+    scanLocalPathEntries: (
+      inputPath: string
+    ) => Promise<{
+      kind: "file" | "directory" | "other" | "missing";
+      path: string;
+      files: string[];
+      directories: string[];
+    }>;
     getPathForDroppedFile: (file: File) => Promise<string | null>;
   };
   terminal: {

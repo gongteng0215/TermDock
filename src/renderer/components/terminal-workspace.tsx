@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { X } from "lucide-react";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "xterm";
@@ -40,6 +41,7 @@ interface TerminalWorkspaceProps {
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onError: (message: string) => void;
+  systemApi: Window["termdock"]["system"] | null;
   terminalApi: Window["termdock"]["terminal"] | null;
   connectionPreferences: ConnectionPreferences;
   hotkeyPreferences: HotkeyPreferences;
@@ -81,12 +83,14 @@ export function TerminalWorkspace({
   onSelectTab,
   onCloseTab,
   onError,
+  systemApi,
   terminalApi,
   connectionPreferences,
   hotkeyPreferences
 }: TerminalWorkspaceProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
   const containerRefs = useRef(new Map<string, HTMLDivElement>());
   const terminalRefs = useRef(new Map<string, TerminalInstance>());
   const searchStateRef = useRef(new Map<string, TerminalSearchState>());
@@ -96,6 +100,9 @@ export function TerminalWorkspace({
   const tabStatusesRef = useRef<Record<string, TabUiStatus>>({});
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabUiStatus>>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
+  const [searchDialogTabId, setSearchDialogTabId] = useState<string | null>(null);
+  const [searchDialogQuery, setSearchDialogQuery] = useState("");
 
   const tabsById = useMemo(() => {
     return new Map(tabs.map((tab) => [tab.id, tab]));
@@ -286,7 +293,9 @@ export function TerminalWorkspace({
     const selection = instance.terminal.getSelection();
     if (selection) {
       try {
-        if (navigator.clipboard?.writeText) {
+        if (systemApi?.writeClipboardText) {
+          await systemApi.writeClipboardText(selection);
+        } else if (navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(selection);
         } else {
           throw new Error("Clipboard API unavailable.");
@@ -303,7 +312,7 @@ export function TerminalWorkspace({
     }
 
     void terminalApi.write(tabId, "\u0003");
-  }, [activeTabId, onError, terminalApi]);
+  }, [activeTabId, onError, systemApi, terminalApi]);
 
   const pasteClipboardToTerminal = useCallback(async (targetTabId?: string) => {
     const tabId = targetTabId ?? activeTabId;
@@ -316,10 +325,14 @@ export function TerminalWorkspace({
     }
 
     try {
-      if (!navigator.clipboard?.readText) {
+      let text = "";
+      if (systemApi?.readClipboardText) {
+        text = await systemApi.readClipboardText();
+      } else if (navigator.clipboard?.readText) {
+        text = await navigator.clipboard.readText();
+      } else {
         throw new Error("Clipboard API unavailable.");
       }
-      const text = await navigator.clipboard.readText();
       if (!text) {
         return;
       }
@@ -328,47 +341,79 @@ export function TerminalWorkspace({
     } catch {
       onError("Paste failed. Clipboard permission may be blocked.");
     }
-  }, [activeTabId, onError, terminalApi]);
+  }, [activeTabId, onError, systemApi, terminalApi]);
 
-  const searchInTerminal = useCallback((targetTabId?: string) => {
-    const tabId = targetTabId ?? activeTabId;
-    if (!tabId) {
-      return;
-    }
-    const instance = terminalRefs.current.get(tabId) ?? null;
-    if (!instance) {
-      return;
-    }
+  const runSearchInTerminal = useCallback(
+    (tabId: string, rawQuery: string) => {
+      const instance = terminalRefs.current.get(tabId) ?? null;
+      if (!instance) {
+        return;
+      }
+      const query = rawQuery.trim();
+      if (!query) {
+        return;
+      }
 
-    const previous = searchStateRef.current.get(tabId);
-    const rawQuery = window.prompt("Find in terminal", previous?.query ?? "");
-    if (!rawQuery) {
-      return;
-    }
-    const query = rawQuery.trim();
-    if (!query) {
-      return;
-    }
+      const previous = searchStateRef.current.get(tabId);
+      const from =
+        previous && previous.query === query
+          ? { row: previous.row, column: previous.column + 1 }
+          : undefined;
+      const match = findTerminalMatch(instance.terminal, query, from);
+      if (!match) {
+        onError(`No terminal match for "${query}".`);
+        return;
+      }
 
-    const from =
-      previous && previous.query === query
-        ? { row: previous.row, column: previous.column + 1 }
-        : undefined;
-    const match = findTerminalMatch(instance.terminal, query, from);
-    if (!match) {
-      onError(`No terminal match for "${query}".`);
-      return;
-    }
+      instance.terminal.select(match.column, match.row, query.length);
+      instance.terminal.scrollToLine(Math.max(0, match.row - Math.floor(instance.terminal.rows / 2)));
+      instance.terminal.focus();
+      searchStateRef.current.set(tabId, {
+        query,
+        row: match.row,
+        column: match.column
+      });
+    },
+    [onError]
+  );
 
-    instance.terminal.select(match.column, match.row, query.length);
-    instance.terminal.scrollToLine(Math.max(0, match.row - Math.floor(instance.terminal.rows / 2)));
-    instance.terminal.focus();
-    searchStateRef.current.set(tabId, {
-      query,
-      row: match.row,
-      column: match.column
-    });
-  }, [activeTabId, onError]);
+  const closeSearchDialog = useCallback(() => {
+    setIsSearchDialogOpen(false);
+    setSearchDialogTabId(null);
+  }, []);
+
+  const submitSearchDialog = useCallback(
+    (event?: FormEvent<HTMLFormElement>) => {
+      if (event) {
+        event.preventDefault();
+      }
+      if (!searchDialogTabId) {
+        closeSearchDialog();
+        return;
+      }
+      runSearchInTerminal(searchDialogTabId, searchDialogQuery);
+      closeSearchDialog();
+    },
+    [closeSearchDialog, runSearchInTerminal, searchDialogQuery, searchDialogTabId]
+  );
+
+  const searchInTerminal = useCallback(
+    (targetTabId?: string) => {
+      const tabId = targetTabId ?? activeTabId;
+      if (!tabId) {
+        return;
+      }
+      if (!terminalRefs.current.has(tabId)) {
+        return;
+      }
+      const previous = searchStateRef.current.get(tabId);
+      setSearchDialogQuery(previous?.query ?? "");
+      setSearchDialogTabId(tabId);
+      setIsSearchDialogOpen(true);
+      closeContextMenu();
+    },
+    [activeTabId, closeContextMenu]
+  );
 
   const interruptTerminal = useCallback(
     (tabId: string) => {
@@ -585,6 +630,49 @@ export function TerminalWorkspace({
   }, [closeContextMenu, contextMenu, tabsById]);
 
   useEffect(() => {
+    if (!isSearchDialogOpen) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      const input = searchDialogInputRef.current;
+      if (!input) {
+        return;
+      }
+      input.focus();
+      input.select();
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isSearchDialogOpen]);
+
+  useEffect(() => {
+    if (!isSearchDialogOpen) {
+      return;
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      closeSearchDialog();
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [closeSearchDialog, isSearchDialogOpen]);
+
+  useEffect(() => {
+    if (!isSearchDialogOpen) {
+      return;
+    }
+    if (!searchDialogTabId || !tabsById.has(searchDialogTabId)) {
+      closeSearchDialog();
+    }
+  }, [closeSearchDialog, isSearchDialogOpen, searchDialogTabId, tabsById]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!activeTabId) {
         return;
@@ -641,9 +729,9 @@ export function TerminalWorkspace({
       }
     };
 
-    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [
     activeTabId,
@@ -808,7 +896,7 @@ export function TerminalWorkspace({
                 onCloseTab(tab.id);
               }}
             >
-              ×
+              <X aria-hidden="true" className="ui-icon tab__close-icon" strokeWidth={2} />
             </span>
           </button>
         ))}
@@ -877,6 +965,46 @@ export function TerminalWorkspace({
           </div>
         ) : null}
       </div>
+      {isSearchDialogOpen ? (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeSearchDialog();
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="modal modal--compact app-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Find in Terminal"
+          >
+            <div className="modal__header">
+              <h3>Find in Terminal</h3>
+            </div>
+            <p className="app-dialog__message">Enter text to search in the current terminal tab.</p>
+            <form className="app-dialog" onSubmit={submitSearchDialog}>
+              <input
+                className="app-dialog__input"
+                onChange={(event) => setSearchDialogQuery(event.target.value)}
+                ref={searchDialogInputRef}
+                value={searchDialogQuery}
+              />
+              <div className="modal__actions">
+                <button className="secondary-button" onClick={closeSearchDialog} type="button">
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit">
+                  Find
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -912,7 +1040,7 @@ function matchesHotkeyBinding(event: KeyboardEvent, binding: HotkeyBindingPrefer
     return false;
   }
 
-  const normalizedEventKey = normalizeHotkeyKey(event.key);
+  const normalizedEventKey = normalizeEventHotkeyKey(event);
   if (!normalizedEventKey) {
     return false;
   }
@@ -949,6 +1077,14 @@ function normalizeHotkeyKey(value: string): string {
     return "";
   }
   return normalized.toLowerCase();
+}
+
+function normalizeEventHotkeyKey(event: KeyboardEvent): string {
+  const code = event.code.trim();
+  if (/^Key[A-Z]$/.test(code)) {
+    return code.slice(3).toLowerCase();
+  }
+  return normalizeHotkeyKey(event.key);
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -1021,3 +1157,4 @@ function scanBufferForMatch(
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+

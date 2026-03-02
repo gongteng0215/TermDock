@@ -39,6 +39,7 @@ function createWindow(): void {
     minHeight: 640,
     title: "TermDock",
     titleBarStyle: isMac ? "hiddenInset" : "default",
+    autoHideMenuBar: !isMac,
     backgroundColor: "#0b0e12",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
@@ -50,7 +51,14 @@ function createWindow(): void {
     windowOptions.icon = runtimeWindowIconPath;
   }
   const mainWindow = new BrowserWindow(windowOptions);
-  setupApplicationMenu(mainWindow);
+  if (isMac) {
+    setupApplicationMenu(mainWindow);
+  } else {
+    Menu.setApplicationMenu(null);
+    mainWindow.setMenu(null);
+    mainWindow.setAutoHideMenuBar(true);
+    mainWindow.setMenuBarVisibility(false);
+  }
   mainWindow.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedURL) => {
@@ -151,7 +159,7 @@ async function bootstrap(): Promise<void> {
 
   const terminalService = new TerminalService(sessionStore, credentialStore);
   registerSessionHandlers(sessionStore, credentialStore);
-  registerSystemHandlers();
+  registerSystemHandlers(terminalService);
   registerTerminalHandlers(terminalService);
   registerSftpHandlers(terminalService);
 

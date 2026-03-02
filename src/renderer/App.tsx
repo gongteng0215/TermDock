@@ -9,6 +9,20 @@ import {
   useState
 } from "react";
 
+import {
+  ArrowUp,
+  ChevronLeft,
+  Download,
+  Menu,
+  Minus,
+  Plus,
+  RefreshCw,
+  Settings,
+  Upload,
+  X
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
 import type {
   SessionCreateInput,
   SessionRecord,
@@ -39,6 +53,7 @@ const EMPTY_FORM: SessionCreateInput = {
   username: "",
   authType: "password",
   privateKeyPath: "",
+  groupId: "",
   remark: "",
   favorite: false,
   secret: ""
@@ -47,12 +62,19 @@ const EMPTY_FORM: SessionCreateInput = {
 const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
+const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
+const SESSION_GROUPS_STORAGE_KEY = "termdock.session-groups.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
 };
-type SettingsSectionId = "connection" | "hotkeys" | "serverHealth" | "fileOpening";
+type SettingsSectionId =
+  | "connection"
+  | "hotkeys"
+  | "serverHealth"
+  | "fileOpening"
+  | "sftp";
 
 type HotkeyActionId = keyof HotkeyPreferences;
 
@@ -74,6 +96,15 @@ interface FileOpenPreferences {
   preferredProgramPath: string;
 }
 
+interface SftpTransferPreferences {
+  uploadConcurrency: number;
+  downloadConcurrency: number;
+}
+
+interface SessionGroupsState {
+  groups: string[];
+}
+
 interface ServerHealthAlertPreferences {
   enabled: boolean;
   cpuWarnPercent: number;
@@ -83,6 +114,10 @@ interface ServerHealthAlertPreferences {
 
 const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
   preferredProgramPath: ""
+};
+const DEFAULT_SFTP_TRANSFER_PREFERENCES: SftpTransferPreferences = {
+  uploadConcurrency: 2,
+  downloadConcurrency: 2
 };
 const DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES: ServerHealthAlertPreferences = {
   enabled: true,
@@ -98,12 +133,12 @@ function isMacPlatformRuntime(): boolean {
 function createDefaultHotkeyPreferences(): HotkeyPreferences {
   const isMac = isMacPlatformRuntime();
   if (!isMac) {
-    // Windows: avoid Ctrl conflicts with terminal SIGINT and avoid common Alt menu mnemonics.
+    // Windows: keep open/close/search on Alt and use Alt+C / Alt+V for terminal clipboard.
     return {
       openSessionTab: { enabled: true, modifier: "alt", key: "t" },
       closeActiveTab: { enabled: true, modifier: "altShift", key: "w" },
       terminalCopy: { enabled: true, modifier: "alt", key: "c" },
-      terminalPaste: { enabled: true, modifier: "altShift", key: "v" },
+      terminalPaste: { enabled: true, modifier: "alt", key: "v" },
       terminalSearch: { enabled: true, modifier: "altShift", key: "f" }
     };
   }
@@ -126,6 +161,7 @@ const SERVER_HEALTH_HISTORY_LIMIT = 24;
 
 interface SftpTransferItem extends SftpTransferEvent {
   updatedAt: number;
+  batchId?: string;
 }
 
 interface ServerHealthDerivedMetrics {
@@ -148,17 +184,20 @@ interface ServerHealthHistoryPoint {
 interface PendingUploadJob {
   tabId: string;
   transferId: string;
+  batchId: string;
   localPath: string;
   remoteDirectory: string;
   remotePath: string;
   name: string;
 }
 
-const UPLOAD_MAX_CONCURRENCY = 2;
-
-interface LocalUploadPathEntry {
+interface PendingDownloadJob {
+  tabId: string;
+  transferId: string;
+  batchId: string;
   localPath: string;
-  relativeDirectory: string;
+  remotePath: string;
+  name: string;
 }
 
 interface SftpContextMenuState {
@@ -182,7 +221,26 @@ interface SftpContextAction {
 interface SessionContextMenuState {
   x: number;
   y: number;
-  sessionId: string;
+  target:
+    | {
+        type: "session";
+        sessionId: string;
+      }
+    | {
+        type: "group";
+        groupKey: string;
+        groupName: string;
+        label: string;
+      }
+    | {
+        type: "group-root";
+      }
+    | {
+        type: "group-view";
+        groupKey: string;
+        groupName: string;
+        label: string;
+      };
 }
 
 interface SessionContextAction {
@@ -191,6 +249,85 @@ interface SessionContextAction {
   disabled?: boolean;
   danger?: boolean;
   run: () => void;
+}
+
+type AppDialogMode = "alert" | "confirm" | "prompt";
+
+interface AppDialogBaseState {
+  mode: AppDialogMode;
+  title: string;
+  message: string;
+  confirmLabel: string;
+}
+
+interface AppAlertDialogState extends AppDialogBaseState {
+  mode: "alert";
+  detailText?: string;
+}
+
+interface AppConfirmDialogState extends AppDialogBaseState {
+  mode: "confirm";
+  cancelLabel: string;
+  danger?: boolean;
+}
+
+interface AppPromptDialogState extends AppDialogBaseState {
+  mode: "prompt";
+  cancelLabel: string;
+  value: string;
+  multiline?: boolean;
+}
+
+type AppDialogState = AppAlertDialogState | AppConfirmDialogState | AppPromptDialogState;
+
+interface AppAlertDialogOptions {
+  title?: string;
+  confirmLabel?: string;
+  detailText?: string;
+}
+
+interface AppConfirmDialogOptions {
+  title?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+}
+
+interface AppPromptDialogOptions {
+  title?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  multiline?: boolean;
+}
+
+type UiIconName =
+  | "settings"
+  | "refresh"
+  | "chevronLeft"
+  | "arrowUp"
+  | "upload"
+  | "download"
+  | "menu"
+  | "close"
+  | "plus"
+  | "minus";
+
+const UI_ICONS: Record<UiIconName, LucideIcon> = {
+  settings: Settings,
+  refresh: RefreshCw,
+  chevronLeft: ChevronLeft,
+  arrowUp: ArrowUp,
+  upload: Upload,
+  download: Download,
+  menu: Menu,
+  close: X,
+  plus: Plus,
+  minus: Minus
+};
+
+function UiIcon({ name }: { name: UiIconName }) {
+  const Icon = UI_ICONS[name];
+  return <Icon aria-hidden="true" className="ui-icon" strokeWidth={1.9} />;
 }
 
 function getSafeTabInstance(value: unknown): number {
@@ -259,8 +396,12 @@ function normalizeHotkeyKey(rawValue: unknown, fallback: string): string {
   return normalized || fallback;
 }
 
-function normalizeEventHotkeyKey(rawValue: string): string {
-  const normalized = rawValue.trim();
+function normalizeEventHotkeyKey(event: KeyboardEvent): string {
+  const code = event.code.trim();
+  if (/^Key[A-Z]$/.test(code)) {
+    return code.slice(3).toLowerCase();
+  }
+  const normalized = event.key.trim();
   if (normalized.length !== 1) {
     return "";
   }
@@ -312,12 +453,46 @@ function isLegacyWindowsPrimaryHotkeyDefaults(preferences: HotkeyPreferences): b
   );
 }
 
+function isLegacyWindowsAltClipboardHotkeyDefaults(preferences: HotkeyPreferences): boolean {
+  if (isMacPlatformRuntime()) {
+    return false;
+  }
+  const sharedOpenCloseSearch =
+    preferences.openSessionTab.enabled &&
+    preferences.openSessionTab.modifier === "alt" &&
+    preferences.openSessionTab.key === "t" &&
+    preferences.closeActiveTab.enabled &&
+    preferences.closeActiveTab.modifier === "altShift" &&
+    preferences.closeActiveTab.key === "w" &&
+    preferences.terminalSearch.enabled &&
+    preferences.terminalSearch.modifier === "altShift" &&
+    preferences.terminalSearch.key === "f";
+  if (!sharedOpenCloseSearch) {
+    return false;
+  }
+  const isOldAltShiftPaste =
+    preferences.terminalCopy.enabled &&
+    preferences.terminalCopy.modifier === "alt" &&
+    preferences.terminalCopy.key === "c" &&
+    preferences.terminalPaste.enabled &&
+    preferences.terminalPaste.modifier === "altShift" &&
+    preferences.terminalPaste.key === "v";
+  const isOldCtrlShiftClipboard =
+    preferences.terminalCopy.enabled &&
+    preferences.terminalCopy.modifier === "primaryShift" &&
+    preferences.terminalCopy.key === "c" &&
+    preferences.terminalPaste.enabled &&
+    preferences.terminalPaste.modifier === "primaryShift" &&
+    preferences.terminalPaste.key === "v";
+  return isOldAltShiftPaste || isOldCtrlShiftClipboard;
+}
+
 function matchesHotkeyBinding(event: KeyboardEvent, binding: HotkeyBindingPreference): boolean {
   if (!binding.enabled) {
     return false;
   }
 
-  const key = normalizeEventHotkeyKey(event.key);
+  const key = normalizeEventHotkeyKey(event);
   if (!key || key !== binding.key) {
     return false;
   }
@@ -396,7 +571,7 @@ function getHotkeyActionDescription(action: HotkeyActionId): string {
     case "closeActiveTab":
       return "Close active terminal tab";
     case "terminalCopy":
-      return "Terminal copy (macOS keeps copy / interrupt behavior; Windows default uses Alt+C)";
+      return "Terminal copy (Windows defaults to Alt+C; macOS keeps Cmd+C behavior)";
     case "terminalPaste":
       return "Paste to terminal";
     case "terminalSearch":
@@ -416,6 +591,8 @@ function getSettingsSectionTitle(section: SettingsSectionId): string {
       return "Server Health Alerts";
     case "fileOpening":
       return "File Opening";
+    case "sftp":
+      return "SFTP Transfers";
     default:
       return "Settings";
   }
@@ -513,6 +690,28 @@ function normalizeRelativeDirectoryPath(pathValue: string): string {
     return normalized.slice(1);
   }
   return normalized;
+}
+
+function sanitizeLocalPathSegment(segment: string): string {
+  const normalized = typeof segment === "string" ? segment.trim() : "";
+  const sanitized = normalized
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .trim();
+  return sanitized || "unnamed";
+}
+
+function joinLocalPath(basePath: string, relativePath: string): string {
+  const normalizedBase = basePath.replace(/[\\/]+$/g, "");
+  const normalizedRelative = relativePath
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter((segment) => segment.length > 0)
+    .join("/");
+  if (!normalizedRelative) {
+    return normalizedBase;
+  }
+  return `${normalizedBase}/${normalizedRelative}`;
 }
 
 function formatTransferBytes(bytes: number): string {
@@ -662,6 +861,39 @@ function parseReconnectDelaySeconds(value: unknown): number {
   return Math.min(60, Math.max(1, Math.trunc(value)));
 }
 
+function parseTransferConcurrency(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(8, Math.max(1, Math.trunc(value)));
+}
+
+function normalizeSessionGroupName(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeSessionGroups(values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const groups: string[] = [];
+  for (const rawValue of values) {
+    const normalized = normalizeSessionGroupName(rawValue);
+    if (!normalized) {
+      continue;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    groups.push(normalized);
+  }
+  groups.sort((left, right) => left.localeCompare(right));
+  return groups;
+}
+
 function parseAlertThresholdPercent(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
@@ -709,7 +941,10 @@ function readHotkeyPreferences(): HotkeyPreferences {
       terminalPaste: parseHotkeyBindingPreference(parsed.terminalPaste, defaults.terminalPaste),
       terminalSearch: parseHotkeyBindingPreference(parsed.terminalSearch, defaults.terminalSearch)
     };
-    if (isLegacyWindowsPrimaryHotkeyDefaults(nextPreferences)) {
+    if (
+      isLegacyWindowsPrimaryHotkeyDefaults(nextPreferences) ||
+      isLegacyWindowsAltClipboardHotkeyDefaults(nextPreferences)
+    ) {
       return createDefaultHotkeyPreferences();
     }
     return nextPreferences;
@@ -736,6 +971,49 @@ function readFileOpenPreferences(): FileOpenPreferences {
     };
   } catch {
     return DEFAULT_FILE_OPEN_PREFERENCES;
+  }
+}
+
+function readSftpTransferPreferences(): SftpTransferPreferences {
+  if (typeof window === "undefined") {
+    return DEFAULT_SFTP_TRANSFER_PREFERENCES;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY);
+    if (!rawValue) {
+      return DEFAULT_SFTP_TRANSFER_PREFERENCES;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<SftpTransferPreferences>;
+    return {
+      uploadConcurrency: parseTransferConcurrency(
+        parsed.uploadConcurrency,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency
+      ),
+      downloadConcurrency: parseTransferConcurrency(
+        parsed.downloadConcurrency,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
+      )
+    };
+  } catch {
+    return DEFAULT_SFTP_TRANSFER_PREFERENCES;
+  }
+}
+
+function readSessionGroupsState(): SessionGroupsState {
+  if (typeof window === "undefined") {
+    return { groups: [] };
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SESSION_GROUPS_STORAGE_KEY);
+    if (!rawValue) {
+      return { groups: [] };
+    }
+    const parsed = JSON.parse(rawValue) as Partial<SessionGroupsState>;
+    return {
+      groups: normalizeSessionGroups(parsed.groups)
+    };
+  } catch {
+    return { groups: [] };
   }
 }
 
@@ -782,6 +1060,7 @@ function toFormFromSession(session: SessionRecord): SessionCreateInput {
     username: session.username,
     authType: session.authType,
     privateKeyPath: session.privateKeyPath ?? "",
+    groupId: session.groupId ?? "",
     remark: session.remark ?? "",
     favorite: session.favorite,
     secret: ""
@@ -828,6 +1107,11 @@ function buildClashDirectRules(session: SessionRecord): string {
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
+  const systemApi = window.termdock?.system;
+  if (systemApi?.writeClipboardText) {
+    await systemApi.writeClipboardText(text);
+    return true;
+  }
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
     return true;
@@ -864,7 +1148,8 @@ export function App() {
         { id: "connection", label: "Connection" },
         { id: "hotkeys", label: "Hotkeys" },
         { id: "serverHealth", label: "Monitor" },
-        { id: "fileOpening", label: "File Open" }
+        { id: "fileOpening", label: "File Open" },
+        { id: "sftp", label: "SFTP" }
       ] as Array<{ id: SettingsSectionId; label: string }>,
     []
   );
@@ -874,6 +1159,7 @@ export function App() {
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [activeSessionGroupKey, setActiveSessionGroupKey] = useState<string | null>(null);
   const [sessionFilterQuery, setSessionFilterQuery] = useState("");
   const [sessionFavoritesOnly, setSessionFavoritesOnly] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -891,6 +1177,12 @@ export function App() {
   );
   const [fileOpenPreferences, setFileOpenPreferences] = useState<FileOpenPreferences>(
     () => readFileOpenPreferences()
+  );
+  const [sftpTransferPreferences, setSftpTransferPreferences] = useState<SftpTransferPreferences>(
+    () => readSftpTransferPreferences()
+  );
+  const [sessionGroupsState, setSessionGroupsState] = useState<SessionGroupsState>(
+    () => readSessionGroupsState()
   );
   const [serverHealthAlertPreferences, setServerHealthAlertPreferences] = useState<ServerHealthAlertPreferences>(
     () => readServerHealthAlertPreferences()
@@ -910,6 +1202,10 @@ export function App() {
   const [sftpToolbarMenu, setSftpToolbarMenu] = useState<SftpToolbarMenuState | null>(null);
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
   const [sftpError, setSftpError] = useState<string | null>(null);
+  const [sftpDeleteProgress, setSftpDeleteProgress] = useState<{
+    name: string;
+    kind: SftpEntry["kind"];
+  } | null>(null);
   const [serverHealth, setServerHealth] = useState<ServerHealthSnapshot | null>(null);
   const [serverHealthMetrics, setServerHealthMetrics] = useState<ServerHealthDerivedMetrics | null>(null);
   const [serverHealthHistory, setServerHealthHistory] = useState<ServerHealthHistoryPoint[]>([]);
@@ -922,22 +1218,51 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const connectedTabIdsRef = useRef<Set<string>>(new Set());
   const uploadQueueRef = useRef<PendingUploadJob[]>([]);
-  const runningUploadIdsRef = useRef<Set<string>>(new Set());
+  const runningUploadIdsRef = useRef<Map<string, string>>(new Map());
   const isDrainingUploadQueueRef = useRef(false);
+  const downloadQueueRef = useRef<PendingDownloadJob[]>([]);
+  const runningDownloadIdsRef = useRef<Map<string, string>>(new Map());
+  const isDrainingDownloadQueueRef = useRef(false);
   const ensuredRemoteDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
+  const openingRemoteFilesRef = useRef<Set<string>>(new Set());
   const sftpContextMenuRef = useRef<HTMLDivElement | null>(null);
   const sftpToolbarMenuRef = useRef<HTMLDivElement | null>(null);
   const sessionContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const appDialogInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const appDialogResolverRef = useRef<((value: unknown) => void) | null>(null);
+  const appDialogCancelValueRef = useRef<unknown>(undefined);
   const previousServerHealthRef = useRef<ServerHealthSnapshot | null>(null);
+  const uploadBatchNoticeRef = useRef<Set<string>>(new Set());
+  const downloadBatchNoticeRef = useRef<Set<string>>(new Set());
+  const canceledUploadBatchIdsRef = useRef<Set<string>>(new Set());
+  const canceledDownloadBatchIdsRef = useRef<Set<string>>(new Set());
+  const [uploadBatchByTab, setUploadBatchByTab] = useState<
+    Record<string, { batchId: string; total: number }>
+  >({});
+  const [downloadBatchByTab, setDownloadBatchByTab] = useState<
+    Record<string, { batchId: string; total: number }>
+  >({});
+  const [appDialog, setAppDialog] = useState<AppDialogState | null>(null);
+  const [appDialogInput, setAppDialogInput] = useState("");
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [sessions, selectedSessionId]
   );
   const sessionContextTarget = useMemo(
-    () => sessions.find((session) => session.id === sessionContextMenu?.sessionId) ?? null,
-    [sessionContextMenu?.sessionId, sessions]
+    () =>
+      sessionContextMenu?.target.type === "session"
+        ? sessions.find((session) => session.id === sessionContextMenu.target.sessionId) ?? null
+        : null,
+    [sessionContextMenu, sessions]
   );
+  const sessionGroupOptions = useMemo(() => {
+    const allGroups = [
+      ...sessionGroupsState.groups,
+      ...sessions.map((session) => session.groupId ?? "")
+    ];
+    return normalizeSessionGroups(allGroups);
+  }, [sessionGroupsState.groups, sessions]);
   const filteredSessions = useMemo(() => {
     const normalizedQuery = sessionFilterQuery.trim().toLowerCase();
     const filtered = sessions.filter((session) => {
@@ -952,18 +1277,177 @@ export function App() {
         session.host,
         session.username,
         String(session.port),
+        session.groupId ?? "",
         session.remark ?? ""
       ].some((value) => value.toLowerCase().includes(normalizedQuery));
     });
     filtered.sort(compareSessionRecency);
     return filtered;
   }, [sessionFavoritesOnly, sessionFilterQuery, sessions]);
+  const groupedSessions = useMemo(() => {
+    const sessionsByGroup = new Map<string, SessionRecord[]>();
+    for (const session of filteredSessions) {
+      const groupValue = session.groupId?.trim() ?? "";
+      const groupKey = groupValue || "__ungrouped__";
+      const existingSessions = sessionsByGroup.get(groupKey);
+      if (existingSessions) {
+        existingSessions.push(session);
+      } else {
+        sessionsByGroup.set(groupKey, [session]);
+      }
+    }
+
+    const groups: Array<{
+      key: string;
+      label: string;
+      groupName: string;
+      sessions: SessionRecord[];
+    }> = [];
+    const seenGroupKeys = new Set<string>();
+    const appendGroup = (groupKey: string, label: string, groupName: string) => {
+      if (seenGroupKeys.has(groupKey)) {
+        return;
+      }
+      seenGroupKeys.add(groupKey);
+      groups.push({
+        key: groupKey,
+        label,
+        groupName,
+        sessions: sessionsByGroup.get(groupKey) ?? []
+      });
+    };
+
+    for (const groupName of sessionGroupOptions) {
+      appendGroup(groupName, groupName, groupName);
+    }
+
+    for (const groupKey of sessionsByGroup.keys()) {
+      if (groupKey === "__ungrouped__") {
+        continue;
+      }
+      appendGroup(groupKey, groupKey, groupKey);
+    }
+
+    const hasUngroupedInAllSessions = sessions.some(
+      (session) => (session.groupId?.trim() ?? "") === ""
+    );
+    if (sessionsByGroup.has("__ungrouped__") || hasUngroupedInAllSessions) {
+      appendGroup("__ungrouped__", "Ungrouped", "");
+    }
+
+    groups.sort((left, right) => {
+      if (left.key === "__ungrouped__" && right.key !== "__ungrouped__") {
+        return 1;
+      }
+      if (left.key !== "__ungrouped__" && right.key === "__ungrouped__") {
+        return -1;
+      }
+      return left.label.localeCompare(right.label, undefined, { sensitivity: "base" });
+    });
+    return groups;
+  }, [filteredSessions, sessionGroupOptions, sessions]);
   const sessionBadgeText = useMemo(() => {
     if (filteredSessions.length === sessions.length) {
       return `${sessions.length}`;
     }
     return `${filteredSessions.length}/${sessions.length}`;
   }, [filteredSessions.length, sessions.length]);
+  const activeSessionGroup = useMemo(() => {
+    if (!activeSessionGroupKey) {
+      return null;
+    }
+    return groupedSessions.find((group) => group.key === activeSessionGroupKey) ?? null;
+  }, [activeSessionGroupKey, groupedSessions]);
+  const activeGroupSessions = activeSessionGroup?.sessions ?? [];
+  const resolveAppDialog = useCallback((result: unknown) => {
+    const resolver = appDialogResolverRef.current;
+    appDialogResolverRef.current = null;
+    appDialogCancelValueRef.current = undefined;
+    setAppDialog(null);
+    setAppDialogInput("");
+    if (resolver) {
+      resolver(result);
+    }
+  }, []);
+  const openAppDialog = useCallback(
+    (dialog: AppDialogState, cancelResult: unknown): Promise<unknown> => {
+      if (appDialogResolverRef.current) {
+        appDialogResolverRef.current(appDialogCancelValueRef.current);
+      }
+      appDialogCancelValueRef.current = cancelResult;
+      setAppDialog(dialog);
+      setAppDialogInput(dialog.mode === "prompt" ? dialog.value : "");
+      return new Promise((resolve) => {
+        appDialogResolverRef.current = resolve;
+      });
+    },
+    []
+  );
+  const showAppAlert = useCallback(
+    async (message: string, options?: AppAlertDialogOptions): Promise<void> => {
+      const dialog: AppAlertDialogState = {
+        mode: "alert",
+        title: options?.title ?? "Notice",
+        message,
+        confirmLabel: options?.confirmLabel ?? "OK",
+        detailText: options?.detailText
+      };
+      await openAppDialog(dialog, undefined);
+    },
+    [openAppDialog]
+  );
+  const showAppConfirm = useCallback(
+    async (message: string, options?: AppConfirmDialogOptions): Promise<boolean> => {
+      const dialog: AppConfirmDialogState = {
+        mode: "confirm",
+        title: options?.title ?? "Confirm",
+        message,
+        confirmLabel: options?.confirmLabel ?? "Confirm",
+        cancelLabel: options?.cancelLabel ?? "Cancel",
+        danger: options?.danger
+      };
+      const result = await openAppDialog(dialog, false);
+      return result === true;
+    },
+    [openAppDialog]
+  );
+  const showAppPrompt = useCallback(
+    async (
+      message: string,
+      defaultValue = "",
+      options?: AppPromptDialogOptions
+    ): Promise<string | null> => {
+      const dialog: AppPromptDialogState = {
+        mode: "prompt",
+        title: options?.title ?? "Input Required",
+        message,
+        confirmLabel: options?.confirmLabel ?? "OK",
+        cancelLabel: options?.cancelLabel ?? "Cancel",
+        value: defaultValue,
+        multiline: options?.multiline
+      };
+      const result = await openAppDialog(dialog, null);
+      return typeof result === "string" ? result : null;
+    },
+    [openAppDialog]
+  );
+  const closeAppDialog = useCallback(() => {
+    resolveAppDialog(appDialogCancelValueRef.current);
+  }, [resolveAppDialog]);
+  const submitAppDialog = useCallback(() => {
+    if (!appDialog) {
+      return;
+    }
+    if (appDialog.mode === "confirm") {
+      resolveAppDialog(true);
+      return;
+    }
+    if (appDialog.mode === "prompt") {
+      resolveAppDialog(appDialogInput);
+      return;
+    }
+    resolveAppDialog(undefined);
+  }, [appDialog, appDialogInput, resolveAppDialog]);
   const editingSession = useMemo(
     () => sessions.find((session) => session.id === editingSessionId) ?? null,
     [editingSessionId, sessions]
@@ -985,31 +1469,173 @@ export function App() {
     }
     return sftpDirectory.entries.find((entry) => entry.path === sftpContextMenu.entryPath) ?? null;
   }, [sftpContextMenu?.entryPath, sftpDirectory]);
-  const activeSftpTransfers = useMemo(() => {
+  const activeUploadTransfers = useMemo(() => {
     if (!activeTabId) {
       return [];
     }
     return sftpTransfers
-      .filter((transfer) => transfer.tabId === activeTabId)
-      .slice(0, 8);
+      .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "upload")
+      .slice(0, 10);
+  }, [activeTabId, sftpTransfers]);
+  const activeDownloadTransfers = useMemo(() => {
+    if (!activeTabId) {
+      return [];
+    }
+    return sftpTransfers
+      .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "download")
+      .slice(0, 10);
   }, [activeTabId, sftpTransfers]);
   const activeUploadQueueStats = useMemo(() => {
     if (!activeTabId) {
       return {
+        total: 0,
         queued: 0,
-        running: 0
+        running: 0,
+        completed: 0,
+        failed: 0,
+        canceled: 0
       };
     }
     const tabTransfers = sftpTransfers.filter(
       (transfer) => transfer.tabId === activeTabId && transfer.direction === "upload"
     );
     return {
+      total: tabTransfers.length,
       queued: tabTransfers.filter((transfer) => transfer.status === "queued").length,
-      running: tabTransfers.filter((transfer) => transfer.status === "running").length
+      running: tabTransfers.filter((transfer) => transfer.status === "running").length,
+      completed: tabTransfers.filter((transfer) => transfer.status === "completed").length,
+      failed: tabTransfers.filter((transfer) => transfer.status === "failed").length,
+      canceled: tabTransfers.filter((transfer) => transfer.status === "canceled").length
     };
   }, [activeTabId, sftpTransfers]);
+  const activeUploadBatchProgress = useMemo(() => {
+    if (!activeTabId) {
+      return null;
+    }
+    const batch = uploadBatchByTab[activeTabId];
+    if (!batch) {
+      return null;
+    }
+    const batchTransfers = sftpTransfers.filter(
+      (transfer) =>
+        transfer.tabId === activeTabId &&
+        transfer.direction === "upload" &&
+        transfer.batchId === batch.batchId
+    );
+    const completed = batchTransfers.filter((transfer) => transfer.status === "completed").length;
+    const failed = batchTransfers.filter((transfer) => transfer.status === "failed").length;
+    const canceled = batchTransfers.filter((transfer) => transfer.status === "canceled").length;
+    const queued = batchTransfers.filter((transfer) => transfer.status === "queued").length;
+    const running = batchTransfers.filter((transfer) => transfer.status === "running").length;
+    const processed = completed + failed + canceled;
+    return {
+      ...batch,
+      completed,
+      failed,
+      canceled,
+      queued,
+      running,
+      processed,
+      done: batch.total > 0 && processed >= batch.total
+    };
+  }, [activeTabId, sftpTransfers, uploadBatchByTab]);
+  const activeUploadProgressStats = useMemo(() => {
+    if (activeUploadBatchProgress) {
+      return {
+        completed: activeUploadBatchProgress.completed,
+        total: activeUploadBatchProgress.total,
+        failed: activeUploadBatchProgress.failed,
+        canceled: activeUploadBatchProgress.canceled,
+        running: activeUploadBatchProgress.running,
+        queued: activeUploadBatchProgress.queued
+      };
+    }
+    return {
+      completed: activeUploadQueueStats.completed,
+      total: activeUploadQueueStats.total,
+      failed: activeUploadQueueStats.failed,
+      canceled: activeUploadQueueStats.canceled,
+      running: activeUploadQueueStats.running,
+      queued: activeUploadQueueStats.queued
+    };
+  }, [activeUploadBatchProgress, activeUploadQueueStats]);
+  const activeDownloadQueueStats = useMemo(() => {
+    if (!activeTabId) {
+      return {
+        total: 0,
+        queued: 0,
+        running: 0,
+        completed: 0,
+        failed: 0,
+        canceled: 0
+      };
+    }
+    const tabTransfers = sftpTransfers.filter(
+      (transfer) => transfer.tabId === activeTabId && transfer.direction === "download"
+    );
+    return {
+      total: tabTransfers.length,
+      queued: tabTransfers.filter((transfer) => transfer.status === "queued").length,
+      running: tabTransfers.filter((transfer) => transfer.status === "running").length,
+      completed: tabTransfers.filter((transfer) => transfer.status === "completed").length,
+      failed: tabTransfers.filter((transfer) => transfer.status === "failed").length,
+      canceled: tabTransfers.filter((transfer) => transfer.status === "canceled").length
+    };
+  }, [activeTabId, sftpTransfers]);
+  const activeDownloadBatchProgress = useMemo(() => {
+    if (!activeTabId) {
+      return null;
+    }
+    const batch = downloadBatchByTab[activeTabId];
+    if (!batch) {
+      return null;
+    }
+    const batchTransfers = sftpTransfers.filter(
+      (transfer) =>
+        transfer.tabId === activeTabId &&
+        transfer.direction === "download" &&
+        transfer.batchId === batch.batchId
+    );
+    const completed = batchTransfers.filter((transfer) => transfer.status === "completed").length;
+    const failed = batchTransfers.filter((transfer) => transfer.status === "failed").length;
+    const canceled = batchTransfers.filter((transfer) => transfer.status === "canceled").length;
+    const queued = batchTransfers.filter((transfer) => transfer.status === "queued").length;
+    const running = batchTransfers.filter((transfer) => transfer.status === "running").length;
+    const processed = completed + failed + canceled;
+    return {
+      ...batch,
+      completed,
+      failed,
+      canceled,
+      queued,
+      running,
+      processed,
+      done: batch.total > 0 && processed >= batch.total
+    };
+  }, [activeTabId, downloadBatchByTab, sftpTransfers]);
+  const activeDownloadProgressStats = useMemo(() => {
+    if (activeDownloadBatchProgress) {
+      return {
+        completed: activeDownloadBatchProgress.completed,
+        total: activeDownloadBatchProgress.total,
+        failed: activeDownloadBatchProgress.failed,
+        canceled: activeDownloadBatchProgress.canceled,
+        running: activeDownloadBatchProgress.running,
+        queued: activeDownloadBatchProgress.queued
+      };
+    }
+    return {
+      completed: activeDownloadQueueStats.completed,
+      total: activeDownloadQueueStats.total,
+      failed: activeDownloadQueueStats.failed,
+      canceled: activeDownloadQueueStats.canceled,
+      running: activeDownloadQueueStats.running,
+      queued: activeDownloadQueueStats.queued
+    };
+  }, [activeDownloadBatchProgress, activeDownloadQueueStats]);
   const canDownloadSelectedSftpEntry =
-    !!selectedSftpEntry && selectedSftpEntry.kind !== "directory";
+    !!selectedSftpEntry &&
+    (selectedSftpEntry.kind === "file" || selectedSftpEntry.kind === "directory");
   const sftpSummary = useMemo(() => {
     const entries = sftpDirectory?.entries ?? [];
     let fileCount = 0;
@@ -1068,12 +1694,15 @@ export function App() {
     };
   }, [serverHealthAlertPreferences, serverHealthMetrics]);
 
-  const applySftpTransferEvent = useCallback((event: SftpTransferEvent) => {
+  const applySftpTransferEvent = useCallback((event: SftpTransferEvent & { batchId?: string }) => {
     setSftpTransfers((prev) => {
       const nextItem: SftpTransferItem = {
         ...event,
         updatedAt: Date.now()
       };
+      if (event.batchId !== undefined) {
+        nextItem.batchId = event.batchId;
+      }
       const existingIndex = prev.findIndex(
         (transfer) => transfer.transferId === event.transferId
       );
@@ -1081,10 +1710,14 @@ export function App() {
         return [nextItem, ...prev].slice(0, 160);
       }
       const next = [...prev];
-      next[existingIndex] = {
+      const mergedItem: SftpTransferItem = {
         ...next[existingIndex],
         ...nextItem
       };
+      if (event.batchId === undefined && next[existingIndex].batchId !== undefined) {
+        mergedItem.batchId = next[existingIndex].batchId;
+      }
+      next[existingIndex] = mergedItem;
       next.sort((left, right) => right.updatedAt - left.updatedAt);
       return next;
     });
@@ -1137,7 +1770,7 @@ export function App() {
     }
     isDrainingUploadQueueRef.current = true;
     try {
-      while (runningUploadIdsRef.current.size < UPLOAD_MAX_CONCURRENCY) {
+      while (runningUploadIdsRef.current.size < sftpTransferPreferences.uploadConcurrency) {
         const nextIndex = uploadQueueRef.current.findIndex((job) =>
           connectedTabIdsRef.current.has(job.tabId)
         );
@@ -1145,7 +1778,7 @@ export function App() {
           break;
         }
         const [nextJob] = uploadQueueRef.current.splice(nextIndex, 1);
-        runningUploadIdsRef.current.add(nextJob.transferId);
+        runningUploadIdsRef.current.set(nextJob.transferId, nextJob.tabId);
         void (async () => {
           await ensureRemoteDirectoryForUpload(nextJob.tabId, nextJob.remoteDirectory);
           await sftpApi.uploadFile(
@@ -1164,6 +1797,7 @@ export function App() {
                 transferId: nextJob.transferId,
                 direction: "upload",
                 status: "failed",
+                batchId: nextJob.batchId,
                 name: nextJob.name,
                 localPath: nextJob.localPath,
                 remotePath: nextJob.remotePath,
@@ -1181,7 +1815,63 @@ export function App() {
     } finally {
       isDrainingUploadQueueRef.current = false;
     }
-  }, [applySftpTransferEvent, ensureRemoteDirectoryForUpload, sftpApi]);
+  }, [
+    applySftpTransferEvent,
+    ensureRemoteDirectoryForUpload,
+    sftpApi,
+    sftpTransferPreferences.uploadConcurrency
+  ]);
+
+  const drainDownloadQueue = useCallback(() => {
+    if (!sftpApi || isDrainingDownloadQueueRef.current) {
+      return;
+    }
+    isDrainingDownloadQueueRef.current = true;
+    try {
+      while (runningDownloadIdsRef.current.size < sftpTransferPreferences.downloadConcurrency) {
+        const nextIndex = downloadQueueRef.current.findIndex((job) =>
+          connectedTabIdsRef.current.has(job.tabId)
+        );
+        if (nextIndex < 0) {
+          break;
+        }
+        const [nextJob] = downloadQueueRef.current.splice(nextIndex, 1);
+        runningDownloadIdsRef.current.set(nextJob.transferId, nextJob.tabId);
+        void sftpApi
+          .downloadFile(
+            nextJob.tabId,
+            nextJob.transferId,
+            nextJob.remotePath,
+            nextJob.localPath
+          )
+          .catch((caughtError) => {
+            const message = (caughtError as Error)?.message ?? "Download failed.";
+            if (!isTransferCanceledMessage(message)) {
+              setSftpError(message);
+              applySftpTransferEvent({
+                tabId: nextJob.tabId,
+                transferId: nextJob.transferId,
+                direction: "download",
+                status: "failed",
+                batchId: nextJob.batchId,
+                name: nextJob.name,
+                localPath: nextJob.localPath,
+                remotePath: nextJob.remotePath,
+                transferredBytes: 0,
+                totalBytes: 0,
+                message
+              });
+            }
+          })
+          .finally(() => {
+            runningDownloadIdsRef.current.delete(nextJob.transferId);
+            drainDownloadQueue();
+          });
+      }
+    } finally {
+      isDrainingDownloadQueueRef.current = false;
+    }
+  }, [applySftpTransferEvent, sftpApi, sftpTransferPreferences.downloadConcurrency]);
 
   const loadSftpDirectory = useCallback(
     async (
@@ -1461,6 +2151,30 @@ export function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
+        SFTP_TRANSFER_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(sftpTransferPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sftpTransferPreferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SESSION_GROUPS_STORAGE_KEY,
+        JSON.stringify({
+          groups: normalizeSessionGroups(sessionGroupsState.groups)
+        } satisfies SessionGroupsState)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sessionGroupsState.groups]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
         SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY,
         JSON.stringify(serverHealthAlertPreferences)
       );
@@ -1616,6 +2330,7 @@ export function App() {
         if (event.status === "connected") {
           connectedTabIdsRef.current.add(event.tabId);
           drainUploadQueue();
+          drainDownloadQueue();
           const tab = terminalTabs.find((item) => item.id === event.tabId);
           if (tab) {
             const connectedAt = new Date().toISOString();
@@ -1672,6 +2387,7 @@ export function App() {
     };
   }, [
     activeTabId,
+    drainDownloadQueue,
     drainUploadQueue,
     isServerHealthDetailOpen,
     loadSftpDirectory,
@@ -1717,6 +2433,68 @@ export function App() {
       stopListening();
     };
   }, [activeTabId, applySftpTransferEvent, loadSftpDirectory, sftpApi, sftpDirectory?.cwd]);
+
+  useEffect(() => {
+    if (!activeTabId || !activeUploadBatchProgress || !activeUploadBatchProgress.done) {
+      return;
+    }
+    const batchId = activeUploadBatchProgress.batchId;
+    if (uploadBatchNoticeRef.current.has(batchId)) {
+      return;
+    }
+    uploadBatchNoticeRef.current.add(batchId);
+    const { completed, failed, canceled, total } = activeUploadBatchProgress;
+    const detailParts = [`${completed}/${total} completed`];
+    if (failed > 0) {
+      detailParts.push(`${failed} failed`);
+    }
+    if (canceled > 0) {
+      detailParts.push(`${canceled} canceled`);
+    }
+    void showAppAlert(`Upload batch finished: ${detailParts.join(", ")}.`, {
+      title: "Upload Summary"
+    });
+    setUploadBatchByTab((prev) => {
+      const current = prev[activeTabId];
+      if (!current || current.batchId !== batchId) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[activeTabId];
+      return next;
+    });
+  }, [activeTabId, activeUploadBatchProgress, showAppAlert]);
+
+  useEffect(() => {
+    if (!activeTabId || !activeDownloadBatchProgress || !activeDownloadBatchProgress.done) {
+      return;
+    }
+    const batchId = activeDownloadBatchProgress.batchId;
+    if (downloadBatchNoticeRef.current.has(batchId)) {
+      return;
+    }
+    downloadBatchNoticeRef.current.add(batchId);
+    const { completed, failed, canceled, total } = activeDownloadBatchProgress;
+    const detailParts = [`${completed}/${total} completed`];
+    if (failed > 0) {
+      detailParts.push(`${failed} failed`);
+    }
+    if (canceled > 0) {
+      detailParts.push(`${canceled} canceled`);
+    }
+    void showAppAlert(`Download batch finished: ${detailParts.join(", ")}.`, {
+      title: "Download Summary"
+    });
+    setDownloadBatchByTab((prev) => {
+      const current = prev[activeTabId];
+      if (!current || current.batchId !== batchId) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[activeTabId];
+      return next;
+    });
+  }, [activeDownloadBatchProgress, activeTabId, showAppAlert]);
 
   useEffect(() => {
     if (!sftpContextMenu) {
@@ -1793,16 +2571,43 @@ export function App() {
   }, []);
 
   const openSessionContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>, sessionId: string) => {
+    (event: ReactMouseEvent<HTMLElement>, target: SessionContextMenuState["target"]) => {
       event.preventDefault();
-      setSelectedSessionId(sessionId);
+      event.stopPropagation();
+      if (target.type === "session") {
+        setSelectedSessionId(target.sessionId);
+      }
       setSessionContextMenu({
         x: event.clientX,
         y: event.clientY,
-        sessionId
+        target
       });
     },
     []
+  );
+
+  const openSessionBlankContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "button, input, textarea, select, a, label, .session-list__item, .session-folder-list__item"
+        )
+      ) {
+        return;
+      }
+      if (activeSessionGroup) {
+        openSessionContextMenu(event, {
+          type: "group-view",
+          groupKey: activeSessionGroup.key,
+          groupName: activeSessionGroup.groupName,
+          label: activeSessionGroup.label
+        });
+        return;
+      }
+      openSessionContextMenu(event, { type: "group-root" });
+    },
+    [activeSessionGroup, openSessionContextMenu]
   );
 
   useEffect(() => {
@@ -1844,11 +2649,71 @@ export function App() {
     if (!sessionContextMenu) {
       return;
     }
-    const exists = sessions.some((session) => session.id === sessionContextMenu.sessionId);
-    if (!exists) {
-      closeSessionContextMenu();
+    const contextTarget = sessionContextMenu.target;
+    if (contextTarget.type === "session") {
+      const exists = sessions.some((session) => session.id === contextTarget.sessionId);
+      if (!exists) {
+        closeSessionContextMenu();
+      }
+      return;
     }
-  }, [closeSessionContextMenu, sessionContextMenu, sessions]);
+    if (contextTarget.type === "group" || contextTarget.type === "group-view") {
+      if (contextTarget.groupKey === "__ungrouped__") {
+        return;
+      }
+      const exists =
+        sessionGroupOptions.some(
+          (groupName) => groupName.toLowerCase() === contextTarget.groupName.toLowerCase()
+        ) ||
+        sessions.some(
+          (session) =>
+            (session.groupId?.trim() ?? "").toLowerCase() === contextTarget.groupName.toLowerCase()
+        );
+      if (!exists) {
+        closeSessionContextMenu();
+      }
+    }
+  }, [closeSessionContextMenu, sessionContextMenu, sessionGroupOptions, sessions]);
+
+  useEffect(() => {
+    if (!appDialog) {
+      return;
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeAppDialog();
+      }
+      if (event.key === "Enter") {
+        if (appDialog.mode === "prompt" && appDialog.multiline && !event.ctrlKey && !event.metaKey) {
+          return;
+        }
+        event.preventDefault();
+        submitAppDialog();
+      }
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [appDialog, closeAppDialog, submitAppDialog]);
+
+  useEffect(() => {
+    if (!appDialog || appDialog.mode !== "prompt") {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      const input = appDialogInputRef.current;
+      if (!input) {
+        return;
+      }
+      input.focus();
+      input.select();
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [appDialog]);
 
   useEffect(() => {
     if (!sftpContextMenu) {
@@ -1870,20 +2735,53 @@ export function App() {
   }, [activeTerminalTab, closeSftpContextMenu, sftpContextMenu, sftpDirectory]);
 
   useEffect(() => {
+    if (!activeSessionGroupKey) {
+      return;
+    }
+    const exists = groupedSessions.some((group) => group.key === activeSessionGroupKey);
+    if (!exists) {
+      setActiveSessionGroupKey(null);
+    }
+  }, [activeSessionGroupKey, groupedSessions]);
+
+  useEffect(() => {
     drainUploadQueue();
-  }, [drainUploadQueue]);
+    drainDownloadQueue();
+  }, [drainDownloadQueue, drainUploadQueue]);
 
   useEffect(() => {
     return () => {
+      if (appDialogResolverRef.current) {
+        appDialogResolverRef.current(appDialogCancelValueRef.current);
+        appDialogResolverRef.current = null;
+      }
       uploadQueueRef.current = [];
       runningUploadIdsRef.current.clear();
       isDrainingUploadQueueRef.current = false;
+      downloadQueueRef.current = [];
+      runningDownloadIdsRef.current.clear();
+      isDrainingDownloadQueueRef.current = false;
       ensuredRemoteDirectoriesRef.current.clear();
+      uploadBatchNoticeRef.current.clear();
+      downloadBatchNoticeRef.current.clear();
+      canceledUploadBatchIdsRef.current.clear();
+      canceledDownloadBatchIdsRef.current.clear();
     };
   }, []);
 
-  const openCreateModal = () => {
-    setForm(EMPTY_FORM);
+  useEffect(() => {
+    return () => {
+      if (systemApi) {
+        void systemApi.disposeRemoteOpenFiles();
+      }
+    };
+  }, [systemApi]);
+
+  const openCreateModal = (groupId = "") => {
+    setForm({
+      ...EMPTY_FORM,
+      groupId
+    });
     setEditingSessionId(null);
     setTestConnectionResult(null);
     setIsCreateModalOpen(true);
@@ -1909,6 +2807,7 @@ export function App() {
   const normalizeFormForSubmit = (): SessionCreateInput => ({
     ...form,
     secret: form.secret?.trim(),
+    groupId: form.groupId?.trim(),
     privateKeyPath:
       form.authType === "privateKey" ? form.privateKeyPath?.trim() : undefined
   });
@@ -1951,6 +2850,7 @@ export function App() {
             normalizedForm.authType === "privateKey"
               ? normalizedForm.privateKeyPath
               : "",
+          groupId: normalizedForm.groupId,
           remark: normalizedForm.remark,
           favorite: normalizedForm.favorite
         };
@@ -1961,11 +2861,21 @@ export function App() {
         setSessions((prev) =>
           prev.map((session) => (session.id === updated.id ? updated : session))
         );
+        if (updated.groupId?.trim()) {
+          setSessionGroupsState((prev) => ({
+            groups: normalizeSessionGroups([...prev.groups, updated.groupId ?? ""])
+          }));
+        }
         setSelectedSessionId(updated.id);
       } else {
         const created = await sessionsApi.create(normalizedForm);
         const nextSessions = [created, ...sessions];
         setSessions(nextSessions);
+        if (created.groupId?.trim()) {
+          setSessionGroupsState((prev) => ({
+            groups: normalizeSessionGroups([...prev.groups, created.groupId ?? ""])
+          }));
+        }
         setSelectedSessionId(created.id);
       }
 
@@ -2041,6 +2951,22 @@ export function App() {
   const closeTerminalTab = useCallback((tabId: string) => {
     connectedTabIdsRef.current.delete(tabId);
     ensuredRemoteDirectoriesRef.current.delete(tabId);
+    setUploadBatchByTab((prev) => {
+      if (!(tabId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+    setDownloadBatchByTab((prev) => {
+      if (!(tabId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
     const queuedJobs = uploadQueueRef.current.filter((job) => job.tabId === tabId);
     if (queuedJobs.length > 0) {
       uploadQueueRef.current = uploadQueueRef.current.filter((job) => job.tabId !== tabId);
@@ -2050,6 +2976,7 @@ export function App() {
           transferId: job.transferId,
           direction: "upload",
           status: "canceled",
+          batchId: job.batchId,
           name: job.name,
           localPath: job.localPath,
           remotePath: job.remotePath,
@@ -2060,8 +2987,31 @@ export function App() {
       }
       drainUploadQueue();
     }
+    const queuedDownloadJobs = downloadQueueRef.current.filter((job) => job.tabId === tabId);
+    if (queuedDownloadJobs.length > 0) {
+      downloadQueueRef.current = downloadQueueRef.current.filter((job) => job.tabId !== tabId);
+      for (const job of queuedDownloadJobs) {
+        applySftpTransferEvent({
+          tabId: job.tabId,
+          transferId: job.transferId,
+          direction: "download",
+          status: "canceled",
+          batchId: job.batchId,
+          name: job.name,
+          localPath: job.localPath,
+          remotePath: job.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "canceled"
+        });
+      }
+      drainDownloadQueue();
+    }
     if (terminalApi) {
       void terminalApi.close(tabId);
+    }
+    if (systemApi) {
+      void systemApi.disposeRemoteOpenFiles(tabId);
     }
 
     const nextTabs = terminalTabs.filter((tab) => tab.id !== tabId);
@@ -2071,11 +3021,30 @@ export function App() {
       return;
     }
     setActiveTabId(nextTabs.length > 0 ? nextTabs[nextTabs.length - 1].id : null);
-  }, [activeTabId, applySftpTransferEvent, drainUploadQueue, terminalApi, terminalTabs]);
+  }, [
+    activeTabId,
+    applySftpTransferEvent,
+    drainDownloadQueue,
+    drainUploadQueue,
+    systemApi,
+    terminalApi,
+    terminalTabs
+  ]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) {
+        return;
+      }
+      const settingsMatches =
+        hasPrimaryShortcutModifier(event) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.trim() === ",";
+      if (settingsMatches) {
+        event.preventDefault();
+        setActiveSettingsSection("connection");
+        setIsSettingsOpen(true);
         return;
       }
       const openMatches = matchesHotkeyBinding(event, hotkeyPreferences.openSessionTab);
@@ -2106,14 +3075,24 @@ export function App() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [activeTabId, closeTerminalTab, hotkeyPreferences, openTerminalTab, selectedSession]);
+  }, [
+    activeTabId,
+    closeTerminalTab,
+    hotkeyPreferences,
+    openTerminalTab,
+    selectedSession
+  ]);
 
   const removeSession = async (sessionId: string) => {
     const hit = sessions.find((session) => session.id === sessionId);
     if (!hit) {
       return;
     }
-    const accepted = window.confirm(`Delete session "${hit.name}"?`);
+    const accepted = await showAppConfirm(`Delete session "${hit.name}"?`, {
+      title: "Delete Session",
+      confirmLabel: "Delete",
+      danger: true
+    });
     if (!accepted) {
       return;
     }
@@ -2213,6 +3192,131 @@ export function App() {
     }));
   };
 
+  const setUploadConcurrency = (rawValue: string) => {
+    const parsed = Number(rawValue);
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      uploadConcurrency: parseTransferConcurrency(
+        parsed,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency
+      )
+    }));
+  };
+
+  const setDownloadConcurrency = (rawValue: string) => {
+    const parsed = Number(rawValue);
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      downloadConcurrency: parseTransferConcurrency(
+        parsed,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
+      )
+    }));
+  };
+
+  const addSessionGroup = (rawName: string) => {
+    const normalized = normalizeSessionGroupName(rawName);
+    if (!normalized) {
+      setError("Group name is required.");
+      return;
+    }
+    setSessionGroupsState((prev) => ({
+      groups: normalizeSessionGroups([...prev.groups, normalized])
+    }));
+    setError(null);
+  };
+
+  const renameSessionGroup = async (groupName: string) => {
+    const nextNameInput = await showAppPrompt("Enter a new name for this group.", groupName, {
+      title: "Rename Group",
+      confirmLabel: "Rename"
+    });
+    if (nextNameInput === null) {
+      return;
+    }
+    const nextName = normalizeSessionGroupName(nextNameInput);
+    if (!nextName) {
+      setError("Group name is required.");
+      return;
+    }
+    if (nextName.toLowerCase() === groupName.toLowerCase()) {
+      return;
+    }
+    const relatedSessions = sessions.filter(
+      (session) => (session.groupId?.trim() ?? "").toLowerCase() === groupName.toLowerCase()
+    );
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      for (const session of relatedSessions) {
+        const updated = await sessionsApi.update(session.id, { groupId: nextName });
+        setSessions((prev) =>
+          prev.map((item) => (item.id === updated.id ? updated : item))
+        );
+      }
+      setSessionGroupsState((prev) => {
+        const withoutCurrent = prev.groups.filter(
+          (item) => item.toLowerCase() !== groupName.toLowerCase()
+        );
+        return {
+          groups: normalizeSessionGroups([...withoutCurrent, nextName])
+        };
+      });
+      setForm((prev) => ({
+        ...prev,
+        groupId:
+          (prev.groupId?.trim() ?? "").toLowerCase() === groupName.toLowerCase()
+            ? nextName
+            : prev.groupId
+      }));
+      setError(null);
+    } catch (caughtError) {
+      setError((caughtError as Error).message);
+    }
+  };
+
+  const deleteSessionGroup = async (groupName: string) => {
+    const relatedSessions = sessions.filter(
+      (session) => (session.groupId?.trim() ?? "").toLowerCase() === groupName.toLowerCase()
+    );
+    const accepted = await showAppConfirm(
+      relatedSessions.length > 0
+        ? `Delete group "${groupName}" and move ${relatedSessions.length} sessions to Ungrouped?`
+        : `Delete group "${groupName}"?`,
+      {
+        title: "Delete Group",
+        confirmLabel: "Delete",
+        danger: true
+      }
+    );
+    if (!accepted) {
+      return;
+    }
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      for (const session of relatedSessions) {
+        const updated = await sessionsApi.update(session.id, { groupId: "" });
+        setSessions((prev) =>
+          prev.map((item) => (item.id === updated.id ? updated : item))
+        );
+      }
+      setSessionGroupsState((prev) => ({
+        groups: prev.groups.filter((item) => item.toLowerCase() !== groupName.toLowerCase())
+      }));
+      setForm((prev) => ({
+        ...prev,
+        groupId:
+          (prev.groupId?.trim() ?? "").toLowerCase() === groupName.toLowerCase() ? "" : prev.groupId
+      }));
+      setError(null);
+    } catch (caughtError) {
+      setError((caughtError as Error).message);
+    }
+  };
+
   const setServerHealthAlertEnabled = (value: boolean) => {
     setServerHealthAlertPreferences((prev) => ({
       ...prev,
@@ -2245,14 +3349,40 @@ export function App() {
     try {
       const copied = await copyTextToClipboard(text);
       if (copied) {
-        window.alert("Clash 直连规则已复制到剪贴板。");
+        await showAppAlert("Clash direct rules copied to clipboard.", {
+          title: "Clash Rules"
+        });
         return;
       }
     } catch {
-      // Fall through to manual copy prompt.
+      // Fall through to manual copy dialog.
     }
-    window.prompt("复制下面的 Clash 直连规则", text);
+    await showAppAlert("Clipboard unavailable. Copy the text below manually.", {
+      title: "Manual Copy",
+      confirmLabel: "Close",
+      detailText: text
+    });
   };
+
+  const viewSessionDetails = useCallback(
+    async (session: SessionRecord) => {
+      const lines = [
+        `Name: ${session.name}`,
+        `Group: ${session.groupId?.trim() || "Ungrouped"}`,
+        `Target: ${session.username}@${session.host}:${session.port}`,
+        `Auth: ${session.authType}`,
+        `Secret: ${session.hasSecret ? "Stored in secure vault" : "-"}`,
+        `Last Connected: ${formatSessionLastConnected(session.lastConnectedAt)}`,
+        `Remark: ${session.remark || "-"}`
+      ];
+      await showAppAlert("Session details", {
+        title: session.name,
+        confirmLabel: "Close",
+        detailText: lines.join("\n")
+      });
+    },
+    [showAppAlert]
+  );
 
   const pickPrivateKeyFile = async () => {
     try {
@@ -2299,7 +3429,10 @@ export function App() {
       return;
     }
 
-    const nameInput = window.prompt("New directory name");
+    const nameInput = await showAppPrompt("Enter a name for the new directory.", "", {
+      title: "New Folder",
+      confirmLabel: "Create"
+    });
     if (nameInput === null) {
       return;
     }
@@ -2336,7 +3469,10 @@ export function App() {
       return;
     }
 
-    const nameInput = window.prompt("Rename to", targetEntry.name);
+    const nameInput = await showAppPrompt("Enter the new name.", targetEntry.name, {
+      title: `Rename ${targetEntry.kind === "directory" ? "Folder" : "File"}`,
+      confirmLabel: "Rename"
+    });
     if (nameInput === null) {
       return;
     }
@@ -2374,8 +3510,13 @@ export function App() {
       return;
     }
 
-    const accepted = window.confirm(
-      `Delete ${targetEntry.kind === "directory" ? "directory" : "file"} "${targetEntry.name}"?`
+    const accepted = await showAppConfirm(
+      `Delete ${targetEntry.kind === "directory" ? "directory" : "file"} "${targetEntry.name}"?`,
+      {
+        title: "Delete Entry",
+        confirmLabel: "Delete",
+        danger: true
+      }
     );
     if (!accepted) {
       return;
@@ -2383,6 +3524,10 @@ export function App() {
 
     setSftpActionLoading(true);
     setSftpError(null);
+    setSftpDeleteProgress({
+      name: targetEntry.name,
+      kind: targetEntry.kind
+    });
     try {
       await sftpApi.deletePath(activeTabId, targetEntry.path, targetEntry.kind);
       setSelectedSftpPath(null);
@@ -2390,6 +3535,7 @@ export function App() {
     } catch (caughtError) {
       setSftpError((caughtError as Error).message);
     } finally {
+      setSftpDeleteProgress(null);
       setSftpActionLoading(false);
     }
   };
@@ -2434,23 +3580,263 @@ export function App() {
       setSftpError("Select a file first.");
       return;
     }
+    const remoteOpenKey = `${activeTabId}:${targetEntry.path}`;
+    if (openingRemoteFilesRef.current.has(remoteOpenKey)) {
+      return;
+    }
+    openingRemoteFilesRef.current.add(remoteOpenKey);
 
     try {
       setSftpError(null);
-      const tempLocalPath = await systemApi.createTempOpenFilePath(targetEntry.name);
-      await sftpApi.downloadFile(
+      const prepared = await systemApi.prepareRemoteOpenFile(
         activeTabId,
-        createTransferId("down"),
         targetEntry.path,
-        tempLocalPath
+        targetEntry.name
       );
+      if (!prepared.alreadyOpen) {
+        await sftpApi.downloadFile(
+          activeTabId,
+          createTransferId("down"),
+          targetEntry.path,
+          prepared.localPath
+        );
+        await systemApi.enableRemoteFileAutoSync(
+          activeTabId,
+          targetEntry.path,
+          prepared.localPath
+        );
+      }
       const preferredProgramPath = fileOpenPreferences.preferredProgramPath.trim();
       await systemApi.openLocalPath(
-        tempLocalPath,
+        prepared.localPath,
         preferredProgramPath.length > 0 ? preferredProgramPath : null
       );
     } catch (caughtError) {
       setSftpError((caughtError as Error).message);
+    } finally {
+      openingRemoteFilesRef.current.delete(remoteOpenKey);
+    }
+  };
+
+  const enqueueDownloadTargets = useCallback(
+    (
+      tabId: string,
+      targets: Array<{
+        name: string;
+        remotePath: string;
+        localPath: string;
+      }>,
+      options?: {
+        batchId?: string;
+        incrementExistingBatchTotal?: boolean;
+        suppressEmptyError?: boolean;
+      }
+    ): number => {
+      const batchId = options?.batchId?.trim()
+        ? options.batchId.trim()
+        : `batch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+        return 0;
+      }
+      const queuedJobs: PendingDownloadJob[] = [];
+      for (const target of targets) {
+        const remotePath = target.remotePath.trim();
+        const localPath = target.localPath.trim();
+        const fallbackName = getPathBaseName(remotePath);
+        const name = target.name.trim() || fallbackName;
+        if (!remotePath || !localPath || !name) {
+          continue;
+        }
+        const transferId = createTransferId("down");
+        const nextJob: PendingDownloadJob = {
+          tabId,
+          transferId,
+          batchId,
+          localPath,
+          remotePath,
+          name
+        };
+        queuedJobs.push(nextJob);
+        applySftpTransferEvent({
+          tabId: nextJob.tabId,
+          transferId: nextJob.transferId,
+          direction: "download",
+          status: "queued",
+          name: nextJob.name,
+          localPath: nextJob.localPath,
+          remotePath: nextJob.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "queued",
+          batchId
+        });
+      }
+      if (queuedJobs.length === 0) {
+        if (!options?.suppressEmptyError) {
+          setSftpError("No valid files to download.");
+        }
+        return 0;
+      }
+      setDownloadBatchByTab((prev) => {
+        const current = prev[tabId];
+        const total =
+          options?.incrementExistingBatchTotal && current && current.batchId === batchId
+            ? current.total + queuedJobs.length
+            : queuedJobs.length;
+        return {
+          ...prev,
+          [tabId]: {
+            batchId,
+            total
+          }
+        };
+      });
+      downloadQueueRef.current.push(...queuedJobs);
+      drainDownloadQueue();
+      return queuedJobs.length;
+    },
+    [applySftpTransferEvent, drainDownloadQueue]
+  );
+
+  const downloadSftpDirectory = async (entry?: SftpEntry | null) => {
+    if (!systemApi) {
+      setSftpError("System bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!sftpApi) {
+      setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!activeTabId) {
+      setSftpError("Open a terminal tab before managing SFTP files.");
+      return;
+    }
+    const targetEntry = entry ?? selectedSftpEntry;
+    if (!targetEntry || targetEntry.kind !== "directory") {
+      setSftpError("Select a directory first.");
+      return;
+    }
+
+    const destinationDirectory = await systemApi.pickDownloadDirectory(targetEntry.name);
+    if (!destinationDirectory) {
+      return;
+    }
+
+    let activeBatchId: string | null = null;
+    try {
+      setSftpActionLoading(true);
+      setSftpError(null);
+
+      const rootLocalName = sanitizeLocalPathSegment(targetEntry.name);
+      const directoryQueue: Array<{
+        remotePath: string;
+        localRelativePath: string;
+      }> = [
+        {
+          remotePath: targetEntry.path,
+          localRelativePath: rootLocalName
+        }
+      ];
+      const batchId = `batch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      activeBatchId = batchId;
+      canceledDownloadBatchIdsRef.current.delete(batchId);
+      setDownloadBatchByTab((prev) => ({
+        ...prev,
+        [activeTabId]: {
+          batchId,
+          total: 0
+        }
+      }));
+      let totalDiscoveredFiles = 0;
+      let skippedEntries = 0;
+
+      while (directoryQueue.length > 0) {
+        if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        const currentDirectory = directoryQueue.shift();
+        if (!currentDirectory) {
+          continue;
+        }
+        const listing = await sftpApi.listDirectory(activeTabId, currentDirectory.remotePath);
+        if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        const currentDirectoryFileTargets: Array<{
+          name: string;
+          remotePath: string;
+          localPath: string;
+        }> = [];
+        for (const childEntry of listing.entries) {
+          if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+            break;
+          }
+          const localName = sanitizeLocalPathSegment(childEntry.name);
+          const nextLocalRelativePath = joinRemotePath(
+            currentDirectory.localRelativePath,
+            localName
+          );
+          if (childEntry.kind === "directory") {
+            directoryQueue.push({
+              remotePath: childEntry.path,
+              localRelativePath: nextLocalRelativePath
+            });
+            continue;
+          }
+          if (childEntry.kind === "file") {
+            currentDirectoryFileTargets.push({
+              name: childEntry.name,
+              remotePath: childEntry.path,
+              localPath: joinLocalPath(destinationDirectory, nextLocalRelativePath)
+            });
+            continue;
+          }
+          skippedEntries += 1;
+        }
+        if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        if (currentDirectoryFileTargets.length > 0) {
+          totalDiscoveredFiles += enqueueDownloadTargets(activeTabId, currentDirectoryFileTargets, {
+            batchId,
+            incrementExistingBatchTotal: true,
+            suppressEmptyError: true
+          });
+        }
+      }
+
+      if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+        return;
+      }
+      if (totalDiscoveredFiles === 0) {
+        setDownloadBatchByTab((prev) => {
+          const current = prev[activeTabId];
+          if (!current || current.batchId !== batchId) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[activeTabId];
+          return next;
+        });
+        await showAppAlert(`No files found in "${targetEntry.name}".`, {
+          title: "Download Folder"
+        });
+        return;
+      }
+
+      if (skippedEntries > 0) {
+        await showAppAlert(
+          `Queued ${totalDiscoveredFiles} files from "${targetEntry.name}". Skipped ${skippedEntries} unsupported entries.`,
+          { title: "Download Folder" }
+        );
+      }
+    } catch (caughtError) {
+      setSftpError((caughtError as Error).message);
+    } finally {
+      if (activeBatchId) {
+        canceledDownloadBatchIdsRef.current.delete(activeBatchId);
+      }
+      setSftpActionLoading(false);
     }
   };
 
@@ -2468,8 +3854,16 @@ export function App() {
       return;
     }
     const targetEntry = entry ?? selectedSftpEntry;
-    if (!targetEntry || targetEntry.kind === "directory") {
-      setSftpError("Select a file first.");
+    if (!targetEntry) {
+      setSftpError("Select a file or directory first.");
+      return;
+    }
+    if (targetEntry.kind === "directory") {
+      await downloadSftpDirectory(targetEntry);
+      return;
+    }
+    if (targetEntry.kind !== "file") {
+      setSftpError("Only files and directories can be downloaded.");
       return;
     }
 
@@ -2480,16 +3874,101 @@ export function App() {
 
     try {
       setSftpError(null);
-      await sftpApi.downloadFile(
-        activeTabId,
-        createTransferId("down"),
-        targetEntry.path,
-        localPath
-      );
+      enqueueDownloadTargets(activeTabId, [
+        {
+          name: targetEntry.name,
+          remotePath: targetEntry.path,
+          localPath
+        }
+      ]);
     } catch (caughtError) {
       setSftpError((caughtError as Error).message);
     }
   };
+
+  const enqueueUploadPathEntries = useCallback(
+    (
+      tabId: string,
+      remoteBaseDirectory: string,
+      entries: Array<{
+        localPath: string;
+        relativeDirectory: string;
+      }>,
+      options?: {
+        batchId?: string;
+        incrementExistingBatchTotal?: boolean;
+        suppressEmptyError?: boolean;
+      }
+    ): number => {
+      const batchId = options?.batchId?.trim()
+        ? options.batchId.trim()
+        : `batch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      if (canceledUploadBatchIdsRef.current.has(batchId)) {
+        return 0;
+      }
+      const queuedJobs: PendingUploadJob[] = [];
+      for (const pathEntry of entries) {
+        const localPath = pathEntry.localPath.trim();
+        const name = getPathBaseName(localPath);
+        if (!name) {
+          continue;
+        }
+        const relativeDirectory = normalizeRelativeDirectoryPath(pathEntry.relativeDirectory);
+        const transferId = createTransferId("up");
+        const remoteDirectory = relativeDirectory
+          ? joinRemotePath(remoteBaseDirectory, relativeDirectory)
+          : remoteBaseDirectory;
+        const remotePath = joinRemotePath(remoteDirectory, name);
+        const nextJob: PendingUploadJob = {
+          tabId,
+          transferId,
+          batchId,
+          localPath,
+          remoteDirectory,
+          remotePath,
+          name
+        };
+        queuedJobs.push(nextJob);
+        applySftpTransferEvent({
+          tabId: nextJob.tabId,
+          transferId: nextJob.transferId,
+          direction: "upload",
+          status: "queued",
+          name: nextJob.name,
+          localPath: nextJob.localPath,
+          remotePath: nextJob.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "queued",
+          batchId
+        });
+      }
+      if (queuedJobs.length === 0) {
+        if (!options?.suppressEmptyError) {
+          setSftpError("No valid files to upload.");
+        }
+        return 0;
+      }
+      setUploadBatchByTab((prev) => {
+        const current = prev[tabId];
+        const total =
+          options?.incrementExistingBatchTotal && current && current.batchId === batchId
+            ? current.total + queuedJobs.length
+            : queuedJobs.length;
+        return {
+          ...prev,
+          [tabId]: {
+            batchId,
+            total
+          }
+        };
+      });
+      uploadQueueRef.current.push(...queuedJobs);
+      drainUploadQueue();
+      return queuedJobs.length;
+    },
+    [applySftpTransferEvent, drainUploadQueue]
+  );
 
   const uploadLocalPathsToSftp = async (paths: string[]) => {
     if (!systemApi) {
@@ -2509,53 +3988,161 @@ export function App() {
     }
 
     setSftpError(null);
-    const expandedPaths = await systemApi.expandUploadPaths(paths);
-    if (expandedPaths.length === 0) {
-      setSftpError("No valid files to upload.");
-      return;
-    }
+    const batchId = `batch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    canceledUploadBatchIdsRef.current.delete(batchId);
+    try {
+      setUploadBatchByTab((prev) => ({
+        ...prev,
+        [activeTabId]: {
+          batchId,
+          total: 0
+        }
+      }));
+      let totalDiscoveredFiles = 0;
+      let skippedEntries = 0;
+      const directoryQueue: Array<{
+        localDirectoryPath: string;
+        relativeDirectory: string;
+      }> = [];
 
-    const queuedJobs: PendingUploadJob[] = [];
-    for (const pathEntry of expandedPaths as LocalUploadPathEntry[]) {
-      const localPath = pathEntry.localPath.trim();
-      const name = getPathBaseName(localPath);
-      if (!name) {
-        continue;
+      for (const rawPath of paths) {
+        if (canceledUploadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        const listing = await systemApi.scanLocalPathEntries(rawPath);
+        if (canceledUploadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        if (listing.kind === "file") {
+          totalDiscoveredFiles += enqueueUploadPathEntries(
+            activeTabId,
+            sftpDirectory.cwd,
+            [
+              {
+                localPath: listing.path,
+                relativeDirectory: ""
+              }
+            ],
+            {
+              batchId,
+              incrementExistingBatchTotal: true,
+              suppressEmptyError: true
+            }
+          );
+          continue;
+        }
+        if (listing.kind === "directory") {
+          const topName = getPathBaseName(listing.path);
+          if (!topName) {
+            skippedEntries += 1;
+            continue;
+          }
+          if (listing.files.length > 0) {
+            totalDiscoveredFiles += enqueueUploadPathEntries(
+              activeTabId,
+              sftpDirectory.cwd,
+              listing.files.map((localPath) => ({
+                localPath,
+                relativeDirectory: topName
+              })),
+              {
+                batchId,
+                incrementExistingBatchTotal: true,
+                suppressEmptyError: true
+              }
+            );
+          }
+          for (const childDirectoryPath of listing.directories) {
+            if (canceledUploadBatchIdsRef.current.has(batchId)) {
+              break;
+            }
+            const childName = getPathBaseName(childDirectoryPath);
+            if (!childName) {
+              skippedEntries += 1;
+              continue;
+            }
+            directoryQueue.push({
+              localDirectoryPath: childDirectoryPath,
+              relativeDirectory: joinRemotePath(topName, childName)
+            });
+          }
+          continue;
+        }
+        skippedEntries += 1;
       }
-      const relativeDirectory = normalizeRelativeDirectoryPath(pathEntry.relativeDirectory);
-      const transferId = createTransferId("up");
-      const remoteDirectory = relativeDirectory
-        ? joinRemotePath(sftpDirectory.cwd, relativeDirectory)
-        : sftpDirectory.cwd;
-      const remotePath = joinRemotePath(remoteDirectory, name);
-      const nextJob: PendingUploadJob = {
-        tabId: activeTabId,
-        transferId,
-        localPath,
-        remoteDirectory,
-        remotePath,
-        name
-      };
-      queuedJobs.push(nextJob);
-      applySftpTransferEvent({
-        tabId: nextJob.tabId,
-        transferId: nextJob.transferId,
-        direction: "upload",
-        status: "queued",
-        name: nextJob.name,
-        localPath: nextJob.localPath,
-        remotePath: nextJob.remotePath,
-        transferredBytes: 0,
-        totalBytes: 0,
-        message: "queued"
-      });
+
+      while (directoryQueue.length > 0) {
+        if (canceledUploadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        const currentDirectory = directoryQueue.shift();
+        if (!currentDirectory) {
+          continue;
+        }
+        const listing = await systemApi.scanLocalPathEntries(currentDirectory.localDirectoryPath);
+        if (canceledUploadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        if (listing.kind !== "directory") {
+          skippedEntries += 1;
+          continue;
+        }
+        if (listing.files.length > 0) {
+          totalDiscoveredFiles += enqueueUploadPathEntries(
+            activeTabId,
+            sftpDirectory.cwd,
+            listing.files.map((localPath) => ({
+              localPath,
+              relativeDirectory: currentDirectory.relativeDirectory
+            })),
+            {
+              batchId,
+              incrementExistingBatchTotal: true,
+              suppressEmptyError: true
+            }
+          );
+        }
+        for (const childDirectoryPath of listing.directories) {
+          if (canceledUploadBatchIdsRef.current.has(batchId)) {
+            break;
+          }
+          const childName = getPathBaseName(childDirectoryPath);
+          if (!childName) {
+            skippedEntries += 1;
+            continue;
+          }
+          directoryQueue.push({
+            localDirectoryPath: childDirectoryPath,
+            relativeDirectory: joinRemotePath(currentDirectory.relativeDirectory, childName)
+          });
+        }
+      }
+
+      if (canceledUploadBatchIdsRef.current.has(batchId)) {
+        return;
+      }
+      if (totalDiscoveredFiles === 0) {
+        setUploadBatchByTab((prev) => {
+          const current = prev[activeTabId];
+          if (!current || current.batchId !== batchId) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[activeTabId];
+          return next;
+        });
+        setSftpError("No valid files to upload.");
+        return;
+      }
+      if (skippedEntries > 0) {
+        await showAppAlert(
+          `Queued ${totalDiscoveredFiles} upload files. Skipped ${skippedEntries} unsupported entries.`,
+          { title: "Upload Summary" }
+        );
+      }
+    } finally {
+      canceledUploadBatchIdsRef.current.delete(batchId);
     }
-    if (queuedJobs.length === 0) {
-      setSftpError("No valid files to upload.");
-      return;
-    }
-    uploadQueueRef.current.push(...queuedJobs);
-    drainUploadQueue();
   };
 
   const cancelSftpUpload = async (transfer: SftpTransferItem) => {
@@ -2570,6 +4157,7 @@ export function App() {
           transferId: queuedJob.transferId,
           direction: "upload",
           status: "canceled",
+          batchId: queuedJob.batchId,
           name: queuedJob.name,
           localPath: queuedJob.localPath,
           remotePath: queuedJob.remotePath,
@@ -2596,6 +4184,29 @@ export function App() {
   };
 
   const cancelSftpDownload = async (transfer: SftpTransferItem) => {
+    if (transfer.direction === "download" && transfer.status === "queued") {
+      const queueIndex = downloadQueueRef.current.findIndex(
+        (job) => job.tabId === transfer.tabId && job.transferId === transfer.transferId
+      );
+      if (queueIndex >= 0) {
+        const [queuedJob] = downloadQueueRef.current.splice(queueIndex, 1);
+        applySftpTransferEvent({
+          tabId: queuedJob.tabId,
+          transferId: queuedJob.transferId,
+          direction: "download",
+          status: "canceled",
+          batchId: queuedJob.batchId,
+          name: queuedJob.name,
+          localPath: queuedJob.localPath,
+          remotePath: queuedJob.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "canceled"
+        });
+        drainDownloadQueue();
+        return;
+      }
+    }
     if (!sftpApi) {
       setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
       return;
@@ -2608,6 +4219,136 @@ export function App() {
         setSftpError(message);
       }
     }
+  };
+
+  const cancelAllActiveUploads = async () => {
+    if (!activeTabId) {
+      return;
+    }
+    const tabId = activeTabId;
+    const activeBatchId = uploadBatchByTab[tabId]?.batchId;
+    if (activeBatchId) {
+      canceledUploadBatchIdsRef.current.add(activeBatchId);
+    }
+    setUploadBatchByTab((prev) => {
+      if (!prev[tabId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+    const queuedJobs = uploadQueueRef.current.filter((job) => job.tabId === tabId);
+    const queuedTransferIds = new Set(queuedJobs.map((job) => job.transferId));
+    if (queuedJobs.length > 0) {
+      uploadQueueRef.current = uploadQueueRef.current.filter((job) => job.tabId !== tabId);
+      for (const job of queuedJobs) {
+        applySftpTransferEvent({
+          tabId: job.tabId,
+          transferId: job.transferId,
+          direction: "upload",
+          status: "canceled",
+          batchId: job.batchId,
+          name: job.name,
+          localPath: job.localPath,
+          remotePath: job.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "canceled"
+        });
+      }
+    }
+    const transferIdsToCancel = new Set<string>();
+    for (const transfer of sftpTransfers) {
+      if (
+        transfer.tabId !== tabId ||
+        transfer.direction !== "upload" ||
+        (transfer.status !== "queued" && transfer.status !== "running")
+      ) {
+        continue;
+      }
+      if (!queuedTransferIds.has(transfer.transferId)) {
+        transferIdsToCancel.add(transfer.transferId);
+      }
+    }
+    for (const [transferId, runningTabId] of runningUploadIdsRef.current.entries()) {
+      if (runningTabId === tabId) {
+        transferIdsToCancel.add(transferId);
+      }
+    }
+    if (!sftpApi) {
+      drainUploadQueue();
+      return;
+    }
+    await Promise.allSettled(
+      Array.from(transferIdsToCancel).map((transferId) => sftpApi.cancelUpload(tabId, transferId))
+    );
+    drainUploadQueue();
+  };
+
+  const cancelAllActiveDownloads = async () => {
+    if (!activeTabId) {
+      return;
+    }
+    const tabId = activeTabId;
+    const activeBatchId = downloadBatchByTab[tabId]?.batchId;
+    if (activeBatchId) {
+      canceledDownloadBatchIdsRef.current.add(activeBatchId);
+    }
+    setDownloadBatchByTab((prev) => {
+      if (!prev[tabId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+    const queuedJobs = downloadQueueRef.current.filter((job) => job.tabId === tabId);
+    const queuedTransferIds = new Set(queuedJobs.map((job) => job.transferId));
+    if (queuedJobs.length > 0) {
+      downloadQueueRef.current = downloadQueueRef.current.filter((job) => job.tabId !== tabId);
+      for (const job of queuedJobs) {
+        applySftpTransferEvent({
+          tabId: job.tabId,
+          transferId: job.transferId,
+          direction: "download",
+          status: "canceled",
+          batchId: job.batchId,
+          name: job.name,
+          localPath: job.localPath,
+          remotePath: job.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "canceled"
+        });
+      }
+    }
+    const transferIdsToCancel = new Set<string>();
+    for (const transfer of sftpTransfers) {
+      if (
+        transfer.tabId !== tabId ||
+        transfer.direction !== "download" ||
+        (transfer.status !== "queued" && transfer.status !== "running")
+      ) {
+        continue;
+      }
+      if (!queuedTransferIds.has(transfer.transferId)) {
+        transferIdsToCancel.add(transfer.transferId);
+      }
+    }
+    for (const [transferId, runningTabId] of runningDownloadIdsRef.current.entries()) {
+      if (runningTabId === tabId) {
+        transferIdsToCancel.add(transferId);
+      }
+    }
+    if (!sftpApi) {
+      drainDownloadQueue();
+      return;
+    }
+    await Promise.allSettled(
+      Array.from(transferIdsToCancel).map((transferId) => sftpApi.cancelDownload(tabId, transferId))
+    );
+    drainDownloadQueue();
   };
 
   const onSftpDragOver = (event: DragEvent<HTMLElement>) => {
@@ -2670,13 +4411,32 @@ export function App() {
     action.run();
   };
 
+  const promptCreateSessionGroup = async () => {
+    const groupNameInput = await showAppPrompt("Enter a name for the new group.", "", {
+      title: "New Group",
+      confirmLabel: "Create"
+    });
+    if (groupNameInput === null) {
+      return;
+    }
+    addSessionGroup(groupNameInput);
+  };
+
   const sessionContextActions: SessionContextAction[] = [];
-  if (sessionContextTarget) {
+  const contextTarget = sessionContextMenu?.target ?? null;
+  if (contextTarget?.type === "session" && sessionContextTarget) {
     sessionContextActions.push({
       id: "open-session",
       label: "Open Terminal Tab",
       run: () => {
         openTerminalTab(sessionContextTarget);
+      }
+    });
+    sessionContextActions.push({
+      id: "view-session",
+      label: "View Details",
+      run: () => {
+        void viewSessionDetails(sessionContextTarget);
       }
     });
     sessionContextActions.push({
@@ -2710,6 +4470,99 @@ export function App() {
         void removeSession(sessionContextTarget.id);
       }
     });
+  } else if (contextTarget?.type === "group") {
+    sessionContextActions.push({
+      id: "open-group",
+      label: "Open Group",
+      run: () => {
+        setActiveSessionGroupKey(contextTarget.groupKey);
+      }
+    });
+    sessionContextActions.push({
+      id: "new-session",
+      label: "New Session",
+      run: () => {
+        openCreateModal(contextTarget.groupName);
+      }
+    });
+    sessionContextActions.push({
+      id: "new-group",
+      label: "New Group",
+      run: () => {
+        void promptCreateSessionGroup();
+      }
+    });
+    if (contextTarget.groupName) {
+      sessionContextActions.push({
+        id: "rename-group",
+        label: "Rename Group",
+        run: () => {
+          void renameSessionGroup(contextTarget.groupName);
+        }
+      });
+      sessionContextActions.push({
+        id: "delete-group",
+        label: "Delete Group",
+        danger: true,
+        run: () => {
+          void deleteSessionGroup(contextTarget.groupName);
+        }
+      });
+    }
+  } else if (contextTarget?.type === "group-root") {
+    sessionContextActions.push({
+      id: "new-group",
+      label: "New Group",
+      run: () => {
+        void promptCreateSessionGroup();
+      }
+    });
+    sessionContextActions.push({
+      id: "new-session",
+      label: "New Session",
+      run: () => {
+        openCreateModal("");
+      }
+    });
+  } else if (contextTarget?.type === "group-view") {
+    sessionContextActions.push({
+      id: "back-groups",
+      label: "Back to Groups",
+      run: () => {
+        setActiveSessionGroupKey(null);
+      }
+    });
+    sessionContextActions.push({
+      id: "new-session",
+      label: "New Session",
+      run: () => {
+        openCreateModal(contextTarget.groupName);
+      }
+    });
+    sessionContextActions.push({
+      id: "new-group",
+      label: "New Group",
+      run: () => {
+        void promptCreateSessionGroup();
+      }
+    });
+    if (contextTarget.groupName) {
+      sessionContextActions.push({
+        id: "rename-group",
+        label: "Rename Group",
+        run: () => {
+          void renameSessionGroup(contextTarget.groupName);
+        }
+      });
+      sessionContextActions.push({
+        id: "delete-group",
+        label: "Delete Group",
+        danger: true,
+        run: () => {
+          void deleteSessionGroup(contextTarget.groupName);
+        }
+      });
+    }
   }
 
   const isSftpActionDisabled = sftpLoading || sftpActionLoading;
@@ -2792,6 +4645,14 @@ export function App() {
         void loadSftpDirectory(sftpContextEntry.path);
       }
     });
+    sftpContextActions.push({
+      id: "download-directory",
+      label: "Download Folder",
+      disabled: isSftpActionDisabled,
+      run: () => {
+        void downloadSftpDirectory(sftpContextEntry);
+      }
+    });
   }
   if (sftpContextEntry && sftpContextEntry.kind !== "directory") {
     sftpContextActions.push({
@@ -2863,9 +4724,13 @@ export function App() {
               return;
             }
           } catch {
-            // Fallback to prompt for manual copy.
+            // Fallback to dialog for manual copy.
           }
-          window.prompt("Copy remote path", sftpContextEntry.path);
+          await showAppAlert("Clipboard unavailable. Copy the path below manually.", {
+            title: "Manual Copy",
+            confirmLabel: "Close",
+            detailText: sftpContextEntry.path
+          });
         })();
       }
     });
@@ -2881,39 +4746,36 @@ export function App() {
               return;
             }
           } catch {
-            // Fallback to prompt for manual copy.
+            // Fallback to dialog for manual copy.
           }
-          window.prompt("Copy current path", sftpDirectory.cwd);
+          await showAppAlert("Clipboard unavailable. Copy the path below manually.", {
+            title: "Manual Copy",
+            confirmLabel: "Close",
+            detailText: sftpDirectory.cwd
+          });
         })();
       }
     });
   }
 
   return (
-    <div className={isMacPlatform ? "app app--mac" : "app"}>
-      <header className="topbar">
-        <div className="topbar__brand">
-          <strong>TermDock</strong>
-          <span>SSH + SFTP Workbench</span>
-        </div>
-        <div className="topbar__meta">
-          <span className="topbar__meta-dot" />
-          <span>
-            {connectionPreferences.autoReconnect
-              ? `Auto Reconnect ${connectionPreferences.reconnectDelaySeconds}s`
-              : "Auto Reconnect Off"}
-          </span>
-          {!isMacPlatform ? (
-            <button
-              className="icon-button topbar__settings-button"
-              onClick={() => openSettingsPanel("connection")}
-              type="button"
-            >
-              Settings
-            </button>
-          ) : null}
-        </div>
-      </header>
+    <div className={isMacPlatform ? "app app--mac" : "app app--windows"}>
+      {isMacPlatform ? (
+        <header className="topbar">
+          <div className="topbar__brand">
+            <strong>TermDock</strong>
+            <span>SSH + SFTP Workbench</span>
+          </div>
+          <div className="topbar__meta">
+            <span className="topbar__meta-dot" />
+            <span>
+              {connectionPreferences.autoReconnect
+                ? `Auto Reconnect ${connectionPreferences.reconnectDelaySeconds}s`
+                : "Auto Reconnect Off"}
+            </span>
+          </div>
+        </header>
+      ) : null}
 
       <main className="layout">
         <aside className="panel panel--left">
@@ -2941,23 +4803,58 @@ export function App() {
                     value={sftpPath}
                   />
                   <button
+                    aria-label="Go to parent directory"
+                    className="icon-button sftp-toolbar__button"
+                    disabled={sftpLoading || sftpActionLoading || !sftpDirectory?.parent}
+                    onClick={() => {
+                      if (!sftpDirectory?.parent) {
+                        return;
+                      }
+                      void loadSftpDirectory(sftpDirectory.parent);
+                    }}
+                    title="Go Up"
+                    type="button"
+                  >
+                    <UiIcon name="arrowUp" />
+                  </button>
+                  <button
+                    aria-label="Refresh directory"
+                    className="icon-button sftp-toolbar__button"
+                    disabled={sftpLoading || sftpActionLoading}
+                    onClick={() => {
+                      void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
+                    }}
+                    title="Refresh"
+                    type="button"
+                  >
+                    <UiIcon name="refresh" />
+                  </button>
+                  <button
                     aria-label="SFTP actions"
                     className="icon-button sftp-toolbar__button sftp-toolbar__button--menu"
                     onClick={toggleSftpToolbarMenu}
                     title="SFTP actions"
                     type="button"
                   >
-                    <span className="sftp-toolbar__menu-bars" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </span>
+                    <UiIcon name="menu" />
                   </button>
                 </div>
                 <p className="hint sftp-current-path">
                   Current: {sftpDirectory?.cwd ?? "(not loaded)"}
                 </p>
                 {sftpError ? <p className="hint sftp-error">{sftpError}</p> : null}
+                {sftpDeleteProgress ? (
+                  <div className="sftp-delete-progress" role="status" aria-live="polite">
+                    <p className="hint sftp-delete-progress__label">
+                      Deleting{" "}
+                      {sftpDeleteProgress.kind === "directory" ? "directory" : "file"}{" "}
+                      "{sftpDeleteProgress.name}"...
+                    </p>
+                    <div className="sftp-delete-progress__track">
+                      <span className="sftp-delete-progress__bar" />
+                    </div>
+                  </div>
+                ) : null}
                 <div
                   className={sftpDropActive ? "sftp-drop-zone is-active" : "sftp-drop-zone"}
                   onDragLeave={onSftpDragLeave}
@@ -3037,47 +4934,6 @@ export function App() {
                     Current directory size: {formatExactByteCount(sftpSummary.totalSize)} ({formatTransferBytes(sftpSummary.totalSize)})
                   </p>
                 </div>
-                <div className="sftp-transfer-panel">
-                  <p className="hint sftp-transfer-panel__title">
-                    Transfer status (upload running {activeUploadQueueStats.running}, upload queued {activeUploadQueueStats.queued}, max {UPLOAD_MAX_CONCURRENCY})
-                  </p>
-                  {activeSftpTransfers.length > 0 ? (
-                    <ul className="sftp-transfer-list">
-                      {activeSftpTransfers.map((transfer) => {
-                        const canCancelTransfer =
-                          transfer.status === "queued" || transfer.status === "running";
-                        return (
-                          <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
-                            <span className="sftp-transfer__icon">
-                              {transfer.direction === "upload" ? "↑" : "↓"}
-                            </span>
-                            <span className="sftp-transfer__name">{transfer.name}</span>
-                            <span className="sftp-transfer__progress">{formatTransferProgress(transfer)}</span>
-                            {canCancelTransfer ? (
-                              <button
-                                aria-label={`Cancel ${transfer.direction}`}
-                                className="icon-button sftp-transfer__cancel"
-                                onClick={() => {
-                                  if (transfer.direction === "upload") {
-                                    void cancelSftpUpload(transfer);
-                                    return;
-                                  }
-                                  void cancelSftpDownload(transfer);
-                                }}
-                                title={`Cancel ${transfer.direction}`}
-                                type="button"
-                              >
-                                ✕
-                              </button>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="hint">No active transfers.</p>
-                  )}
-                </div>
               </>
             ) : (
               <p className="hint">
@@ -3095,122 +4951,136 @@ export function App() {
             onCloseTab={closeTerminalTab}
             onError={setError}
             onSelectTab={setActiveTabId}
+            systemApi={systemApi}
             terminalApi={terminalApi}
             tabs={terminalTabs}
           />
         </section>
 
         <aside className="panel panel--right">
-          <section className="panel__section">
+          <section className="panel__section" onContextMenu={openSessionBlankContextMenu}>
             <div className="panel__heading">
               <div className="panel__title-group">
                 <h2>Sessions</h2>
                 <span className="panel__badge">{sessionBadgeText}</span>
               </div>
-              <button
-                aria-label="Create session"
-                className="primary-button primary-button--small primary-button--icon"
-                onClick={openCreateModal}
-                title="Create session"
-                type="button"
-              >
-                +
-              </button>
+              <div className="session-panel__heading-actions">
+                <span className="hint session-explorer__location">
+                  {activeSessionGroup ? `Group: ${activeSessionGroup.label}` : "Groups"}
+                </span>
+                <button
+                  aria-label="Open settings"
+                  className="icon-button session-panel__settings-button"
+                  onClick={() => openSettingsPanel("connection")}
+                  title="Settings"
+                  type="button"
+                >
+                  <UiIcon name="settings" />
+                </button>
+              </div>
             </div>
             {loading ? <p className="hint">Loading sessions...</p> : null}
-            <div className="session-filter-bar">
-              <input
-                className="session-filter-input"
-                onChange={(event) => setSessionFilterQuery(event.target.value)}
-                placeholder="Filter name/host/user"
-                value={sessionFilterQuery}
-              />
-              <button
-                aria-label={sessionFavoritesOnly ? "Show all sessions" : "Show favorite sessions only"}
-                className={
-                  sessionFavoritesOnly
-                    ? "icon-button session-filter-toggle is-active"
-                    : "icon-button session-filter-toggle"
-                }
-                onClick={() => setSessionFavoritesOnly((prev) => !prev)}
-                title={sessionFavoritesOnly ? "Show all" : "Favorites only"}
-                type="button"
-              >
-                {sessionFavoritesOnly ? "★" : "☆"}
-              </button>
-            </div>
-            {!loading && filteredSessions.length === 0 ? (
-              <p className="hint">
-                {sessions.length === 0
-                  ? "No sessions yet."
-                  : "No sessions match current filters."}
-              </p>
-            ) : null}
-            <ul className="session-list">
-              {filteredSessions.map((session) => (
-                <li
-                  key={session.id}
-                  className={
-                    selectedSessionId === session.id
-                      ? "session-list__item is-selected"
-                      : "session-list__item"
-                  }
-                  onContextMenu={(event) => openSessionContextMenu(event, session.id)}
+            <div className="session-explorer">
+              <div className="session-filter-bar">
+                <input
+                  className="session-filter-input"
+                  onChange={(event) => setSessionFilterQuery(event.target.value)}
+                  placeholder="Filter name/host/user/group"
+                  value={sessionFilterQuery}
+                />
+                <button
+                  aria-label={sessionFavoritesOnly ? "Show all sessions" : "Show favorite sessions only"}
+                  className={sessionFavoritesOnly ? "session-filter-toggle is-active" : "session-filter-toggle"}
+                  onClick={() => setSessionFavoritesOnly((prev) => !prev)}
+                  title={sessionFavoritesOnly ? "Show all" : "Favorites only"}
+                  type="button"
                 >
+                  {sessionFavoritesOnly ? "Favorites" : "All"}
+                </button>
+              </div>
+              {!activeSessionGroup ? (
+                <>
+                  {!loading && filteredSessions.length === 0 ? (
+                    <p className="hint">
+                      {sessions.length === 0
+                        ? "No sessions yet."
+                        : "No sessions match current filters."}
+                    </p>
+                  ) : null}
+                  <ul className="session-folder-list">
+                    {groupedSessions.map((group) => (
+                      <li
+                        className="session-folder-list__item"
+                        key={group.key}
+                        onContextMenu={(event) =>
+                          openSessionContextMenu(event, {
+                            type: "group",
+                            groupKey: group.key,
+                            groupName: group.groupName,
+                            label: group.label
+                          })
+                        }
+                      >
+                        <button
+                          className="session-folder-list__main"
+                          onClick={() => setActiveSessionGroupKey(group.key)}
+                          title={`${group.label} (${group.sessions.length})`}
+                          type="button"
+                        >
+                          <span className="session-folder-list__name">{group.label}</span>
+                          <span className="session-folder-list__count">{group.sessions.length}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <>
                   <button
-                    className="session-list__main"
-                    onClick={() => setSelectedSessionId(session.id)}
-                    onDoubleClick={() => openTerminalTab(session)}
-                    title={`${session.username}@${session.host}:${session.port}`}
+                    aria-label="Back to groups"
+                    className="icon-button session-explorer__back"
+                    onClick={() => setActiveSessionGroupKey(null)}
+                    title="Back to groups"
                     type="button"
                   >
-                    <span className="session-list__name">{session.name}</span>
-                    <span className="session-list__host">{session.host}</span>
+                    <UiIcon name="chevronLeft" />
                   </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="panel__section">
-            <div className="panel__heading">
-              <h2>Selected Session</h2>
+                  {!loading && activeGroupSessions.length === 0 ? (
+                    <p className="hint">No sessions in this group.</p>
+                  ) : null}
+                  <ul className="session-list">
+                    {activeGroupSessions.map((session) => (
+                      <li
+                        key={session.id}
+                        className={
+                          selectedSessionId === session.id
+                            ? "session-list__item is-selected"
+                            : "session-list__item"
+                        }
+                        onContextMenu={(event) =>
+                          openSessionContextMenu(event, {
+                            type: "session",
+                            sessionId: session.id
+                          })
+                        }
+                      >
+                        <button
+                          className="session-list__main"
+                          onClick={() => setSelectedSessionId(session.id)}
+                          onDoubleClick={() => openTerminalTab(session)}
+                          title={`${session.username}@${session.host}:${session.port}`}
+                          type="button"
+                        >
+                          <span className="session-list__name">{session.name}</span>
+                          <span className="session-list__host">{session.host}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </div>
-            {selectedSession ? (
-              <dl className="session-meta">
-                <div>
-                  <dt>Name</dt>
-                  <dd>{selectedSession.name}</dd>
-                </div>
-                <div>
-                  <dt>Target</dt>
-                  <dd>
-                    {selectedSession.username}@{selectedSession.host}:
-                    {selectedSession.port}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Auth</dt>
-                  <dd>{selectedSession.authType}</dd>
-                </div>
-                <div>
-                  <dt>Secret</dt>
-                  <dd>{selectedSession.hasSecret ? "Stored in secure vault" : "-"}</dd>
-                </div>
-                <div>
-                  <dt>Last Connected</dt>
-                  <dd>{formatSessionLastConnected(selectedSession.lastConnectedAt)}</dd>
-                </div>
-                <div>
-                  <dt>Remark</dt>
-                  <dd>{selectedSession.remark || "-"}</dd>
-                </div>
-              </dl>
-            ) : (
-              <p className="hint">Pick a session from the right panel.</p>
-            )}
           </section>
-
           <section className="panel__section">
             <div className="panel__heading">
               <h2>Server Health</h2>
@@ -3227,7 +5097,7 @@ export function App() {
                   title={isServerHealthDetailOpen ? "Hide details" : "Show details"}
                   type="button"
                 >
-                  {isServerHealthDetailOpen ? "▴" : "▾"}
+                  <UiIcon name={isServerHealthDetailOpen ? "minus" : "plus"} />
                 </button>
                 <button
                   aria-label="Refresh server metrics"
@@ -3247,7 +5117,7 @@ export function App() {
                   title="Refresh"
                   type="button"
                 >
-                  ⟳
+                  <UiIcon name="refresh" />
                 </button>
                 <span
                   className={
@@ -3330,17 +5200,17 @@ export function App() {
                           {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
                         </strong>
                         <span className="server-health-card__meta">
-                          {serverHealth.diskPath} · {formatTransferBytes(serverHealth.diskUsedBytes)}/
+                          {serverHealth.diskPath} | {formatTransferBytes(serverHealth.diskUsedBytes)}/
                           {formatTransferBytes(serverHealth.diskTotalBytes)}
                         </span>
                       </div>
                       <div className="server-health-card">
                         <span className="server-health-card__label">Network</span>
                         <strong className="server-health-card__value">
-                          ↓ {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
+                          RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
                         </strong>
                         <span className="server-health-card__meta">
-                          ↑ {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
+                          TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
                         </span>
                       </div>
                       <div className="server-health-card">
@@ -3437,7 +5307,7 @@ export function App() {
                           )}
                         </div>
                         <p className="hint server-health__footnote">
-                          Updated: {serverHealthUpdatedLabel} · RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
+                          Updated: {serverHealthUpdatedLabel} | RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
                           {formatTransferBytes(serverHealth.networkTxBytes)}
                         </p>
                       </div>
@@ -3455,6 +5325,135 @@ export function App() {
           </section>
         </aside>
       </main>
+
+      <section className="transfer-dock">
+        <div className="transfer-dock__heading">
+          <h3>Transfers</h3>
+          <span className="hint">
+            {activeTerminalTab
+              ? `Bound to ${activeTerminalTab.title}`
+              : "Open a terminal tab to manage transfers"}
+          </span>
+        </div>
+        <div className="transfer-dock__grid">
+          <section className="transfer-dock__panel">
+            <div className="sftp-transfer-panel__header">
+              <p className="hint sftp-transfer-panel__title">
+                Uploads (running {activeUploadQueueStats.running}, queued{" "}
+                {activeUploadQueueStats.queued}, threads{" "}
+                {sftpTransferPreferences.uploadConcurrency})
+              </p>
+              <button
+                aria-label="Cancel all upload tasks"
+                className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
+                disabled={!activeTabId}
+                onClick={() => {
+                  void cancelAllActiveUploads();
+                }}
+                title="Cancel all upload tasks in this tab"
+                type="button"
+              >
+                <UiIcon name="close" />
+              </button>
+            </div>
+            <p className="hint sftp-transfer-panel__batch-progress">
+              Progress: {activeUploadProgressStats.completed}/{activeUploadProgressStats.total} completed
+              (failed {activeUploadProgressStats.failed}, canceled {activeUploadProgressStats.canceled},
+              running {activeUploadProgressStats.running}, queued {activeUploadProgressStats.queued})
+            </p>
+            {activeUploadTransfers.length > 0 ? (
+              <ul className="sftp-transfer-list transfer-dock__list">
+                {activeUploadTransfers.map((transfer) => {
+                  const canCancelTransfer =
+                    transfer.status === "queued" || transfer.status === "running";
+                  return (
+                    <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
+                      <span className="sftp-transfer__icon">
+                        <UiIcon name="upload" />
+                      </span>
+                      <span className="sftp-transfer__name">{transfer.name}</span>
+                      <span className="sftp-transfer__progress">{formatTransferProgress(transfer)}</span>
+                      {canCancelTransfer ? (
+                        <button
+                          aria-label="Cancel upload"
+                          className="icon-button sftp-transfer__cancel"
+                          onClick={() => {
+                            void cancelSftpUpload(transfer);
+                          }}
+                          title="Cancel upload"
+                          type="button"
+                        >
+                          <UiIcon name="close" />
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="hint transfer-dock__empty">No upload transfers.</p>
+            )}
+          </section>
+          <section className="transfer-dock__panel">
+            <div className="sftp-transfer-panel__header">
+              <p className="hint sftp-transfer-panel__title">
+                Downloads (running {activeDownloadQueueStats.running}, queued{" "}
+                {activeDownloadQueueStats.queued}, threads{" "}
+                {sftpTransferPreferences.downloadConcurrency})
+              </p>
+              <button
+                aria-label="Cancel all download tasks"
+                className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
+                disabled={!activeTabId}
+                onClick={() => {
+                  void cancelAllActiveDownloads();
+                }}
+                title="Cancel all download tasks in this tab"
+                type="button"
+              >
+                <UiIcon name="close" />
+              </button>
+            </div>
+            <p className="hint sftp-transfer-panel__batch-progress">
+              Progress: {activeDownloadProgressStats.completed}/{activeDownloadProgressStats.total} completed
+              (failed {activeDownloadProgressStats.failed}, canceled {activeDownloadProgressStats.canceled},
+              running {activeDownloadProgressStats.running}, queued {activeDownloadProgressStats.queued})
+            </p>
+            {activeDownloadTransfers.length > 0 ? (
+              <ul className="sftp-transfer-list transfer-dock__list">
+                {activeDownloadTransfers.map((transfer) => {
+                  const canCancelTransfer =
+                    transfer.status === "queued" || transfer.status === "running";
+                  return (
+                    <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
+                      <span className="sftp-transfer__icon">
+                        <UiIcon name="download" />
+                      </span>
+                      <span className="sftp-transfer__name">{transfer.name}</span>
+                      <span className="sftp-transfer__progress">{formatTransferProgress(transfer)}</span>
+                      {canCancelTransfer ? (
+                        <button
+                          aria-label="Cancel download"
+                          className="icon-button sftp-transfer__cancel"
+                          onClick={() => {
+                            void cancelSftpDownload(transfer);
+                          }}
+                          title="Cancel download"
+                          type="button"
+                        >
+                          <UiIcon name="close" />
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="hint transfer-dock__empty">No download transfers.</p>
+            )}
+          </section>
+        </div>
+      </section>
 
       {sftpToolbarMenu ? (
         <div
@@ -3671,10 +5670,9 @@ export function App() {
                       })}
                     </div>
                     <p className="hint">
-                      Windows defaults use Alt-based hotkeys to avoid terminal <code>Ctrl + C</code>
-                      conflicts. Some keys use <code>Alt + Shift</code> to avoid Windows menu
-                      shortcuts (for example <code>Alt + F</code>/<code>Alt + V</code>). macOS
-                      keeps the existing Cmd-based behavior.
+                      Windows defaults use <code>Alt + C</code> / <code>Alt + V</code> for
+                      terminal copy/paste, and keeps Alt-based keys for tab and search actions.
+                      macOS keeps the existing Cmd-based behavior.
                     </p>
                     <div className="modal__actions">
                       <button
@@ -3777,6 +5775,34 @@ export function App() {
                   </>
                 ) : null}
 
+                {activeSettingsSection === "sftp" ? (
+                  <>
+                    <label>
+                      Upload Threads
+                      <input
+                        max={8}
+                        min={1}
+                        onChange={(event) => setUploadConcurrency(event.target.value)}
+                        type="number"
+                        value={sftpTransferPreferences.uploadConcurrency}
+                      />
+                    </label>
+                    <label>
+                      Download Threads
+                      <input
+                        max={8}
+                        min={1}
+                        onChange={(event) => setDownloadConcurrency(event.target.value)}
+                        type="number"
+                        value={sftpTransferPreferences.downloadConcurrency}
+                      />
+                    </label>
+                    <p className="hint">
+                      Controls max parallel upload/download tasks. Range: 1-8.
+                    </p>
+                  </>
+                ) : null}
+
                 <div className="modal__actions settings-panel__footer">
                   <button
                     className="primary-button"
@@ -3858,6 +5884,22 @@ export function App() {
                   />
                 </label>
               </div>
+              <label>
+                Group
+                <select
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, groupId: event.target.value }))
+                  }
+                  value={form.groupId ?? ""}
+                >
+                  <option value="">Ungrouped</option>
+                  {sessionGroupOptions.map((groupName) => (
+                    <option key={groupName} value={groupName}>
+                      {groupName}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label>
                 Auth Type
                 <select
@@ -3963,7 +6005,83 @@ export function App() {
         </div>
       ) : null}
 
+      {appDialog ? (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeAppDialog();
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="modal modal--compact app-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={appDialog.title}
+          >
+            <div className="modal__header">
+              <h3>{appDialog.title}</h3>
+            </div>
+            <p className="app-dialog__message">{appDialog.message}</p>
+            {appDialog.mode === "prompt" ? (
+              appDialog.multiline ? (
+                <textarea
+                  className="app-dialog__textarea"
+                  onChange={(event) => setAppDialogInput(event.target.value)}
+                  ref={(element) => {
+                    appDialogInputRef.current = element;
+                  }}
+                  rows={6}
+                  value={appDialogInput}
+                />
+              ) : (
+                <input
+                  className="app-dialog__input"
+                  onChange={(event) => setAppDialogInput(event.target.value)}
+                  ref={(element) => {
+                    appDialogInputRef.current = element;
+                  }}
+                  value={appDialogInput}
+                />
+              )
+            ) : appDialog.detailText ? (
+              <textarea
+                className="app-dialog__textarea app-dialog__textarea--readonly"
+                readOnly
+                value={appDialog.detailText}
+              />
+            ) : null}
+            {appDialog.mode === "prompt" && appDialog.multiline ? (
+              <p className="hint app-dialog__hint">Use Ctrl+Enter to confirm.</p>
+            ) : null}
+            <div className="modal__actions">
+              {appDialog.mode !== "alert" ? (
+                <button className="secondary-button" onClick={closeAppDialog} type="button">
+                  {appDialog.cancelLabel}
+                </button>
+              ) : null}
+              <button
+                className={
+                  appDialog.mode === "confirm" && appDialog.danger
+                    ? "primary-button app-dialog__confirm--danger"
+                    : "primary-button"
+                }
+                onClick={submitAppDialog}
+                type="button"
+              >
+                {appDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {error ? <div className="error-bar">{error}</div> : null}
     </div>
   );
 }
+
+

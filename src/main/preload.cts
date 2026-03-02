@@ -47,10 +47,35 @@ const api = {
       ipcRenderer.invoke("system:pickUploadFile") as Promise<string | null>,
     pickDownloadTarget: (defaultName: string) =>
       ipcRenderer.invoke("system:pickDownloadTarget", defaultName) as Promise<string | null>,
+    pickDownloadDirectory: (defaultName?: string) =>
+      ipcRenderer.invoke("system:pickDownloadDirectory", defaultName) as Promise<string | null>,
     pickOpenProgram: () =>
       ipcRenderer.invoke("system:pickOpenProgram") as Promise<string | null>,
+    readClipboardText: () =>
+      ipcRenderer.invoke("system:readClipboardText") as Promise<string>,
+    writeClipboardText: (value: string) =>
+      ipcRenderer.invoke("system:writeClipboardText", value) as Promise<void>,
     createTempOpenFilePath: (defaultName: string) =>
       ipcRenderer.invoke("system:createTempOpenFilePath", defaultName) as Promise<string>,
+    prepareRemoteOpenFile: (tabId: string, remotePath: string, defaultName: string) =>
+      ipcRenderer.invoke(
+        "system:prepareRemoteOpenFile",
+        tabId,
+        remotePath,
+        defaultName
+      ) as Promise<{
+        localPath: string;
+        alreadyOpen: boolean;
+      }>,
+    enableRemoteFileAutoSync: (tabId: string, remotePath: string, localPath: string) =>
+      ipcRenderer.invoke(
+        "system:enableRemoteFileAutoSync",
+        tabId,
+        remotePath,
+        localPath
+      ) as Promise<void>,
+    disposeRemoteOpenFiles: (tabId?: string | null) =>
+      ipcRenderer.invoke("system:disposeRemoteOpenFiles", tabId) as Promise<void>,
     openLocalPath: (localPath: string, preferredProgramPath?: string | null) =>
       ipcRenderer.invoke("system:openLocalPath", localPath, preferredProgramPath) as Promise<void>,
     expandUploadPaths: (inputPaths: string[]) =>
@@ -60,6 +85,13 @@ const api = {
           relativeDirectory: string;
         }>
       >,
+    scanLocalPathEntries: (inputPath: string) =>
+      ipcRenderer.invoke("system:scanLocalPathEntries", inputPath) as Promise<{
+        kind: "file" | "directory" | "other" | "missing";
+        path: string;
+        files: string[];
+        directories: string[];
+      }>,
     getPathForDroppedFile: async (file: unknown) => {
       try {
         const pathValue = webUtils.getPathForFile(file as Parameters<typeof webUtils.getPathForFile>[0]);

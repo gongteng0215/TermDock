@@ -7,7 +7,7 @@ It combines session management, multi-tab terminal, and file transfer in one wor
 
 ## English
 
-### Current Status (2026-02-26)
+### Current Status (2026-03-03)
 
 ### Available Features
 
@@ -34,7 +34,7 @@ It combines session management, multi-tab terminal, and file transfer in one wor
 
 ### Release Readiness
 
-- Latest official release: `v0.1.1` (GitHub Release)
+- Latest official release: `v0.1.3` (GitHub Release)
 - Release quality today: usable for early production/power users, but not fully hardened GA
 - Still recommended before broad rollout:
   - Cross-platform smoke tests (`P0-F3`)
@@ -98,23 +98,23 @@ Workflow file: `.github/workflows/release.yml`
 Stable release:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 Prerelease (test/rc):
 
 ```bash
-git tag v0.1.1-test.1
-git push origin v0.1.1-test.1
+git tag v0.1.3-test.1
+git push origin v0.1.3-test.1
 ```
 
 3. GitHub Actions `Release` workflow will build:
 - macOS: `arm64 dmg/zip` + `x64 dmg/zip`
 - Windows: `nsis(.exe)` + `zip`
 4. Release type is automatic:
-- Tag without `-` (for example `v0.1.1`) => official release
-- Tag with `-` (for example `v0.1.1-test.1`, `v0.1.1-rc.1`) => prerelease
+- Tag without `-` (for example `v0.1.3`) => official release
+- Tag with `-` (for example `v0.1.3-test.1`, `v0.1.3-rc.1`) => prerelease
 5. Intel + macOS 12 users should download the `x64` mac package.
 
 You can also trigger it manually in Actions (`workflow_dispatch`) with an existing tag.
@@ -216,7 +216,7 @@ MIT (`LICENSE`)
 
 ### 当前发版判断
 
-- 最新正式版：`v0.1.1`（已发布到 GitHub Release）
+- 最新正式版：`v0.1.3`（已发布到 GitHub Release）
 - 当前质量判断：可供早期生产/重度用户使用，但仍未达到完全打磨的 GA 水平
 - 大规模推广前建议补齐：
   - `P0-F3` 跨平台冒烟测试
@@ -280,23 +280,23 @@ pnpm build
 正式版：
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 测试/预发布版：
 
 ```bash
-git tag v0.1.1-test.1
-git push origin v0.1.1-test.1
+git tag v0.1.3-test.1
+git push origin v0.1.3-test.1
 ```
 
 3. GitHub Actions 会自动执行 `Release`，构建：
 - macOS：`arm64 dmg/zip` + `x64 dmg/zip`
 - Windows：`nsis(.exe)` + `zip`
 4. 发布类型自动判断：
-- 不带 `-` 的 tag（例如 `v0.1.1`）=> 正式版 Release
-- 带 `-` 的 tag（例如 `v0.1.1-test.1`、`v0.1.1-rc.1`）=> Prerelease
+- 不带 `-` 的 tag（例如 `v0.1.3`）=> 正式版 Release
+- 带 `-` 的 tag（例如 `v0.1.3-test.1`、`v0.1.3-rc.1`）=> Prerelease
 5. Intel + macOS 12 用户请下载带 `x64` 的 mac 包。
 
 也可在 Actions 页面手动触发（`workflow_dispatch`），输入已存在的 tag。

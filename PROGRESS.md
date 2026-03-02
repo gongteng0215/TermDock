@@ -1,6 +1,6 @@
 # TermDock Progress
 
-Last updated: 2026-02-26
+Last updated: 2026-03-03
 
 ## Snapshot
 
@@ -15,7 +15,7 @@ Last updated: 2026-02-26
 
 ## Release Readiness
 
-- Official GitHub Release shipped: `v0.1.1`
+- Official GitHub Release shipped: `v0.1.3`
 - Current quality: usable for early production/power users, but not fully hardened GA
 - Minimum gates before broad public rollout:
   - `P0-F3` cross-platform smoke tests (macOS + Windows 11)
@@ -77,7 +77,7 @@ Last updated: 2026-02-26
 - Monitoring threshold alerts shipped: configurable CPU/memory/disk thresholds + panel alert badge/highlight
 - Monitoring drill-down shipped: top CPU processes + failed services in detail view (on-demand polling)
 - Right-side layout compacted (session list + monitor cards) to improve information density
-- Official GitHub Release `v0.1.1` published (stable tag workflow path validated)
+- Official GitHub Release `v0.1.3` published (stable tag workflow path validated)
 - Hotkey settings upgraded from toggles to configurable key bindings (Windows terminal copy now defaults to `Alt+C`)
 - Settings dialog reorganized into left-nav + right-content layout for clearer grouping
 
@@ -88,7 +88,7 @@ Last updated: 2026-02-26
 3. Finalize installer signing/notarization strategy (`P0-F4`)
 4. Implement recoverable global error actions (`P0-E3`)
 
-## Product Scope Updates (2026-02-26)
+## Product Scope Updates (2026-03-03)
 
 - Added into product planning:
   - Server health panel (CPU/memory/disk/network/load/uptime + threshold alerts + process/service drill-down) is now implemented
