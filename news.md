@@ -1,28 +1,35 @@
-感觉现在的功能有点少，你想想还有什么可以做的
+# TermDock Product Notes
 
-先把这几条加到产品里面去，然后再想想还有什么可以做的 111
+Last updated: 2026-03-03
 
-再想想还有什么可以做的吗
+## Confirmed Direction
 
-可以这些也写到文档里面去，然后在想还可以做什么
+- Keep a compact-first desktop workflow
+- Prioritize operator efficiency over decorative UI
+- Use context-menu-first interactions for session/group/file operations
+- Keep core terminal and transfer actions deterministic and recoverable
 
-可以吧，这些也放进去吧
+## Shipped in Recent Cycles
 
-再加个功能吧，连接上服务器，可以监控服务器的状态
+- Server health baseline and detail drill-down
+- Alert thresholds for CPU/memory/disk
+- Folder-style session grouping
+- Split transfer dock with queue stats and cancel-all actions
+- Remote file open deduplication and auto-upload on save
+- Windows hotkey defaults updated to `Alt+C` / `Alt+V`
+- UI icon system upgraded to `lucide-react`
 
-然后这个功能先做吧
+## Current Top Problems to Solve
 
-Error invoking remote method 'terminal:getServerHealth': Error: Server health data is incomplete for tab 2d988665-3be9-4628-8482-681328a4a81d-1771429200666-11b82d. Raw output: VM-0-10-ubuntu 6505035.22 5194102956 5103864423 0 0 0.04 0.01 0.00 0 0 0 0 0
+1. Cross-platform smoke test coverage is still incomplete
+2. Installer signing/notarization workflow is not finalized
+3. Global recoverable error UX needs stronger action guidance
+4. Large transfer/folder edge cases still need hardening
 
-内存和磁盘都是0
+## Next Candidate Features
 
-可以了，但是网络是0
-
-Network
-RX 4.3 TB / TX 135.6 GB
-
-更新到几个md文档里面去，然后想想还能怎么改进这个功能
-
-可以开始吧
-
-服务器监控趋势图不要直接放在监控参数下面，要在监控的面板上有个按钮可以查看详情，才出现服务器监控趋势图
+- SSH config import
+- Port forwarding UI
+- Transfer retry center and history
+- Snippets and command palette
+- Multi-host command broadcast

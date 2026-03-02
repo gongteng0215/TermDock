@@ -2,46 +2,40 @@
 
 ## v0.1.3 (2026-03-03)
 
-### 发布类型
-- 正式版（Stable）
+Release type: Stable
 
-### 重点更新
-- 会话分组重构为“文件夹式浏览”：
-  - 先看分组，再进入分组查看会话
-  - 分组和会话统一通过右键菜单管理（新建/重命名/删除/查看）
-  - Session 右侧信息区移除，详情改为右键查看
-- 传输区（Uploads / Downloads）统一下沉到底部固定区域，上传下载分离展示。
-- 上传/下载队列能力增强：
-  - 新增每批次完成数/总数统计
-  - 支持一键取消全部任务
-  - 支持取消单任务并修复“取消后仍继续执行”的问题
-  - 上传/下载并发线程数可在设置中配置（默认 2）
-- 下载能力增强：
-  - 右键支持下载文件夹
-  - 下载流程与上传流程统一（队列、统计、取消逻辑）
-- 远程文件打开体验改进：
-  - 重复打开同一远程文件时不再无限新开窗口
-  - 关闭后可再次打开
-  - 保存本地打开的远程文件时自动回传覆盖到服务器
-- 删除体验改进：
-  - 删除文件/目录时增加进度提示
-  - 删除目录走远端命令路径，减少长时间无反馈卡住问题
-- 快捷键调整：
-  - Windows 终端复制/粘贴默认改为 `Alt+C` / `Alt+V`
-  - 保留可配置热键机制
-- Windows 顶部菜单栏处理：
-  - 默认隐藏菜单栏，避免出现原生顶栏占位
-- 界面与图标升级：
-  - 引入 `lucide-react` 图标库
-  - 统一替换主要操作图标（设置、刷新、菜单、取消、标签关闭等）
-  - 修复部分乱码与按钮样式不统一问题
+### Highlights
 
-### 兼容与注意事项
-- 首次升级后，建议在 `Settings` 中确认：
-  - Upload Threads
-  - Download Threads
-  - Hotkeys（尤其是复制/粘贴绑定）
-- 若你依赖旧的测试版行为（`0.1.3-test.1`），请留意会话分组与右键交互方式已更新。
+- Reworked Sessions into a folder-style flow:
+  - Browse groups first, then enter a group to view sessions
+  - Group and session actions unified under context menus
+  - Removed the dedicated right-side session info panel
+- Added blank-area context menu support in the Sessions panel
+- Split upload/download and pinned transfer panels to a fixed bottom dock
+- Added batch progress stats for transfer workflows
+- Added one-click cancel-all for upload and download
+- Fixed cancellation races where tasks could continue after cancel
+- Added folder download from SFTP context menu
+- Unified upload/download queue behavior and controls
+- Added configurable upload/download thread counts in Settings (default: 2)
+- Improved remote file open/edit behavior:
+  - Prevent duplicate windows for the same remote file
+  - Reopen works after close
+  - Auto-upload on save back to server
+- Added visible delete progress feedback
+- Improved directory delete path handling on remote host
+- Windows menu bar is now hidden by default
+- Windows terminal copy/paste defaults changed to `Alt+C` / `Alt+V`
+- UI icon refresh with `lucide-react` for consistent controls
 
-### 验证
-- 已完成 `pnpm run build` 构建验证（renderer + main 通过）。
+### Compatibility Notes
+
+- After upgrade, check:
+  - `Settings > SFTP > Upload Threads`
+  - `Settings > SFTP > Download Threads`
+  - `Settings > Hotkeys` (especially copy/paste bindings)
+- If upgrading from `0.1.3-test.1`, session-group and context-menu interactions have changed.
+
+### Validation
+
+- Build verification completed: `pnpm run build` (renderer + main passed)

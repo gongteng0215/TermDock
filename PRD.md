@@ -1,285 +1,123 @@
 # TermDock PRD
 
-## 1. 文档信息
+Version: v1.6  
+Last updated: 2026-03-03
 
-- 产品名：`TermDock`
-- 文档版本：`v1.5`
-- 最后更新：`2026-02-26`
-- 适用阶段：`MVP(P0)` + `V2(P1)` 规划
+## 1. Product Positioning
 
-## 2. 产品定位
+TermDock is a desktop SSH + SFTP workspace for developers and operators.
+The product goal is to complete session management, terminal operations, and file transfer inside one window with low context switching.
 
-TermDock 是一款面向开发者和运维人员的跨平台桌面 SSH + SFTP 工具。  
-目标是用一个窗口完成会话管理、远程终端操作、SFTP 文件传输。
+Target platforms:
 
-- 主平台：macOS（体验优先）
-- 必须兼容：Windows 11
+- macOS (experience-first)
+- Windows 11 (full compatibility)
 
-## 3. 目标与非目标
+## 2. Product Goals
 
-### 3.1 MVP 目标
+### MVP (P0)
 
-- 快速、安全连接远程服务器
-- 支持稳定的多标签 SSH 终端
-- 支持可用的 SFTP 文件浏览与单文件传输
-- 降低“终端 + 文件工具”来回切换成本
+- Fast and reliable remote login
+- Stable multi-tab terminal workflow
+- Usable SFTP browsing and transfer workflow
+- Safe and efficient daily operations
 
-### 3.2 MVP 非目标
+### Non-goals for MVP
 
-- 不做堡垒机（审批/审计/录像）
-- 不做云端账号体系
-- 不做移动端
+- Enterprise bastion/governance suite
+- Cloud account identity platform
+- Mobile clients
 
-## 4. 目标用户与场景
+## 3. Target Users
 
-### 4.1 用户
+- Backend/frontend engineers
+- SRE/operations engineers
+- Users with high-frequency SSH + file transfer tasks
 
-- 后端/前端开发者
-- 运维/SRE
-- 需高频 SSH + 文件上传下载的技术用户
+## 4. UX Principles
 
-### 4.2 典型场景
+- Compact-first layout
+- Information density over decorative spacing
+- Context-menu-first operation for list/tree actions
+- Strong safeguards for destructive operations
+- Platform-native keyboard behavior
 
-- 登录测试/生产机排障
-- 上传构建产物并执行部署脚本
-- 多台机器并行连接查看日志
+## 5. Functional Scope
 
-## 5. 体验原则（硬约束）
+### 5.1 Session Management
 
-- `Compact-first`：默认紧凑布局，优先信息密度
-- 操作连贯：会话打开、终端操作、SFTP 切换应在一个工作区内完成
-- 降低误操作：危险操作要确认，编辑弹窗默认不允许点空白关闭
-- 平台一致性：macOS 使用 `Cmd`，Windows 使用 `Ctrl`
+- Create/edit/delete/test connection
+- Search, favorite filter, recency sorting
+- Folder-style group navigation
+- Group/session context menu operations
 
-## 6. 功能需求（MVP / P0）
+### 5.2 Terminal
 
-## 6.1 会话管理（Session Manager）
+- xterm-based terminal rendering
+- Multi-tab and same-session multi-open
+- Reconnect and context actions
+- Configurable hotkeys
+- KeepAlive and auto reconnect
 
-### 需求
+### 5.3 SFTP
 
-- 会话 CRUD
-- 会话字段：`name / host / port / username / authType / privateKeyPath / remark / favorite`
-- 支持密码与私钥认证
-- 支持连接测试
-- 支持搜索过滤、收藏筛选、最近连接排序
+- Browse/open/refresh/path jump
+- Create folder, rename, delete
+- Upload/download with queue and progress
+- Cancel single task and cancel all
+- Folder download
+- Drag-and-drop upload
 
-### 验收要点
+### 5.4 Remote File Open/Edit
 
-- 3 分钟内可创建会话并发起连接
-- 编辑/删除后列表与存储一致
-- 最近连接时间可回显
+- Open remote file into local temp file
+- Prevent duplicate opens for same remote file
+- Reopen after close
+- Auto-upload on save back to remote path
 
-## 6.2 SSH 终端（Terminal）
+### 5.5 Monitoring
 
-### 需求
+- CPU, memory, disk, network, load, uptime
+- Alert thresholds for CPU/memory/disk
+- Trend detail panel
+- Top CPU processes and failed services
 
-- xterm.js 终端渲染
-- 多标签、同会话多开
-- 右键上下文菜单（MVP 至少含 `Clear`）
-- 快捷键：
-  - 新标签、关标签
-  - 复制/中断、粘贴、搜索
-- KeepAlive + 断开后的自动重连（可配置）
+### 5.6 Settings
 
-### 验收要点
+- Connection preferences
+- Hotkey bindings
+- Server health alert thresholds
+- File opening preferences
+- Upload/download concurrency
 
-- 输入输出链路稳定
-- 多标签互不干扰
-- 自动重连可生效并有状态反馈
+## 6. Security Requirements
 
-## 6.3 SFTP 文件管理
+- No plain-text credential persistence
+- Use keychain/credential manager via keytar where available
+- Controlled destructive operations with confirmation
 
-### 需求
+## 7. Non-functional Requirements
 
-- 与当前终端标签绑定复用连接
-- 目录浏览：进入目录、返回上级、刷新、路径跳转
-- 文件操作：新建目录、重命名、删除（MVP 非递归）
-- 文件打开：右键“打开文件”与双击打开，支持默认打开程序配置
-- 传输：单文件上传/下载、进度显示、拖拽上传（文件）、上传取消
-- 传输状态与目录统计在内容框下方展示，避免列表跳动
+- Stable startup and reconnect behavior
+- Transfer cancellation should be responsive and deterministic
+- UI should avoid layout jumps in core workflows
+- Release builds for macOS and Windows should be reproducible
 
-### 验收要点
+## 8. Current Limitations
 
-- 能完成“上传文件 -> 下载文件 -> 删除文件”闭环
-- 目录切换与列表刷新稳定
-- 错误可见并可继续操作
-- 上传取消后状态可见，且不应误报失败
-- 文件打开失败时有明确提示，不影响目录操作与后续传输
+- SQLite migration not complete
+- Automated test coverage is incomplete
+- Signing/notarization process is not fully finalized
+- Some recursive SFTP safety flows still need hardening
 
-## 6.4 设置（Settings）
+## 9. Release Gates Before Broader Rollout
 
-### 需求
+1. Cross-platform smoke testing (`P0-F3`)
+2. Installer signing/notarization and install verification (`P0-F4`)
+3. Recoverable global error UX (`P0-E3`)
 
-- 可配置自动重连开关与延迟
-- 可配置主要快捷键开关与键位（含终端复制/粘贴/搜索、开关 tab 等）
-- 可配置服务器监控告警阈值（CPU / 内存 / 磁盘）
-- 可配置 SFTP 文件默认打开程序（双击/右键打开）
-- 平台入口：
-  - macOS：应用菜单 `Settings...`（`Command+,`）
-  - Windows：`File > Settings...`（`Ctrl+,`）+ 顶栏按钮
+## 10. Version Plan
 
-### 验收要点
-
-- 设置变更立即生效
-- 重启后设置持久化（本地）
-- 设置项按模块分组展示（左侧菜单 + 右侧内容），降低误操作
-
-## 6.5 安全
-
-### 需求
-
-- 密码/passphrase 不落明文
-- macOS 使用 Keychain、Windows 使用 Credential Manager
-- 私钥路径可通过系统文件选择器设置
-
-## 6.6 服务器状态监控（Server Health）
-
-### 需求
-
-- 连接服务器后可查看基础状态：`CPU / 内存 / 磁盘 / 网络 / Load / Uptime`
-- 与当前激活终端标签绑定，切换标签时监控目标同步切换
-- 支持自动刷新与手动刷新
-- 监控详情（趋势图）默认折叠，点击“详情”后展开，避免默认信息过载
-- 支持阈值告警：CPU / 内存 / 磁盘超阈值时显示状态角标与卡片高亮（阈值在 Settings 配置）
-- 监控详情支持服务/进程下钻：Top CPU 进程 + `systemctl --failed` 服务
-- 服务/进程下钻数据仅在详情展开时拉取与轮询，降低默认开销
-- 采样失败时给出明确错误，不影响终端与 SFTP 正常使用
-
-### 验收要点
-
-- 已连接标签可稳定显示监控指标，断连后有可见提示
-- 手动刷新可即时更新，自动刷新可持续工作
-- 详情展开/收起不影响主流程操作
-- 阈值配置修改后能即时影响告警判定
-- 详情展开时可查看 Top 进程与失败服务，关闭详情后停止额外轮询
-- 监控异常不应导致应用崩溃或终端断开
-
-## 7. 非功能需求
-
-- 启动性能：冷启动目标 `< 3s`（开发机基线）
-- 稳定性：连接断开可恢复；SFTP 失败有明确错误
-- 兼容性：macOS + Windows 11 核心流程可用
-- 可用性：关键流程支持键鼠混合操作，减少重复点击
-
-## 8. 技术方案
-
-- 桌面框架：Electron
-- 前端：React + TypeScript
-- 终端：xterm.js
-- SSH/SFTP：ssh2
-- 凭据：keytar
-- 存储：当前 JSON，后续迁移 SQLite（`sessions/groups/recent_sessions`）
-
-## 9. 数据模型（目标形态）
-
-### sessions
-
-- `id`
-- `name`
-- `host`
-- `port`
-- `username`
-- `auth_type`
-- `private_key_path`
-- `group_id`
-- `remark`
-- `favorite`
-- `last_connected_at`
-
-### groups（P1 规划）
-
-- `id`
-- `name`
-- `parent_id`
-
-### recent_sessions（P1 规划）
-
-- `session_id`
-- `last_used_at`
-
-## 10. 版本规划
-
-### v0.1（MVP Preview，可内测）
-
-- 会话管理（CRUD + 搜索/收藏）
-- SSH 多标签终端（同会话多开）
-- SFTP 基础文件管理与单文件传输
-- KeepAlive + 自动重连配置
-- 设置页（重连与热键）
-- 服务器状态监控基础面板（概览 + 详情趋势）
-
-### v0.1.1（已发布）
-
-- 服务器监控阈值告警（CPU/内存/磁盘）+ 面板状态角标/高亮
-- 服务器监控服务/进程下钻（Top CPU 进程、失败服务）
-- 右侧会话区与监控面板紧凑化（提升信息密度）
-- GitHub Release 正式版打包发布验证（`macOS arm64/x64` + `Windows`）
-
-### v0.2（Beta）
-
-- SQLite 迁移与分组树
-- SFTP 传输队列/并发策略
-- 目录拖拽上传与递归操作增强
-- 错误恢复与稳定性专项
-- 监控增强（时间窗口、自定义检查、导出、多会话概览）
-
-### v0.3（GA 目标）
-
-- 完整测试与打包发布链路
-- 更多效率能力（分屏、Snippets、端口转发）
-
-### V2 已纳入功能（本轮加入产品）
-
-- SSH config 导入（`~/.ssh/config`）
-- 端口转发 UI（本地转发优先）
-- 远程文件快速编辑（下载-编辑-回传）
-- SFTP 目录下载（递归）
-- Snippets 命令片段 + `Cmd/Ctrl+K` 命令面板
-- 连接质量面板（RTT / 重连次数 / 失败率）
-- 主机指纹信任与变更告警（TOFU）
-- 多主机命令广播执行
-
-### V2 拓展候选（新增）
-
-- 会话模板与环境变量继承
-- 跳板机/多跳连接（`ProxyJump`）
-- 传输历史与重试中心
-- 本地与远程目录同步
-- Runbook 任务流（多步骤命令）
-- 敏感命令保护（高危命令二次确认）
-- 审计模式（命令/传输日志导出）
-- 定时任务（调度 Runbook）
-- 工作区快照恢复（标签/路径/布局一键恢复）
-- 传输完整性校验（上传/下载后 `sha256` 比对）
-- 传输断点续传（失败后从中断位置继续）
-- 传输限速（全局/单任务带宽控制）
-- SFTP 回收站（可恢复删除）
-- 生产环境保护模式（高危操作双确认）
-- 日志观察台（订阅/高亮/自动滚动）
-- 应用内更新通道（stable/beta）
-- 监控快照导出（CSV/JSON）
-- 多会话健康概览（会话列表健康摘要）
-
-## 11. 发版准入标准
-
-### 11.1 可发内测（当前已满足）
-
-- 首连、执行命令、上传下载可跑通
-- 快捷键、设置、SFTP 主流程可用
-- 关键错误可见
-
-### 11.2 可发公开版（当前未满足）
-
-- 完成跨平台冒烟测试（`P0-F3`）
-- 完成打包安装流程与签名策略（`P0-F4`）
-- 完成全局错误恢复体验（`P0-E3`）
-
-## 12. 当前实现映射（2026-02-26）
-
-- `DONE`：`P0-A1/A2/A4/B3/C1/C2/C3/C4/C6/C7/C8/D1/G1`
-- `PARTIAL`：`P0-A3/B1/B2/B4/B5/C5/D2/D3/D4/D5/D6/F4`
-- `TODO`：`P0-A5/E1/E2/E3/E4/F1/F2/F3`
-
-结论：`v0.1.1` 正式版已发布，可继续迭代发版；距离稳定 GA 仍需补齐测试、签名/公证与全局错误恢复。
-
-补充：`P0-D4` 已支持上传取消；`P0-G1` 已提供服务器监控基础能力；`P1-J1/J2`（监控告警阈值、服务/进程下钻）已落地；`P1-H6` 仍待补 RTT/失败率等连接质量指标；后续重点为监控时间窗/导出/多会话概览与传输队列策略。
+- `v0.1.3` (current stable): session/group workflow refresh, transfer improvements, remote file auto-sync, icon unification
+- Next hardening cycle: testing, installer reliability, error recovery
+- Next capability cycle: SSH config import, port forwarding, advanced transfer/workflow tooling

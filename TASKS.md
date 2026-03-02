@@ -1,184 +1,63 @@
-# TermDock 任务清单
+# TermDock Task Board
 
-> 基于 `PRD.md`，按 `MVP(P0)` 与 `V2(P1)` 维护。  
-> 最后更新：2026-02-26
+Last updated: 2026-03-03
 
-## 全局开发约束（持续生效）
+## Current Release State
 
-- `Compact-first`：新增页面/面板/弹窗默认紧凑布局
-- 信息密度优先：同屏展示更多核心信息，减少无效留白
-- 一致性：同类组件保持统一间距、字号、交互反馈
+- Stable release: `v0.1.3`
+- Branch baseline: `master`
+- Priority direction: hardening and release quality, not new broad feature expansion
 
-## 当前发版判断
+## P0 Matrix
 
-- 当前状态：`v0.1.1` 正式版已发布（GitHub Release）
-- 质量判断：可持续迭代发版，但暂不建议大规模公开推广
-- 大规模推广前最低补齐项：
-  - `P0-F3` 跨平台冒烟测试
-  - `P0-F4` 打包产物安装验证与签名策略
-  - `P0-E3` 全局错误恢复指引
-
-## P0 进度总览（2026-02-26）
-
-- `DONE`: 13
-- `PARTIAL`: 12
-- `TODO`: 8
-
-## 最近完成（2026-02-26）
-
-- 发布版空白页修复：生产环境资源路径改为相对路径（`file://` 正常加载）
-- 发布链路增强：macOS `arm64/x64` + Windows 产物稳定发布到 GitHub Release
-- SFTP 上传支持取消：上传中可中断，取消后状态标记为 `canceled`
-- 取消交互优化：取消上传不再弹错误提示，不影响后续继续操作
-- 图标能力补齐：`build/icon.icns` + `build/icon.ico` 已接入打包配置，开发态图标回退可用
-- 服务器监控基础能力落地：CPU/内存/磁盘/网络/负载/运行时长采集与展示
-- 监控交互优化：趋势图改为“详情开关”展开，默认只显示核心指标
-- 监控告警阈值：支持在 `Settings` 配置 CPU/内存/磁盘阈值，面板显示 `OK/ALERT` 状态与高亮
-- 监控下钻能力：详情面板新增 `Top processes (CPU)` 与 `Failed services`
-- 右侧布局紧凑化：会话列表与监控卡片密度提升，减少空白占用
-- 发布流程验证：已完成 `v0.1.1` 正式 tag/release 发布（自动构建产物）
-- 热键配置增强：Windows 终端复制默认改为 `Alt+C`；主要快捷键支持自定义键位（Settings）
-- Settings 布局优化：改为左侧菜单 + 右侧内容分栏
-
-### 已完成（DONE）
-
-- `P0-A1` 工程骨架（Electron + React + TypeScript）
-- `P0-A2` 三栏联动（Session / Terminal / SFTP）
-- `P0-A4` 安全存储（`keytar` + fallback）
-- `P0-B3` 会话删除与确认
-- `P0-C1` xterm 渲染
-- `P0-C2` SSH 连接封装（密码/私钥）
-- `P0-C3` 终端 IO 通道
-- `P0-C4` 多标签管理
-- `P0-C6` macOS 优先快捷键体系（Win 使用 Ctrl）
-- `P0-C7` 同会话多开
-- `P0-C8` 终端右键菜单（含 Clear，可扩展）
-- `P0-D1` SFTP 通道封装（复用连接）
-- `P0-G1` 服务器监控面板（基础指标 + 自动刷新 + 详情趋势）
-
-### 部分完成（PARTIAL）
-
-- `P0-A3` 已做 JSON CRUD，未迁移 SQLite/groups/recent_sessions
-- `P0-B1` 会话列表 + 搜索过滤 + 收藏筛选已完成，分组树未完成
-- `P0-B2` 创建/编辑可用，校验与批量编辑未完善
-- `P0-B4` 已记录 `lastConnectedAt`，未建立独立 `recent_sessions` 表
-- `P0-B5` 收藏已支持，分组视图下体验未打磨
-- `P0-C5` KeepAlive + 自动重连已支持，缺显式手动重连入口
-- `P0-D2` SFTP 面板已可用，折叠交互仍需完善
-- `P0-D3` 目录浏览与紧凑列表已可用，异常态/完整文件信息仍需加强
-- `P0-D4` 单文件上传下载 + 进度 + 上传取消已可用，队列并发策略未完成
-- `P0-D5` 新建目录/重命名/删除可用，递归删除与覆盖确认未完善
-- `P0-D6` 文件拖拽上传可用，目录拖拽与批量交互待完善
-- `P0-F4` 已接入 electron-builder + GitHub Release 工作流并完成 `v0.1.1` 正式发布，待签名/公证策略完善
-
-### 未开始（TODO）
-
-- `P0-A5` 本地结构化日志与错误采集
-- `P0-E1` 启动性能优化与基准
-- `P0-E2` 大文件传输内存优化专项
-- `P0-E3` 全局可恢复错误提示
-- `P0-E4` 崩溃恢复/持久化验证
-- `P0-F1` 单元测试（连接层/数据层）
-- `P0-F2` 集成测试（SSH + SFTP 主链路）
-- `P0-F3` 跨平台冒烟测试（macOS/Win11）
-
-## P0 任务矩阵
-
-| ID | 状态 | 说明 |
+| ID | Status | Notes |
 | --- | --- | --- |
-| P0-A1 | DONE | 工程可启动 |
-| P0-A2 | DONE | 三栏状态联动 |
-| P0-A3 | PARTIAL | JSON 已落地，SQLite 未落地 |
-| P0-A4 | DONE | 凭据安全存储已接入 |
-| P0-A5 | TODO | 日志模块未完成 |
-| P0-B1 | PARTIAL | 搜索/收藏筛选可用，分组树未做 |
-| P0-B2 | PARTIAL | 表单可用，深校验与批量流程待补 |
-| P0-B3 | DONE | 删除确认已实现 |
-| P0-B4 | PARTIAL | 最近连接时间已记录，独立表未做 |
-| P0-B5 | PARTIAL | 收藏能力已实现，分组态未打磨 |
-| P0-C1 | DONE | xterm 正常工作 |
-| P0-C2 | DONE | SSH 密码/私钥连接可用 |
-| P0-C3 | DONE | shell stream 可用 |
-| P0-C4 | DONE | 多标签可用 |
-| P0-C5 | PARTIAL | 自动重连可用，手动重连入口待补 |
-| P0-C6 | DONE | Cmd/Ctrl 快捷键体系可用 |
-| P0-C7 | DONE | 同会话多 tab 可并行 |
-| P0-C8 | DONE | 右键菜单可扩展 |
-| P0-D1 | DONE | SFTP 复用 SSH 连接 |
-| P0-D2 | PARTIAL | 面板可用，折叠/布局交互待完善 |
-| P0-D3 | PARTIAL | 浏览/切换可用，异常态待补 |
-| P0-D4 | PARTIAL | 上传下载+上传取消可用，队列并发待补 |
-| P0-D5 | PARTIAL | 基本文件操作可用，递归/覆盖待补 |
-| P0-D6 | PARTIAL | 文件拖拽可用，目录拖拽待补 |
-| P0-E1 | TODO | 性能基准未完成 |
-| P0-E2 | TODO | 内存优化未开始 |
-| P0-E3 | TODO | 全局恢复提示未完成 |
-| P0-E4 | TODO | 异常恢复验证未完成 |
-| P0-F1 | TODO | 单测未完成 |
-| P0-F2 | TODO | 集成测试未完成 |
-| P0-F3 | TODO | 跨平台冒烟未完成 |
-| P0-F4 | PARTIAL | 已接入 CI 打包与 Release 上传并完成 mac 双架构，待签名/公证策略 |
-| P0-G1 | DONE | 已支持服务器基础监控（CPU/内存/磁盘/网络/负载/运行时长） |
+| P0-A1 | DONE | Electron + React + TypeScript baseline is stable |
+| P0-A2 | DONE | Core multi-pane shell workflow is stable |
+| P0-A3 | PARTIAL | JSON persistence works; SQLite migration pending |
+| P0-A4 | DONE | Secure credential storage via keytar/fallback |
+| P0-A5 | TODO | Structured logging module |
+| P0-B1 | PARTIAL | Session list/search/favorite done; deeper group model pending |
+| P0-B2 | PARTIAL | Session form is usable; stronger validation/bulk flows pending |
+| P0-B3 | DONE | Delete with confirmation |
+| P0-B4 | PARTIAL | Recency tracking exists; dedicated recent table pending |
+| P0-B5 | PARTIAL | Favorite flow exists; grouped-favorite polish pending |
+| P0-C1 | DONE | xterm rendering |
+| P0-C2 | DONE | SSH password/private-key auth |
+| P0-C3 | DONE | Terminal IO stream wiring |
+| P0-C4 | DONE | Multi-tab terminal sessions |
+| P0-C5 | PARTIAL | KeepAlive + auto reconnect done; extra manual recovery UX pending |
+| P0-C6 | DONE | Platform-aware hotkeys |
+| P0-C7 | DONE | Same session multi-open |
+| P0-C8 | DONE | Terminal context menu |
+| P0-D1 | DONE | SFTP channel reuse via active tab |
+| P0-D2 | PARTIAL | SFTP panel is usable; final polish pending |
+| P0-D3 | PARTIAL | Browse/open/refresh works; edge error states still improving |
+| P0-D4 | PARTIAL | Queue/progress/cancel for upload/download done; more stress hardening pending |
+| P0-D5 | PARTIAL | Create/rename/delete done; recursive safety flows still evolving |
+| P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
+| P0-E1 | TODO | Startup performance benchmark/optimization |
+| P0-E2 | TODO | Large transfer memory optimization |
+| P0-E3 | TODO | Recoverable global error UX |
+| P0-E4 | TODO | Persistence crash-recovery verification |
+| P0-F1 | TODO | Unit tests |
+| P0-F2 | TODO | Integration tests |
+| P0-F3 | TODO | Cross-platform smoke tests |
+| P0-F4 | PARTIAL | Build/release pipeline works; signing/notarization pending |
+| P0-G1 | DONE | Server health panel baseline shipped |
 
-## 下一轮优先级（建议顺序）
+## In Progress Track (v0.1.3+)
 
-1. `P1-J3/J4/J5/J6`：服务器监控增强（时间窗、自定义检查、导出、多会话概览）
-2. `P0-F3`：执行一轮完整跨平台冒烟（mac Intel/mac Apple Silicon/Windows）并沉淀 checklist
-3. `P0-F4`：完善签名与公证策略（Windows 代码签名、mac Notarization）并验证安装体验
-4. `P0-E3`：建立全局错误恢复指引（可重试按钮、断线提示、桥接异常恢复）
-5. `P0-D4` + `P0-D6`：传输队列/并发策略 + 目录拖拽上传
-6. `P0-A3`：SQLite 迁移（sessions/groups/recent_sessions）
+1. `P0-F3` Cross-platform smoke checklist and reproducible report
+2. `P0-F4` Signing/notarization strategy and installation verification
+3. `P0-E3` Global error recovery actions and user guidance
+4. Transfer hardening for cancel races and large directory jobs
 
-## P1（V2）保留范围
+## Backlog Candidates
 
-- 分屏终端
-- Snippets + 变量
-- 端口转发 UI
-- 远程文本快速编辑
-- 批量执行
-- 清屏热键可配置
-
-## P1 新增（已加入产品规划）
-
-| ID | 状态 | 说明 |
-| --- | --- | --- |
-| P1-H1 | BACKLOG | SSH config 导入（`~/.ssh/config`） |
-| P1-H2 | BACKLOG | 端口转发 UI（本地/远程） |
-| P1-H3 | BACKLOG | 远程文件快速编辑（下载-编辑-回传） |
-| P1-H4 | BACKLOG | SFTP 目录下载（递归） |
-| P1-H5 | BACKLOG | Snippets + `Cmd/Ctrl+K` 命令面板 |
-| P1-H6 | PARTIAL | 已有服务器监控基础面板 + 阈值告警 + 进程/服务下钻，待补 RTT/重连次数/失败率 |
-| P1-H7 | BACKLOG | 主机指纹信任与变更告警（TOFU） |
-| P1-H8 | BACKLOG | 多主机命令广播执行 |
-
-## P1 进一步候选（本轮新增）
-
-| ID | 状态 | 说明 |
-| --- | --- | --- |
-| P1-I1 | IDEA | 会话模板与环境变量继承 |
-| P1-I2 | IDEA | 跳板机/多跳连接（`ProxyJump`） |
-| P1-I3 | IDEA | 传输历史与重试中心 |
-| P1-I4 | IDEA | 本地与远程目录同步 |
-| P1-I5 | IDEA | Runbook 任务流（多步骤命令） |
-| P1-I6 | IDEA | 敏感命令保护（高危命令二次确认） |
-| P1-I7 | IDEA | 审计模式（命令/传输日志导出） |
-| P1-I8 | IDEA | 定时任务（调度 Runbook） |
-| P1-I9 | IDEA | 工作区快照恢复（标签/路径/布局） |
-| P1-I10 | IDEA | 传输完整性校验（上传/下载后 `sha256`） |
-| P1-I11 | IDEA | 传输断点续传（大文件失败续传） |
-| P1-I12 | IDEA | 传输限速（全局/单任务） |
-| P1-I13 | IDEA | SFTP 回收站（删除可恢复） |
-| P1-I14 | IDEA | 生产环境保护模式（高危操作双确认） |
-| P1-I15 | IDEA | 日志观察台（订阅/高亮/自动滚动） |
-| P1-I16 | IDEA | 应用内更新通道（stable/beta） |
-
-## P1 服务器监控增强（新）
-
-| ID | 状态 | 说明 |
-| --- | --- | --- |
-| P1-J1 | DONE | 监控阈值告警（CPU/内存/磁盘）+ 面板角标/高亮 + Settings 配置 |
-| P1-J2 | DONE | 服务与进程下钻（`systemctl --failed`、Top CPU 进程） |
-| P1-J3 | BACKLOG | 趋势图时间窗口（1m/5m/15m）与平滑采样 |
-| P1-J4 | BACKLOG | 自定义监控命令模板（用户可配置） |
-| P1-J5 | BACKLOG | 监控快照导出（CSV/JSON） |
-| P1-J6 | BACKLOG | 多会话监控概览（会话列表显示健康摘要） |
+- SSH config import (`~/.ssh/config`)
+- Port forwarding UI
+- Snippets and command palette
+- Remote file quick-edit advanced flow
+- Multi-host command broadcast
+- Transfer retry center and history
