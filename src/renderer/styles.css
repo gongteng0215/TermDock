@@ -394,6 +394,13 @@ body::before {
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
 }
 
+.session-folder-list__item.is-selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px rgba(81, 166, 255, 0.4),
+    0 10px 20px rgba(7, 14, 21, 0.42);
+}
+
 .session-folder-list__main {
   width: 100%;
   border: 0;
@@ -705,6 +712,13 @@ body::before {
   color: #9ec4e8;
 }
 
+.settings-panel__version {
+  margin: 0;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  color: #8bb1d4;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 156px minmax(0, 1fr);
@@ -890,14 +904,19 @@ body::before {
 .terminal-tabs {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 4px;
   border-bottom: 1px solid var(--border-soft);
   padding: 4px 6px;
   overflow-x: auto;
+  overflow-y: hidden;
   background: linear-gradient(180deg, rgba(13, 24, 34, 0.72), rgba(9, 18, 27, 0.58));
+  scrollbar-width: thin;
 }
 
 .tab {
+  flex: 0 0 auto;
+  max-width: 260px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -909,6 +928,14 @@ body::before {
   font-size: 12px;
   cursor: pointer;
   transition: border-color 140ms ease, background 140ms ease;
+}
+
+.tab > span:first-child {
+  min-width: 0;
+  max-width: 216px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab:hover {

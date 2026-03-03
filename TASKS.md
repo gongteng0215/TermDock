@@ -4,7 +4,7 @@ Last updated: 2026-03-03
 
 ## Current Release State
 
-- Stable release: `v0.1.3`
+- Stable release: `v0.1.4`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 
@@ -61,3 +61,16 @@ Last updated: 2026-03-03
 - Remote file quick-edit advanced flow
 - Multi-host command broadcast
 - Transfer retry center and history
+
+## Proposed Feature Track (Post-Hardening)
+
+| ID | Priority | Status | Feature | Why |
+| --- | --- | --- | --- | --- |
+| F1 | P1 | TODO | Transfer conflict policy (overwrite/skip/rename) | Prevent accidental overwrite and clarify current behavior |
+| F2 | P1 | TODO | Transfer retry center + persistent history | Fast recovery after network interruption or cancel race |
+| F3 | P1 | TODO | SSH config import (`~/.ssh/config`) | Reduce manual session creation for existing users |
+| F4 | P1 | TODO | Port forwarding manager (L/R/Dynamic) | Cover common SSH tunnel workflows without external tools |
+| F5 | P2 | TODO | Session templates + env variables | Faster provisioning for repeated host patterns |
+| F6 | P2 | TODO | Remote overwrite pre-check (mtime/size/checksum) | Safer file edit and sync workflows |
+| F7 | P2 | TODO | Unified operation center for long jobs | Better visibility for recursive delete/copy/move tasks |
+| F8 | P3 | TODO | Encrypted session export/import | Easier migration and backup across machines |

@@ -22,6 +22,7 @@ import {
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import packageJson from "../../package.json";
 
 import type {
   SessionCreateInput,
@@ -64,17 +65,20 @@ const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
 const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
 const SESSION_GROUPS_STORAGE_KEY = "termdock.session-groups.v1";
+const SESSION_SORT_MODE_STORAGE_KEY = "termdock.session-sort-mode.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
 };
+const APP_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
 type SettingsSectionId =
   | "connection"
   | "hotkeys"
   | "serverHealth"
   | "fileOpening"
   | "sftp";
+type SessionSortMode = "default" | "nameAsc" | "nameDesc" | "recent";
 
 type HotkeyActionId = keyof HotkeyPreferences;
 
@@ -901,6 +905,40 @@ function parseAlertThresholdPercent(value: unknown, fallback: number): number {
   return Math.min(100, Math.max(50, Math.trunc(value)));
 }
 
+function isSessionSortMode(value: unknown): value is SessionSortMode {
+  return (
+    value === "default" ||
+    value === "nameAsc" ||
+    value === "nameDesc" ||
+    value === "recent"
+  );
+}
+
+function sortSessionsForMode(items: SessionRecord[], mode: SessionSortMode): SessionRecord[] {
+  if (mode === "default") {
+    return items;
+  }
+  if (mode === "recent") {
+    return [...items].sort(compareSessionRecency);
+  }
+  const sorted = [...items].sort((left, right) =>
+    left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+  );
+  return mode === "nameDesc" ? sorted.reverse() : sorted;
+}
+
+function readSessionSortMode(): SessionSortMode {
+  if (typeof window === "undefined") {
+    return "default";
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SESSION_SORT_MODE_STORAGE_KEY);
+    return isSessionSortMode(rawValue) ? rawValue : "default";
+  } catch {
+    return "default";
+  }
+}
+
 function readConnectionPreferences(): ConnectionPreferences {
   if (typeof window === "undefined") {
     return DEFAULT_CONNECTION_PREFERENCES;
@@ -1160,6 +1198,9 @@ export function App() {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [activeSessionGroupKey, setActiveSessionGroupKey] = useState<string | null>(null);
+  const [sessionSortMode, setSessionSortMode] = useState<SessionSortMode>(() => readSessionSortMode());
+  const [selectedGroupKeys, setSelectedGroupKeys] = useState<string[]>([]);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
   const [sessionFilterQuery, setSessionFilterQuery] = useState("");
   const [sessionFavoritesOnly, setSessionFavoritesOnly] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1216,6 +1257,7 @@ export function App() {
   const [serverProcessError, setServerProcessError] = useState<string | null>(null);
   const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const terminalTabsRef = useRef<TerminalTab[]>([]);
   const connectedTabIdsRef = useRef<Set<string>>(new Set());
   const uploadQueueRef = useRef<PendingUploadJob[]>([]);
   const runningUploadIdsRef = useRef<Map<string, string>>(new Map());
@@ -1244,18 +1286,22 @@ export function App() {
   >({});
   const [appDialog, setAppDialog] = useState<AppDialogState | null>(null);
   const [appDialogInput, setAppDialogInput] = useState("");
+  const [moveGroupDialog, setMoveGroupDialog] = useState<{
+    sessionIds: string[];
+    targetGroup: string;
+  } | null>(null);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [sessions, selectedSessionId]
   );
-  const sessionContextTarget = useMemo(
-    () =>
-      sessionContextMenu?.target.type === "session"
-        ? sessions.find((session) => session.id === sessionContextMenu.target.sessionId) ?? null
-        : null,
-    [sessionContextMenu, sessions]
-  );
+  const sessionContextTarget = useMemo(() => {
+    const target = sessionContextMenu?.target;
+    if (!target || target.type !== "session") {
+      return null;
+    }
+    return sessions.find((session) => session.id === target.sessionId) ?? null;
+  }, [sessionContextMenu, sessions]);
   const sessionGroupOptions = useMemo(() => {
     const allGroups = [
       ...sessionGroupsState.groups,
@@ -1281,9 +1327,8 @@ export function App() {
         session.remark ?? ""
       ].some((value) => value.toLowerCase().includes(normalizedQuery));
     });
-    filtered.sort(compareSessionRecency);
-    return filtered;
-  }, [sessionFavoritesOnly, sessionFilterQuery, sessions]);
+    return sortSessionsForMode(filtered, sessionSortMode);
+  }, [sessionFavoritesOnly, sessionFilterQuery, sessionSortMode, sessions]);
   const groupedSessions = useMemo(() => {
     const sessionsByGroup = new Map<string, SessionRecord[]>();
     for (const session of filteredSessions) {
@@ -1358,7 +1403,27 @@ export function App() {
     }
     return groupedSessions.find((group) => group.key === activeSessionGroupKey) ?? null;
   }, [activeSessionGroupKey, groupedSessions]);
-  const activeGroupSessions = activeSessionGroup?.sessions ?? [];
+  const activeGroupSessions = useMemo(
+    () => activeSessionGroup?.sessions ?? [],
+    [activeSessionGroup]
+  );
+  const selectedGroupKeySet = useMemo(() => new Set(selectedGroupKeys), [selectedGroupKeys]);
+  const selectedSessionIdSet = useMemo(() => new Set(selectedSessionIds), [selectedSessionIds]);
+  const selectedGroups = useMemo(
+    () => groupedSessions.filter((group) => selectedGroupKeySet.has(group.key)),
+    [groupedSessions, selectedGroupKeySet]
+  );
+  const selectedGroupNames = useMemo(
+    () =>
+      selectedGroups
+        .filter((group) => group.groupName.trim().length > 0)
+        .map((group) => group.groupName),
+    [selectedGroups]
+  );
+  const selectedSessionsInActiveGroup = useMemo(
+    () => activeGroupSessions.filter((session) => selectedSessionIdSet.has(session.id)),
+    [activeGroupSessions, selectedSessionIdSet]
+  );
   const resolveAppDialog = useCallback((result: unknown) => {
     const resolver = appDialogResolverRef.current;
     appDialogResolverRef.current = null;
@@ -2116,6 +2181,40 @@ export function App() {
   }, [sessionsApi]);
 
   useEffect(() => {
+    terminalTabsRef.current = terminalTabs;
+  }, [terminalTabs]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SESSION_SORT_MODE_STORAGE_KEY, sessionSortMode);
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sessionSortMode]);
+
+  useEffect(() => {
+    const validGroupKeys = new Set(groupedSessions.map((group) => group.key));
+    setSelectedGroupKeys((prev) => prev.filter((groupKey) => validGroupKeys.has(groupKey)));
+  }, [groupedSessions]);
+
+  useEffect(() => {
+    const validSessionIds = new Set(sessions.map((session) => session.id));
+    setSelectedSessionIds((prev) => prev.filter((sessionId) => validSessionIds.has(sessionId)));
+  }, [sessions]);
+
+  useEffect(() => {
+    if (!activeSessionGroup) {
+      setSelectedSessionIds([]);
+      return;
+    }
+    const validSessionIds = new Set(activeGroupSessions.map((session) => session.id));
+    setSelectedSessionIds((prev) => prev.filter((sessionId) => validSessionIds.has(sessionId)));
+    if (selectedSessionId && !validSessionIds.has(selectedSessionId)) {
+      setSelectedSessionId(activeGroupSessions[0]?.id ?? null);
+    }
+  }, [activeGroupSessions, activeSessionGroup, selectedSessionId]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         CONNECTION_PREFERENCES_STORAGE_KEY,
@@ -2576,6 +2675,14 @@ export function App() {
       event.stopPropagation();
       if (target.type === "session") {
         setSelectedSessionId(target.sessionId);
+        setSelectedSessionIds((prev) =>
+          prev.includes(target.sessionId) ? prev : [target.sessionId]
+        );
+      }
+      if (target.type === "group") {
+        setSelectedGroupKeys((prev) =>
+          prev.includes(target.groupKey) ? prev : [target.groupKey]
+        );
       }
       setSessionContextMenu({
         x: event.clientX,
@@ -2948,29 +3055,51 @@ export function App() {
     setActiveTabId(id);
   }, [terminalApi]);
 
-  const closeTerminalTab = useCallback((tabId: string) => {
-    connectedTabIdsRef.current.delete(tabId);
-    ensuredRemoteDirectoriesRef.current.delete(tabId);
-    setUploadBatchByTab((prev) => {
-      if (!(tabId in prev)) {
-        return prev;
+  const closeTerminalTabs = useCallback((tabIds: string[]) => {
+    const uniqueTabIds = Array.from(new Set(tabIds.filter(Boolean)));
+    if (uniqueTabIds.length === 0) {
+      return;
+    }
+    const tabIdSet = new Set(uniqueTabIds);
+
+    for (const tabId of uniqueTabIds) {
+      connectedTabIdsRef.current.delete(tabId);
+      ensuredRemoteDirectoriesRef.current.delete(tabId);
+      if (terminalApi) {
+        void terminalApi.close(tabId);
       }
+      if (systemApi) {
+        void systemApi.disposeRemoteOpenFiles(tabId);
+      }
+    }
+
+    setUploadBatchByTab((prev) => {
+      let changed = false;
       const next = { ...prev };
-      delete next[tabId];
-      return next;
+      for (const tabId of uniqueTabIds) {
+        if (tabId in next) {
+          delete next[tabId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
     setDownloadBatchByTab((prev) => {
-      if (!(tabId in prev)) {
-        return prev;
-      }
+      let changed = false;
       const next = { ...prev };
-      delete next[tabId];
-      return next;
+      for (const tabId of uniqueTabIds) {
+        if (tabId in next) {
+          delete next[tabId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
-    const queuedJobs = uploadQueueRef.current.filter((job) => job.tabId === tabId);
-    if (queuedJobs.length > 0) {
-      uploadQueueRef.current = uploadQueueRef.current.filter((job) => job.tabId !== tabId);
-      for (const job of queuedJobs) {
+
+    const queuedUploadJobs = uploadQueueRef.current.filter((job) => tabIdSet.has(job.tabId));
+    if (queuedUploadJobs.length > 0) {
+      uploadQueueRef.current = uploadQueueRef.current.filter((job) => !tabIdSet.has(job.tabId));
+      for (const job of queuedUploadJobs) {
         applySftpTransferEvent({
           tabId: job.tabId,
           transferId: job.transferId,
@@ -2987,9 +3116,10 @@ export function App() {
       }
       drainUploadQueue();
     }
-    const queuedDownloadJobs = downloadQueueRef.current.filter((job) => job.tabId === tabId);
+
+    const queuedDownloadJobs = downloadQueueRef.current.filter((job) => tabIdSet.has(job.tabId));
     if (queuedDownloadJobs.length > 0) {
-      downloadQueueRef.current = downloadQueueRef.current.filter((job) => job.tabId !== tabId);
+      downloadQueueRef.current = downloadQueueRef.current.filter((job) => !tabIdSet.has(job.tabId));
       for (const job of queuedDownloadJobs) {
         applySftpTransferEvent({
           tabId: job.tabId,
@@ -3007,29 +3137,57 @@ export function App() {
       }
       drainDownloadQueue();
     }
-    if (terminalApi) {
-      void terminalApi.close(tabId);
-    }
-    if (systemApi) {
-      void systemApi.disposeRemoteOpenFiles(tabId);
-    }
 
-    const nextTabs = terminalTabs.filter((tab) => tab.id !== tabId);
+    const nextTabs = terminalTabsRef.current.filter((tab) => !tabIdSet.has(tab.id));
+    terminalTabsRef.current = nextTabs;
     setTerminalTabs(nextTabs);
+    setActiveTabId((currentTabId) => {
+      if (!currentTabId || !tabIdSet.has(currentTabId)) {
+        return currentTabId;
+      }
+      return nextTabs.length > 0 ? nextTabs[nextTabs.length - 1].id : null;
+    });
+  }, [applySftpTransferEvent, drainDownloadQueue, drainUploadQueue, systemApi, terminalApi]);
 
-    if (activeTabId !== tabId) {
-      return;
-    }
-    setActiveTabId(nextTabs.length > 0 ? nextTabs[nextTabs.length - 1].id : null);
-  }, [
-    activeTabId,
-    applySftpTransferEvent,
-    drainDownloadQueue,
-    drainUploadQueue,
-    systemApi,
-    terminalApi,
-    terminalTabs
-  ]);
+  const closeTerminalTab = useCallback((tabId: string) => {
+    closeTerminalTabs([tabId]);
+  }, [closeTerminalTabs]);
+
+  const closeTabsLeft = useCallback(
+    (tabId: string) => {
+      const tabs = terminalTabsRef.current;
+      const index = tabs.findIndex((tab) => tab.id === tabId);
+      if (index <= 0) {
+        return;
+      }
+      closeTerminalTabs(tabs.slice(0, index).map((tab) => tab.id));
+    },
+    [closeTerminalTabs]
+  );
+
+  const closeTabsRight = useCallback(
+    (tabId: string) => {
+      const tabs = terminalTabsRef.current;
+      const index = tabs.findIndex((tab) => tab.id === tabId);
+      if (index < 0 || index >= tabs.length - 1) {
+        return;
+      }
+      closeTerminalTabs(tabs.slice(index + 1).map((tab) => tab.id));
+    },
+    [closeTerminalTabs]
+  );
+
+  const closeOtherTabs = useCallback(
+    (tabId: string) => {
+      const tabs = terminalTabsRef.current;
+      closeTerminalTabs(tabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id));
+    },
+    [closeTerminalTabs]
+  );
+
+  const closeAllTabs = useCallback(() => {
+    closeTerminalTabs(terminalTabsRef.current.map((tab) => tab.id));
+  }, [closeTerminalTabs]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -3083,16 +3241,22 @@ export function App() {
     selectedSession
   ]);
 
-  const removeSession = async (sessionId: string) => {
-    const hit = sessions.find((session) => session.id === sessionId);
-    if (!hit) {
+  const removeSessionsByIds = async (sessionIds: string[]) => {
+    const uniqueSessionIds = Array.from(new Set(sessionIds));
+    const targets = sessions.filter((session) => uniqueSessionIds.includes(session.id));
+    if (targets.length === 0) {
       return;
     }
-    const accepted = await showAppConfirm(`Delete session "${hit.name}"?`, {
-      title: "Delete Session",
-      confirmLabel: "Delete",
-      danger: true
-    });
+    const accepted = await showAppConfirm(
+      targets.length === 1
+        ? `Delete session "${targets[0].name}"?`
+        : `Delete ${targets.length} selected sessions?`,
+      {
+        title: "Delete Session",
+        confirmLabel: "Delete",
+        danger: true
+      }
+    );
     if (!accepted) {
       return;
     }
@@ -3102,27 +3266,28 @@ export function App() {
         throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
       }
 
-      await sessionsApi.remove(sessionId);
-      const nextSessions = sessions.filter((session) => session.id !== sessionId);
+      const removedSessionIds = new Set<string>();
+      for (const session of targets) {
+        await sessionsApi.remove(session.id);
+        removedSessionIds.add(session.id);
+      }
+      const nextSessions = sessions.filter((session) => !removedSessionIds.has(session.id));
       setSessions(nextSessions);
-      if (selectedSessionId === sessionId) {
+      setSelectedSessionIds((prev) => prev.filter((sessionId) => !removedSessionIds.has(sessionId)));
+      if (selectedSessionId && removedSessionIds.has(selectedSessionId)) {
         setSelectedSessionId(nextSessions[0]?.id ?? null);
       }
-      const removedTabs = terminalTabs.filter((tab) => tab.sessionId === sessionId);
-      for (const tab of removedTabs) {
-        connectedTabIdsRef.current.delete(tab.id);
-        if (terminalApi) {
-          void terminalApi.close(tab.id);
-        }
-      }
-      const nextTabs = terminalTabs.filter((tab) => tab.sessionId !== sessionId);
-      setTerminalTabs(nextTabs);
-      if (nextTabs.every((tab) => tab.id !== activeTabId)) {
-        setActiveTabId(nextTabs[0]?.id ?? null);
-      }
+      const removedTabIds = terminalTabsRef.current
+        .filter((tab) => removedSessionIds.has(tab.sessionId))
+        .map((tab) => tab.id);
+      closeTerminalTabs(removedTabIds);
     } catch (caughtError) {
       setError((caughtError as Error).message);
     }
+  };
+
+  const removeSession = async (sessionId: string) => {
+    await removeSessionsByIds([sessionId]);
   };
 
   const patchSession = async (sessionId: string, patch: SessionUpdateInput) => {
@@ -3315,6 +3480,131 @@ export function App() {
     } catch (caughtError) {
       setError((caughtError as Error).message);
     }
+  };
+
+  const deleteSessionGroupsBatch = async (groupNames: string[]) => {
+    const normalizedGroupNames = normalizeSessionGroups(groupNames).filter(
+      (groupName) => groupName.trim().length > 0
+    );
+    if (normalizedGroupNames.length === 0) {
+      return;
+    }
+    const targetGroupNameSet = new Set(
+      normalizedGroupNames.map((groupName) => groupName.toLowerCase())
+    );
+    const relatedSessions = sessions.filter((session) =>
+      targetGroupNameSet.has((session.groupId?.trim() ?? "").toLowerCase())
+    );
+    const accepted = await showAppConfirm(
+      relatedSessions.length > 0
+        ? `Delete ${normalizedGroupNames.length} selected groups and move ${relatedSessions.length} sessions to Ungrouped?`
+        : `Delete ${normalizedGroupNames.length} selected groups?`,
+      {
+        title: "Delete Group",
+        confirmLabel: "Delete",
+        danger: true
+      }
+    );
+    if (!accepted) {
+      return;
+    }
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      const updatedById = new Map<string, SessionRecord>();
+      for (const session of relatedSessions) {
+        const updated = await sessionsApi.update(session.id, { groupId: "" });
+        updatedById.set(updated.id, updated);
+      }
+      if (updatedById.size > 0) {
+        setSessions((prev) => prev.map((item) => updatedById.get(item.id) ?? item));
+      }
+      setSessionGroupsState((prev) => ({
+        groups: prev.groups.filter((item) => !targetGroupNameSet.has(item.toLowerCase()))
+      }));
+      setSelectedGroupKeys((prev) =>
+        prev.filter((groupKey) => !targetGroupNameSet.has(groupKey.toLowerCase()))
+      );
+      setForm((prev) => ({
+        ...prev,
+        groupId:
+          targetGroupNameSet.has((prev.groupId?.trim() ?? "").toLowerCase()) ? "" : prev.groupId
+      }));
+      setError(null);
+    } catch (caughtError) {
+      setError((caughtError as Error).message);
+    }
+  };
+
+  const assignSessionsToGroup = async (sessionIds: string[], groupName: string) => {
+    const normalizedGroupName = normalizeSessionGroupName(groupName);
+    const uniqueSessionIds = Array.from(new Set(sessionIds));
+    if (uniqueSessionIds.length === 0) {
+      return;
+    }
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      const updatedById = new Map<string, SessionRecord>();
+      for (const sessionId of uniqueSessionIds) {
+        const session = sessions.find((item) => item.id === sessionId);
+        if (!session) {
+          continue;
+        }
+        if ((session.groupId?.trim() ?? "") === normalizedGroupName) {
+          continue;
+        }
+        const updated = await sessionsApi.update(session.id, {
+          groupId: normalizedGroupName
+        });
+        updatedById.set(updated.id, updated);
+      }
+      if (updatedById.size > 0) {
+        setSessions((prev) => prev.map((item) => updatedById.get(item.id) ?? item));
+      }
+      if (normalizedGroupName) {
+        setSessionGroupsState((prev) => ({
+          groups: normalizeSessionGroups([...prev.groups, normalizedGroupName])
+        }));
+      }
+      setError(null);
+    } catch (caughtError) {
+      setError((caughtError as Error).message);
+    }
+  };
+
+  const openMoveSessionsToGroupDialog = (sessionIds: string[]) => {
+    const uniqueSessionIds = Array.from(new Set(sessionIds)).filter((sessionId) =>
+      sessions.some((session) => session.id === sessionId)
+    );
+    if (uniqueSessionIds.length === 0) {
+      return;
+    }
+    const targetSessions = sessions.filter((session) => uniqueSessionIds.includes(session.id));
+    const firstGroup = targetSessions[0]?.groupId?.trim() ?? "";
+    const allSameGroup = targetSessions.every(
+      (session) => (session.groupId?.trim() ?? "") === firstGroup
+    );
+    const defaultGroup = allSameGroup ? firstGroup : "";
+    setMoveGroupDialog({
+      sessionIds: uniqueSessionIds,
+      targetGroup: defaultGroup
+    });
+  };
+
+  const closeMoveGroupDialog = () => {
+    setMoveGroupDialog(null);
+  };
+
+  const submitMoveGroupDialog = async () => {
+    if (!moveGroupDialog) {
+      return;
+    }
+    const { sessionIds, targetGroup } = moveGroupDialog;
+    setMoveGroupDialog(null);
+    await assignSessionsToGroup(sessionIds, targetGroup);
   };
 
   const setServerHealthAlertEnabled = (value: boolean) => {
@@ -4422,59 +4712,130 @@ export function App() {
     addSessionGroup(groupNameInput);
   };
 
+  const appendSessionSortActions = (actions: SessionContextAction[]) => {
+    actions.push({
+      id: "sort-default",
+      label: sessionSortMode === "default" ? "Sort: Default (Current)" : "Sort: Default",
+      run: () => {
+        setSessionSortMode("default");
+      }
+    });
+    actions.push({
+      id: "sort-recent",
+      label: sessionSortMode === "recent" ? "Sort: Recent (Current)" : "Sort: Recent",
+      run: () => {
+        setSessionSortMode("recent");
+      }
+    });
+    actions.push({
+      id: "sort-name-asc",
+      label: sessionSortMode === "nameAsc" ? "Sort: Name A-Z (Current)" : "Sort: Name A-Z",
+      run: () => {
+        setSessionSortMode("nameAsc");
+      }
+    });
+    actions.push({
+      id: "sort-name-desc",
+      label: sessionSortMode === "nameDesc" ? "Sort: Name Z-A (Current)" : "Sort: Name Z-A",
+      run: () => {
+        setSessionSortMode("nameDesc");
+      }
+    });
+  };
+
   const sessionContextActions: SessionContextAction[] = [];
   const contextTarget = sessionContextMenu?.target ?? null;
   if (contextTarget?.type === "session" && sessionContextTarget) {
+    const selectedSet = new Set(selectedSessionsInActiveGroup.map((session) => session.id));
+    const sessionsForActions =
+      selectedSet.has(sessionContextTarget.id) && selectedSessionsInActiveGroup.length > 0
+        ? selectedSessionsInActiveGroup
+        : [sessionContextTarget];
+    const selectedIds = sessionsForActions.map((session) => session.id);
+    const selectedCount = sessionsForActions.length;
+
     sessionContextActions.push({
       id: "open-session",
-      label: "Open Terminal Tab",
+      label: selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Terminal Tab",
       run: () => {
-        openTerminalTab(sessionContextTarget);
+        for (const session of sessionsForActions) {
+          openTerminalTab(session);
+        }
+      }
+    });
+    if (selectedCount === 1) {
+      sessionContextActions.push({
+        id: "view-session",
+        label: "View Details",
+        run: () => {
+          void viewSessionDetails(sessionContextTarget);
+        }
+      });
+      sessionContextActions.push({
+        id: "toggle-favorite",
+        label: sessionContextTarget.favorite ? "Unfavorite" : "Favorite",
+        run: () => {
+          void patchSession(sessionContextTarget.id, {
+            favorite: !sessionContextTarget.favorite
+          });
+        }
+      });
+      sessionContextActions.push({
+        id: "copy-clash-rules",
+        label: "Copy Clash Direct Rules",
+        run: () => {
+          void copyClashDirectRules(sessionContextTarget);
+        }
+      });
+      sessionContextActions.push({
+        id: "edit-session",
+        label: "Edit Session",
+        run: () => {
+          openEditModal(sessionContextTarget);
+        }
+      });
+    }
+    sessionContextActions.push({
+      id: "move-session-group",
+      label: selectedCount > 1 ? "Move Selected to Group..." : "Move to Group...",
+      run: () => {
+        openMoveSessionsToGroupDialog(selectedIds);
       }
     });
     sessionContextActions.push({
-      id: "view-session",
-      label: "View Details",
+      id: "move-session-ungrouped",
+      label: selectedCount > 1 ? "Move Selected to Ungrouped" : "Move to Ungrouped",
       run: () => {
-        void viewSessionDetails(sessionContextTarget);
-      }
-    });
-    sessionContextActions.push({
-      id: "toggle-favorite",
-      label: sessionContextTarget.favorite ? "Unfavorite" : "Favorite",
-      run: () => {
-        void patchSession(sessionContextTarget.id, {
-          favorite: !sessionContextTarget.favorite
-        });
-      }
-    });
-    sessionContextActions.push({
-      id: "copy-clash-rules",
-      label: "Copy Clash Direct Rules",
-      run: () => {
-        void copyClashDirectRules(sessionContextTarget);
-      }
-    });
-    sessionContextActions.push({
-      id: "edit-session",
-      label: "Edit Session",
-      run: () => {
-        openEditModal(sessionContextTarget);
+        void assignSessionsToGroup(selectedIds, "");
       }
     });
     sessionContextActions.push({
       id: "delete-session",
-      label: "Delete Session",
+      label: selectedCount > 1 ? `Delete ${selectedCount} Selected` : "Delete Session",
       danger: true,
       run: () => {
-        void removeSession(sessionContextTarget.id);
+        void removeSessionsByIds(selectedIds);
       }
     });
+    appendSessionSortActions(sessionContextActions);
   } else if (contextTarget?.type === "group") {
+    const contextGroup =
+      groupedSessions.find((group) => group.key === contextTarget.groupKey) ?? null;
+    const groupsForActions =
+      selectedGroupKeySet.has(contextTarget.groupKey) && selectedGroups.length > 0
+        ? selectedGroups
+        : contextGroup
+          ? [contextGroup]
+          : [];
+    const groupNamesForActions = groupsForActions
+      .filter((group) => group.groupName.trim().length > 0)
+      .map((group) => group.groupName);
+
     sessionContextActions.push({
       id: "open-group",
       label: "Open Group",
       run: () => {
+        setSelectedGroupKeys([contextTarget.groupKey]);
         setActiveSessionGroupKey(contextTarget.groupKey);
       }
     });
@@ -4492,23 +4853,46 @@ export function App() {
         void promptCreateSessionGroup();
       }
     });
-    if (contextTarget.groupName) {
-      sessionContextActions.push({
-        id: "rename-group",
-        label: "Rename Group",
-        run: () => {
-          void renameSessionGroup(contextTarget.groupName);
-        }
-      });
-      sessionContextActions.push({
-        id: "delete-group",
-        label: "Delete Group",
-        danger: true,
-        run: () => {
-          void deleteSessionGroup(contextTarget.groupName);
-        }
-      });
-    }
+    sessionContextActions.push({
+      id: "select-all-groups",
+      label: "Select All Groups",
+      disabled: groupedSessions.length === 0,
+      run: () => {
+        setSelectedGroupKeys(groupedSessions.map((group) => group.key));
+      }
+    });
+    sessionContextActions.push({
+      id: "clear-group-selection",
+      label: "Clear Group Selection",
+      disabled: selectedGroupKeys.length === 0,
+      run: () => {
+        setSelectedGroupKeys([]);
+      }
+    });
+    sessionContextActions.push({
+      id: "rename-group",
+      label:
+        groupNamesForActions.length > 1
+          ? "Rename Group (Select One)"
+          : "Rename Group",
+      disabled: groupNamesForActions.length !== 1,
+      run: () => {
+        void renameSessionGroup(groupNamesForActions[0]);
+      }
+    });
+    sessionContextActions.push({
+      id: "delete-group",
+      label:
+        groupNamesForActions.length > 1
+          ? `Delete ${groupNamesForActions.length} Selected Groups`
+          : "Delete Group",
+      disabled: groupNamesForActions.length === 0,
+      danger: true,
+      run: () => {
+        void deleteSessionGroupsBatch(groupNamesForActions);
+      }
+    });
+    appendSessionSortActions(sessionContextActions);
   } else if (contextTarget?.type === "group-root") {
     sessionContextActions.push({
       id: "new-group",
@@ -4524,7 +4908,46 @@ export function App() {
         openCreateModal("");
       }
     });
+    sessionContextActions.push({
+      id: "select-all-groups",
+      label: "Select All Groups",
+      disabled: groupedSessions.length === 0,
+      run: () => {
+        setSelectedGroupKeys(groupedSessions.map((group) => group.key));
+      }
+    });
+    sessionContextActions.push({
+      id: "clear-group-selection",
+      label: "Clear Group Selection",
+      disabled: selectedGroupKeys.length === 0,
+      run: () => {
+        setSelectedGroupKeys([]);
+      }
+    });
+    sessionContextActions.push({
+      id: "rename-selected-group",
+      label: "Rename Selected Group",
+      disabled: selectedGroupNames.length !== 1,
+      run: () => {
+        void renameSessionGroup(selectedGroupNames[0]);
+      }
+    });
+    sessionContextActions.push({
+      id: "delete-selected-groups",
+      label:
+        selectedGroupNames.length > 1
+          ? `Delete ${selectedGroupNames.length} Selected Groups`
+          : "Delete Selected Group",
+      disabled: selectedGroupNames.length === 0,
+      danger: true,
+      run: () => {
+        void deleteSessionGroupsBatch(selectedGroupNames);
+      }
+    });
+    appendSessionSortActions(sessionContextActions);
   } else if (contextTarget?.type === "group-view") {
+    const selectedCount = selectedSessionsInActiveGroup.length;
+    const selectedIds = selectedSessionsInActiveGroup.map((session) => session.id);
     sessionContextActions.push({
       id: "back-groups",
       label: "Back to Groups",
@@ -4563,6 +4986,60 @@ export function App() {
         }
       });
     }
+    sessionContextActions.push({
+      id: "select-all-sessions",
+      label: "Select All Sessions",
+      disabled: activeGroupSessions.length === 0,
+      run: () => {
+        const allIds = activeGroupSessions.map((session) => session.id);
+        setSelectedSessionIds(allIds);
+        setSelectedSessionId(allIds[0] ?? null);
+      }
+    });
+    sessionContextActions.push({
+      id: "clear-session-selection",
+      label: "Clear Session Selection",
+      disabled: selectedCount === 0,
+      run: () => {
+        setSelectedSessionIds([]);
+      }
+    });
+    sessionContextActions.push({
+      id: "open-selected-sessions",
+      label: selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Selected Session",
+      disabled: selectedCount === 0,
+      run: () => {
+        for (const session of selectedSessionsInActiveGroup) {
+          openTerminalTab(session);
+        }
+      }
+    });
+    sessionContextActions.push({
+      id: "move-selected-sessions",
+      label: "Move Selected to Group...",
+      disabled: selectedCount === 0,
+      run: () => {
+        openMoveSessionsToGroupDialog(selectedIds);
+      }
+    });
+    sessionContextActions.push({
+      id: "move-selected-sessions-ungrouped",
+      label: "Move Selected to Ungrouped",
+      disabled: selectedCount === 0,
+      run: () => {
+        void assignSessionsToGroup(selectedIds, "");
+      }
+    });
+    sessionContextActions.push({
+      id: "delete-selected-sessions",
+      label: selectedCount > 1 ? `Delete ${selectedCount} Selected Sessions` : "Delete Selected Session",
+      disabled: selectedCount === 0,
+      danger: true,
+      run: () => {
+        void removeSessionsByIds(selectedIds);
+      }
+    });
+    appendSessionSortActions(sessionContextActions);
   }
 
   const isSftpActionDisabled = sftpLoading || sftpActionLoading;
@@ -4948,7 +5425,11 @@ export function App() {
             activeTabId={activeTabId}
             connectionPreferences={connectionPreferences}
             hotkeyPreferences={hotkeyPreferences}
+            onCloseAllTabs={closeAllTabs}
             onCloseTab={closeTerminalTab}
+            onCloseTabsLeft={closeTabsLeft}
+            onCloseTabsRight={closeTabsRight}
+            onCloseOtherTabs={closeOtherTabs}
             onError={setError}
             onSelectTab={setActiveTabId}
             systemApi={systemApi}
@@ -5010,7 +5491,11 @@ export function App() {
                   <ul className="session-folder-list">
                     {groupedSessions.map((group) => (
                       <li
-                        className="session-folder-list__item"
+                        className={
+                          selectedGroupKeySet.has(group.key)
+                            ? "session-folder-list__item is-selected"
+                            : "session-folder-list__item"
+                        }
                         key={group.key}
                         onContextMenu={(event) =>
                           openSessionContextMenu(event, {
@@ -5023,7 +5508,19 @@ export function App() {
                       >
                         <button
                           className="session-folder-list__main"
-                          onClick={() => setActiveSessionGroupKey(group.key)}
+                          onClick={(event) => {
+                            const isMultiSelect = event.ctrlKey || event.metaKey;
+                            if (isMultiSelect) {
+                              setSelectedGroupKeys((prev) =>
+                                prev.includes(group.key)
+                                  ? prev.filter((groupKey) => groupKey !== group.key)
+                                  : [...prev, group.key]
+                              );
+                              return;
+                            }
+                            setSelectedGroupKeys([group.key]);
+                            setActiveSessionGroupKey(group.key);
+                          }}
                           title={`${group.label} (${group.sessions.length})`}
                           type="button"
                         >
@@ -5053,7 +5550,7 @@ export function App() {
                       <li
                         key={session.id}
                         className={
-                          selectedSessionId === session.id
+                          selectedSessionIdSet.has(session.id)
                             ? "session-list__item is-selected"
                             : "session-list__item"
                         }
@@ -5066,7 +5563,23 @@ export function App() {
                       >
                         <button
                           className="session-list__main"
-                          onClick={() => setSelectedSessionId(session.id)}
+                          onClick={(event) => {
+                            const isMultiSelect = event.ctrlKey || event.metaKey;
+                            if (isMultiSelect) {
+                              setSelectedSessionIds((prev) => {
+                                if (prev.includes(session.id)) {
+                                  const next = prev.filter((sessionId) => sessionId !== session.id);
+                                  setSelectedSessionId(next[0] ?? null);
+                                  return next;
+                                }
+                                setSelectedSessionId(session.id);
+                                return [...prev, session.id];
+                              });
+                              return;
+                            }
+                            setSelectedSessionId(session.id);
+                            setSelectedSessionIds([session.id]);
+                          }}
                           onDoubleClick={() => openTerminalTab(session)}
                           title={`${session.username}@${session.host}:${session.port}`}
                           type="button"
@@ -5517,7 +6030,10 @@ export function App() {
           ref={sessionContextMenuRef}
           style={{
             left: `${Math.max(8, Math.min(sessionContextMenu.x, window.innerWidth - 236))}px`,
-            top: `${Math.max(8, Math.min(sessionContextMenu.y, window.innerHeight - 196))}px`
+            top: `${Math.max(
+              8,
+              Math.min(sessionContextMenu.y, window.innerHeight - (sessionContextActions.length * 26 + 16))
+            )}px`
           }}
         >
           {sessionContextActions.map((action) => (
@@ -5579,6 +6095,7 @@ export function App() {
                   <h4 className="settings-group__title">
                     {getSettingsSectionTitle(activeSettingsSection)}
                   </h4>
+                  <p className="hint settings-panel__version">Version {APP_VERSION}</p>
                 </div>
 
                 {activeSettingsSection === "connection" ? (
@@ -6005,6 +6522,75 @@ export function App() {
         </div>
       ) : null}
 
+      {moveGroupDialog ? (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeMoveGroupDialog();
+            }
+          }}
+          role="presentation"
+        >
+          <div
+            className="modal modal--compact app-dialog"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Move Sessions to Group"
+          >
+            <div className="modal__header">
+              <h3>
+                {moveGroupDialog.sessionIds.length > 1
+                  ? `Move ${moveGroupDialog.sessionIds.length} Sessions`
+                  : "Move Session"}
+              </h3>
+            </div>
+            <p className="app-dialog__message">Select target group from the list.</p>
+            <form
+              className="session-form app-dialog"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitMoveGroupDialog();
+              }}
+            >
+              <label>
+                Target Group
+                <select
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setMoveGroupDialog((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            targetGroup: nextValue
+                          }
+                        : prev
+                    );
+                  }}
+                  value={moveGroupDialog.targetGroup}
+                >
+                  <option value="">Ungrouped</option>
+                  {sessionGroupOptions.map((groupName) => (
+                    <option key={groupName} value={groupName}>
+                      {groupName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="modal__actions">
+                <button className="secondary-button" onClick={closeMoveGroupDialog} type="button">
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit">
+                  Move
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       {appDialog ? (
         <div
           className="modal-backdrop"
@@ -6047,7 +6633,7 @@ export function App() {
                   value={appDialogInput}
                 />
               )
-            ) : appDialog.detailText ? (
+            ) : appDialog.mode === "alert" && appDialog.detailText ? (
               <textarea
                 className="app-dialog__textarea app-dialog__textarea--readonly"
                 readOnly

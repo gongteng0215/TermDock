@@ -4,7 +4,7 @@ Last updated: 2026-03-03
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.3`
+- Stable release shipped: `v0.1.4`
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -22,7 +22,18 @@ Last updated: 2026-03-03
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX
 
-## Completed Since v0.1.2
+## Completed in v0.1.4
+
+- Settings now displays current app version
+- Added session/group multi-select and batch context operations
+- Added `Move to Group` dropdown selection flow
+- Added session sort mode options with persisted preference
+- Default session ordering now stays stable during reconnect activity
+- Added terminal tab right-click close actions (left/right/others/all)
+- Improved tab overflow horizontal scrolling behavior
+- Updated roadmap and planning markdown documents
+
+## Previously Completed (v0.1.3)
 
 - Session grouping moved to folder-style navigation
 - Session/group actions moved to context menu workflows
@@ -51,3 +62,11 @@ Last updated: 2026-03-03
 2. Finalize signing/notarization path and verify installer flows (`P0-F4`)
 3. Build recoverable global error actions and guidance (`P0-E3`)
 4. Continue transfer robustness and large-folder workflow hardening
+
+## Feature Candidates After Hardening
+
+1. Transfer conflict policy with explicit user choice (`overwrite/skip/rename`)
+2. Transfer retry center and durable transfer history
+3. SSH config import and session deduplication workflow
+4. Port forwarding manager (local/remote/SOCKS)
+5. Session templates for repeated infrastructure patterns

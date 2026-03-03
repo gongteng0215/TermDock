@@ -5,12 +5,19 @@ It combines session management, multi-tab terminal, file transfer, and server he
 
 ## Current Status
 
-- Current stable release: `v0.1.3` (2026-03-03)
+- Current stable release: `v0.1.4` (2026-03-03)
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
 
-## Highlights in v0.1.3
+## Highlights in v0.1.4
 
+- Settings now shows current app version
+- Batch session/group operations via multi-select context menu
+- `Move session to group` now uses dropdown selection
+- Session sort modes with persistence (`Default`, `Recent`, `Name A-Z`, `Name Z-A`)
+- Stable default list ordering (no reconnect reorder jumps)
+- Terminal tab right-click actions: close current/left/right/others/all
+- Improved horizontal tab scrolling behavior
 - Folder-style session grouping workflow
 - Context-menu-driven session and group management
 - Transfer dock pinned at bottom with split upload/download panels
@@ -61,21 +68,21 @@ Workflow: `.github/workflows/release.yml`
 Stable release:
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.3-test.1
-git push origin v0.1.3-test.1
+git tag v0.1.4-test.1
+git push origin v0.1.4-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.3`) => stable release
-- Tag with `-` (for example `v0.1.3-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.4`) => stable release
+- Tag with `-` (for example `v0.1.4-test.1`) => prerelease
 
 ## Known Limitations
 
@@ -84,6 +91,17 @@ Tag rules:
 - Broader cross-platform smoke tests are still pending
 - Installer signing/notarization strategy is not fully complete
 - No in-app auto-update yet
+
+## Planned Features (Prioritized)
+
+1. Transfer conflict policy (overwrite / skip / rename) for file and folder jobs
+2. Transfer retry center with failed-task replay and persistent history
+3. SSH config import from `~/.ssh/config` with duplicate detection
+4. Port forwarding manager (local / remote / dynamic SOCKS)
+5. Session templates and environment variables
+6. Remote compare before overwrite (size/mtime/checksum fast path)
+7. Operation center for long-running tasks (delete/copy/move) with unified progress
+8. Optional session export/import with encrypted payload
 
 ## Project Structure
 

@@ -11,6 +11,7 @@ Last updated: 2026-03-03
 
 ## Shipped in Recent Cycles
 
+- v0.1.4: settings version display, batch session/group operations, tab close menu expansion, move-to-group dropdown
 - Server health baseline and detail drill-down
 - Alert thresholds for CPU/memory/disk
 - Folder-style session grouping
@@ -28,8 +29,10 @@ Last updated: 2026-03-03
 
 ## Next Candidate Features
 
-- SSH config import
-- Port forwarding UI
-- Transfer retry center and history
-- Snippets and command palette
-- Multi-host command broadcast
+- Transfer conflict policy with explicit choice (`overwrite/skip/rename`)
+- Transfer retry center and persistent history
+- SSH config import with duplicate detection
+- Port forwarding UI (local/remote/SOCKS)
+- Session templates with variable substitution
+- Unified operation center for long-running remote tasks
+- Optional encrypted session export/import

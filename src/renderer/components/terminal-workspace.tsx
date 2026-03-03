@@ -40,6 +40,10 @@ interface TerminalWorkspaceProps {
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onCloseTabsLeft: (tabId: string) => void;
+  onCloseTabsRight: (tabId: string) => void;
+  onCloseOtherTabs: (tabId: string) => void;
+  onCloseAllTabs: () => void;
   onError: (message: string) => void;
   systemApi: Window["termdock"]["system"] | null;
   terminalApi: Window["termdock"]["terminal"] | null;
@@ -71,6 +75,13 @@ interface ContextMenuState {
   y: number;
 }
 
+interface TabContextAction {
+  id: string;
+  label: string;
+  run: (tabId: string) => void;
+  isDisabled?: (tabId: string) => boolean;
+}
+
 interface TerminalSearchState {
   query: string;
   row: number;
@@ -82,6 +93,10 @@ export function TerminalWorkspace({
   activeTabId,
   onSelectTab,
   onCloseTab,
+  onCloseTabsLeft,
+  onCloseTabsRight,
+  onCloseOtherTabs,
+  onCloseAllTabs,
   onError,
   systemApi,
   terminalApi,
@@ -90,6 +105,7 @@ export function TerminalWorkspace({
 }: TerminalWorkspaceProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const tabMenuRef = useRef<HTMLDivElement | null>(null);
   const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
   const containerRefs = useRef(new Map<string, HTMLDivElement>());
   const terminalRefs = useRef(new Map<string, TerminalInstance>());
@@ -100,6 +116,7 @@ export function TerminalWorkspace({
   const tabStatusesRef = useRef<Record<string, TabUiStatus>>({});
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabUiStatus>>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [tabContextMenu, setTabContextMenu] = useState<ContextMenuState | null>(null);
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
   const [searchDialogTabId, setSearchDialogTabId] = useState<string | null>(null);
   const [searchDialogQuery, setSearchDialogQuery] = useState("");
@@ -131,10 +148,14 @@ export function TerminalWorkspace({
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
+  const closeTabContextMenu = useCallback(() => {
+    setTabContextMenu(null);
+  }, []);
 
   const openContextMenu = useCallback(
     (event: MouseEvent, tabId: string) => {
       event.preventDefault();
+      closeTabContextMenu();
       onSelectTab(tabId);
       setContextMenu({
         tabId,
@@ -142,7 +163,21 @@ export function TerminalWorkspace({
         y: event.clientY
       });
     },
-    [onSelectTab]
+    [closeTabContextMenu, onSelectTab]
+  );
+
+  const openTabContextMenu = useCallback(
+    (event: MouseEvent, tabId: string) => {
+      event.preventDefault();
+      closeContextMenu();
+      onSelectTab(tabId);
+      setTabContextMenu({
+        tabId,
+        x: event.clientX,
+        y: event.clientY
+      });
+    },
+    [closeContextMenu, onSelectTab]
   );
 
   const runContextAction = useCallback(
@@ -154,6 +189,17 @@ export function TerminalWorkspace({
       closeContextMenu();
     },
     [closeContextMenu]
+  );
+
+  const runTabContextAction = useCallback(
+    (action: TabContextAction, tabId: string) => {
+      if (action.isDisabled?.(tabId)) {
+        return;
+      }
+      action.run(tabId);
+      closeTabContextMenu();
+    },
+    [closeTabContextMenu]
   );
 
   const fitTerminal = useCallback((tabId: string) => {
@@ -533,6 +579,65 @@ export function TerminalWorkspace({
     ]
   );
 
+  const tabContextActions = useMemo<TabContextAction[]>(
+    () => [
+      {
+        id: "tab-close",
+        label: "Close Tab",
+        run: (tabId: string) => {
+          onCloseTab(tabId);
+        },
+        isDisabled: (tabId: string) => !tabsByIdRef.current.has(tabId)
+      },
+      {
+        id: "tab-close-left",
+        label: "Close Tabs to Left",
+        run: (tabId: string) => {
+          onCloseTabsLeft(tabId);
+        },
+        isDisabled: (tabId: string) => {
+          const index = tabs.findIndex((tab) => tab.id === tabId);
+          return index <= 0;
+        }
+      },
+      {
+        id: "tab-close-right",
+        label: "Close Tabs to Right",
+        run: (tabId: string) => {
+          onCloseTabsRight(tabId);
+        },
+        isDisabled: (tabId: string) => {
+          const index = tabs.findIndex((tab) => tab.id === tabId);
+          return index < 0 || index >= tabs.length - 1;
+        }
+      },
+      {
+        id: "tab-close-others",
+        label: "Close Other Tabs",
+        run: (tabId: string) => {
+          onCloseOtherTabs(tabId);
+        },
+        isDisabled: () => tabs.length <= 1
+      },
+      {
+        id: "tab-close-all",
+        label: "Close All Tabs",
+        run: () => {
+          onCloseAllTabs();
+        },
+        isDisabled: () => tabs.length === 0
+      }
+    ],
+    [
+      onCloseAllTabs,
+      onCloseOtherTabs,
+      onCloseTab,
+      onCloseTabsLeft,
+      onCloseTabsRight,
+      tabs
+    ]
+  );
+
   useEffect(() => {
     if (connectionPreferences.autoReconnect) {
       return;
@@ -628,6 +733,50 @@ export function TerminalWorkspace({
       closeContextMenu();
     }
   }, [closeContextMenu, contextMenu, tabsById]);
+
+  useEffect(() => {
+    if (!tabContextMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (tabMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeTabContextMenu();
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeTabContextMenu();
+      }
+    };
+
+    const onWindowResize = () => {
+      closeTabContextMenu();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", onWindowResize);
+    window.addEventListener("scroll", onWindowResize, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("resize", onWindowResize);
+      window.removeEventListener("scroll", onWindowResize, true);
+    };
+  }, [closeTabContextMenu, tabContextMenu]);
+
+  useEffect(() => {
+    if (!tabContextMenu) {
+      return;
+    }
+    if (!tabsById.has(tabContextMenu.tabId)) {
+      closeTabContextMenu();
+    }
+  }, [closeTabContextMenu, tabContextMenu, tabsById]);
 
   useEffect(() => {
     if (!isSearchDialogOpen) {
@@ -879,6 +1028,7 @@ export function TerminalWorkspace({
             key={tab.id}
             className={activeTabId === tab.id ? "tab is-active" : "tab"}
             onClick={() => onSelectTab(tab.id)}
+            onContextMenu={(event) => openTabContextMenu(event, tab.id)}
             onMouseDown={(event) => {
               if (event.button !== 1) {
                 return;
@@ -901,6 +1051,34 @@ export function TerminalWorkspace({
           </button>
         ))}
       </div>
+      {tabContextMenu ? (
+        <div
+          className="terminal-context-menu"
+          ref={tabMenuRef}
+          style={{
+            left: `${Math.max(8, Math.min(tabContextMenu.x, window.innerWidth - 236))}px`,
+            top: `${Math.max(
+              8,
+              Math.min(tabContextMenu.y, window.innerHeight - (tabContextActions.length * 26 + 16))
+            )}px`
+          }}
+        >
+          {tabContextActions.map((action) => {
+            const disabled = action.isDisabled?.(tabContextMenu.tabId) ?? false;
+            return (
+              <button
+                className="terminal-context-menu__item"
+                disabled={disabled}
+                key={action.id}
+                onClick={() => runTabContextAction(action, tabContextMenu.tabId)}
+                type="button"
+              >
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="terminal-stage" ref={stageRef}>
         {tabs.length === 0 ? (
           <p className="hint terminal-empty">

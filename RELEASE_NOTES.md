@@ -1,5 +1,45 @@
 # TermDock Release Notes
 
+## v0.1.4 (2026-03-03)
+
+Release type: Stable
+
+### Highlights
+
+- Added app version display in `Settings`
+- Added multi-select batch workflows in Sessions:
+  - Batch operations for selected groups and sessions
+  - Batch move and batch delete from context menus
+  - `Move to Group` now uses a dropdown selector instead of free-text input
+- Improved session ordering controls:
+  - Added context-menu sort modes (`Default`, `Recent`, `Name A-Z`, `Name Z-A`)
+  - Sort mode is persisted across restarts
+  - Default mode keeps list position stable (no unexpected reorder on reconnect)
+- Added terminal tab context menu actions:
+  - `Close Tab`
+  - `Close Tabs to Left`
+  - `Close Tabs to Right`
+  - `Close Other Tabs`
+  - `Close All Tabs`
+- Improved terminal tab overflow handling with horizontal scrolling
+- Fixed UI text consistency issues in sort labels
+- Updated project markdown docs with prioritized feature roadmap
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
+## Unreleased (Planning)
+
+### Candidate Scope
+
+- Transfer conflict policy (`overwrite/skip/rename`) for upload/download
+- Transfer retry center and persistent task history
+- SSH config import from existing local environments
+- Port forwarding manager (local/remote/dynamic SOCKS)
+- Session templates and environment variable substitution
+
 ## v0.1.3 (2026-03-03)
 
 Release type: Stable

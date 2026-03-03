@@ -1,6 +1,6 @@
 # TermDock PRD
 
-Version: v1.6  
+Version: v1.7  
 Last updated: 2026-03-03
 
 ## 1. Product Positioning
@@ -118,6 +118,13 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.3` (current stable): session/group workflow refresh, transfer improvements, remote file auto-sync, icon unification
+- `v0.1.4` (current stable): settings version display, batch session/group operations, stable sort preferences, tab close menu expansion, move-to-group dropdown
 - Next hardening cycle: testing, installer reliability, error recovery
-- Next capability cycle: SSH config import, port forwarding, advanced transfer/workflow tooling
+- Capability cycle candidate A:
+  - Transfer conflict policy (`overwrite/skip/rename`) and retry center
+  - SSH config import with dedup and mapping preview
+  - Port forwarding manager (local/remote/dynamic)
+- Capability cycle candidate B:
+  - Session templates and environment variable substitution
+  - Unified operation center for long-running remote tasks
+  - Optional encrypted session export/import
