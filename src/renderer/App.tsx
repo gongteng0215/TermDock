@@ -137,12 +137,12 @@ function isMacPlatformRuntime(): boolean {
 function createDefaultHotkeyPreferences(): HotkeyPreferences {
   const isMac = isMacPlatformRuntime();
   if (!isMac) {
-    // Windows: keep open/close/search on Alt and use Alt+C / Alt+V for terminal clipboard.
+    // Windows: keep open/close/search on Alt and use Ctrl+Shift+C / Ctrl+Shift+V for terminal clipboard.
     return {
       openSessionTab: { enabled: true, modifier: "alt", key: "t" },
       closeActiveTab: { enabled: true, modifier: "altShift", key: "w" },
-      terminalCopy: { enabled: true, modifier: "alt", key: "c" },
-      terminalPaste: { enabled: true, modifier: "alt", key: "v" },
+      terminalCopy: { enabled: true, modifier: "primaryShift", key: "c" },
+      terminalPaste: { enabled: true, modifier: "primaryShift", key: "v" },
       terminalSearch: { enabled: true, modifier: "altShift", key: "f" }
     };
   }
@@ -481,6 +481,13 @@ function isLegacyWindowsAltClipboardHotkeyDefaults(preferences: HotkeyPreference
     preferences.terminalPaste.enabled &&
     preferences.terminalPaste.modifier === "altShift" &&
     preferences.terminalPaste.key === "v";
+  const isOldAltClipboard =
+    preferences.terminalCopy.enabled &&
+    preferences.terminalCopy.modifier === "alt" &&
+    preferences.terminalCopy.key === "c" &&
+    preferences.terminalPaste.enabled &&
+    preferences.terminalPaste.modifier === "alt" &&
+    preferences.terminalPaste.key === "v";
   const isOldCtrlShiftClipboard =
     preferences.terminalCopy.enabled &&
     preferences.terminalCopy.modifier === "primaryShift" &&
@@ -488,7 +495,7 @@ function isLegacyWindowsAltClipboardHotkeyDefaults(preferences: HotkeyPreference
     preferences.terminalPaste.enabled &&
     preferences.terminalPaste.modifier === "primaryShift" &&
     preferences.terminalPaste.key === "v";
-  return isOldAltShiftPaste || isOldCtrlShiftClipboard;
+  return isOldAltShiftPaste || isOldAltClipboard || isOldCtrlShiftClipboard;
 }
 
 function matchesHotkeyBinding(event: KeyboardEvent, binding: HotkeyBindingPreference): boolean {
@@ -575,9 +582,9 @@ function getHotkeyActionDescription(action: HotkeyActionId): string {
     case "closeActiveTab":
       return "Close active terminal tab";
     case "terminalCopy":
-      return "Terminal copy (Windows defaults to Alt+C; macOS keeps Cmd+C behavior)";
+      return "Terminal copy (Windows defaults to Ctrl+Shift+C)";
     case "terminalPaste":
-      return "Paste to terminal";
+      return "Terminal paste (Windows defaults to Ctrl+Shift+V)";
     case "terminalSearch":
       return "Search in terminal";
     default:
@@ -1144,6 +1151,28 @@ function buildClashDirectRules(session: SessionRecord): string {
   return lines.join("\n");
 }
 
+function quoteShellArg(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "\"\"";
+  }
+  if (!/[\s"\\]/.test(trimmed)) {
+    return trimmed;
+  }
+  return `"${trimmed.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")}"`;
+}
+
+function buildSshConnectionCommand(session: SessionRecord): string {
+  const username = session.username.trim();
+  const host = session.host.trim();
+  const parts: string[] = ["ssh"];
+  if (session.authType === "privateKey" && session.privateKeyPath?.trim()) {
+    parts.push("-i", quoteShellArg(session.privateKeyPath));
+  }
+  parts.push("-p", `${session.port}`, `${username}@${host}`);
+  return parts.join(" ");
+}
+
 async function copyTextToClipboard(text: string): Promise<boolean> {
   const systemApi = window.termdock?.system;
   if (systemApi?.writeClipboardText) {
@@ -1698,6 +1727,18 @@ export function App() {
       queued: activeDownloadQueueStats.queued
     };
   }, [activeDownloadBatchProgress, activeDownloadQueueStats]);
+  const canClearFinishedUploads =
+    !!activeTabId &&
+    (activeUploadQueueStats.completed +
+      activeUploadQueueStats.failed +
+      activeUploadQueueStats.canceled >
+      0);
+  const canClearFinishedDownloads =
+    !!activeTabId &&
+    (activeDownloadQueueStats.completed +
+      activeDownloadQueueStats.failed +
+      activeDownloadQueueStats.canceled >
+      0);
   const canDownloadSelectedSftpEntry =
     !!selectedSftpEntry &&
     (selectedSftpEntry.kind === "file" || selectedSftpEntry.kind === "directory");
@@ -2903,6 +2944,45 @@ export function App() {
     setError(null);
   }, []);
 
+  const buildDuplicateSessionName = useCallback(
+    (sourceName: string): string => {
+      const baseName = sourceName.trim() || "Session";
+      const candidateBase = `${baseName} copy`;
+      const usedNames = new Set(
+        sessions.map((session) => session.name.trim().toLowerCase())
+      );
+      if (!usedNames.has(candidateBase.toLowerCase())) {
+        return candidateBase;
+      }
+      let suffix = 2;
+      while (usedNames.has(`${candidateBase} ${suffix}`.toLowerCase())) {
+        suffix += 1;
+      }
+      return `${candidateBase} ${suffix}`;
+    },
+    [sessions]
+  );
+
+  const openDuplicateSessionModal = useCallback(
+    (session: SessionRecord) => {
+      setForm({
+        ...toFormFromSession(session),
+        name: buildDuplicateSessionName(session.name),
+        secret: ""
+      });
+      setEditingSessionId(null);
+      setTestConnectionResult(null);
+      setIsCreateModalOpen(true);
+      setError(null);
+      if (session.authType === "password") {
+        void showAppAlert("Duplicated session requires password input before saving.", {
+          title: "Duplicate Session"
+        });
+      }
+    },
+    [buildDuplicateSessionName, showAppAlert]
+  );
+
   const closeCreateModal = () => {
     if (saving || testingConnection) {
       return;
@@ -3653,6 +3733,29 @@ export function App() {
       detailText: text
     });
   };
+
+  const copySessionConnectionCommand = useCallback(
+    async (session: SessionRecord) => {
+      const command = buildSshConnectionCommand(session);
+      try {
+        const copied = await copyTextToClipboard(command);
+        if (copied) {
+          await showAppAlert("SSH command copied to clipboard.", {
+            title: "Connection Command"
+          });
+          return;
+        }
+      } catch {
+        // Fall through to manual copy dialog.
+      }
+      await showAppAlert("Clipboard unavailable. Copy the command below manually.", {
+        title: "Manual Copy",
+        confirmLabel: "Close",
+        detailText: command
+      });
+    },
+    [showAppAlert]
+  );
 
   const viewSessionDetails = useCallback(
     async (session: SessionRecord) => {
@@ -4641,6 +4744,20 @@ export function App() {
     drainDownloadQueue();
   };
 
+  const clearFinishedTransfers = (direction: "upload" | "download") => {
+    if (!activeTabId) {
+      return;
+    }
+    setSftpTransfers((prev) =>
+      prev.filter((transfer) => {
+        if (transfer.tabId !== activeTabId || transfer.direction !== direction) {
+          return true;
+        }
+        return transfer.status === "queued" || transfer.status === "running";
+      })
+    );
+  };
+
   const onSftpDragOver = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -4788,10 +4905,24 @@ export function App() {
         }
       });
       sessionContextActions.push({
+        id: "copy-ssh-command",
+        label: "Copy SSH Command",
+        run: () => {
+          void copySessionConnectionCommand(sessionContextTarget);
+        }
+      });
+      sessionContextActions.push({
         id: "edit-session",
         label: "Edit Session",
         run: () => {
           openEditModal(sessionContextTarget);
+        }
+      });
+      sessionContextActions.push({
+        id: "duplicate-session",
+        label: "Duplicate Session",
+        run: () => {
+          openDuplicateSessionModal(sessionContextTarget);
         }
       });
     }
@@ -5580,6 +5711,19 @@ export function App() {
                             setSelectedSessionId(session.id);
                             setSelectedSessionIds([session.id]);
                           }}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key !== "Enter" ||
+                              event.altKey ||
+                              event.ctrlKey ||
+                              event.metaKey ||
+                              event.shiftKey
+                            ) {
+                              return;
+                            }
+                            event.preventDefault();
+                            openTerminalTab(session);
+                          }}
                           onDoubleClick={() => openTerminalTab(session)}
                           title={`${session.username}@${session.host}:${session.port}`}
                           type="button"
@@ -5856,18 +6000,30 @@ export function App() {
                 {activeUploadQueueStats.queued}, threads{" "}
                 {sftpTransferPreferences.uploadConcurrency})
               </p>
-              <button
-                aria-label="Cancel all upload tasks"
-                className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
-                disabled={!activeTabId}
-                onClick={() => {
-                  void cancelAllActiveUploads();
-                }}
-                title="Cancel all upload tasks in this tab"
-                type="button"
-              >
-                <UiIcon name="close" />
-              </button>
+              <div className="sftp-transfer-panel__actions">
+                <button
+                  className="secondary-button sftp-transfer-panel__clear"
+                  disabled={!canClearFinishedUploads}
+                  onClick={() => {
+                    clearFinishedTransfers("upload");
+                  }}
+                  type="button"
+                >
+                  Clear Finished
+                </button>
+                <button
+                  aria-label="Cancel all upload tasks"
+                  className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
+                  disabled={!activeTabId}
+                  onClick={() => {
+                    void cancelAllActiveUploads();
+                  }}
+                  title="Cancel all upload tasks in this tab"
+                  type="button"
+                >
+                  <UiIcon name="close" />
+                </button>
+              </div>
             </div>
             <p className="hint sftp-transfer-panel__batch-progress">
               Progress: {activeUploadProgressStats.completed}/{activeUploadProgressStats.total} completed
@@ -5914,18 +6070,30 @@ export function App() {
                 {activeDownloadQueueStats.queued}, threads{" "}
                 {sftpTransferPreferences.downloadConcurrency})
               </p>
-              <button
-                aria-label="Cancel all download tasks"
-                className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
-                disabled={!activeTabId}
-                onClick={() => {
-                  void cancelAllActiveDownloads();
-                }}
-                title="Cancel all download tasks in this tab"
-                type="button"
-              >
-                <UiIcon name="close" />
-              </button>
+              <div className="sftp-transfer-panel__actions">
+                <button
+                  className="secondary-button sftp-transfer-panel__clear"
+                  disabled={!canClearFinishedDownloads}
+                  onClick={() => {
+                    clearFinishedTransfers("download");
+                  }}
+                  type="button"
+                >
+                  Clear Finished
+                </button>
+                <button
+                  aria-label="Cancel all download tasks"
+                  className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
+                  disabled={!activeTabId}
+                  onClick={() => {
+                    void cancelAllActiveDownloads();
+                  }}
+                  title="Cancel all download tasks in this tab"
+                  type="button"
+                >
+                  <UiIcon name="close" />
+                </button>
+              </div>
             </div>
             <p className="hint sftp-transfer-panel__batch-progress">
               Progress: {activeDownloadProgressStats.completed}/{activeDownloadProgressStats.total} completed
@@ -6187,9 +6355,10 @@ export function App() {
                       })}
                     </div>
                     <p className="hint">
-                      Windows defaults use <code>Alt + C</code> / <code>Alt + V</code> for
-                      terminal copy/paste, and keeps Alt-based keys for tab and search actions.
-                      macOS keeps the existing Cmd-based behavior.
+                      Windows defaults use <code>Ctrl + Shift + C</code> /{" "}
+                      <code>Ctrl + Shift + V</code> for terminal copy/paste, and keeps
+                      Alt-based keys for tab and search actions. macOS keeps the existing
+                      Cmd-based behavior.
                     </p>
                     <div className="modal__actions">
                       <button

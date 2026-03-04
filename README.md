@@ -5,12 +5,16 @@ It combines session management, multi-tab terminal, file transfer, and server he
 
 ## Current Status
 
-- Current stable release: `v0.1.4` (2026-03-03)
+- Current stable release: `v0.1.5` (2026-03-04)
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
 
-## Highlights in v0.1.4
+## Highlights in v0.1.5
 
+- Windows clipboard defaults now use `Ctrl+Shift+C` / `Ctrl+Shift+V`
+- Session context actions: `Duplicate Session` and `Copy SSH Command`
+- Session quick connect via `Enter`
+- Transfer dock actions: `Clear Finished` for upload/download lists
 - Settings now shows current app version
 - Batch session/group operations via multi-select context menu
 - `Move session to group` now uses dropdown selection
@@ -28,7 +32,7 @@ It combines session management, multi-tab terminal, file transfer, and server he
 - Auto-upload back to server when a remotely opened file is saved
 - Improved delete progress feedback
 - Windows menu bar hidden by default
-- Windows terminal copy/paste defaults switched to `Alt+C` / `Alt+V`
+- Windows terminal copy/paste defaults switched to `Ctrl+Shift+C` / `Ctrl+Shift+V`
 - Unified icon system using `lucide-react`
 
 ## Available Features
@@ -68,21 +72,21 @@ Workflow: `.github/workflows/release.yml`
 Stable release:
 
 ```bash
-git tag v0.1.4
-git push origin v0.1.4
+git tag v0.1.5
+git push origin v0.1.5
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.4-test.1
-git push origin v0.1.4-test.1
+git tag v0.1.5-test.1
+git push origin v0.1.5-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.4`) => stable release
-- Tag with `-` (for example `v0.1.4-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.5`) => stable release
+- Tag with `-` (for example `v0.1.5-test.1`) => prerelease
 
 ## Known Limitations
 

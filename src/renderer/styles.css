@@ -1300,6 +1300,19 @@ body::before {
   margin-bottom: 0;
 }
 
+.sftp-transfer-panel__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sftp-transfer-panel__clear {
+  height: 18px;
+  padding: 0 7px;
+  font-size: 10px;
+  border-radius: 4px;
+}
+
 .sftp-transfer-panel__bulk-cancel {
   width: 20px;
   height: 18px;

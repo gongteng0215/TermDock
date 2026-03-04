@@ -1,5 +1,31 @@
 # TermDock Release Notes
 
+## v0.1.5 (2026-03-04)
+
+Release type: Stable
+
+### Highlights
+
+- Updated Windows terminal clipboard defaults to:
+  - `Ctrl+Shift+C` for copy
+  - `Ctrl+Shift+V` for paste
+- Removed temporary Alt clipboard compatibility fallback to avoid terminal Meta-key conflicts
+- Added `Clear Finished` actions in Transfer panels (upload/download):
+  - Clears only `completed/failed/canceled` items
+  - Keeps `running/queued` tasks visible
+- Added session context action: `Duplicate Session`
+  - Auto-fills a copied session form with a unique `copy` suffix
+  - Prompts for password re-entry when duplicating password-based sessions
+- Added session context action: `Copy SSH Command`
+  - Copies a ready-to-run `ssh` command based on session settings
+- Added quick-connect keyboard action in session list:
+  - Press `Enter` on selected session to open terminal tab
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
 ## v0.1.4 (2026-03-03)
 
 Release type: Stable
