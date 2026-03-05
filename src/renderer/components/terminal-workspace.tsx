@@ -957,6 +957,7 @@ export function TerminalWorkspace({
       const dataDisposable = terminal.onData((data) => {
         void terminalApi.write(tab.id, data);
       });
+      let wheelLineRemainder = 0;
       const onWheel = (event: WheelEvent) => {
         if (event.ctrlKey || event.altKey || event.metaKey) {
           return;
@@ -964,21 +965,38 @@ export function TerminalWorkspace({
         if (terminal.buffer.active.type !== "alternate") {
           return;
         }
+        if (terminal.modes.mouseTrackingMode !== "none") {
+          return;
+        }
 
         const legacyWheelDelta = (event as WheelEvent & { wheelDelta?: number }).wheelDelta;
         const rawDeltaY = event.deltaY !== 0 ? event.deltaY : -(legacyWheelDelta ?? 0);
-        const deltaLines =
+        const deltaLinesRaw =
           event.deltaMode === WheelEvent.DOM_DELTA_LINE
             ? rawDeltaY
             : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
               ? rawDeltaY * Math.max(terminal.rows, 1)
               : rawDeltaY / WHEEL_PIXELS_PER_LINE;
-        if (!Number.isFinite(deltaLines) || deltaLines === 0) {
+        if (!Number.isFinite(deltaLinesRaw) || deltaLinesRaw === 0) {
           return;
         }
 
-        const stepCount = Math.min(MAX_WHEEL_NAV_LINES, Math.max(1, Math.ceil(Math.abs(deltaLines))));
-        const sequence = deltaLines > 0 ? "\u001b[B" : "\u001b[A";
+        wheelLineRemainder += deltaLinesRaw;
+        const wholeLines =
+          wheelLineRemainder > 0
+            ? Math.floor(wheelLineRemainder)
+            : Math.ceil(wheelLineRemainder);
+        if (wholeLines === 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        wheelLineRemainder -= wholeLines;
+
+        const stepCount = Math.min(MAX_WHEEL_NAV_LINES, Math.abs(wholeLines));
+        const upSequence = terminal.modes.applicationCursorKeysMode ? "\u001bOA" : "\u001b[A";
+        const downSequence = terminal.modes.applicationCursorKeysMode ? "\u001bOB" : "\u001b[B";
+        const sequence = wholeLines > 0 ? downSequence : upSequence;
         void terminalApi.write(tab.id, sequence.repeat(stepCount));
         event.preventDefault();
         event.stopPropagation();
