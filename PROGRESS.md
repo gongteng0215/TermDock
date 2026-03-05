@@ -33,6 +33,7 @@ Last updated: 2026-03-05
 - Added monitor polling in-flight guards per tab to reduce overload during high transfer activity
 - Skip silent server monitor polling while uploads/downloads are running on the same tab
 - Added deferred and font-ready terminal refit flow to stabilize small-window rendering in packaged builds
+- Added reusable transfer soak-test harness (`scripts/soak-transfer.mjs`) and execution guide (`SOAK_TEST.md`)
 
 ## Previously Completed (v0.1.8 / v0.1.7 / v0.1.6)
 
@@ -79,7 +80,7 @@ Last updated: 2026-03-05
 
 ## Next Focus
 
-1. Validate post-`v0.1.9` hardening on long transfer sessions (multi-hour soak)
+1. Run the soak-test matrix and capture baseline/medium/high reports (`SOAK_TEST.md`)
 2. Execute and document full macOS/Windows smoke checklist (`P0-F3`)
 3. Finalize signing/notarization path and verify installer flows (`P0-F4`)
 4. Build recoverable global error actions and guidance (`P0-E3`)

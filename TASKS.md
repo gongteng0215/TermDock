@@ -64,6 +64,9 @@ Last updated: 2026-03-05
 3. Field validation:
    - verify no random disconnect regressions during large batch upload tests
    - verify no small-window editor rendering corruption
+4. Soak tooling:
+   - added `scripts/soak-transfer.mjs`
+   - added `SOAK_TEST.md` runbook and matrix
 
 ## Backlog Candidates
 

@@ -12,6 +12,9 @@ Release type: Stable candidate
 - Stabilized terminal viewport behavior on smaller windows and packaged startup:
   - Added deferred multi-pass `fit` scheduling after tab activation/connect
   - Added a font-ready refit path to prevent stale row/column sizing
+- Added long-duration transfer soak tooling:
+  - `scripts/soak-transfer.mjs`
+  - `SOAK_TEST.md` execution matrix and validation runbook
 
 ### Validation
 

@@ -11,6 +11,7 @@ Last updated: 2026-03-05
 
 ## Shipped in Recent Cycles
 
+- master (post-v0.1.9): added transfer soak-test tool (`scripts/soak-transfer.mjs`) and runbook (`SOAK_TEST.md`)
 - master (post-v0.1.9): reduced transfer-time disconnect risk by preventing overlapping server monitor polling per tab
 - master (post-v0.1.9): stabilized terminal rendering on small windows with deferred/font-ready xterm refit
 - v0.1.9: blocked raw wheel mouse-report text artifacts (`%6`, `%9`) in alternate-buffer editor scenarios

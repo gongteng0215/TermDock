@@ -14,6 +14,7 @@
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.node.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "soak:transfer": "node scripts/soak-transfer.mjs",
     "pack": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --dir",
     "dist:mac": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --mac dmg zip --publish never",
     "dist:mac:arm64": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --mac dmg zip --arm64 --publish never",

@@ -88,6 +88,14 @@ pnpm dev
 pnpm build
 ```
 
+## Soak Test
+
+```bash
+pnpm run soak:transfer
+```
+
+Set SSH/SFTP target environment variables first. See `SOAK_TEST.md` for full setup.
+
 ## Release
 
 Workflow: `.github/workflows/release.yml`
@@ -154,6 +162,7 @@ src/shared    # Shared contracts and types
 - `PROGRESS.md`: progress and readiness snapshot
 - `TASKS.md`: execution tasks and status
 - `PRD.md`: product requirements
+- `SOAK_TEST.md`: long-duration transfer stress test guide
 
 ## License
 

@@ -109,6 +109,7 @@ Target platforms:
 - UI should avoid layout jumps in core workflows
 - Release builds for macOS and Windows should be reproducible
 - Background monitor requests must avoid overlap-induced connection pressure
+- Long-duration transfer soak runs should be repeatable with scriptable parameters
 
 ## 8. Current Limitations
 
@@ -129,6 +130,7 @@ Target platforms:
 - Next patch cycle (master in progress):
   - monitor polling overlap guard during heavy transfer sessions
   - small-window packaged terminal refit stabilization
+  - scripted transfer soak harness and matrix runbook
 - Next hardening cycle: testing, installer reliability, error recovery
 - Capability cycle candidate A:
   - Transfer conflict policy (`overwrite/skip/rename`) and retry center
