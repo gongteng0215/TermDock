@@ -60,6 +60,7 @@ interface TerminalInstance {
 
 const WHEEL_PIXELS_PER_LINE = 40;
 const MAX_WHEEL_NAV_LINES = 12;
+const WHEEL_CAPTURE = true;
 
 type TabUiStatus = {
   status: TerminalConnectionStatus | "error";
@@ -960,33 +961,48 @@ export function TerminalWorkspace({
         if (event.ctrlKey || event.altKey || event.metaKey) {
           return;
         }
-        if (terminal.buffer.active !== terminal.buffer.alternate) {
+        if (terminal.buffer.active.type !== "alternate") {
           return;
         }
 
+        const legacyWheelDelta = (event as WheelEvent & { wheelDelta?: number }).wheelDelta;
+        const rawDeltaY = event.deltaY !== 0 ? event.deltaY : -(legacyWheelDelta ?? 0);
         const deltaLines =
           event.deltaMode === WheelEvent.DOM_DELTA_LINE
-            ? event.deltaY
+            ? rawDeltaY
             : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-              ? event.deltaY * Math.max(terminal.rows, 1)
-              : event.deltaY / WHEEL_PIXELS_PER_LINE;
-        if (deltaLines === 0) {
+              ? rawDeltaY * Math.max(terminal.rows, 1)
+              : rawDeltaY / WHEEL_PIXELS_PER_LINE;
+        if (!Number.isFinite(deltaLines) || deltaLines === 0) {
           return;
         }
 
-        const stepCount = Math.min(MAX_WHEEL_NAV_LINES, Math.max(1, Math.round(Math.abs(deltaLines))));
+        const stepCount = Math.min(MAX_WHEEL_NAV_LINES, Math.max(1, Math.ceil(Math.abs(deltaLines))));
         const sequence = deltaLines > 0 ? "\u001b[B" : "\u001b[A";
         void terminalApi.write(tab.id, sequence.repeat(stepCount));
         event.preventDefault();
+        event.stopPropagation();
       };
-      container.addEventListener("wheel", onWheel, { passive: false });
+      const wheelTargets = new Set<HTMLElement>();
+      const registerWheelTarget = (target: HTMLElement | null | undefined) => {
+        if (!target || wheelTargets.has(target)) {
+          return;
+        }
+        target.addEventListener("wheel", onWheel, { capture: WHEEL_CAPTURE, passive: false });
+        wheelTargets.add(target);
+      };
+      registerWheelTarget(container);
+      registerWheelTarget(terminal.element);
 
       terminalRefs.current.set(tab.id, {
         terminal,
         fitAddon,
         dataDisposable,
         removeWheelListener: () => {
-          container.removeEventListener("wheel", onWheel);
+          for (const target of wheelTargets) {
+            target.removeEventListener("wheel", onWheel, WHEEL_CAPTURE);
+          }
+          wheelTargets.clear();
         }
       });
 
