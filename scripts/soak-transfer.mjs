@@ -218,6 +218,7 @@ async function main() {
   };
 
   let stopping = false;
+  let expectedConnectionClose = false;
   let client = null;
   let sftp = null;
   let monitorTimer = null;
@@ -256,13 +257,13 @@ async function main() {
     client.on("close", (hadError) => {
       const eventText = `close(hadError=${String(hadError)})`;
       summary.connectionEvents.push(eventText);
-      if (!stopping) {
+      if (!stopping && !expectedConnectionClose) {
         summary.disconnectedUnexpectedly = true;
       }
     });
     client.on("end", () => {
       summary.connectionEvents.push("end");
-      if (!stopping) {
+      if (!stopping && !expectedConnectionClose) {
         summary.disconnectedUnexpectedly = true;
       }
     });
@@ -405,6 +406,8 @@ async function main() {
       }
     }
     if (client) {
+      // From here, close events are expected and must not be counted as random disconnects.
+      expectedConnectionClose = true;
       try {
         client.end();
       } catch {
