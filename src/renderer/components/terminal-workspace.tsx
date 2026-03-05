@@ -55,7 +55,11 @@ interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
   dataDisposable: IDisposable;
+  removeWheelListener: () => void;
 }
+
+const WHEEL_PIXELS_PER_LINE = 40;
+const MAX_WHEEL_NAV_LINES = 12;
 
 type TabUiStatus = {
   status: TerminalConnectionStatus | "error";
@@ -903,6 +907,7 @@ export function TerminalWorkspace({
         continue;
       }
       clearReconnectState(tabId);
+      instance.removeWheelListener();
       instance.dataDisposable.dispose();
       instance.terminal.dispose();
       terminalRefs.current.delete(tabId);
@@ -951,11 +956,38 @@ export function TerminalWorkspace({
       const dataDisposable = terminal.onData((data) => {
         void terminalApi.write(tab.id, data);
       });
+      const onWheel = (event: WheelEvent) => {
+        if (event.ctrlKey || event.altKey || event.metaKey) {
+          return;
+        }
+        if (terminal.buffer.active !== terminal.buffer.alternate) {
+          return;
+        }
+
+        const deltaLines =
+          event.deltaMode === WheelEvent.DOM_DELTA_LINE
+            ? event.deltaY
+            : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+              ? event.deltaY * Math.max(terminal.rows, 1)
+              : event.deltaY / WHEEL_PIXELS_PER_LINE;
+        if (deltaLines === 0) {
+          return;
+        }
+
+        const stepCount = Math.min(MAX_WHEEL_NAV_LINES, Math.max(1, Math.round(Math.abs(deltaLines))));
+        const sequence = deltaLines > 0 ? "\u001b[B" : "\u001b[A";
+        void terminalApi.write(tab.id, sequence.repeat(stepCount));
+        event.preventDefault();
+      };
+      container.addEventListener("wheel", onWheel, { passive: false });
 
       terminalRefs.current.set(tab.id, {
         terminal,
         fitAddon,
-        dataDisposable
+        dataDisposable,
+        removeWheelListener: () => {
+          container.removeEventListener("wheel", onWheel);
+        }
       });
 
       if (tab.id === activeTabId) {
@@ -1002,6 +1034,7 @@ export function TerminalWorkspace({
     return () => {
       for (const [tabId, instance] of terminalRefs.current.entries()) {
         clearReconnectState(tabId);
+        instance.removeWheelListener();
         instance.dataDisposable.dispose();
         instance.terminal.dispose();
         searchStateRef.current.delete(tabId);
