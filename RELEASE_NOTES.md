@@ -1,5 +1,21 @@
 # TermDock Release Notes
 
+## v0.1.6 (2026-03-05)
+
+Release type: Stable
+
+### Highlights
+
+- Fixed terminal mouse wheel behavior in alternate-buffer applications
+  - Scrolling now works in long files when using `nano`
+  - Scrolling now works in `vim` through the same input path
+- Added safe wheel-listener lifecycle cleanup on terminal tab close/unmount
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
 ## v0.1.5 (2026-03-04)
 
 Release type: Stable

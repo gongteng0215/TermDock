@@ -1,6 +1,6 @@
 # TermDock Product Notes
 
-Last updated: 2026-03-03
+Last updated: 2026-03-05
 
 ## Confirmed Direction
 
@@ -11,6 +11,7 @@ Last updated: 2026-03-03
 
 ## Shipped in Recent Cycles
 
+- v0.1.6: terminal wheel scrolling fix for alternate-buffer editors (`nano`, `vim`)
 - v0.1.4: settings version display, batch session/group operations, tab close menu expansion, move-to-group dropdown
 - Server health baseline and detail drill-down
 - Alert thresholds for CPU/memory/disk

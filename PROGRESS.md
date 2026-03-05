@@ -1,10 +1,10 @@
 # TermDock Progress
 
-Last updated: 2026-03-03
+Last updated: 2026-03-05
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.4`
+- Stable release shipped: `v0.1.6`
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -22,7 +22,12 @@ Last updated: 2026-03-03
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX
 
-## Completed in v0.1.4
+## Completed in v0.1.6
+
+- Terminal mouse wheel scrolling now works in alternate-buffer editors (`nano`, `vim`)
+- Added terminal wheel listener cleanup on tab close/unmount to avoid stale handlers
+
+## Previously Completed (v0.1.5 / v0.1.4)
 
 - Settings now displays current app version
 - Added session/group multi-select and batch context operations

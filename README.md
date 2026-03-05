@@ -5,9 +5,13 @@ It combines session management, multi-tab terminal, file transfer, and server he
 
 ## Current Status
 
-- Current stable release: `v0.1.5` (2026-03-04)
+- Current stable release: `v0.1.6` (2026-03-05)
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
+
+## Highlights in v0.1.6
+
+- Terminal mouse wheel now scrolls correctly in full-screen terminal editors (alternate buffer), including `nano` and `vim`
 
 ## Highlights in v0.1.5
 
@@ -72,21 +76,21 @@ Workflow: `.github/workflows/release.yml`
 Stable release:
 
 ```bash
-git tag v0.1.5
-git push origin v0.1.5
+git tag v0.1.6
+git push origin v0.1.6
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.5-test.1
-git push origin v0.1.5-test.1
+git tag v0.1.6-test.1
+git push origin v0.1.6-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.5`) => stable release
-- Tag with `-` (for example `v0.1.5-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.6`) => stable release
+- Tag with `-` (for example `v0.1.6-test.1`) => prerelease
 
 ## Known Limitations
 
