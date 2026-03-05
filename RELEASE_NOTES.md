@@ -1,5 +1,22 @@
 # TermDock Release Notes
 
+## v0.1.8 (2026-03-05)
+
+Release type: Stable
+
+### Highlights
+
+- Refined terminal wheel input behavior to reduce extra blank-line/jump effects during scroll
+- Added mode-aware wheel forwarding strategy:
+  - respects `application cursor keys` mode for correct arrow sequence mapping
+  - skips injected wheel navigation when terminal mouse tracking is active
+  - uses accumulated wheel deltas to avoid over-triggering line movements
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
 ## v0.1.7 (2026-03-05)
 
 Release type: Stable

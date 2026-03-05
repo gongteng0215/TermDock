@@ -11,6 +11,7 @@ Last updated: 2026-03-05
 
 ## Shipped in Recent Cycles
 
+- v0.1.8: refined terminal wheel mapping to reduce blank-line/jump effects in full-screen editors
 - v0.1.7: improved wheel-scroll reliability in alternate-buffer editors by capturing terminal wheel events
 - v0.1.6: terminal wheel scrolling fix for alternate-buffer editors (`nano`, `vim`)
 - v0.1.4: settings version display, batch session/group operations, tab close menu expansion, move-to-group dropdown
