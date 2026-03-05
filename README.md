@@ -5,9 +5,14 @@ It combines session management, multi-tab terminal, file transfer, and server he
 
 ## Current Status
 
-- Current stable release: `v0.1.8` (2026-03-05)
+- Current stable release: `v0.1.9` (2026-03-05)
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
+
+## Highlights in v0.1.9
+
+- Prevented raw wheel mouse-report sequences from leaking into terminal text in alternate-buffer editor states
+- Reduced visible garbage input such as `%6`/`%9` when mouse tracking is enabled
 
 ## Highlights in v0.1.8
 
@@ -85,21 +90,21 @@ Workflow: `.github/workflows/release.yml`
 Stable release:
 
 ```bash
-git tag v0.1.8
-git push origin v0.1.8
+git tag v0.1.9
+git push origin v0.1.9
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.8-test.1
-git push origin v0.1.8-test.1
+git tag v0.1.9-test.1
+git push origin v0.1.9-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.8`) => stable release
-- Tag with `-` (for example `v0.1.8-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.9`) => stable release
+- Tag with `-` (for example `v0.1.9-test.1`) => prerelease
 
 ## Known Limitations
 

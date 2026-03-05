@@ -1,5 +1,20 @@
 # TermDock Release Notes
 
+## v0.1.9 (2026-03-05)
+
+Release type: Stable
+
+### Highlights
+
+- Added a protection path for alternate-buffer wheel handling when mouse tracking is active
+- Prevents raw wheel mouse-report sequences from appearing as terminal text (for example `%6`, `%9`)
+- Keeps scrolling behavior stable in full-screen editors while avoiding garbage input artifacts
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
 ## v0.1.8 (2026-03-05)
 
 Release type: Stable
