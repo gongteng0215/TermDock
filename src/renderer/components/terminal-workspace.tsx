@@ -117,6 +117,7 @@ export function TerminalWorkspace({
   const searchStateRef = useRef(new Map<string, TerminalSearchState>());
   const reconnectAttemptsRef = useRef(new Map<string, number>());
   const reconnectTimersRef = useRef(new Map<string, number>());
+  const deferredFitTimersRef = useRef(new Map<string, number[]>());
   const tabsByIdRef = useRef(new Map<string, TerminalTab>());
   const tabStatusesRef = useRef<Record<string, TabUiStatus>>({});
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabUiStatus>>({});
@@ -148,6 +149,17 @@ export function TerminalWorkspace({
       window.clearTimeout(timer);
       reconnectTimersRef.current.delete(tabId);
     }
+  }, []);
+
+  const clearDeferredFitTimers = useCallback((tabId: string) => {
+    const timers = deferredFitTimersRef.current.get(tabId);
+    if (!timers) {
+      return;
+    }
+    for (const timer of timers) {
+      window.clearTimeout(timer);
+    }
+    deferredFitTimersRef.current.delete(tabId);
   }, []);
 
   const closeContextMenu = useCallback(() => {
@@ -223,6 +235,31 @@ export function TerminalWorkspace({
     }
   }, [terminalApi]);
 
+  const scheduleDeferredFit = useCallback(
+    (tabId: string) => {
+      clearDeferredFitTimers(tabId);
+      const timers: number[] = [];
+      const schedule = (delayMs: number) => {
+        const timer = window.setTimeout(() => {
+          fitTerminal(tabId);
+        }, delayMs);
+        timers.push(timer);
+      };
+      schedule(0);
+      schedule(90);
+      schedule(260);
+      deferredFitTimersRef.current.set(tabId, timers);
+
+      // Packaged builds may load fonts later than dev; refit after fonts settle
+      // to avoid stale row/column sizing in smaller windows.
+      const fontSet = document.fonts;
+      void fontSet.ready.then(() => {
+        fitTerminal(tabId);
+      });
+    },
+    [clearDeferredFitTimers, fitTerminal]
+  );
+
   const focusTerminal = useCallback((tabId: string) => {
     const instance = terminalRefs.current.get(tabId);
     if (!instance) {
@@ -261,6 +298,7 @@ export function TerminalWorkspace({
         .then(() => {
           clearReconnectState(tab.id);
           fitTerminal(tab.id);
+          scheduleDeferredFit(tab.id);
         })
         .catch((error: Error) => {
           const message = error.message || "Failed to connect.";
@@ -269,7 +307,7 @@ export function TerminalWorkspace({
           onError(message);
         });
     },
-    [clearReconnectState, fitTerminal, onError, setTabStatus, terminalApi]
+    [clearReconnectState, fitTerminal, onError, scheduleDeferredFit, setTabStatus, terminalApi]
   );
 
   const reconnectTabNow = useCallback(
@@ -908,6 +946,7 @@ export function TerminalWorkspace({
         continue;
       }
       clearReconnectState(tabId);
+      clearDeferredFitTimers(tabId);
       instance.removeWheelListener();
       instance.dataDisposable.dispose();
       instance.terminal.dispose();
@@ -1034,24 +1073,35 @@ export function TerminalWorkspace({
 
       setTabStatus(tab.id, { status: "connecting" });
       terminal.writeln(`Connecting to ${tab.title}...`);
+      scheduleDeferredFit(tab.id);
       void connectTab(tab);
     }
-  }, [activeTabId, clearReconnectState, connectTab, setTabStatus, tabs, terminalApi]);
+  }, [
+    activeTabId,
+    clearDeferredFitTimers,
+    clearReconnectState,
+    connectTab,
+    scheduleDeferredFit,
+    setTabStatus,
+    tabs,
+    terminalApi
+  ]);
 
   useEffect(() => {
     if (!activeTabId) {
       return;
     }
 
+    fitTerminal(activeTabId);
+    scheduleDeferredFit(activeTabId);
     const timeout = setTimeout(() => {
-      fitTerminal(activeTabId);
       focusTerminal(activeTabId);
     }, 0);
 
     return () => {
       clearTimeout(timeout);
     };
-  }, [activeTabId, fitTerminal, focusTerminal]);
+  }, [activeTabId, fitTerminal, focusTerminal, scheduleDeferredFit]);
 
   useEffect(() => {
     if (!activeTabId || !stageRef.current) {
@@ -1072,6 +1122,7 @@ export function TerminalWorkspace({
     return () => {
       for (const [tabId, instance] of terminalRefs.current.entries()) {
         clearReconnectState(tabId);
+        clearDeferredFitTimers(tabId);
         instance.removeWheelListener();
         instance.dataDisposable.dispose();
         instance.terminal.dispose();
@@ -1085,8 +1136,9 @@ export function TerminalWorkspace({
       searchStateRef.current.clear();
       reconnectAttemptsRef.current.clear();
       reconnectTimersRef.current.clear();
+      deferredFitTimersRef.current.clear();
     };
-  }, [clearReconnectState, terminalApi]);
+  }, [clearDeferredFitTimers, clearReconnectState, terminalApi]);
 
   return (
     <>
