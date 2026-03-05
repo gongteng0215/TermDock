@@ -1303,6 +1303,8 @@ export function App() {
   const appDialogResolverRef = useRef<((value: unknown) => void) | null>(null);
   const appDialogCancelValueRef = useRef<unknown>(undefined);
   const previousServerHealthRef = useRef<ServerHealthSnapshot | null>(null);
+  const serverHealthRequestInFlightTabsRef = useRef<Set<string>>(new Set());
+  const serverProcessRequestInFlightTabsRef = useRef<Set<string>>(new Set());
   const uploadBatchNoticeRef = useRef<Set<string>>(new Set());
   const downloadBatchNoticeRef = useRef<Set<string>>(new Set());
   const canceledUploadBatchIdsRef = useRef<Set<string>>(new Set());
@@ -2054,8 +2056,24 @@ export function App() {
         resetServerHealth("Terminal tab is not connected.");
         return;
       }
+      const isSilent = options?.silent === true;
+      if (serverHealthRequestInFlightTabsRef.current.has(targetTabId)) {
+        return;
+      }
+      if (isSilent) {
+        const hasActiveUpload = Array.from(runningUploadIdsRef.current.values()).some(
+          (tabId) => tabId === targetTabId
+        );
+        const hasActiveDownload = Array.from(runningDownloadIdsRef.current.values()).some(
+          (tabId) => tabId === targetTabId
+        );
+        if (hasActiveUpload || hasActiveDownload) {
+          return;
+        }
+      }
 
-      if (!options?.silent) {
+      serverHealthRequestInFlightTabsRef.current.add(targetTabId);
+      if (!isSilent) {
         setServerHealthLoading(true);
       }
       try {
@@ -2081,7 +2099,8 @@ export function App() {
         const message = (caughtError as Error).message;
         setServerHealthError(message);
       } finally {
-        if (!options?.silent) {
+        serverHealthRequestInFlightTabsRef.current.delete(targetTabId);
+        if (!isSilent) {
           setServerHealthLoading(false);
         }
       }
@@ -2110,7 +2129,23 @@ export function App() {
         resetServerProcesses("Terminal tab is not connected.");
         return;
       }
-      if (!options?.silent) {
+      const isSilent = options?.silent === true;
+      if (serverProcessRequestInFlightTabsRef.current.has(targetTabId)) {
+        return;
+      }
+      if (isSilent) {
+        const hasActiveUpload = Array.from(runningUploadIdsRef.current.values()).some(
+          (tabId) => tabId === targetTabId
+        );
+        const hasActiveDownload = Array.from(runningDownloadIdsRef.current.values()).some(
+          (tabId) => tabId === targetTabId
+        );
+        if (hasActiveUpload || hasActiveDownload) {
+          return;
+        }
+      }
+      serverProcessRequestInFlightTabsRef.current.add(targetTabId);
+      if (!isSilent) {
         setServerProcessLoading(true);
       }
       try {
@@ -2121,7 +2156,8 @@ export function App() {
         const message = (caughtError as Error).message;
         setServerProcessError(message);
       } finally {
-        if (!options?.silent) {
+        serverProcessRequestInFlightTabsRef.current.delete(targetTabId);
+        if (!isSilent) {
           setServerProcessLoading(false);
         }
       }
