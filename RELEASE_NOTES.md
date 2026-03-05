@@ -1,5 +1,21 @@
 # TermDock Release Notes
 
+## v0.1.7 (2026-03-05)
+
+Release type: Stable
+
+### Highlights
+
+- Improved terminal wheel-scroll reliability in alternate-buffer applications
+  - Uses `buffer.active.type === "alternate"` detection for robust mode detection
+  - Captures wheel events on terminal surfaces to avoid dropped events
+- Kept lifecycle cleanup for wheel listeners on tab close/unmount
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
 ## v0.1.6 (2026-03-05)
 
 Release type: Stable

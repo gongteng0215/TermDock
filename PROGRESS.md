@@ -4,7 +4,7 @@ Last updated: 2026-03-05
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.6`
+- Stable release shipped: `v0.1.7`
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -22,7 +22,12 @@ Last updated: 2026-03-05
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX
 
-## Completed in v0.1.6
+## Completed in v0.1.7
+
+- Improved wheel-scroll reliability in `nano`/`vim` by capturing wheel events on terminal surfaces
+- Switched alternate-buffer detection to `buffer.active.type` for stable behavior across sessions
+
+## Previously Completed (v0.1.6)
 
 - Terminal mouse wheel scrolling now works in alternate-buffer editors (`nano`, `vim`)
 - Added terminal wheel listener cleanup on tab close/unmount to avoid stale handlers
