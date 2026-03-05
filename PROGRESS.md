@@ -5,6 +5,7 @@ Last updated: 2026-03-05
 ## Snapshot
 
 - Stable release shipped: `v0.1.9`
+- Master branch includes post-`v0.1.9` hardening for transfer stability and terminal viewport sizing
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -26,6 +27,12 @@ Last updated: 2026-03-05
 
 - Added protection to block raw wheel mouse-report sequences while mouse tracking is active
 - Eliminated `%6`/`%9`-style garbage text artifacts caused by wheel input in full-screen editor modes
+
+## In Progress on master (next patch)
+
+- Added monitor polling in-flight guards per tab to reduce overload during high transfer activity
+- Skip silent server monitor polling while uploads/downloads are running on the same tab
+- Added deferred and font-ready terminal refit flow to stabilize small-window rendering in packaged builds
 
 ## Previously Completed (v0.1.8 / v0.1.7 / v0.1.6)
 
@@ -72,10 +79,10 @@ Last updated: 2026-03-05
 
 ## Next Focus
 
-1. Execute and document full macOS/Windows smoke checklist (`P0-F3`)
-2. Finalize signing/notarization path and verify installer flows (`P0-F4`)
-3. Build recoverable global error actions and guidance (`P0-E3`)
-4. Continue transfer robustness and large-folder workflow hardening
+1. Validate post-`v0.1.9` hardening on long transfer sessions (multi-hour soak)
+2. Execute and document full macOS/Windows smoke checklist (`P0-F3`)
+3. Finalize signing/notarization path and verify installer flows (`P0-F4`)
+4. Build recoverable global error actions and guidance (`P0-E3`)
 
 ## Feature Candidates After Hardening
 

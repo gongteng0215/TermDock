@@ -9,6 +9,11 @@ It combines session management, multi-tab terminal, file transfer, and server he
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
 
+## In Progress on `master` (next patch candidate)
+
+- Reduced random disconnect risk during heavy transfer bursts by avoiding overlapping server-monitor polling requests per tab
+- Improved terminal viewport stability on small windows and packaged startup by adding deferred multi-pass `fit` and font-ready refit
+
 ## Highlights in v0.1.9
 
 - Prevented raw wheel mouse-report sequences from leaking into terminal text in alternate-buffer editor states
@@ -113,6 +118,16 @@ Tag rules:
 - Broader cross-platform smoke tests are still pending
 - Installer signing/notarization strategy is not fully complete
 - No in-app auto-update yet
+
+## Near-Term Execution Focus
+
+1. Transfer stress hardening:
+   - long-running upload/download soak tests
+   - per-tab transfer + monitor pressure validation
+2. Small-window terminal stability:
+   - add explicit smoke checklist for 720p / scaled Windows displays
+3. Error recovery UX:
+   - clear reconnect guidance when remote host drops or throttles sessions
 
 ## Planned Features (Prioritized)
 

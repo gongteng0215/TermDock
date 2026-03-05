@@ -1,7 +1,7 @@
 # TermDock PRD
 
-Version: v1.7  
-Last updated: 2026-03-03
+Version: v1.8  
+Last updated: 2026-03-05
 
 ## 1. Product Positioning
 
@@ -90,6 +90,12 @@ Target platforms:
 - File opening preferences
 - Upload/download concurrency
 
+### 5.7 Stability Hardening (active)
+
+- Prevent monitor request overlap per tab under high transfer load
+- Reduce transfer-time disconnect risk when server resources are constrained
+- Keep terminal viewport sizing stable on small windows and packaged startup
+
 ## 6. Security Requirements
 
 - No plain-text credential persistence
@@ -102,6 +108,7 @@ Target platforms:
 - Transfer cancellation should be responsive and deterministic
 - UI should avoid layout jumps in core workflows
 - Release builds for macOS and Windows should be reproducible
+- Background monitor requests must avoid overlap-induced connection pressure
 
 ## 8. Current Limitations
 
@@ -118,7 +125,10 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.4` (current stable): settings version display, batch session/group operations, stable sort preferences, tab close menu expansion, move-to-group dropdown
+- `v0.1.9` (current stable): wheel/mouse-tracking artifact protection and editor scrolling compatibility hardening
+- Next patch cycle (master in progress):
+  - monitor polling overlap guard during heavy transfer sessions
+  - small-window packaged terminal refit stabilization
 - Next hardening cycle: testing, installer reliability, error recovery
 - Capability cycle candidate A:
   - Transfer conflict policy (`overwrite/skip/rename`) and retry center

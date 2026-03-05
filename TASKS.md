@@ -33,7 +33,7 @@ Last updated: 2026-03-05
 | P0-D1 | DONE | SFTP channel reuse via active tab |
 | P0-D2 | PARTIAL | SFTP panel is usable; final polish pending |
 | P0-D3 | PARTIAL | Browse/open/refresh works; edge error states still improving |
-| P0-D4 | PARTIAL | Queue/progress/cancel for upload/download done; more stress hardening pending |
+| P0-D4 | PARTIAL | Queue/progress/cancel done; monitor contention mitigations landed, long-run stress hardening still pending |
 | P0-D5 | PARTIAL | Create/rename/delete done; recursive safety flows still evolving |
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
 | P0-E1 | TODO | Startup performance benchmark/optimization |
@@ -52,6 +52,18 @@ Last updated: 2026-03-05
 2. `P0-F4` Signing/notarization strategy and installation verification
 3. `P0-E3` Global error recovery actions and user guidance
 4. Transfer hardening for cancel races and large directory jobs
+
+## Post-v0.1.9 Hotfix Track (master)
+
+1. Transfer + monitor contention hardening:
+   - prevent overlapping monitor requests per tab
+   - pause silent monitor polling during active transfer bursts
+2. Terminal viewport stabilization:
+   - deferred multi-pass fit on connect/activate
+   - font-ready refit for packaged startup and small-window scenarios
+3. Field validation:
+   - verify no random disconnect regressions during large batch upload tests
+   - verify no small-window editor rendering corruption
 
 ## Backlog Candidates
 

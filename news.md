@@ -11,6 +11,8 @@ Last updated: 2026-03-05
 
 ## Shipped in Recent Cycles
 
+- master (post-v0.1.9): reduced transfer-time disconnect risk by preventing overlapping server monitor polling per tab
+- master (post-v0.1.9): stabilized terminal rendering on small windows with deferred/font-ready xterm refit
 - v0.1.9: blocked raw wheel mouse-report text artifacts (`%6`, `%9`) in alternate-buffer editor scenarios
 - v0.1.8: refined terminal wheel mapping to reduce blank-line/jump effects in full-screen editors
 - v0.1.7: improved wheel-scroll reliability in alternate-buffer editors by capturing terminal wheel events

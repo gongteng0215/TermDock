@@ -1,5 +1,23 @@
 # TermDock Release Notes
 
+## Unreleased (v0.1.10 candidate)
+
+Release type: Stable candidate
+
+### Highlights
+
+- Reduced random disconnect risk during heavy transfer workloads:
+  - Added per-tab in-flight guards for server health/process polling
+  - Skip silent monitor polling while active upload/download tasks are running on the same tab
+- Stabilized terminal viewport behavior on smaller windows and packaged startup:
+  - Added deferred multi-pass `fit` scheduling after tab activation/connect
+  - Added a font-ready refit path to prevent stale row/column sizing
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
 ## v0.1.9 (2026-03-05)
 
 Release type: Stable
