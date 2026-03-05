@@ -966,6 +966,10 @@ export function TerminalWorkspace({
           return;
         }
         if (terminal.modes.mouseTrackingMode !== "none") {
+          // Prevent xterm from emitting raw mouse wheel reports that can appear
+          // as garbage text in some full-screen editor states.
+          event.preventDefault();
+          event.stopPropagation();
           return;
         }
 
