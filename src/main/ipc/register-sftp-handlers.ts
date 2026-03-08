@@ -36,6 +36,17 @@ export function registerSftpHandlers(terminalService: TerminalService): void {
       terminalService.uploadFile(tabId, transferId, localPath, remoteDirectory)
   );
   ipcMain.handle(
+    "sftp:uploadFileToPath",
+    async (
+      _event,
+      tabId: string,
+      transferId: string,
+      localPath: string,
+      remotePath: string
+    ) =>
+      terminalService.uploadFileToPath(tabId, transferId, localPath, remotePath)
+  );
+  ipcMain.handle(
     "sftp:cancelUpload",
     async (_event, tabId: string, transferId: string) =>
       terminalService.cancelUpload(tabId, transferId)

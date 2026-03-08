@@ -1,24 +1,74 @@
 # TermDock Release Notes
 
-## Unreleased (v0.1.10 candidate)
+## v0.1.10 (2026-03-08)
 
-Release type: Stable candidate
+Release type: Stable
 
 ### Highlights
 
+- Added transfer conflict policy for upload/download queues:
+  - batch-level strategy selection: `Overwrite`, `Skip`, `Rename`
+  - rename strategy auto-generates non-conflicting names (`name (1).ext`)
+  - upload path now supports explicit target remote path for rename-safe queueing
+- Added failed-transfer retry actions in transfer dock:
+  - `Retry Failed` for uploads
+  - `Retry Failed` for downloads (with conflict policy check before requeue)
+- Added persistent failed-transfer history (session scope, restart-safe):
+  - terminal-status transfer history persisted in local storage
+  - dock-level `Retry Failed` now reuses persisted failures after app restart
+- Added Transfer Retry Center:
+  - modal view with scope/direction/status/search filters
+  - batch actions: select visible, retry selected failed, delete selected/visible/all
+- Added diagnostics logging baseline:
+  - main process file logger with rotation (`userData/logs/termdock.log`)
+  - renderer global `error` and `unhandledrejection` auto-log
+  - new `Settings > Diagnostics` panel to refresh/open/copy log paths
+- Added one-click bug report export in `Settings > Diagnostics`:
+  - exports zip bundle with logs + runtime metadata + safe settings snapshot
+  - copyable export path for support handoff
+- Added SSH config import baseline:
+  - sessions context-menu action `Import SSH Config...`
+  - parser + preview + duplicate strategy (`skip` / `overwrite` / `rename`)
+- Hardened SSH config parser behavior:
+  - recursive `Include` expansion (glob include paths supported)
+  - wildcard and negation `Host` matching with order-aware option merge
+- Added port forwarding baseline in `Settings > Port Fwd`:
+  - Local (`-L`), Remote (`-R`), and Dynamic (`-D` / `SOCKS5`) create/list/remove
+  - forward lifecycle is bound to the active terminal tab
+  - forwards auto-clean up on disconnect or tab close
+- Added saved port forwarding presets:
+  - presets persist locally per session
+  - one-click apply from `Settings > Port Fwd`
+  - optional auto-restore when the terminal tab reconnects
+- Improved port forwarding runtime visibility:
+  - active forwards now expose runtime status (`Active` / `Degraded`)
+  - track per-forward connection totals and failed connection counts
+  - expose last activity timestamp and last failure reason in `Settings > Port Fwd`
+  - auto-refresh forwarding status while the settings panel is open
+- Added port forwarding event timeline and diagnostics snapshot:
+  - `Settings > Port Fwd > Recent Events` shows recent create/remove/degraded/recovered entries
+  - `Export Snapshot` copies active forwarding state + recent events to clipboard for issue reporting
+- Added persisted port forwarding history controls:
+  - event timeline is persisted locally by session and survives restart
+  - new event filter (`All` / `Errors` / `Create-Remove` / `Degraded-Recovered`)
+  - one-click clear for visible events or current-session event history
+- Updated project markdown docs to reflect current `F5+` status and next diagnostics priorities
 - Reduced random disconnect risk during heavy transfer workloads:
   - Added per-tab in-flight guards for server health/process polling
   - Skip silent monitor polling while active upload/download tasks are running on the same tab
 - Stabilized terminal viewport behavior on smaller windows and packaged startup:
   - Added deferred multi-pass `fit` scheduling after tab activation/connect
   - Added a font-ready refit path to prevent stale row/column sizing
+- Fixed settings panel footer overlap on shorter window heights
 - Added long-duration transfer soak tooling:
   - `scripts/soak-transfer.mjs`
   - `SOAK_TEST.md` execution matrix and validation runbook
 
 ### Validation
 
-- Type check passed: `pnpm run typecheck`
+- Type check passed:
+  - `tsc --noEmit -p tsconfig.json`
+  - `tsc --noEmit -p tsconfig.node.json`
 - Build passed: `pnpm run build`
 
 ## v0.1.9 (2026-03-05)
@@ -140,16 +190,6 @@ Release type: Stable
 
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
-
-## Unreleased (Planning)
-
-### Candidate Scope
-
-- Transfer conflict policy (`overwrite/skip/rename`) for upload/download
-- Transfer retry center and persistent task history
-- SSH config import from existing local environments
-- Port forwarding manager (local/remote/dynamic SOCKS)
-- Session templates and environment variable substitution
 
 ## v0.1.3 (2026-03-03)
 

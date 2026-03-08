@@ -1,79 +1,77 @@
 # TermDock
 
 TermDock is a cross-platform desktop SSH + SFTP client for developers and operators.
-It combines session management, multi-tab terminal, file transfer, and server health monitoring in one workspace.
+It combines session management, multi-tab terminal, file transfer, diagnostics logging, and server health monitoring in one workspace.
 
 ## Current Status
 
-- Current stable release: `v0.1.9` (2026-03-05)
+- Current stable release: `v0.1.10` (2026-03-08)
+- Current branch focus: `v0.1.11` hardening candidate on `master`
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
 
-## In Progress on `master` (next patch candidate)
+## In Progress on `master` (v0.1.11 candidate)
 
+- Transfer conflict policy for upload/download (`Overwrite` / `Skip` / `Rename`)
+- Failed transfer replay actions (`Retry Failed`) for upload/download docks
+- Session-scoped persistent failed-transfer history (survives restart and feeds `Retry Failed`)
+- Transfer Retry Center modal (filter/search/select/retry/delete persisted history records)
+- SSH config import baseline (`~/.ssh/config`): preview + duplicate strategy (`skip`/`overwrite`/`rename`)
+- SSH config parser hardening: recursive `Include` + `Host` wildcard/negation merge semantics
+- Port forwarding manager in `Settings > Port Fwd`:
+  - Local / Remote / Dynamic (`SOCKS5`) creation, list, and remove
+  - saved per-session presets with one-click apply
+  - optional auto-restore on terminal connect
+  - runtime status (`Active` / `Degraded`) with last error and activity metadata
+  - recent per-tab forwarding events (`created`/`removed`/`degraded`/`recovered`)
+  - session-scoped persisted event history with filter and clear actions
+  - one-click diagnostics snapshot export (clipboard)
+  - bound to active terminal tab with auto-cleanup on disconnect/close
+- Diagnostics logging baseline:
+  - main process file logging with rotation
+  - renderer global error auto-capture
+  - `Settings > Diagnostics` for log path refresh/open/copy
+- Added one-click bug report export (`zip`: logs + runtime metadata + settings snapshot)
 - Reduced random disconnect risk during heavy transfer bursts by avoiding overlapping server-monitor polling requests per tab
 - Improved terminal viewport stability on small windows and packaged startup by adding deferred multi-pass `fit` and font-ready refit
-
-## Highlights in v0.1.9
-
-- Prevented raw wheel mouse-report sequences from leaking into terminal text in alternate-buffer editor states
-- Reduced visible garbage input such as `%6`/`%9` when mouse tracking is enabled
-
-## Highlights in v0.1.8
-
-- Refined terminal wheel input mapping to reduce extra blank-line jumps while scrolling in full-screen editors
-- Added mode-aware wheel forwarding (`application cursor keys` and `mouse tracking` guards) for cleaner `vim`/`nano` behavior
-
-## Highlights in v0.1.7
-
-- Improved wheel-scroll reliability in full-screen terminal editors (`nano`, `vim`) by capturing wheel events on terminal surfaces
-
-## Highlights in v0.1.6
-
-- Terminal mouse wheel now scrolls correctly in full-screen terminal editors (alternate buffer), including `nano` and `vim`
-
-## Highlights in v0.1.5
-
-- Windows clipboard defaults now use `Ctrl+Shift+C` / `Ctrl+Shift+V`
-- Session context actions: `Duplicate Session` and `Copy SSH Command`
-- Session quick connect via `Enter`
-- Transfer dock actions: `Clear Finished` for upload/download lists
-- Settings now shows current app version
-- Batch session/group operations via multi-select context menu
-- `Move session to group` now uses dropdown selection
-- Session sort modes with persistence (`Default`, `Recent`, `Name A-Z`, `Name Z-A`)
-- Stable default list ordering (no reconnect reorder jumps)
-- Terminal tab right-click actions: close current/left/right/others/all
-- Improved horizontal tab scrolling behavior
-- Folder-style session grouping workflow
-- Context-menu-driven session and group management
-- Transfer dock pinned at bottom with split upload/download panels
-- Batch transfer progress stats and one-click cancel-all
-- Upload/download concurrency settings
-- Folder download support from SFTP context menu
-- Remote file open deduplication and reopen support
-- Auto-upload back to server when a remotely opened file is saved
-- Improved delete progress feedback
-- Windows menu bar hidden by default
-- Windows terminal copy/paste defaults switched to `Ctrl+Shift+C` / `Ctrl+Shift+V`
-- Unified icon system using `lucide-react`
+- Added transfer soak tool and runbook (`scripts/soak-transfer.mjs`, `SOAK_TEST.md`)
 
 ## Available Features
 
 - Session create/edit/delete/test
 - Password and private key authentication
 - Session search, favorites, and recency sorting
+- Folder-style session grouping and context-menu operations
+- SSH config import with preview and duplicate-handling strategy
 - Multi-tab xterm terminal (including same session multi-open)
 - Terminal context menu and reconnect flow
-- Configurable hotkeys in Settings
+- Port forwarding manager in Settings:
+  - Local forward (`-L`)
+  - Remote forward (`-R`)
+  - Dynamic SOCKS5 forward (`-D`)
+  - saved presets per session
+  - auto-restore on connect
+  - runtime status/failed-connection metadata
+  - recent event timeline + persisted history controls + diagnostics snapshot export
+  - tab-scoped lifecycle with one-click remove
+- Configurable hotkeys in Settings (Windows defaults: `Ctrl+Shift+C` / `Ctrl+Shift+V`)
 - KeepAlive and auto reconnect
-- SFTP browse/create/rename/delete and file open
-- Upload/download queue with progress and cancellation
+- SFTP browse/create/rename/delete/open
+- Upload/download queues with:
+  - progress, per-task cancel, cancel-all
+  - conflict policy (`Overwrite` / `Skip` / `Rename`)
+  - retry failed tasks
+  - persistent failed retry history per session
+  - Retry Center for batch retry and history cleanup
+- Remote file open/edit with duplicate-open protection and auto-upload on save
 - Server health panel:
   - CPU, memory, disk, network, load, uptime
-  - Alert thresholds for CPU/memory/disk
-  - Detail view with trend samples
-  - Top CPU processes and failed services
+  - alert thresholds for CPU/memory/disk
+  - detail view with trend samples, top CPU processes, and failed services
+- Diagnostics logging:
+  - runtime log file in app user-data directory
+  - settings actions to open log folder and copy log path
+  - one-click bug report bundle export (`.zip`)
 
 ## Quick Start
 
@@ -103,50 +101,73 @@ Workflow: `.github/workflows/release.yml`
 Stable release:
 
 ```bash
-git tag v0.1.9
-git push origin v0.1.9
+git tag v0.1.10
+git push origin v0.1.10
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.9-test.1
-git push origin v0.1.9-test.1
+git tag v0.1.11-test.1
+git push origin v0.1.11-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.9`) => stable release
-- Tag with `-` (for example `v0.1.9-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.10`) => stable release
+- Tag with `-` (for example `v0.1.10-test.1`) => prerelease
 
 ## Known Limitations
 
 - Data is still JSON-based (SQLite migration pending)
-- Some advanced SFTP safety flows are still in progress
+- Persistent transfer history is local-only (no sync/export yet)
+- Active runtime port forwards remain tab-scoped; event history now persists locally per session, but there is no cross-device sync/export workflow yet
+- Dynamic forwarding currently supports SOCKS5 no-auth `CONNECT` baseline only
 - Broader cross-platform smoke tests are still pending
 - Installer signing/notarization strategy is not fully complete
 - No in-app auto-update yet
 
 ## Near-Term Execution Focus
 
-1. Transfer stress hardening:
-   - long-running upload/download soak tests
-   - per-tab transfer + monitor pressure validation
-2. Small-window terminal stability:
-   - add explicit smoke checklist for 720p / scaled Windows displays
-3. Error recovery UX:
-   - clear reconnect guidance when remote host drops or throttles sessions
+1. Port forwarding diagnostics polish (file export + richer correlation metadata) (`F5+`)
+2. Retry-center analytics and history export (`F2+`)
+3. Cross-platform smoke checklist and reproducible reports (Windows/macOS)
+4. Installer signing/notarization and installation verification
+5. Recoverable global error UX (Reconnect / Open Logs / Copy Error)
 
-## Planned Features (Prioritized)
+## Candidate Features (Prioritized)
 
-1. Transfer conflict policy (overwrite / skip / rename) for file and folder jobs
-2. Transfer retry center with failed-task replay and persistent history
-3. SSH config import from `~/.ssh/config` with duplicate detection
-4. Port forwarding manager (local / remote / dynamic SOCKS)
-5. Session templates and environment variables
-6. Remote compare before overwrite (size/mtime/checksum fast path)
-7. Operation center for long-running tasks (delete/copy/move) with unified progress
-8. Optional session export/import with encrypted payload
+1. Advanced retry-center analytics and history export
+2. Session templates and environment variable substitution
+3. Remote compare before overwrite (size/mtime/checksum fast path)
+4. Operation center for long-running tasks (delete/copy/move) with unified progress
+5. Optional session export/import with encrypted payload
+6. SSH jump-host chain builder (`ProxyJump`/bastion wizard)
+7. Transfer bandwidth limiter and schedule window
+8. Command snippets/playbooks with variable prompts and safety confirmation
+9. Multi-host command broadcast with dry-run preview
+10. Remote file snapshot and quick rollback for accidental edits
+11. Session tags and smart saved views (by env/owner/risk)
+12. Terminal session recording/replay with sanitized export
+13. Dangerous-command guardrails (rule-based preflight confirmation)
+14. One-way sync profiles for recurring upload/download folders
+15. Connection quality timeline (latency/reconnect/throughput history)
+16. Workspace profile mode (`dev` / `staging` / `prod`) with visual risk cues
+
+## Exploration Ideas (Unprioritized)
+
+- Operation audit timeline (who/when/where/what for command and transfer actions)
+- Disconnect auto-diagnostic report (network + reconnect + runtime context snapshot)
+- Diff-first sync mode (preview changes and transfer only deltas)
+- Session health checks with proactive risk badges
+- Team session bundle (encrypted import/export with tags and templates)
+- Temporary authorization mode (time-limited operation window for risky sessions)
+- Environment policy templates (`dev` / `staging` / `prod`) for timeout/concurrency/alerts
+- Crash dump + symbolized stack pipeline for faster root-cause analysis
+- Release channel management (`stable` / `beta` / `canary`) with rollback guidance
+- Accessibility and hotkey conflict checker
+- Plugin extension hooks for ticketing/CMDB/alerts integrations
+- Built-in command allowlist/denylist policy packs per workspace
 
 ## Project Structure
 
@@ -163,6 +184,7 @@ src/shared    # Shared contracts and types
 - `TASKS.md`: execution tasks and status
 - `PRD.md`: product requirements
 - `SOAK_TEST.md`: long-duration transfer stress test guide
+- `news.md`: product notes and directional summary
 
 ## License
 

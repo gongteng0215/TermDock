@@ -1,6 +1,7 @@
 import type {
   SessionCreateInput,
   SessionRecord,
+  SshConfigParseResult,
   SessionTestConnectionResult,
   SessionUpdateInput
 } from "../shared/session";
@@ -10,6 +11,9 @@ import type {
   SftpTransferEvent
 } from "../shared/sftp";
 import type {
+  CreatePortForwardInput,
+  PortForwardEventRecord,
+  PortForwardRecord,
   ServerHealthSnapshot,
   ServerProcessSnapshot,
   TerminalEvent
@@ -25,15 +29,36 @@ interface TermDockApi {
     testConnection: (input: SessionCreateInput) => Promise<SessionTestConnectionResult>;
     update: (id: string, patch: SessionUpdateInput) => Promise<SessionRecord>;
     remove: (id: string) => Promise<void>;
+    parseSshConfig: (filePath?: string) => Promise<SshConfigParseResult>;
   };
   system: {
     pickPrivateKey: () => Promise<string | null>;
+    pickSshConfigFile: () => Promise<string | null>;
     pickUploadFile: () => Promise<string | null>;
     pickDownloadTarget: (defaultName: string) => Promise<string | null>;
     pickDownloadDirectory: (defaultName?: string) => Promise<string | null>;
     pickOpenProgram: () => Promise<string | null>;
     readClipboardText: () => Promise<string>;
     writeClipboardText: (value: string) => Promise<void>;
+    writeLog: (
+      level: "debug" | "info" | "warn" | "error",
+      source: string,
+      message: string,
+      details?: unknown
+    ) => Promise<void>;
+    getLogInfo: () => Promise<{
+      logDirectoryPath: string;
+      logFilePath: string;
+    }>;
+    exportBugReport: (payload?: {
+      settingsSnapshot?: unknown;
+      runtimeSnapshot?: unknown;
+    }) => Promise<{
+      canceled: boolean;
+      outputPath: string | null;
+      generatedAtIso?: string;
+      logFileCount?: number;
+    }>;
     createTempOpenFilePath: (defaultName: string) => Promise<string>;
     prepareRemoteOpenFile: (
       tabId: string,
@@ -74,6 +99,10 @@ interface TermDockApi {
     resize: (tabId: string, cols: number, rows: number) => Promise<void>;
     getServerHealth: (tabId: string) => Promise<ServerHealthSnapshot>;
     getServerProcesses: (tabId: string) => Promise<ServerProcessSnapshot>;
+    listPortForwards: (tabId: string) => Promise<PortForwardRecord[]>;
+    listPortForwardEvents: (tabId: string, limit?: number) => Promise<PortForwardEventRecord[]>;
+    createPortForward: (tabId: string, input: CreatePortForwardInput) => Promise<PortForwardRecord>;
+    removePortForward: (tabId: string, forwardId: string) => Promise<void>;
     close: (tabId: string) => Promise<void>;
     onEvent: (listener: (event: TerminalEvent) => void) => () => void;
   };
@@ -87,6 +116,12 @@ interface TermDockApi {
       transferId: string,
       localPath: string,
       remoteDirectory: string
+    ) => Promise<void>;
+    uploadFileToPath: (
+      tabId: string,
+      transferId: string,
+      localPath: string,
+      remotePath: string
     ) => Promise<void>;
     cancelUpload: (tabId: string, transferId: string) => Promise<boolean>;
     cancelDownload: (tabId: string, transferId: string) => Promise<boolean>;

@@ -4,6 +4,7 @@ import type { IpcRendererEvent } from "electron";
 import type {
   SessionCreateInput,
   SessionRecord,
+  SshConfigParseResult,
   SessionTestConnectionResult,
   SessionUpdateInput
 } from "../shared/session.js";
@@ -13,6 +14,9 @@ import type {
   SftpTransferEvent
 } from "../shared/sftp.js";
 import type {
+  CreatePortForwardInput,
+  PortForwardEventRecord,
+  PortForwardRecord,
   ServerHealthSnapshot,
   ServerProcessSnapshot,
   TerminalEvent
@@ -38,11 +42,15 @@ const api = {
       ipcRenderer.invoke("sessions:testConnection", input) as Promise<SessionTestConnectionResult>,
     update: (id: string, patch: SessionUpdateInput) =>
       ipcRenderer.invoke("sessions:update", id, patch) as Promise<SessionRecord>,
-    remove: (id: string) => ipcRenderer.invoke("sessions:delete", id) as Promise<void>
+    remove: (id: string) => ipcRenderer.invoke("sessions:delete", id) as Promise<void>,
+    parseSshConfig: (filePath?: string) =>
+      ipcRenderer.invoke("sessions:parseSshConfig", filePath) as Promise<SshConfigParseResult>
   },
   system: {
     pickPrivateKey: () =>
       ipcRenderer.invoke("system:pickPrivateKey") as Promise<string | null>,
+    pickSshConfigFile: () =>
+      ipcRenderer.invoke("system:pickSshConfigFile") as Promise<string | null>,
     pickUploadFile: () =>
       ipcRenderer.invoke("system:pickUploadFile") as Promise<string | null>,
     pickDownloadTarget: (defaultName: string) =>
@@ -55,6 +63,28 @@ const api = {
       ipcRenderer.invoke("system:readClipboardText") as Promise<string>,
     writeClipboardText: (value: string) =>
       ipcRenderer.invoke("system:writeClipboardText", value) as Promise<void>,
+    writeLog: (
+      level: "debug" | "info" | "warn" | "error",
+      source: string,
+      message: string,
+      details?: unknown
+    ) =>
+      ipcRenderer.invoke("system:writeLog", level, source, message, details) as Promise<void>,
+    getLogInfo: () =>
+      ipcRenderer.invoke("system:getLogInfo") as Promise<{
+        logDirectoryPath: string;
+        logFilePath: string;
+      }>,
+    exportBugReport: (payload?: {
+      settingsSnapshot?: unknown;
+      runtimeSnapshot?: unknown;
+    }) =>
+      ipcRenderer.invoke("system:exportBugReport", payload) as Promise<{
+        canceled: boolean;
+        outputPath: string | null;
+        generatedAtIso?: string;
+        logFileCount?: number;
+      }>,
     createTempOpenFilePath: (defaultName: string) =>
       ipcRenderer.invoke("system:createTempOpenFilePath", defaultName) as Promise<string>,
     prepareRemoteOpenFile: (tabId: string, remotePath: string, defaultName: string) =>
@@ -112,6 +142,16 @@ const api = {
       ipcRenderer.invoke("terminal:getServerHealth", tabId) as Promise<ServerHealthSnapshot>,
     getServerProcesses: (tabId: string) =>
       ipcRenderer.invoke("terminal:getServerProcesses", tabId) as Promise<ServerProcessSnapshot>,
+    listPortForwards: (tabId: string) =>
+      ipcRenderer.invoke("terminal:listPortForwards", tabId) as Promise<PortForwardRecord[]>,
+    listPortForwardEvents: (tabId: string, limit?: number) =>
+      ipcRenderer.invoke("terminal:listPortForwardEvents", tabId, limit) as Promise<
+        PortForwardEventRecord[]
+      >,
+    createPortForward: (tabId: string, input: CreatePortForwardInput) =>
+      ipcRenderer.invoke("terminal:createPortForward", tabId, input) as Promise<PortForwardRecord>,
+    removePortForward: (tabId: string, forwardId: string) =>
+      ipcRenderer.invoke("terminal:removePortForward", tabId, forwardId) as Promise<void>,
     close: (tabId: string) =>
       ipcRenderer.invoke("terminal:close", tabId) as Promise<void>,
     onEvent: (listener: (event: TerminalEvent) => void) => {
@@ -148,6 +188,19 @@ const api = {
         transferId,
         localPath,
         remoteDirectory
+      ) as Promise<void>,
+    uploadFileToPath: (
+      tabId: string,
+      transferId: string,
+      localPath: string,
+      remotePath: string
+    ) =>
+      ipcRenderer.invoke(
+        "sftp:uploadFileToPath",
+        tabId,
+        transferId,
+        localPath,
+        remotePath
       ) as Promise<void>,
     cancelUpload: (tabId: string, transferId: string) =>
       ipcRenderer.invoke("sftp:cancelUpload", tabId, transferId) as Promise<boolean>,

@@ -7,6 +7,8 @@ import {
   stat as statLocalFile,
   unlink as unlinkLocalFile
 } from "node:fs/promises";
+import { createConnection, createServer } from "node:net";
+import type { Server as NetServer, Socket } from "node:net";
 import { homedir } from "node:os";
 import { basename as basenamePath, dirname as dirnamePath, join as joinPath } from "node:path";
 import { posix as posixPath } from "node:path";
@@ -30,6 +32,11 @@ import type {
   SftpTransferEvent
 } from "../../shared/sftp.js";
 import type {
+  CreatePortForwardInput,
+  PortForwardEventRecord,
+  PortForwardRecord,
+  PortForwardStatus,
+  PortForwardType,
   ServerHealthSnapshot,
   ServerProcessEntry,
   ServerProcessSnapshot,
@@ -78,6 +85,55 @@ interface ActiveDownloadTransfer {
   writeStream?: NodeJS.WritableStream;
 }
 
+interface ActivePortForwardBase {
+  id: string;
+  tabId: string;
+  type: PortForwardType;
+  bindHost: string;
+  bindPort: number;
+  createdAt: string;
+  status: PortForwardStatus;
+  totalConnections: number;
+  failedConnections: number;
+  lastActivityAt?: string;
+  lastError?: string;
+  lastErrorAt?: string;
+}
+
+interface ActiveLocalPortForward extends ActivePortForwardBase {
+  type: "local";
+  targetHost: string;
+  targetPort: number;
+  server: NetServer;
+}
+
+interface ActiveRemotePortForward extends ActivePortForwardBase {
+  type: "remote";
+  targetHost: string;
+  targetPort: number;
+  client: Client;
+  listener: (
+    details: {
+      destIP: string;
+      destPort: number;
+      srcIP: string;
+      srcPort: number;
+    },
+    accept: () => ClientChannel,
+    reject: () => void
+  ) => void;
+}
+
+interface ActiveDynamicPortForward extends ActivePortForwardBase {
+  type: "dynamic";
+  server: NetServer;
+}
+
+type ActivePortForward =
+  | ActiveLocalPortForward
+  | ActiveRemotePortForward
+  | ActiveDynamicPortForward;
+
 class TransferCanceledError extends Error {
   constructor() {
     super("Transfer canceled.");
@@ -87,6 +143,8 @@ class TransferCanceledError extends Error {
 
 export class TerminalService {
   private readonly connections = new Map<string, TerminalConnection>();
+  private readonly activePortForwardsByTab = new Map<string, Map<string, ActivePortForward>>();
+  private readonly portForwardEventsByTab = new Map<string, PortForwardEventRecord[]>();
   private readonly activeUploadTransfers = new Map<string, ActiveUploadTransfer>();
   private readonly activeDownloadTransfers = new Map<string, ActiveDownloadTransfer>();
   private readonly pendingUploadCancelKeys = new Set<string>();
@@ -210,6 +268,7 @@ export class TerminalService {
       if (this.connections.get(tabId) !== connection) {
         return;
       }
+      this.closeAllPortForwardsSync(tabId, connection);
       this.emitClosed(connection);
       this.connections.delete(tabId);
     });
@@ -332,6 +391,7 @@ export class TerminalService {
       if (this.connections.get(tabId) !== nativeConnection) {
         return;
       }
+      this.closeAllPortForwardsSync(tabId);
       this.emit(sender, {
         tabId,
         type: "error",
@@ -344,6 +404,7 @@ export class TerminalService {
       if (this.connections.get(tabId) !== nativeConnection) {
         return;
       }
+      this.closeAllPortForwardsSync(tabId);
       this.connections.delete(tabId);
       this.emitClosed(nativeConnection);
     });
@@ -378,6 +439,7 @@ export class TerminalService {
     }
 
     this.connections.delete(tabId);
+    this.closeAllPortForwardsSync(tabId, connection.mode === "ssh2" ? connection : undefined);
     for (const key of this.pendingUploadCancelKeys) {
       if (key.startsWith(`${tabId}:`)) {
         this.pendingUploadCancelKeys.delete(key);
@@ -428,6 +490,60 @@ export class TerminalService {
       collectedAt: new Date().toISOString(),
       ...parsed
     };
+  }
+
+  async listPortForwards(tabId: string): Promise<PortForwardRecord[]> {
+    return this.getPortForwardRecords(tabId);
+  }
+
+  async listPortForwardEvents(tabId: string, limit?: number): Promise<PortForwardEventRecord[]> {
+    const safeLimit =
+      typeof limit === "number" && Number.isFinite(limit)
+        ? Math.max(1, Math.min(200, Math.trunc(limit)))
+        : 40;
+    const events = this.portForwardEventsByTab.get(tabId);
+    if (!events || events.length === 0) {
+      return [];
+    }
+    return events.slice(0, safeLimit);
+  }
+
+  async createPortForward(tabId: string, input: CreatePortForwardInput): Promise<PortForwardRecord> {
+    const connection = this.getConnectedSsh2Connection(tabId, "Port forwarding");
+    const normalizedInput = normalizePortForwardInput(input);
+    this.assertPortForwardBindingAvailable(tabId, normalizedInput.type, normalizedInput.bindHost, normalizedInput.bindPort);
+
+    let created: ActivePortForward;
+    if (normalizedInput.type === "local") {
+      created = await this.startLocalPortForward(tabId, connection, normalizedInput);
+    } else if (normalizedInput.type === "remote") {
+      created = await this.startRemotePortForward(tabId, connection, normalizedInput);
+    } else {
+      created = await this.startDynamicPortForward(tabId, connection, normalizedInput);
+    }
+
+    const tabForwards = this.ensurePortForwardMap(tabId);
+    tabForwards.set(created.id, created);
+    this.appendPortForwardEvent(created, "created", "info", "Port forward created.");
+    return this.toPortForwardRecord(created);
+  }
+
+  async removePortForward(tabId: string, forwardId: string): Promise<void> {
+    const safeForwardId = normalizePortForwardId(forwardId);
+    const tabForwards = this.activePortForwardsByTab.get(tabId);
+    if (!tabForwards) {
+      return;
+    }
+    const activeForward = tabForwards.get(safeForwardId);
+    if (!activeForward) {
+      return;
+    }
+    tabForwards.delete(safeForwardId);
+    if (tabForwards.size === 0) {
+      this.activePortForwardsByTab.delete(tabId);
+    }
+    this.appendPortForwardEvent(activeForward, "removed", "info", "Port forward removed.");
+    await this.stopPortForward(activeForward);
   }
 
   async listDirectory(tabId: string, targetPath?: string): Promise<SftpDirectoryListResult> {
@@ -730,6 +846,494 @@ export class TerminalService {
     } finally {
       this.activeDownloadTransfers.delete(transferKey);
     }
+  }
+
+  private getPortForwardRecords(tabId: string): PortForwardRecord[] {
+    const tabForwards = this.activePortForwardsByTab.get(tabId);
+    if (!tabForwards) {
+      return [];
+    }
+    return Array.from(tabForwards.values())
+      .map((forward) => this.toPortForwardRecord(forward))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  private toPortForwardRecord(forward: ActivePortForward): PortForwardRecord {
+    return {
+      id: forward.id,
+      tabId: forward.tabId,
+      type: forward.type,
+      bindHost: forward.bindHost,
+      bindPort: forward.bindPort,
+      targetHost:
+        forward.type === "local" || forward.type === "remote"
+          ? forward.targetHost
+          : undefined,
+      targetPort:
+        forward.type === "local" || forward.type === "remote"
+          ? forward.targetPort
+          : undefined,
+      createdAt: forward.createdAt,
+      status: forward.status,
+      totalConnections: forward.totalConnections,
+      failedConnections: forward.failedConnections,
+      lastActivityAt: forward.lastActivityAt,
+      lastError: forward.lastError,
+      lastErrorAt: forward.lastErrorAt
+    };
+  }
+
+  private appendPortForwardEvent(
+    forward: Pick<ActivePortForwardBase, "id" | "tabId" | "type" | "bindHost" | "bindPort">,
+    type: PortForwardEventRecord["type"],
+    level: PortForwardEventRecord["level"],
+    message: string
+  ): void {
+    const entry: PortForwardEventRecord = {
+      id: createPortForwardEventId(),
+      tabId: forward.tabId,
+      forwardId: forward.id,
+      forwardType: forward.type,
+      bindHost: forward.bindHost,
+      bindPort: forward.bindPort,
+      level,
+      type,
+      message,
+      createdAt: new Date().toISOString()
+    };
+    const existing = this.portForwardEventsByTab.get(forward.tabId) ?? [];
+    existing.unshift(entry);
+    if (existing.length > 200) {
+      existing.length = 200;
+    }
+    this.portForwardEventsByTab.set(forward.tabId, existing);
+  }
+
+  private markPortForwardConnectionSuccess(tabId: string, forwardId: string): void {
+    const forward = this.activePortForwardsByTab.get(tabId)?.get(forwardId);
+    if (!forward) {
+      return;
+    }
+    const wasDegraded = forward.status === "degraded";
+    forward.totalConnections += 1;
+    forward.lastActivityAt = new Date().toISOString();
+    forward.status = "active";
+    if (wasDegraded) {
+      this.appendPortForwardEvent(
+        forward,
+        "statusRecovered",
+        "info",
+        "Port forward recovered and is accepting connections."
+      );
+    }
+  }
+
+  private markPortForwardConnectionFailure(tabId: string, forwardId: string, error?: unknown): void {
+    const forward = this.activePortForwardsByTab.get(tabId)?.get(forwardId);
+    if (!forward) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const wasActive = forward.status === "active";
+    forward.totalConnections += 1;
+    forward.failedConnections += 1;
+    forward.lastActivityAt = now;
+    forward.status = "degraded";
+    const message = toPortForwardRuntimeErrorMessage(error);
+    if (message) {
+      forward.lastError = message;
+      forward.lastErrorAt = now;
+    }
+    if (wasActive) {
+      this.appendPortForwardEvent(
+        forward,
+        "statusDegraded",
+        "error",
+        message || "Port forward failed to proxy a connection."
+      );
+    }
+  }
+
+  private ensurePortForwardMap(tabId: string): Map<string, ActivePortForward> {
+    const existing = this.activePortForwardsByTab.get(tabId);
+    if (existing) {
+      return existing;
+    }
+    const created = new Map<string, ActivePortForward>();
+    this.activePortForwardsByTab.set(tabId, created);
+    return created;
+  }
+
+  private assertPortForwardBindingAvailable(
+    tabId: string,
+    type: PortForwardType,
+    bindHost: string,
+    bindPort: number
+  ): void {
+    const tabForwards = this.activePortForwardsByTab.get(tabId);
+    if (!tabForwards) {
+      return;
+    }
+    for (const forward of tabForwards.values()) {
+      if (forward.type !== type) {
+        continue;
+      }
+      if (forward.bindPort !== bindPort) {
+        continue;
+      }
+      if (forward.bindHost.toLowerCase() !== bindHost.toLowerCase()) {
+        continue;
+      }
+      throw new Error(`Port forwarding already exists on ${bindHost}:${bindPort}.`);
+    }
+  }
+
+  private async startLocalPortForward(
+    tabId: string,
+    connection: Ssh2TerminalConnection,
+    input: NormalizedCreatePortForwardInput & { type: "local" }
+  ): Promise<ActiveLocalPortForward> {
+    const forwardId = createPortForwardId("L");
+    const createdAt = new Date().toISOString();
+    const server = createServer((localSocket) => {
+      if (connection.closed || this.connections.get(tabId) !== connection) {
+        localSocket.destroy();
+        return;
+      }
+      const sourceHost = localSocket.remoteAddress ?? input.bindHost;
+      const sourcePort = localSocket.remotePort ?? 0;
+      connection.client.forwardOut(
+        sourceHost,
+        sourcePort,
+        input.targetHost,
+        input.targetPort,
+        (error, sshStream) => {
+          if (error || !sshStream) {
+            this.markPortForwardConnectionFailure(tabId, forwardId, error);
+            localSocket.destroy(error ?? new Error("Port forward channel rejected."));
+            return;
+          }
+          this.markPortForwardConnectionSuccess(tabId, forwardId);
+          bridgeDuplexStreams(localSocket, sshStream);
+        }
+      );
+    });
+    server.on("error", () => {
+      // Keep listener attached to avoid unhandled server errors after startup.
+    });
+    await listenTcpServer(server, input.bindHost, input.bindPort);
+    const boundPort = resolveListeningPort(server, input.bindPort);
+    return {
+      id: forwardId,
+      tabId,
+      type: "local",
+      bindHost: input.bindHost,
+      bindPort: boundPort,
+      targetHost: input.targetHost,
+      targetPort: input.targetPort,
+      createdAt,
+      status: "active",
+      totalConnections: 0,
+      failedConnections: 0,
+      server
+    };
+  }
+
+  private async startRemotePortForward(
+    tabId: string,
+    connection: Ssh2TerminalConnection,
+    input: NormalizedCreatePortForwardInput & { type: "remote" }
+  ): Promise<ActiveRemotePortForward> {
+    const forwardId = createPortForwardId("R");
+    const createdAt = new Date().toISOString();
+    let activeBindPort = input.bindPort;
+    const listener: ActiveRemotePortForward["listener"] = (details, accept, reject) => {
+      if (!matchesRemoteForwardBinding(details, input.bindHost, activeBindPort)) {
+        reject();
+        return;
+      }
+      let sshStream: ClientChannel;
+      try {
+        sshStream = accept();
+      } catch {
+        this.markPortForwardConnectionFailure(tabId, forwardId, new Error("Remote forward channel rejected."));
+        reject();
+        return;
+      }
+      const localSocket = createConnection({
+        host: input.targetHost,
+        port: input.targetPort
+      });
+      localSocket.once("connect", () => {
+        this.markPortForwardConnectionSuccess(tabId, forwardId);
+        bridgeDuplexStreams(localSocket, sshStream);
+      });
+      localSocket.once("error", (error) => {
+        this.markPortForwardConnectionFailure(tabId, forwardId, error);
+        safeEndSshChannel(sshStream);
+      });
+      sshStream.once("error", () => {
+        localSocket.destroy();
+      });
+      sshStream.once("close", () => {
+        localSocket.destroy();
+      });
+    };
+
+    connection.client.on("tcp connection" as any, listener as any);
+    try {
+      const boundPort = await forwardIn(connection.client, input.bindHost, input.bindPort);
+      if (Number.isFinite(boundPort) && boundPort > 0) {
+        activeBindPort = Math.trunc(boundPort);
+      }
+    } catch (error) {
+      connection.client.removeListener("tcp connection" as any, listener as any);
+      throw error;
+    }
+
+    return {
+      id: forwardId,
+      tabId,
+      type: "remote",
+      bindHost: input.bindHost,
+      bindPort: activeBindPort,
+      targetHost: input.targetHost,
+      targetPort: input.targetPort,
+      createdAt,
+      status: "active",
+      totalConnections: 0,
+      failedConnections: 0,
+      client: connection.client,
+      listener
+    };
+  }
+
+  private async startDynamicPortForward(
+    tabId: string,
+    connection: Ssh2TerminalConnection,
+    input: NormalizedCreatePortForwardInput & { type: "dynamic" }
+  ): Promise<ActiveDynamicPortForward> {
+    const forwardId = createPortForwardId("D");
+    const createdAt = new Date().toISOString();
+    const server = createServer((socket) => {
+      this.handleDynamicSocksConnection(socket, tabId, forwardId, connection);
+    });
+    server.on("error", () => {
+      // Keep listener attached to avoid unhandled server errors after startup.
+    });
+    await listenTcpServer(server, input.bindHost, input.bindPort);
+    const boundPort = resolveListeningPort(server, input.bindPort);
+    return {
+      id: forwardId,
+      tabId,
+      type: "dynamic",
+      bindHost: input.bindHost,
+      bindPort: boundPort,
+      createdAt,
+      status: "active",
+      totalConnections: 0,
+      failedConnections: 0,
+      server
+    };
+  }
+
+  private async stopPortForward(forward: ActivePortForward): Promise<void> {
+    if (forward.type === "local" || forward.type === "dynamic") {
+      await closeTcpServer(forward.server);
+      return;
+    }
+    forward.client.removeListener("tcp connection" as any, forward.listener as any);
+    try {
+      await unforwardIn(forward.client, forward.bindHost, forward.bindPort);
+    } catch {
+      // Connection may already be closed; treat as best effort.
+    }
+  }
+
+  private closeAllPortForwardsSync(tabId: string, _connection?: Ssh2TerminalConnection): void {
+    const tabForwards = this.activePortForwardsByTab.get(tabId);
+    if (!tabForwards) {
+      return;
+    }
+    this.activePortForwardsByTab.delete(tabId);
+    for (const forward of tabForwards.values()) {
+      this.appendPortForwardEvent(
+        forward,
+        "removed",
+        "info",
+        "Port forward stopped because terminal tab disconnected or closed."
+      );
+      if (forward.type === "local" || forward.type === "dynamic") {
+        closeTcpServerNoWait(forward.server);
+        continue;
+      }
+      forward.client.removeListener(
+        "tcp connection" as any,
+        forward.listener as any
+      );
+      try {
+        forward.client.unforwardIn(forward.bindHost, forward.bindPort, () => {
+          // Best effort release.
+        });
+      } catch {
+        // Connection likely already closed.
+      }
+    }
+  }
+
+  private handleDynamicSocksConnection(
+    socket: Socket,
+    tabId: string,
+    forwardId: string,
+    connection: Ssh2TerminalConnection
+  ): void {
+    let state: "greeting" | "request" | "proxy" = "greeting";
+    let pending = Buffer.alloc(0);
+    let remoteStream: ClientChannel | null = null;
+
+    const destroySocket = (error?: Error) => {
+      if (error) {
+        socket.destroy(error);
+        return;
+      }
+      socket.destroy();
+    };
+
+    const closeRemote = () => {
+      if (!remoteStream) {
+        return;
+      }
+      safeEndSshChannel(remoteStream);
+      remoteStream = null;
+    };
+
+    const onSocketData = (chunk: Buffer) => {
+      if (state === "proxy") {
+        return;
+      }
+      pending = Buffer.concat([pending, chunk]);
+      while (true) {
+        if (state === "greeting") {
+          if (pending.length < 2) {
+            return;
+          }
+          const version = pending[0];
+          const methodsLength = pending[1];
+          if (pending.length < 2 + methodsLength) {
+            return;
+          }
+          const methods = pending.subarray(2, 2 + methodsLength);
+          pending = pending.subarray(2 + methodsLength);
+          if (version !== 0x05) {
+            destroySocket();
+            return;
+          }
+          if (!methods.includes(0x00)) {
+            socket.write(Buffer.from([0x05, 0xff]));
+            destroySocket();
+            return;
+          }
+          socket.write(Buffer.from([0x05, 0x00]));
+          state = "request";
+          continue;
+        }
+
+        if (pending.length < 4) {
+          return;
+        }
+        const version = pending[0];
+        const command = pending[1];
+        const addressType = pending[3];
+        if (version !== 0x05) {
+          destroySocket();
+          return;
+        }
+        if (command !== 0x01) {
+          socket.write(buildSocksReply(0x07));
+          destroySocket();
+          return;
+        }
+
+        let offset = 4;
+        let destinationHost = "";
+        if (addressType === 0x01) {
+          if (pending.length < offset + 4 + 2) {
+            return;
+          }
+          destinationHost = `${pending[offset]}.${pending[offset + 1]}.${pending[offset + 2]}.${pending[offset + 3]}`;
+          offset += 4;
+        } else if (addressType === 0x03) {
+          if (pending.length < offset + 1) {
+            return;
+          }
+          const hostLength = pending[offset];
+          if (pending.length < offset + 1 + hostLength + 2) {
+            return;
+          }
+          destinationHost = pending.subarray(offset + 1, offset + 1 + hostLength).toString("utf-8");
+          offset += 1 + hostLength;
+        } else if (addressType === 0x04) {
+          if (pending.length < offset + 16 + 2) {
+            return;
+          }
+          destinationHost = parseIpv6Buffer(pending.subarray(offset, offset + 16));
+          offset += 16;
+        } else {
+          socket.write(buildSocksReply(0x08));
+          destroySocket();
+          return;
+        }
+        const destinationPort = (pending[offset] << 8) + pending[offset + 1];
+        offset += 2;
+        pending = pending.subarray(offset);
+
+        if (!destinationHost || destinationPort < 1 || destinationPort > 65535) {
+          socket.write(buildSocksReply(0x04));
+          destroySocket();
+          return;
+        }
+        if (connection.closed || this.connections.get(tabId) !== connection) {
+          socket.write(buildSocksReply(0x01));
+          destroySocket();
+          return;
+        }
+
+        const sourceHost = socket.localAddress ?? "127.0.0.1";
+        const sourcePort = socket.localPort ?? 0;
+        connection.client.forwardOut(
+          sourceHost,
+          sourcePort,
+          destinationHost,
+          destinationPort,
+          (error, stream) => {
+            if (error || !stream) {
+              this.markPortForwardConnectionFailure(tabId, forwardId, error);
+              socket.write(buildSocksReply(0x05));
+              destroySocket();
+              return;
+            }
+            this.markPortForwardConnectionSuccess(tabId, forwardId);
+            remoteStream = stream;
+            socket.write(buildSocksReply(0x00));
+            if (pending.length > 0) {
+              stream.write(pending);
+              pending = Buffer.alloc(0);
+            }
+            state = "proxy";
+            bridgeDuplexStreams(socket, stream);
+          }
+        );
+        return;
+      }
+    };
+
+    socket.on("data", onSocketData);
+    socket.once("error", () => {
+      closeRemote();
+    });
+    socket.once("close", () => {
+      closeRemote();
+    });
   }
 
   private async uploadLocalFileToRemotePath(
@@ -1407,6 +2011,230 @@ export class TerminalService {
   }
 }
 
+type NormalizedCreatePortForwardInput =
+  | {
+      type: "local";
+      bindHost: string;
+      bindPort: number;
+      targetHost: string;
+      targetPort: number;
+    }
+  | {
+      type: "remote";
+      bindHost: string;
+      bindPort: number;
+      targetHost: string;
+      targetPort: number;
+    }
+  | {
+      type: "dynamic";
+      bindHost: string;
+      bindPort: number;
+    };
+
+function normalizePortForwardInput(input: CreatePortForwardInput): NormalizedCreatePortForwardInput {
+  const type = normalizePortForwardType(input.type);
+  const bindHostRaw = typeof input.bindHost === "string" ? input.bindHost.trim() : "";
+  const bindHost = bindHostRaw || "127.0.0.1";
+  const bindPort = normalizePortValue(input.bindPort, "Bind port");
+  if (type === "dynamic") {
+    return {
+      type,
+      bindHost,
+      bindPort
+    };
+  }
+  const targetHostRaw = typeof input.targetHost === "string" ? input.targetHost.trim() : "";
+  if (!targetHostRaw) {
+    throw new Error(`${type === "local" ? "Remote target host" : "Local target host"} is required.`);
+  }
+  const targetPort = normalizePortValue(
+    input.targetPort,
+    type === "local" ? "Remote target port" : "Local target port"
+  );
+  return {
+    type,
+    bindHost,
+    bindPort,
+    targetHost: targetHostRaw,
+    targetPort
+  };
+}
+
+function normalizePortForwardType(value: unknown): PortForwardType {
+  if (value === "local" || value === "remote" || value === "dynamic") {
+    return value;
+  }
+  throw new Error("Invalid port forwarding type.");
+}
+
+function normalizePortValue(value: unknown, label: string): number {
+  const raw =
+    typeof value === "string"
+      ? Number.parseInt(value, 10)
+      : typeof value === "number"
+        ? Math.trunc(value)
+        : Number.NaN;
+  if (!Number.isFinite(raw) || raw < 1 || raw > 65535) {
+    throw new Error(`${label} must be between 1 and 65535.`);
+  }
+  return raw;
+}
+
+function normalizePortForwardId(value: unknown): string {
+  const safe = typeof value === "string" ? value.trim() : "";
+  if (!safe) {
+    throw new Error("Port forwarding id is required.");
+  }
+  return safe;
+}
+
+function createPortForwardId(prefix: "L" | "R" | "D"): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function createPortForwardEventId(): string {
+  return `pfe-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function resolveListeningPort(server: NetServer, fallbackPort: number): number {
+  const address = server.address();
+  if (address && typeof address !== "string" && Number.isFinite(address.port)) {
+    return Math.max(1, Math.trunc(address.port));
+  }
+  return fallbackPort;
+}
+
+async function listenTcpServer(server: NetServer, host: string, port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error) => {
+      server.removeListener("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.removeListener("error", onError);
+      resolve();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, host);
+  });
+}
+
+async function closeTcpServer(server: NetServer): Promise<void> {
+  if (!server.listening) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function closeTcpServerNoWait(server: NetServer): void {
+  if (!server.listening) {
+    return;
+  }
+  try {
+    server.close(() => {
+      // Best-effort release.
+    });
+  } catch {
+    // Best-effort release.
+  }
+}
+
+async function forwardIn(client: Client, host: string, port: number): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    client.forwardIn(host, port, (error, realPort) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(typeof realPort === "number" ? realPort : port);
+    });
+  });
+}
+
+async function unforwardIn(client: Client, host: string, port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    client.unforwardIn(host, port, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function matchesRemoteForwardBinding(
+  details: {
+    destIP: string;
+    destPort: number;
+  },
+  bindHost: string,
+  bindPort: number
+): boolean {
+  if (details.destPort !== bindPort) {
+    return false;
+  }
+  const normalizedBindHost = bindHost.trim().toLowerCase();
+  if (
+    !normalizedBindHost ||
+    normalizedBindHost === "0.0.0.0" ||
+    normalizedBindHost === "::" ||
+    normalizedBindHost === "*"
+  ) {
+    return true;
+  }
+  return (details.destIP || "").trim().toLowerCase() === normalizedBindHost;
+}
+
+function safeEndSshChannel(channel: ClientChannel): void {
+  try {
+    channel.end();
+  } catch {
+    // Best effort.
+  }
+}
+
+function bridgeDuplexStreams(socket: Socket, sshStream: ClientChannel): void {
+  socket.pipe(sshStream).pipe(socket);
+  socket.once("error", () => {
+    safeEndSshChannel(sshStream);
+  });
+  socket.once("close", () => {
+    safeEndSshChannel(sshStream);
+  });
+  sshStream.once("error", () => {
+    socket.destroy();
+  });
+  sshStream.once("close", () => {
+    socket.destroy();
+  });
+}
+
+function buildSocksReply(replyCode: number): Buffer {
+  return Buffer.from([0x05, replyCode & 0xff, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+}
+
+function parseIpv6Buffer(input: Buffer): string {
+  if (input.length !== 16) {
+    return "::";
+  }
+  const groups: string[] = [];
+  for (let index = 0; index < input.length; index += 2) {
+    groups.push(input.readUInt16BE(index).toString(16));
+  }
+  return groups.join(":");
+}
+
 const SERVER_HEALTH_COMMAND = [
   "echo '__TD_HOST__'",
   "hostname 2>/dev/null || uname -n || echo unknown",
@@ -1823,6 +2651,37 @@ function toDeletePathErrorMessage(targetPath: string, kind: SftpEntryKind, error
     return `Failed to delete ${subject} "${targetPath}". Server returned a generic failure (possible permissions, lock, or unsupported entry type).`;
   }
   return `Failed to delete ${subject} "${targetPath}": ${message}`;
+}
+
+function toPortForwardRuntimeErrorMessage(error: unknown): string {
+  const rawMessage =
+    error instanceof Error
+      ? error.message.trim()
+      : typeof error === "string"
+        ? error.trim()
+        : String(error ?? "").trim();
+  if (!rawMessage) {
+    return "";
+  }
+  if (/EADDRINUSE|address already in use/i.test(rawMessage)) {
+    return "Listen address already in use.";
+  }
+  if (/EACCES|EPERM|permission denied/i.test(rawMessage)) {
+    return "Permission denied for listen/target endpoint.";
+  }
+  if (/ENOTFOUND|getaddrinfo/i.test(rawMessage)) {
+    return "Target host could not be resolved.";
+  }
+  if (/ECONNREFUSED|connection refused/i.test(rawMessage)) {
+    return "Target refused the forwarded connection.";
+  }
+  if (/ETIMEDOUT|timed out/i.test(rawMessage)) {
+    return "Target connection timed out.";
+  }
+  if (/administratively prohibited|open failed/i.test(rawMessage)) {
+    return "SSH server rejected the forwarded channel.";
+  }
+  return rawMessage;
 }
 
 function assertPathIsSafeForDelete(targetPath: string): void {

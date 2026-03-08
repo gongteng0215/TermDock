@@ -2,10 +2,12 @@ import { ipcMain } from "electron";
 
 import type {
   SessionCreateInput,
+  SshConfigParseResult,
   SessionTestConnectionResult,
   SessionUpdateInput
 } from "../../shared/session.js";
 import type { CredentialStore } from "../security/credential-store.js";
+import { parseSshConfigFile } from "../ssh/parse-ssh-config.js";
 import { testSshConnection } from "../ssh/test-connection.js";
 import { SessionStore } from "../storage/session-store.js";
 
@@ -44,5 +46,10 @@ export function registerSessionHandlers(
     "sessions:testConnection",
     async (_event, input: SessionCreateInput): Promise<SessionTestConnectionResult> =>
       testSshConnection(input)
+  );
+  ipcMain.handle(
+    "sessions:parseSshConfig",
+    async (_event, filePath?: string): Promise<SshConfigParseResult> =>
+      parseSshConfigFile(filePath)
   );
 }

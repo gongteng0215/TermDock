@@ -8,6 +8,7 @@ import { registerSftpHandlers } from "./ipc/register-sftp-handlers.js";
 import { registerSessionHandlers } from "./ipc/register-session-handlers.js";
 import { registerSystemHandlers } from "./ipc/register-system-handlers.js";
 import { registerTerminalHandlers } from "./ipc/register-terminal-handlers.js";
+import { appLogger } from "./logging/app-logger.js";
 import { createCredentialStore } from "./security/credential-store.js";
 import { SessionStore } from "./storage/session-store.js";
 import { TerminalService } from "./terminal/terminal-service.js";
@@ -62,11 +63,20 @@ function createWindow(): void {
   mainWindow.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedURL) => {
-      console.error(
-        `[TermDock] Renderer load failed (${errorCode}): ${errorDescription} | ${validatedURL}`
+      appLogger.log(
+        "error",
+        "main:window",
+        `Renderer load failed (${errorCode}): ${errorDescription}`,
+        { validatedURL }
       );
     }
   );
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    appLogger.log("error", "main:window", `Renderer process gone: ${details.reason}`, details);
+  });
+  mainWindow.on("unresponsive", () => {
+    appLogger.log("warn", "main:window", "Main window became unresponsive.");
+  });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
@@ -79,7 +89,9 @@ function createWindow(): void {
         .executeJavaScript("typeof window.termdock")
         .then((result) => {
           if (result !== "object") {
-            console.error(
+            appLogger.log(
+              "error",
+              "main:window",
               `[TermDock] Desktop bridge missing in renderer. typeof window.termdock = ${String(
                 result
               )}`
@@ -87,7 +99,7 @@ function createWindow(): void {
           }
         })
         .catch((error: Error) => {
-          console.error("[TermDock] Bridge probe failed:", error.message);
+          appLogger.log("error", "main:window", "Bridge probe failed.", error);
         });
     });
     return;
@@ -153,6 +165,10 @@ function setupApplicationMenu(mainWindow: BrowserWindow): void {
 }
 
 async function bootstrap(): Promise<void> {
+  await app.whenReady();
+  appLogger.initialize();
+  installGlobalErrorLogging();
+
   const dbPath = join(app.getPath("userData"), "db", "sessions.json");
   const sessionStore = new SessionStore(dbPath);
   const credentialStore = await createCredentialStore();
@@ -163,7 +179,6 @@ async function bootstrap(): Promise<void> {
   registerTerminalHandlers(terminalService);
   registerSftpHandlers(terminalService);
 
-  await app.whenReady();
   if (isMac) {
     await applyMacDockIcon();
   }
@@ -183,7 +198,7 @@ app.on("window-all-closed", () => {
 });
 
 void bootstrap().catch((error: Error) => {
-  console.error("[TermDock] bootstrap failed:", error.message);
+  appLogger.log("error", "main:bootstrap", "Bootstrap failed.", error);
 });
 
 function resolveRuntimeIconCandidates(): string[] {
@@ -205,9 +220,21 @@ async function applyMacDockIcon(): Promise<void> {
       await Promise.resolve(app.dock.setIcon(iconPath));
       return;
     } catch (error) {
-      console.warn(
-        `[TermDock] Failed to set dock icon from ${iconPath}: ${(error as Error).message}`
+      appLogger.log(
+        "warn",
+        "main:icon",
+        `Failed to set dock icon from ${iconPath}.`,
+        error
       );
     }
   }
+}
+
+function installGlobalErrorLogging(): void {
+  process.on("uncaughtException", (error) => {
+    appLogger.log("error", "main:uncaughtException", "Unhandled exception in main process.", error);
+  });
+  process.on("unhandledRejection", (reason) => {
+    appLogger.log("error", "main:unhandledRejection", "Unhandled promise rejection.", reason);
+  });
 }

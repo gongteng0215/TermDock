@@ -47,3 +47,20 @@ export interface SessionTestConnectionResult {
   ok: boolean;
   message: string;
 }
+
+export interface SshConfigImportCandidate {
+  hostAlias: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authType: SessionAuthType;
+  privateKeyPath?: string;
+  sourceLine: number;
+}
+
+export interface SshConfigParseResult {
+  filePath: string;
+  candidates: SshConfigImportCandidate[];
+  warnings: string[];
+}

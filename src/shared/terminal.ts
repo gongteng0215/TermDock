@@ -1,5 +1,52 @@
 export type TerminalConnectionStatus = "connecting" | "connected" | "closed";
 
+export type PortForwardType = "local" | "remote" | "dynamic";
+export type PortForwardStatus = "active" | "degraded";
+export type PortForwardEventLevel = "info" | "error";
+export type PortForwardEventType =
+  | "created"
+  | "removed"
+  | "statusRecovered"
+  | "statusDegraded";
+
+export interface PortForwardRecord {
+  id: string;
+  tabId: string;
+  type: PortForwardType;
+  bindHost: string;
+  bindPort: number;
+  targetHost?: string;
+  targetPort?: number;
+  createdAt: string;
+  status: PortForwardStatus;
+  totalConnections: number;
+  failedConnections: number;
+  lastActivityAt?: string;
+  lastError?: string;
+  lastErrorAt?: string;
+}
+
+export interface PortForwardEventRecord {
+  id: string;
+  tabId: string;
+  forwardId: string;
+  forwardType: PortForwardType;
+  bindHost: string;
+  bindPort: number;
+  level: PortForwardEventLevel;
+  type: PortForwardEventType;
+  message: string;
+  createdAt: string;
+}
+
+export interface CreatePortForwardInput {
+  type: PortForwardType;
+  bindHost: string;
+  bindPort: number;
+  targetHost?: string;
+  targetPort?: number;
+}
+
 export interface ServerHealthSnapshot {
   tabId: string;
   collectedAt: string;

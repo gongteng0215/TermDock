@@ -27,6 +27,7 @@ import packageJson from "../../package.json";
 import type {
   SessionCreateInput,
   SessionRecord,
+  SshConfigParseResult,
   SessionUpdateInput
 } from "../shared/session";
 import type {
@@ -35,6 +36,9 @@ import type {
   SftpTransferEvent
 } from "../shared/sftp";
 import type {
+  CreatePortForwardInput,
+  PortForwardEventRecord,
+  PortForwardRecord,
   ServerHealthSnapshot,
   ServerProcessSnapshot
 } from "../shared/terminal";
@@ -64,9 +68,15 @@ const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
 const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
+const SFTP_TRANSFER_HISTORY_STORAGE_KEY = "termdock.sftp-transfer-history.v1";
+const PORT_FORWARD_PRESETS_STORAGE_KEY = "termdock.port-forward-presets.v1";
+const PORT_FORWARD_EVENT_HISTORY_STORAGE_KEY = "termdock.port-forward-event-history.v1";
 const SESSION_GROUPS_STORAGE_KEY = "termdock.session-groups.v1";
 const SESSION_SORT_MODE_STORAGE_KEY = "termdock.session-sort-mode.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
+const MAX_SFTP_TRANSFER_HISTORY = 800;
+const MAX_PORT_FORWARD_EVENT_HISTORY = 1200;
+const MAX_PORT_FORWARD_EVENT_HISTORY_PER_SESSION = 320;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
@@ -77,8 +87,13 @@ type SettingsSectionId =
   | "hotkeys"
   | "serverHealth"
   | "fileOpening"
-  | "sftp";
+  | "sftp"
+  | "portForwarding"
+  | "diagnostics";
 type SessionSortMode = "default" | "nameAsc" | "nameDesc" | "recent";
+type TransferHistoryScope = "activeSession" | "allSessions";
+type TransferHistoryDirectionFilter = "all" | SftpTransferEvent["direction"];
+type TransferHistoryStatusFilter = "all" | SftpTransferEvent["status"];
 
 type HotkeyActionId = keyof HotkeyPreferences;
 
@@ -129,6 +144,13 @@ const DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES: ServerHealthAlertPreferences = {
   memoryWarnPercent: 85,
   diskWarnPercent: 90
 };
+const DEFAULT_PORT_FORWARD_FORM: PortForwardFormState = {
+  type: "local",
+  bindHost: "127.0.0.1",
+  bindPort: "8080",
+  targetHost: "127.0.0.1",
+  targetPort: "80"
+};
 
 function isMacPlatformRuntime(): boolean {
   return typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
@@ -166,6 +188,20 @@ const SERVER_HEALTH_HISTORY_LIMIT = 24;
 interface SftpTransferItem extends SftpTransferEvent {
   updatedAt: number;
   batchId?: string;
+  sessionId?: string;
+}
+
+interface SftpTransferHistoryItem {
+  key: string;
+  sessionId: string;
+  direction: SftpTransferEvent["direction"];
+  status: SftpTransferEvent["status"];
+  name: string;
+  localPath: string;
+  remotePath: string;
+  updatedAt: number;
+  attemptCount: number;
+  message?: string;
 }
 
 interface ServerHealthDerivedMetrics {
@@ -185,6 +221,35 @@ interface ServerHealthHistoryPoint {
   txBytesPerSecond: number;
 }
 
+interface PortForwardFormState {
+  type: CreatePortForwardInput["type"];
+  bindHost: string;
+  bindPort: string;
+  targetHost: string;
+  targetPort: string;
+}
+
+interface PortForwardPreset {
+  id: string;
+  sessionId: string;
+  name: string;
+  type: CreatePortForwardInput["type"];
+  bindHost: string;
+  bindPort: number;
+  targetHost?: string;
+  targetPort?: number;
+  autoRestore: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+type PortForwardEventFilter = "all" | "errors" | "lifecycle" | "status";
+
+interface PortForwardEventHistoryItem extends PortForwardEventRecord {
+  key: string;
+  sessionId: string;
+}
+
 interface PendingUploadJob {
   tabId: string;
   transferId: string;
@@ -202,6 +267,20 @@ interface PendingDownloadJob {
   localPath: string;
   remotePath: string;
   name: string;
+}
+
+type TransferConflictStrategy = "overwrite" | "skip" | "rename";
+
+interface UploadPathEntry {
+  localPath: string;
+  relativeDirectory: string;
+  remoteName?: string;
+}
+
+interface DownloadTargetEntry {
+  name: string;
+  remotePath: string;
+  localPath: string;
 }
 
 interface SftpContextMenuState {
@@ -255,7 +334,7 @@ interface SessionContextAction {
   run: () => void;
 }
 
-type AppDialogMode = "alert" | "confirm" | "prompt";
+type AppDialogMode = "alert" | "confirm" | "prompt" | "choice";
 
 interface AppDialogBaseState {
   mode: AppDialogMode;
@@ -282,7 +361,23 @@ interface AppPromptDialogState extends AppDialogBaseState {
   multiline?: boolean;
 }
 
-type AppDialogState = AppAlertDialogState | AppConfirmDialogState | AppPromptDialogState;
+interface AppChoiceDialogOption {
+  value: string;
+  label: string;
+  danger?: boolean;
+}
+
+interface AppChoiceDialogState extends AppDialogBaseState {
+  mode: "choice";
+  cancelLabel: string;
+  options: AppChoiceDialogOption[];
+}
+
+type AppDialogState =
+  | AppAlertDialogState
+  | AppConfirmDialogState
+  | AppPromptDialogState
+  | AppChoiceDialogState;
 
 interface AppAlertDialogOptions {
   title?: string;
@@ -302,6 +397,11 @@ interface AppPromptDialogOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   multiline?: boolean;
+}
+
+interface AppChoiceDialogOptions {
+  title?: string;
+  cancelLabel?: string;
 }
 
 type UiIconName =
@@ -410,6 +510,10 @@ function normalizeEventHotkeyKey(event: KeyboardEvent): string {
     return "";
   }
   return normalized.toLowerCase();
+}
+
+function buildSessionConnectionKey(host: string, port: number, username: string): string {
+  return `${host.trim().toLowerCase()}:${port}:${username.trim().toLowerCase()}`;
 }
 
 function parseHotkeyBindingPreference(
@@ -604,9 +708,160 @@ function getSettingsSectionTitle(section: SettingsSectionId): string {
       return "File Opening";
     case "sftp":
       return "SFTP Transfers";
+    case "portForwarding":
+      return "Port Forwarding";
+    case "diagnostics":
+      return "Diagnostics";
     default:
       return "Settings";
   }
+}
+
+function formatPortForwardRecord(record: PortForwardRecord): string {
+  if (record.type === "local") {
+    return `[L] ${record.bindHost}:${record.bindPort} -> ${record.targetHost}:${record.targetPort}`;
+  }
+  if (record.type === "remote") {
+    return `[R] ${record.bindHost}:${record.bindPort} -> ${record.targetHost}:${record.targetPort}`;
+  }
+  return `[D] SOCKS5 ${record.bindHost}:${record.bindPort}`;
+}
+
+function formatPortForwardPreset(preset: PortForwardPreset): string {
+  if (preset.type === "local") {
+    return `[L] ${preset.bindHost}:${preset.bindPort} -> ${preset.targetHost}:${preset.targetPort}`;
+  }
+  if (preset.type === "remote") {
+    return `[R] ${preset.bindHost}:${preset.bindPort} -> ${preset.targetHost}:${preset.targetPort}`;
+  }
+  return `[D] SOCKS5 ${preset.bindHost}:${preset.bindPort}`;
+}
+
+function getPortForwardStatusLabel(record: PortForwardRecord): string {
+  return record.status === "degraded" ? "Degraded" : "Active";
+}
+
+function formatPortForwardTimestamp(isoString?: string): string {
+  if (!isoString) {
+    return "-";
+  }
+  const parsed = new Date(isoString);
+  if (!Number.isFinite(parsed.getTime())) {
+    return "-";
+  }
+  return parsed.toLocaleString();
+}
+
+function formatPortForwardEventType(type: PortForwardEventRecord["type"]): string {
+  if (type === "created") {
+    return "Created";
+  }
+  if (type === "removed") {
+    return "Removed";
+  }
+  if (type === "statusRecovered") {
+    return "Recovered";
+  }
+  return "Degraded";
+}
+
+function formatPortForwardEventSummary(event: PortForwardEventRecord): string {
+  const prefix = event.forwardType === "dynamic" ? "[D]" : event.forwardType === "remote" ? "[R]" : "[L]";
+  return `${prefix} ${event.bindHost}:${event.bindPort}`;
+}
+
+function toPortForwardErrorMessage(error: unknown): string {
+  const raw = toLogMessage(error);
+  if (/EADDRINUSE|address already in use/i.test(raw)) {
+    return "Listen host/port is already in use. Pick another bind address or stop the conflicting process.";
+  }
+  if (/EACCES|EPERM|permission denied/i.test(raw)) {
+    return "Permission denied when opening the forward. Try a higher port or adjust system permissions.";
+  }
+  if (/ENOTFOUND|getaddrinfo/i.test(raw)) {
+    return "Target host could not be resolved. Check DNS or host spelling.";
+  }
+  if (/ECONNREFUSED|connection refused/i.test(raw)) {
+    return "Target refused the forwarded connection. Verify target host/port is listening.";
+  }
+  if (/ETIMEDOUT|timed out/i.test(raw)) {
+    return "Forwarded connection timed out. Check network reachability and firewall rules.";
+  }
+  if (/administratively prohibited|open failed/i.test(raw)) {
+    return "SSH server rejected the forwarded channel. Verify server forwarding policy.";
+  }
+  return raw;
+}
+
+function buildDefaultPortForwardPresetName(input: PortForwardFormState): string {
+  if (input.type === "dynamic") {
+    return `SOCKS ${input.bindHost.trim() || "127.0.0.1"}:${input.bindPort.trim() || "1080"}`;
+  }
+  const prefix = input.type === "local" ? "L" : "R";
+  return `${prefix} ${input.bindHost.trim() || "127.0.0.1"}:${input.bindPort.trim() || "0"} -> ${input.targetHost.trim() || "127.0.0.1"}:${input.targetPort.trim() || "0"}`;
+}
+
+function buildPortForwardInputFromForm(form: PortForwardFormState): CreatePortForwardInput {
+  const bindHost = form.bindHost.trim() || "127.0.0.1";
+  const bindPort = Number.parseInt(form.bindPort, 10);
+  if (!Number.isFinite(bindPort) || bindPort < 1 || bindPort > 65535) {
+    throw new Error("Listen port must be between 1 and 65535.");
+  }
+  if (form.type === "dynamic") {
+    return {
+      type: "dynamic",
+      bindHost,
+      bindPort
+    };
+  }
+  const targetHost = form.targetHost.trim();
+  if (!targetHost) {
+    throw new Error(
+      form.type === "local" ? "Remote target host is required." : "Local target host is required."
+    );
+  }
+  const targetPort = Number.parseInt(form.targetPort, 10);
+  if (!Number.isFinite(targetPort) || targetPort < 1 || targetPort > 65535) {
+    throw new Error(
+      form.type === "local"
+        ? "Remote target port must be between 1 and 65535."
+        : "Local target port must be between 1 and 65535."
+    );
+  }
+  return {
+    type: form.type,
+    bindHost,
+    bindPort,
+    targetHost,
+    targetPort
+  };
+}
+
+function buildPortForwardInputFromPreset(preset: PortForwardPreset): CreatePortForwardInput {
+  if (preset.type === "dynamic") {
+    return {
+      type: "dynamic",
+      bindHost: preset.bindHost,
+      bindPort: preset.bindPort
+    };
+  }
+  return {
+    type: preset.type,
+    bindHost: preset.bindHost,
+    bindPort: preset.bindPort,
+    targetHost: preset.targetHost,
+    targetPort: preset.targetPort
+  };
+}
+
+function toPortForwardFormFromPreset(preset: PortForwardPreset): PortForwardFormState {
+  return {
+    type: preset.type,
+    bindHost: preset.bindHost,
+    bindPort: `${preset.bindPort}`,
+    targetHost: preset.targetHost ?? "",
+    targetPort: preset.targetPort ? `${preset.targetPort}` : ""
+  };
 }
 
 function formatSftpSizeForLs(size: number): string {
@@ -653,8 +908,68 @@ function isTransferCanceledMessage(message?: string): boolean {
   return /\bcancel(?:ed|led)?\b/i.test(message);
 }
 
+function isSftpTransferDirection(value: unknown): value is SftpTransferEvent["direction"] {
+  return value === "upload" || value === "download";
+}
+
+function isSftpTransferStatus(value: unknown): value is SftpTransferEvent["status"] {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "canceled"
+  );
+}
+
+function isPortForwardTypeValue(value: unknown): value is CreatePortForwardInput["type"] {
+  return value === "local" || value === "remote" || value === "dynamic";
+}
+
+function isPortForwardEventTypeValue(value: unknown): value is PortForwardEventRecord["type"] {
+  return (
+    value === "created" ||
+    value === "removed" ||
+    value === "statusRecovered" ||
+    value === "statusDegraded"
+  );
+}
+
+function isPortForwardEventLevelValue(value: unknown): value is PortForwardEventRecord["level"] {
+  return value === "info" || value === "error";
+}
+
+function isTerminalTransferStatus(status: SftpTransferEvent["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "canceled";
+}
+
+function createTransferHistoryKey(
+  sessionId: string,
+  direction: SftpTransferEvent["direction"],
+  localPath: string,
+  remotePath: string
+): string {
+  return `${sessionId}\u0000${direction}\u0000${localPath}\u0000${remotePath}`;
+}
+
+function createTransferRetryKey(
+  direction: SftpTransferEvent["direction"],
+  localPath: string,
+  remotePath: string
+): string {
+  return `${direction}\u0000${localPath}\u0000${remotePath}`;
+}
+
 function createTransferId(prefix: "up" | "down"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function createPortForwardPresetId(): string {
+  return `pfp-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function createPortForwardEventHistoryKey(sessionId: string, eventId: string): string {
+  return `${sessionId}\u0000${eventId}`;
 }
 
 function getPathBaseName(pathValue: string): string {
@@ -664,6 +979,57 @@ function getPathBaseName(pathValue: string): string {
     return normalized;
   }
   return normalized.slice(marker + 1);
+}
+
+function getPathDirectoryName(pathValue: string): string {
+  const normalized = pathValue.replaceAll("\\", "/");
+  const marker = normalized.lastIndexOf("/");
+  if (marker < 0) {
+    return "";
+  }
+  if (marker === 0) {
+    return "/";
+  }
+  return normalized.slice(0, marker);
+}
+
+function splitFileName(name: string): {
+  stem: string;
+  extension: string;
+} {
+  const marker = name.lastIndexOf(".");
+  if (marker <= 0) {
+    return {
+      stem: name,
+      extension: ""
+    };
+  }
+  return {
+    stem: name.slice(0, marker),
+    extension: name.slice(marker)
+  };
+}
+
+function pickAvailableFileName(targetName: string, usedNames: Set<string>): string {
+  if (!usedNames.has(targetName)) {
+    return targetName;
+  }
+  const { stem, extension } = splitFileName(targetName);
+  let suffix = 1;
+  while (true) {
+    const nextName = `${stem} (${suffix})${extension}`;
+    if (!usedNames.has(nextName)) {
+      return nextName;
+    }
+    suffix += 1;
+  }
+}
+
+function toTransferConflictStrategy(value: string | null): TransferConflictStrategy | null {
+  if (value === "overwrite" || value === "skip" || value === "rename") {
+    return value;
+  }
+  return null;
 }
 
 function joinRemotePath(parentPath: string, name: string): string {
@@ -762,6 +1128,48 @@ function formatTransferProgress(transfer: SftpTransferItem): string {
     return `${percent}%`;
   }
   return `${percent}% ${formatTransferBytes(transfer.transferredBytes)}/${formatTransferBytes(total)}`;
+}
+
+function formatHistoryTimestamp(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "-";
+  }
+  const value = new Date(timestamp);
+  if (!Number.isFinite(value.getTime())) {
+    return "-";
+  }
+  return value.toLocaleString();
+}
+
+function formatSshConfigPreview(result: SshConfigParseResult): string {
+  const lines: string[] = [];
+  lines.push(`File: ${result.filePath}`);
+  lines.push(`Parsed hosts: ${result.candidates.length}`);
+  lines.push("");
+  const previewRows = result.candidates.slice(0, 30);
+  for (const candidate of previewRows) {
+    const authLabel =
+      candidate.authType === "privateKey" && candidate.privateKeyPath
+        ? `key=${candidate.privateKeyPath}`
+        : "password";
+    lines.push(
+      `- ${candidate.name}: ${candidate.username}@${candidate.host}:${candidate.port} (${authLabel})`
+    );
+  }
+  if (result.candidates.length > previewRows.length) {
+    lines.push(`... ${result.candidates.length - previewRows.length} more host entries`);
+  }
+  if (result.warnings.length > 0) {
+    lines.push("");
+    lines.push("Warnings:");
+    for (const warning of result.warnings.slice(0, 10)) {
+      lines.push(`- ${warning}`);
+    }
+    if (result.warnings.length > 10) {
+      lines.push(`... ${result.warnings.length - 10} more warnings`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function formatPercent(value: number): string {
@@ -1044,6 +1452,234 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
   }
 }
 
+function readSftpTransferHistory(): SftpTransferHistoryItem[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SFTP_TRANSFER_HISTORY_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const normalized: SftpTransferHistoryItem[] = [];
+    for (const row of parsed) {
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const candidate = row as Partial<SftpTransferHistoryItem>;
+      const sessionId =
+        typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+      const localPath =
+        typeof candidate.localPath === "string" ? candidate.localPath.trim() : "";
+      const remotePath =
+        typeof candidate.remotePath === "string" ? candidate.remotePath.trim() : "";
+      const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+      const updatedAt =
+        typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
+          ? Math.max(0, Math.trunc(candidate.updatedAt))
+          : 0;
+      const attemptCount =
+        typeof candidate.attemptCount === "number" && Number.isFinite(candidate.attemptCount)
+          ? Math.max(1, Math.trunc(candidate.attemptCount))
+          : 1;
+      if (
+        !sessionId ||
+        !localPath ||
+        !remotePath ||
+        !name ||
+        !updatedAt ||
+        !isSftpTransferDirection(candidate.direction) ||
+        !isSftpTransferStatus(candidate.status)
+      ) {
+        continue;
+      }
+      const key =
+        typeof candidate.key === "string" && candidate.key.trim()
+          ? candidate.key.trim()
+          : createTransferHistoryKey(sessionId, candidate.direction, localPath, remotePath);
+      const message =
+        typeof candidate.message === "string" && candidate.message.trim().length > 0
+          ? candidate.message.trim().slice(0, 500)
+          : undefined;
+      normalized.push({
+        key,
+        sessionId,
+        direction: candidate.direction,
+        status: candidate.status,
+        name,
+        localPath,
+        remotePath,
+        updatedAt,
+        attemptCount,
+        message
+      });
+    }
+    normalized.sort((left, right) => right.updatedAt - left.updatedAt);
+    return normalized.slice(0, MAX_SFTP_TRANSFER_HISTORY);
+  } catch {
+    return [];
+  }
+}
+
+function readPortForwardPresets(): PortForwardPreset[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(PORT_FORWARD_PRESETS_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const normalized: PortForwardPreset[] = [];
+    for (const row of parsed) {
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const candidate = row as Partial<PortForwardPreset>;
+      const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+      const sessionId =
+        typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+      const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+      const bindHost =
+        typeof candidate.bindHost === "string" ? candidate.bindHost.trim() : "";
+      const bindPort =
+        typeof candidate.bindPort === "number" && Number.isFinite(candidate.bindPort)
+          ? Math.max(1, Math.min(65535, Math.trunc(candidate.bindPort)))
+          : 0;
+      const createdAt =
+        typeof candidate.createdAt === "number" && Number.isFinite(candidate.createdAt)
+          ? Math.max(0, Math.trunc(candidate.createdAt))
+          : 0;
+      const updatedAt =
+        typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
+          ? Math.max(0, Math.trunc(candidate.updatedAt))
+          : createdAt;
+      if (
+        !id ||
+        !sessionId ||
+        !name ||
+        !bindHost ||
+        !bindPort ||
+        !createdAt ||
+        !updatedAt ||
+        !isPortForwardTypeValue(candidate.type)
+      ) {
+        continue;
+      }
+      const targetHost =
+        typeof candidate.targetHost === "string" && candidate.targetHost.trim()
+          ? candidate.targetHost.trim()
+          : undefined;
+      const targetPort =
+        typeof candidate.targetPort === "number" && Number.isFinite(candidate.targetPort)
+          ? Math.max(1, Math.min(65535, Math.trunc(candidate.targetPort)))
+          : undefined;
+      if (candidate.type !== "dynamic" && (!targetHost || !targetPort)) {
+        continue;
+      }
+      normalized.push({
+        id,
+        sessionId,
+        name,
+        type: candidate.type,
+        bindHost,
+        bindPort,
+        targetHost,
+        targetPort,
+        autoRestore: candidate.autoRestore === true,
+        createdAt,
+        updatedAt
+      });
+    }
+    normalized.sort((left, right) => right.updatedAt - left.updatedAt);
+    return normalized;
+  } catch {
+    return [];
+  }
+}
+
+function readPortForwardEventHistory(): PortForwardEventHistoryItem[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(PORT_FORWARD_EVENT_HISTORY_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const normalized: PortForwardEventHistoryItem[] = [];
+    for (const row of parsed) {
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const candidate = row as Partial<PortForwardEventHistoryItem>;
+      const key = typeof candidate.key === "string" ? candidate.key.trim() : "";
+      const sessionId =
+        typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+      const eventId = typeof candidate.id === "string" ? candidate.id.trim() : "";
+      const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "";
+      const forwardId = typeof candidate.forwardId === "string" ? candidate.forwardId.trim() : "";
+      const bindHost =
+        typeof candidate.bindHost === "string" ? candidate.bindHost.trim() : "";
+      const bindPort =
+        typeof candidate.bindPort === "number" && Number.isFinite(candidate.bindPort)
+          ? Math.max(1, Math.min(65535, Math.trunc(candidate.bindPort)))
+          : 0;
+      const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
+      const createdAt =
+        typeof candidate.createdAt === "string" && candidate.createdAt.trim()
+          ? candidate.createdAt.trim()
+          : "";
+      if (
+        !key ||
+        !sessionId ||
+        !eventId ||
+        !tabId ||
+        !forwardId ||
+        !bindHost ||
+        !bindPort ||
+        !message ||
+        !createdAt ||
+        !isPortForwardTypeValue(candidate.forwardType) ||
+        !isPortForwardEventTypeValue(candidate.type) ||
+        !isPortForwardEventLevelValue(candidate.level)
+      ) {
+        continue;
+      }
+      normalized.push({
+        key,
+        sessionId,
+        id: eventId,
+        tabId,
+        forwardId,
+        forwardType: candidate.forwardType,
+        bindHost,
+        bindPort,
+        level: candidate.level,
+        type: candidate.type,
+        message: message.slice(0, 600),
+        createdAt
+      });
+    }
+    normalized.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return normalized.slice(0, MAX_PORT_FORWARD_EVENT_HISTORY);
+  } catch {
+    return [];
+  }
+}
+
 function readSessionGroupsState(): SessionGroupsState {
   if (typeof window === "undefined") {
     return { groups: [] };
@@ -1195,6 +1831,36 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   return copied;
 }
 
+function toLogMessage(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message || value.name || "Error";
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized || "Unknown error";
+  }
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded) {
+      return encoded;
+    }
+  } catch {
+    // Ignore stringify errors and fallback to String().
+  }
+  return String(value);
+}
+
+function toLogDetails(value: unknown): unknown {
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack
+    };
+  }
+  return value;
+}
+
 export function App() {
   const [bridge, setBridge] = useState<Window["termdock"] | null>(
     () => window.termdock ?? null
@@ -1216,7 +1882,9 @@ export function App() {
         { id: "hotkeys", label: "Hotkeys" },
         { id: "serverHealth", label: "Monitor" },
         { id: "fileOpening", label: "File Open" },
-        { id: "sftp", label: "SFTP" }
+        { id: "sftp", label: "SFTP" },
+        { id: "portForwarding", label: "Port Fwd" },
+        { id: "diagnostics", label: "Diagnostics" }
       ] as Array<{ id: SettingsSectionId; label: string }>,
     []
   );
@@ -1268,10 +1936,40 @@ export function App() {
   const [sftpDropActive, setSftpDropActive] = useState(false);
   const [selectedSftpPath, setSelectedSftpPath] = useState<string | null>(null);
   const [sftpTransfers, setSftpTransfers] = useState<SftpTransferItem[]>([]);
+  const [transferHistory, setTransferHistory] = useState<SftpTransferHistoryItem[]>(
+    () => readSftpTransferHistory()
+  );
+  const [isRetryCenterOpen, setIsRetryCenterOpen] = useState(false);
+  const [retryCenterScope, setRetryCenterScope] = useState<TransferHistoryScope>("activeSession");
+  const [retryCenterDirection, setRetryCenterDirection] =
+    useState<TransferHistoryDirectionFilter>("all");
+  const [retryCenterStatus, setRetryCenterStatus] =
+    useState<TransferHistoryStatusFilter>("failed");
+  const [retryCenterQuery, setRetryCenterQuery] = useState("");
+  const [retryCenterSelection, setRetryCenterSelection] = useState<string[]>([]);
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null);
   const [sftpToolbarMenu, setSftpToolbarMenu] = useState<SftpToolbarMenuState | null>(null);
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
   const [sftpError, setSftpError] = useState<string | null>(null);
+  const [logInfo, setLogInfo] = useState<{
+    logDirectoryPath: string;
+    logFilePath: string;
+  } | null>(null);
+  const [isExportingBugReport, setIsExportingBugReport] = useState(false);
+  const [portForwards, setPortForwards] = useState<PortForwardRecord[]>([]);
+  const [portForwardForm, setPortForwardForm] = useState<PortForwardFormState>(
+    DEFAULT_PORT_FORWARD_FORM
+  );
+  const [portForwardPresets, setPortForwardPresets] = useState<PortForwardPreset[]>(
+    () => readPortForwardPresets()
+  );
+  const [portForwardBusy, setPortForwardBusy] = useState(false);
+  const [portForwardStatusMessage, setPortForwardStatusMessage] = useState<string | null>(null);
+  const [portForwardEventHistory, setPortForwardEventHistory] = useState<
+    PortForwardEventHistoryItem[]
+  >(() => readPortForwardEventHistory());
+  const [portForwardEventFilter, setPortForwardEventFilter] =
+    useState<PortForwardEventFilter>("all");
   const [sftpDeleteProgress, setSftpDeleteProgress] = useState<{
     name: string;
     kind: SftpEntry["kind"];
@@ -1287,6 +1985,8 @@ export function App() {
   const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const terminalTabsRef = useRef<TerminalTab[]>([]);
+  const portForwardPresetsRef = useRef<PortForwardPreset[]>([]);
+  const autoRestoredPortForwardTabsRef = useRef<Set<string>>(new Set());
   const connectedTabIdsRef = useRef<Set<string>>(new Set());
   const uploadQueueRef = useRef<PendingUploadJob[]>([]);
   const runningUploadIdsRef = useRef<Map<string, string>>(new Map());
@@ -1326,6 +2026,44 @@ export function App() {
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [sessions, selectedSessionId]
   );
+  const activeTerminalTab = useMemo(
+    () => terminalTabs.find((tab) => tab.id === activeTabId) ?? null,
+    [activeTabId, terminalTabs]
+  );
+  const isActiveTabConnected = !!(activeTabId && connectedTabIdsRef.current.has(activeTabId));
+  const activeSessionId = activeTerminalTab?.sessionId ?? null;
+  const activePortForwardPresets = useMemo(() => {
+    if (!activeSessionId) {
+      return [];
+    }
+    return portForwardPresets
+      .filter((preset) => preset.sessionId === activeSessionId)
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+  }, [activeSessionId, portForwardPresets]);
+  const activePortForwardEventHistory = useMemo(() => {
+    if (!activeSessionId) {
+      return [];
+    }
+    return portForwardEventHistory
+      .filter((entry) => entry.sessionId === activeSessionId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }, [activeSessionId, portForwardEventHistory]);
+  const visiblePortForwardEventHistory = useMemo(() => {
+    if (portForwardEventFilter === "all") {
+      return activePortForwardEventHistory;
+    }
+    if (portForwardEventFilter === "errors") {
+      return activePortForwardEventHistory.filter((entry) => entry.level === "error");
+    }
+    if (portForwardEventFilter === "lifecycle") {
+      return activePortForwardEventHistory.filter(
+        (entry) => entry.type === "created" || entry.type === "removed"
+      );
+    }
+    return activePortForwardEventHistory.filter(
+      (entry) => entry.type === "statusDegraded" || entry.type === "statusRecovered"
+    );
+  }, [activePortForwardEventHistory, portForwardEventFilter]);
   const sessionContextTarget = useMemo(() => {
     const target = sessionContextMenu?.target;
     if (!target || target.type !== "session") {
@@ -1455,6 +2193,22 @@ export function App() {
     () => activeGroupSessions.filter((session) => selectedSessionIdSet.has(session.id)),
     [activeGroupSessions, selectedSessionIdSet]
   );
+  const writeAppLog = useCallback(
+    (
+      level: "debug" | "info" | "warn" | "error",
+      source: string,
+      message: string,
+      details?: unknown
+    ) => {
+      if (!systemApi?.writeLog) {
+        return;
+      }
+      void systemApi.writeLog(level, source, message, details).catch(() => {
+        // Best-effort logging path; ignore write failures.
+      });
+    },
+    [systemApi]
+  );
   const resolveAppDialog = useCallback((result: unknown) => {
     const resolver = appDialogResolverRef.current;
     appDialogResolverRef.current = null;
@@ -1527,11 +2281,555 @@ export function App() {
     },
     [openAppDialog]
   );
+  const refreshLogInfo = useCallback(async (): Promise<void> => {
+    if (!systemApi?.getLogInfo) {
+      setError("Log bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    const info = await systemApi.getLogInfo();
+    setLogInfo(info);
+  }, [systemApi]);
+  const refreshPortForwards = useCallback(
+    async (targetTabId?: string | null): Promise<void> => {
+      if (!terminalApi?.listPortForwards) {
+        setPortForwards([]);
+        setPortForwardStatusMessage(null);
+        return;
+      }
+      const tabId = targetTabId ?? activeTabId;
+      if (!tabId) {
+        setPortForwards([]);
+        setPortForwardStatusMessage(null);
+        return;
+      }
+      try {
+        const listed = await terminalApi.listPortForwards(tabId);
+        setPortForwards(listed);
+        const degradedCount = listed.filter((entry) => entry.status === "degraded").length;
+        if (degradedCount > 0) {
+          setPortForwardStatusMessage(
+            `${degradedCount} active forward(s) currently degraded. Check their last error below.`
+          );
+        } else if (listed.length > 0) {
+          setPortForwardStatusMessage("All active forwards are healthy.");
+        } else {
+          setPortForwardStatusMessage("No active forwards on the current tab.");
+        }
+      } catch (caughtError) {
+        const message = toPortForwardErrorMessage(caughtError);
+        setError(message);
+        setPortForwardStatusMessage(message);
+        writeAppLog(
+          "error",
+          "renderer:port-forwarding",
+          "Failed to refresh port forwarding list.",
+          caughtError
+        );
+      }
+    },
+    [activeTabId, terminalApi, writeAppLog]
+  );
+  const refreshPortForwardEvents = useCallback(
+    async (targetTabId?: string | null): Promise<void> => {
+      if (!terminalApi?.listPortForwardEvents) {
+        return;
+      }
+      const tabId = targetTabId ?? activeTabId;
+      if (!tabId) {
+        return;
+      }
+      try {
+        const listed = await terminalApi.listPortForwardEvents(tabId, 40);
+        const sessionIdForEvents =
+          tabId === activeTabId
+            ? activeSessionId
+            : terminalTabsRef.current.find((tab) => tab.id === tabId)?.sessionId ?? null;
+        if (sessionIdForEvents && listed.length > 0) {
+          setPortForwardEventHistory((prev) => {
+            const mergedByKey = new Map<string, PortForwardEventHistoryItem>();
+            for (const entry of prev) {
+              mergedByKey.set(entry.key, entry);
+            }
+            for (const event of listed) {
+              const key = createPortForwardEventHistoryKey(sessionIdForEvents, event.id);
+              mergedByKey.set(key, {
+                ...event,
+                key,
+                sessionId: sessionIdForEvents
+              });
+            }
+            const merged = Array.from(mergedByKey.values()).sort((left, right) =>
+              right.createdAt.localeCompare(left.createdAt)
+            );
+            const sessionCounts = new Map<string, number>();
+            const capped: PortForwardEventHistoryItem[] = [];
+            for (const item of merged) {
+              const count = sessionCounts.get(item.sessionId) ?? 0;
+              if (count >= MAX_PORT_FORWARD_EVENT_HISTORY_PER_SESSION) {
+                continue;
+              }
+              sessionCounts.set(item.sessionId, count + 1);
+              capped.push(item);
+              if (capped.length >= MAX_PORT_FORWARD_EVENT_HISTORY) {
+                break;
+              }
+            }
+            return capped;
+          });
+        }
+      } catch (caughtError) {
+        const message = toPortForwardErrorMessage(caughtError);
+        setError(message);
+        writeAppLog(
+          "error",
+          "renderer:port-forwarding",
+          "Failed to refresh port forwarding events.",
+          caughtError
+        );
+      }
+    },
+    [activeSessionId, activeTabId, terminalApi, writeAppLog]
+  );
+  const exportPortForwardSnapshot = useCallback(async (): Promise<void> => {
+    try {
+      if (!activeTabId || !activeTerminalTab) {
+        throw new Error("Open a connected session tab first.");
+      }
+      const lines: string[] = [];
+      lines.push("# TermDock Port Forward Snapshot");
+      lines.push(`Generated: ${new Date().toISOString()}`);
+      lines.push(`Tab: ${activeTerminalTab.title}`);
+      lines.push(`TabId: ${activeTabId}`);
+      lines.push(`SessionId: ${activeSessionId ?? "-"}`);
+      lines.push(`Status: ${isActiveTabConnected ? "connected" : "disconnected"}`);
+      lines.push("");
+      lines.push("## Active Forwards");
+      if (portForwards.length === 0) {
+        lines.push("- none");
+      } else {
+        for (const forward of portForwards) {
+          lines.push(
+            `- ${formatPortForwardRecord(forward)} | ${getPortForwardStatusLabel(forward)} | connections ${forward.totalConnections} failed ${forward.failedConnections}`
+          );
+          if (forward.lastActivityAt) {
+            lines.push(`  lastActivity: ${forward.lastActivityAt}`);
+          }
+          if (forward.lastError) {
+            lines.push(`  lastError: ${forward.lastErrorAt ?? "-"} ${forward.lastError}`);
+          }
+        }
+      }
+      lines.push("");
+      lines.push("## Recent Events");
+      if (activePortForwardEventHistory.length === 0) {
+        lines.push("- none");
+      } else {
+        for (const event of activePortForwardEventHistory.slice(0, 30)) {
+          lines.push(
+            `- ${event.createdAt} [${event.level.toUpperCase()}] ${formatPortForwardEventType(event.type)} ${formatPortForwardEventSummary(event)}: ${event.message}`
+          );
+        }
+      }
+      const snapshotText = lines.join("\n");
+      const copied = await copyTextToClipboard(snapshotText);
+      if (copied) {
+        await showAppAlert("Port forwarding snapshot copied to clipboard.", {
+          title: "Port Forwarding Diagnostics"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the snapshot below manually.", {
+        title: "Port Forwarding Diagnostics",
+        detailText: snapshotText
+      });
+    } catch (caughtError) {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to export port forwarding snapshot.",
+        caughtError
+      );
+    }
+  }, [
+    activeTabId,
+    activeSessionId,
+    activePortForwardEventHistory,
+    activeTerminalTab,
+    isActiveTabConnected,
+    portForwards,
+    showAppAlert,
+    writeAppLog
+  ]);
+  const clearVisiblePortForwardHistory = useCallback(async (): Promise<void> => {
+    if (!activeSessionId || visiblePortForwardEventHistory.length === 0) {
+      return;
+    }
+    const accepted = await showAppConfirm(
+      `Delete ${visiblePortForwardEventHistory.length} visible port forwarding history item(s)?`,
+      {
+        title: "Port Forwarding History",
+        confirmLabel: "Delete",
+        danger: true
+      }
+    );
+    if (!accepted) {
+      return;
+    }
+    const keys = new Set(visiblePortForwardEventHistory.map((entry) => entry.key));
+    setPortForwardEventHistory((prev) => prev.filter((entry) => !keys.has(entry.key)));
+  }, [activeSessionId, showAppConfirm, visiblePortForwardEventHistory]);
+  const clearSessionPortForwardHistory = useCallback(async (): Promise<void> => {
+    if (!activeSessionId || activePortForwardEventHistory.length === 0) {
+      return;
+    }
+    const accepted = await showAppConfirm(
+      `Delete all ${activePortForwardEventHistory.length} port forwarding history item(s) for this session?`,
+      {
+        title: "Port Forwarding History",
+        confirmLabel: "Delete All",
+        danger: true
+      }
+    );
+    if (!accepted) {
+      return;
+    }
+    setPortForwardEventHistory((prev) =>
+      prev.filter((entry) => entry.sessionId !== activeSessionId)
+    );
+  }, [activePortForwardEventHistory.length, activeSessionId, showAppConfirm]);
+  const createPortForwardOnTab = useCallback(
+    async (
+      tabId: string,
+      input: CreatePortForwardInput,
+      options?: {
+        updateVisibleList?: boolean;
+      }
+    ): Promise<PortForwardRecord> => {
+      if (!terminalApi?.createPortForward) {
+        throw new Error("Terminal bridge unavailable. Restart `pnpm dev`.");
+      }
+      const created = await terminalApi.createPortForward(tabId, input);
+      if ((options?.updateVisibleList ?? true) && tabId === activeTabId) {
+        setPortForwards((prev) => [created, ...prev.filter((entry) => entry.id !== created.id)]);
+      }
+      return created;
+    },
+    [activeTabId, terminalApi]
+  );
+  const createPortForward = useCallback(async (): Promise<void> => {
+    if (!activeTabId) {
+      await showAppAlert("Open a session tab first, then create port forwarding.", {
+        title: "Port Forwarding"
+      });
+      return;
+    }
+    const activeConnected = !!(
+      activeTabId &&
+      connectedTabIdsRef.current.has(activeTabId)
+    );
+    if (!activeConnected) {
+      await showAppAlert("Active tab is not connected. Reconnect and try again.", {
+        title: "Port Forwarding"
+      });
+      return;
+    }
+
+    try {
+      const input = buildPortForwardInputFromForm(portForwardForm);
+      setPortForwardBusy(true);
+      const created = await createPortForwardOnTab(activeTabId, input);
+      if (input.type === "dynamic") {
+        setPortForwardForm((prev) => ({
+          ...prev,
+          bindPort: `${created.bindPort}`
+        }));
+      }
+      setPortForwardStatusMessage(`Created ${formatPortForwardRecord(created)}.`);
+      await showAppAlert(
+        `Port forwarding created.\n${formatPortForwardRecord(created)}`,
+        {
+          title: "Port Forwarding"
+        }
+      );
+    } catch (caughtError) {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      setPortForwardStatusMessage(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to create port forwarding.",
+        caughtError
+      );
+    } finally {
+      setPortForwardBusy(false);
+    }
+  }, [
+    activeTabId,
+    createPortForwardOnTab,
+    portForwardForm,
+    showAppAlert,
+    writeAppLog
+  ]);
+  const savePortForwardPreset = useCallback(async (): Promise<void> => {
+    if (!activeSessionId || !activeTerminalTab) {
+      await showAppAlert("Open the target session tab first, then save a port forwarding preset.", {
+        title: "Port Forwarding Preset"
+      });
+      return;
+    }
+    try {
+      const input = buildPortForwardInputFromForm(portForwardForm);
+      const defaultName = buildDefaultPortForwardPresetName(portForwardForm);
+      const presetName = await showAppPrompt("Preset name", defaultName, {
+        title: "Save Port Forward Preset",
+        confirmLabel: "Save"
+      });
+      if (presetName === null) {
+        return;
+      }
+      const trimmedName = presetName.trim();
+      if (!trimmedName) {
+        throw new Error("Preset name is required.");
+      }
+      const now = Date.now();
+      setPortForwardPresets((prev) => {
+        const existing = prev.find(
+          (preset) =>
+            preset.sessionId === activeSessionId &&
+            preset.name.toLowerCase() === trimmedName.toLowerCase()
+        );
+        const nextPreset: PortForwardPreset = {
+          id: existing?.id ?? createPortForwardPresetId(),
+          sessionId: activeSessionId,
+          name: trimmedName,
+          type: input.type,
+          bindHost: input.bindHost,
+          bindPort: input.bindPort,
+          targetHost: input.type === "dynamic" ? undefined : input.targetHost,
+          targetPort: input.type === "dynamic" ? undefined : input.targetPort,
+          autoRestore: existing?.autoRestore ?? false,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now
+        };
+        const next = prev.filter((preset) => preset.id !== nextPreset.id);
+        next.unshift(nextPreset);
+        next.sort((left, right) => right.updatedAt - left.updatedAt);
+        return next;
+      });
+      setError(null);
+      await showAppAlert(
+        `Preset saved for ${activeTerminalTab.title}.\n${trimmedName}`,
+        {
+          title: "Port Forwarding Preset"
+        }
+      );
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to save port forwarding preset.",
+        caughtError
+      );
+    }
+  }, [
+    activeSessionId,
+    activeTerminalTab,
+    portForwardForm,
+    showAppAlert,
+    showAppPrompt,
+    writeAppLog
+  ]);
+  const applyPortForwardPreset = useCallback(
+    async (preset: PortForwardPreset): Promise<void> => {
+      if (!activeTabId) {
+        await showAppAlert("Open the target session tab first, then apply a preset.", {
+          title: "Port Forwarding Preset"
+        });
+        return;
+      }
+      if (!connectedTabIdsRef.current.has(activeTabId)) {
+        await showAppAlert("Active tab is not connected. Reconnect and try again.", {
+          title: "Port Forwarding Preset"
+        });
+        return;
+      }
+      const activeSession = terminalTabsRef.current.find((tab) => tab.id === activeTabId)?.sessionId ?? "";
+      if (activeSession !== preset.sessionId) {
+        await showAppAlert("Preset session does not match the active terminal tab.", {
+          title: "Port Forwarding Preset"
+        });
+        return;
+      }
+      try {
+        setPortForwardBusy(true);
+        setPortForwardForm(toPortForwardFormFromPreset(preset));
+        const created = await createPortForwardOnTab(
+          activeTabId,
+          buildPortForwardInputFromPreset(preset)
+        );
+        setPortForwardStatusMessage(`Applied preset "${preset.name}" successfully.`);
+        await showAppAlert(`Port forwarding created.\n${formatPortForwardRecord(created)}`, {
+          title: "Port Forwarding Preset"
+        });
+      } catch (caughtError) {
+        const message = toPortForwardErrorMessage(caughtError);
+        setError(message);
+        setPortForwardStatusMessage(`Failed to apply preset "${preset.name}": ${message}`);
+        writeAppLog(
+          "error",
+          "renderer:port-forwarding",
+          "Failed to apply port forwarding preset.",
+          caughtError
+        );
+      } finally {
+        setPortForwardBusy(false);
+      }
+    },
+    [activeTabId, createPortForwardOnTab, showAppAlert, writeAppLog]
+  );
+  const setPortForwardPresetAutoRestore = useCallback((presetId: string, value: boolean) => {
+    setPortForwardPresets((prev) =>
+      prev.map((preset) =>
+        preset.id === presetId
+          ? {
+              ...preset,
+              autoRestore: value,
+              updatedAt: Date.now()
+            }
+          : preset
+      )
+    );
+  }, []);
+  const deletePortForwardPreset = useCallback(
+    async (preset: PortForwardPreset): Promise<void> => {
+      const accepted = await showAppConfirm(
+        `Delete preset "${preset.name}"?\n${formatPortForwardPreset(preset)}`,
+        {
+          title: "Port Forwarding Preset",
+          confirmLabel: "Delete",
+          danger: true
+        }
+      );
+      if (!accepted) {
+        return;
+      }
+      setPortForwardPresets((prev) => prev.filter((entry) => entry.id !== preset.id));
+    },
+    [showAppConfirm]
+  );
+  const restorePortForwardPresetsForTab = useCallback(
+    async (tabId: string, sessionId: string): Promise<void> => {
+      if (autoRestoredPortForwardTabsRef.current.has(tabId)) {
+        return;
+      }
+      autoRestoredPortForwardTabsRef.current.add(tabId);
+      const presets = portForwardPresetsRef.current
+        .filter((preset) => preset.sessionId === sessionId && preset.autoRestore)
+        .sort((left, right) => left.createdAt - right.createdAt);
+      if (presets.length === 0) {
+        return;
+      }
+      let failedCount = 0;
+      for (const preset of presets) {
+        try {
+          await createPortForwardOnTab(tabId, buildPortForwardInputFromPreset(preset), {
+            updateVisibleList: tabId === activeTabId
+          });
+        } catch (caughtError) {
+          failedCount += 1;
+          writeAppLog(
+            "error",
+            "renderer:port-forwarding",
+            `Failed to auto-restore port forwarding preset "${preset.name}".`,
+            caughtError
+          );
+        }
+      }
+      if (failedCount > 0 && tabId === activeTabId) {
+        const message = `${failedCount} port forwarding preset(s) failed to auto-restore.`;
+        setError(message);
+        setPortForwardStatusMessage(message);
+      }
+    },
+    [activeTabId, createPortForwardOnTab, writeAppLog]
+  );
+  const removePortForward = useCallback(
+    async (forward: PortForwardRecord): Promise<void> => {
+      if (!terminalApi?.removePortForward) {
+        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+        return;
+      }
+      const tabId = activeTabId;
+      if (!tabId) {
+        return;
+      }
+      const shouldDelete = await showAppConfirm(
+        `Remove this forward?\n${formatPortForwardRecord(forward)}`,
+        {
+          title: "Port Forwarding",
+          confirmLabel: "Remove",
+          danger: true
+        }
+      );
+      if (!shouldDelete) {
+        return;
+      }
+      try {
+        setPortForwardBusy(true);
+        await terminalApi.removePortForward(tabId, forward.id);
+        setPortForwards((prev) => prev.filter((entry) => entry.id !== forward.id));
+        setPortForwardStatusMessage(`Removed ${formatPortForwardRecord(forward)}.`);
+      } catch (caughtError) {
+        const message = toPortForwardErrorMessage(caughtError);
+        setError(message);
+        setPortForwardStatusMessage(message);
+        writeAppLog(
+          "error",
+          "renderer:port-forwarding",
+          "Failed to remove port forwarding.",
+          caughtError
+        );
+      } finally {
+        setPortForwardBusy(false);
+      }
+    },
+    [activeTabId, showAppConfirm, terminalApi, writeAppLog]
+  );
+  const showAppChoice = useCallback(
+    async (
+      message: string,
+      choices: AppChoiceDialogOption[],
+      options?: AppChoiceDialogOptions
+    ): Promise<string | null> => {
+      if (!Array.isArray(choices) || choices.length === 0) {
+        return null;
+      }
+      const dialog: AppChoiceDialogState = {
+        mode: "choice",
+        title: options?.title ?? "Choose Action",
+        message,
+        confirmLabel: "",
+        cancelLabel: options?.cancelLabel ?? "Cancel",
+        options: choices
+      };
+      const result = await openAppDialog(dialog, null);
+      return typeof result === "string" ? result : null;
+    },
+    [openAppDialog]
+  );
   const closeAppDialog = useCallback(() => {
     resolveAppDialog(appDialogCancelValueRef.current);
   }, [resolveAppDialog]);
   const submitAppDialog = useCallback(() => {
     if (!appDialog) {
+      return;
+    }
+    if (appDialog.mode === "choice") {
       return;
     }
     if (appDialog.mode === "confirm") {
@@ -1548,11 +2846,6 @@ export function App() {
     () => sessions.find((session) => session.id === editingSessionId) ?? null,
     [editingSessionId, sessions]
   );
-  const activeTerminalTab = useMemo(
-    () => terminalTabs.find((tab) => tab.id === activeTabId) ?? null,
-    [activeTabId, terminalTabs]
-  );
-  const isActiveTabConnected = !!(activeTabId && connectedTabIdsRef.current.has(activeTabId));
   const selectedSftpEntry = useMemo<SftpEntry | null>(() => {
     if (!sftpDirectory || !selectedSftpPath) {
       return null;
@@ -1573,6 +2866,17 @@ export function App() {
       .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "upload")
       .slice(0, 10);
   }, [activeTabId, sftpTransfers]);
+  const failedUploadTransfers = useMemo(() => {
+    if (!activeTabId) {
+      return [];
+    }
+    return sftpTransfers.filter(
+      (transfer) =>
+        transfer.tabId === activeTabId &&
+        transfer.direction === "upload" &&
+        transfer.status === "failed"
+    );
+  }, [activeTabId, sftpTransfers]);
   const activeDownloadTransfers = useMemo(() => {
     if (!activeTabId) {
       return [];
@@ -1581,6 +2885,127 @@ export function App() {
       .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "download")
       .slice(0, 10);
   }, [activeTabId, sftpTransfers]);
+  const failedDownloadTransfers = useMemo(() => {
+    if (!activeTabId) {
+      return [];
+    }
+    return sftpTransfers.filter(
+      (transfer) =>
+        transfer.tabId === activeTabId &&
+        transfer.direction === "download" &&
+        transfer.status === "failed"
+    );
+  }, [activeTabId, sftpTransfers]);
+  const failedUploadHistory = useMemo(() => {
+    if (!activeSessionId) {
+      return [];
+    }
+    return transferHistory.filter(
+      (entry) =>
+        entry.sessionId === activeSessionId &&
+        entry.direction === "upload" &&
+        entry.status === "failed"
+    );
+  }, [activeSessionId, transferHistory]);
+  const failedDownloadHistory = useMemo(() => {
+    if (!activeSessionId) {
+      return [];
+    }
+    return transferHistory.filter(
+      (entry) =>
+        entry.sessionId === activeSessionId &&
+        entry.direction === "download" &&
+        entry.status === "failed"
+    );
+  }, [activeSessionId, transferHistory]);
+  const failedUploadRetryCandidates = useMemo(() => {
+    const dedup = new Set<string>();
+    const targets: Array<{
+      name: string;
+      localPath: string;
+      remotePath: string;
+    }> = [];
+    const runtime = [...failedUploadTransfers].sort((left, right) => left.updatedAt - right.updatedAt);
+    for (const transfer of runtime) {
+      const key = createTransferRetryKey(
+        "upload",
+        transfer.localPath.trim(),
+        transfer.remotePath.trim()
+      );
+      if (dedup.has(key)) {
+        continue;
+      }
+      dedup.add(key);
+      targets.push({
+        name: transfer.name,
+        localPath: transfer.localPath,
+        remotePath: transfer.remotePath
+      });
+    }
+    const history = [...failedUploadHistory].sort((left, right) => left.updatedAt - right.updatedAt);
+    for (const transfer of history) {
+      const key = createTransferRetryKey(
+        "upload",
+        transfer.localPath.trim(),
+        transfer.remotePath.trim()
+      );
+      if (dedup.has(key)) {
+        continue;
+      }
+      dedup.add(key);
+      targets.push({
+        name: transfer.name,
+        localPath: transfer.localPath,
+        remotePath: transfer.remotePath
+      });
+    }
+    return targets;
+  }, [failedUploadHistory, failedUploadTransfers]);
+  const failedDownloadRetryCandidates = useMemo(() => {
+    const dedup = new Set<string>();
+    const targets: Array<{
+      name: string;
+      localPath: string;
+      remotePath: string;
+    }> = [];
+    const runtime = [...failedDownloadTransfers].sort(
+      (left, right) => left.updatedAt - right.updatedAt
+    );
+    for (const transfer of runtime) {
+      const key = createTransferRetryKey(
+        "download",
+        transfer.localPath.trim(),
+        transfer.remotePath.trim()
+      );
+      if (dedup.has(key)) {
+        continue;
+      }
+      dedup.add(key);
+      targets.push({
+        name: transfer.name,
+        localPath: transfer.localPath,
+        remotePath: transfer.remotePath
+      });
+    }
+    const history = [...failedDownloadHistory].sort((left, right) => left.updatedAt - right.updatedAt);
+    for (const transfer of history) {
+      const key = createTransferRetryKey(
+        "download",
+        transfer.localPath.trim(),
+        transfer.remotePath.trim()
+      );
+      if (dedup.has(key)) {
+        continue;
+      }
+      dedup.add(key);
+      targets.push({
+        name: transfer.name,
+        localPath: transfer.localPath,
+        remotePath: transfer.remotePath
+      });
+    }
+    return targets;
+  }, [failedDownloadHistory, failedDownloadTransfers]);
   const activeUploadQueueStats = useMemo(() => {
     if (!activeTabId) {
       return {
@@ -1741,6 +3166,64 @@ export function App() {
       activeDownloadQueueStats.failed +
       activeDownloadQueueStats.canceled >
       0);
+  const canRetryFailedUploads = !!activeTabId && failedUploadRetryCandidates.length > 0;
+  const canRetryFailedDownloads = !!activeTabId && failedDownloadRetryCandidates.length > 0;
+  const retryCenterEntries = useMemo(() => {
+    const normalizedQuery = retryCenterQuery.trim().toLowerCase();
+    const filtered = transferHistory.filter((entry) => {
+      if (retryCenterScope === "activeSession") {
+        if (!activeSessionId || entry.sessionId !== activeSessionId) {
+          return false;
+        }
+      }
+      if (retryCenterDirection !== "all" && entry.direction !== retryCenterDirection) {
+        return false;
+      }
+      if (retryCenterStatus !== "all" && entry.status !== retryCenterStatus) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+      return (
+        entry.name.toLowerCase().includes(normalizedQuery) ||
+        entry.localPath.toLowerCase().includes(normalizedQuery) ||
+        entry.remotePath.toLowerCase().includes(normalizedQuery) ||
+        (entry.message ?? "").toLowerCase().includes(normalizedQuery)
+      );
+    });
+    return filtered.sort((left, right) => right.updatedAt - left.updatedAt).slice(0, 400);
+  }, [
+    activeSessionId,
+    retryCenterDirection,
+    retryCenterQuery,
+    retryCenterScope,
+    retryCenterStatus,
+    transferHistory
+  ]);
+  const retryCenterSelectionSet = useMemo(
+    () => new Set(retryCenterSelection),
+    [retryCenterSelection]
+  );
+  const selectedRetryCenterEntries = useMemo(
+    () => retryCenterEntries.filter((entry) => retryCenterSelectionSet.has(entry.key)),
+    [retryCenterEntries, retryCenterSelectionSet]
+  );
+  const selectedRetryCenterFailedEntries = useMemo(
+    () =>
+      selectedRetryCenterEntries.filter(
+        (entry) =>
+          entry.status === "failed" &&
+          !!activeSessionId &&
+          entry.sessionId === activeSessionId
+      ),
+    [activeSessionId, selectedRetryCenterEntries]
+  );
+  const canRetrySelectedRetryCenterEntries =
+    !!activeTabId && selectedRetryCenterFailedEntries.length > 0;
+  const canClearSelectedRetryCenterEntries = selectedRetryCenterEntries.length > 0;
+  const canClearVisibleRetryCenterEntries = retryCenterEntries.length > 0;
+  const canClearAllRetryCenterEntries = transferHistory.length > 0;
   const canDownloadSelectedSftpEntry =
     !!selectedSftpEntry &&
     (selectedSftpEntry.kind === "file" || selectedSftpEntry.kind === "directory");
@@ -1803,11 +3286,18 @@ export function App() {
   }, [serverHealthAlertPreferences, serverHealthMetrics]);
 
   const applySftpTransferEvent = useCallback((event: SftpTransferEvent & { batchId?: string }) => {
+    const now = Date.now();
+    let historyCandidate: SftpTransferHistoryItem | null = null;
     setSftpTransfers((prev) => {
+      const tabSessionId =
+        terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.sessionId ?? "";
       const nextItem: SftpTransferItem = {
         ...event,
-        updatedAt: Date.now()
+        updatedAt: now
       };
+      if (tabSessionId) {
+        nextItem.sessionId = tabSessionId;
+      }
       if (event.batchId !== undefined) {
         nextItem.batchId = event.batchId;
       }
@@ -1815,6 +3305,25 @@ export function App() {
         (transfer) => transfer.transferId === event.transferId
       );
       if (existingIndex < 0) {
+        if (isTerminalTransferStatus(nextItem.status) && nextItem.sessionId) {
+          historyCandidate = {
+            key: createTransferHistoryKey(
+              nextItem.sessionId,
+              nextItem.direction,
+              nextItem.localPath.trim(),
+              nextItem.remotePath.trim()
+            ),
+            sessionId: nextItem.sessionId,
+            direction: nextItem.direction,
+            status: nextItem.status,
+            name: nextItem.name,
+            localPath: nextItem.localPath,
+            remotePath: nextItem.remotePath,
+            updatedAt: now,
+            attemptCount: 1,
+            message: nextItem.message?.trim() ? nextItem.message.trim() : undefined
+          };
+        }
         return [nextItem, ...prev].slice(0, 160);
       }
       const next = [...prev];
@@ -1825,10 +3334,51 @@ export function App() {
       if (event.batchId === undefined && next[existingIndex].batchId !== undefined) {
         mergedItem.batchId = next[existingIndex].batchId;
       }
+      if (!mergedItem.sessionId && next[existingIndex].sessionId) {
+        mergedItem.sessionId = next[existingIndex].sessionId;
+      }
+      if (isTerminalTransferStatus(mergedItem.status) && mergedItem.sessionId) {
+        historyCandidate = {
+          key: createTransferHistoryKey(
+            mergedItem.sessionId,
+            mergedItem.direction,
+            mergedItem.localPath.trim(),
+            mergedItem.remotePath.trim()
+          ),
+          sessionId: mergedItem.sessionId,
+          direction: mergedItem.direction,
+          status: mergedItem.status,
+          name: mergedItem.name,
+          localPath: mergedItem.localPath,
+          remotePath: mergedItem.remotePath,
+          updatedAt: now,
+          attemptCount: 1,
+          message: mergedItem.message?.trim() ? mergedItem.message.trim() : undefined
+        };
+      }
       next[existingIndex] = mergedItem;
       next.sort((left, right) => right.updatedAt - left.updatedAt);
       return next;
     });
+    if (historyCandidate) {
+      setTransferHistory((prev) => {
+        const existingIndex = prev.findIndex((item) => item.key === historyCandidate!.key);
+        if (existingIndex < 0) {
+          return [historyCandidate!, ...prev]
+            .sort((left, right) => right.updatedAt - left.updatedAt)
+            .slice(0, MAX_SFTP_TRANSFER_HISTORY);
+        }
+        const next = [...prev];
+        const current = next[existingIndex];
+        next[existingIndex] = {
+          ...current,
+          ...historyCandidate,
+          attemptCount: current.attemptCount + 1
+        };
+        next.sort((left, right) => right.updatedAt - left.updatedAt);
+        return next.slice(0, MAX_SFTP_TRANSFER_HISTORY);
+      });
+    }
   }, []);
 
   const ensureRemoteDirectoryForUpload = useCallback(
@@ -1889,11 +3439,11 @@ export function App() {
         runningUploadIdsRef.current.set(nextJob.transferId, nextJob.tabId);
         void (async () => {
           await ensureRemoteDirectoryForUpload(nextJob.tabId, nextJob.remoteDirectory);
-          await sftpApi.uploadFile(
+          await sftpApi.uploadFileToPath(
             nextJob.tabId,
             nextJob.transferId,
             nextJob.localPath,
-            nextJob.remoteDirectory
+            nextJob.remotePath
           );
         })()
           .catch((caughtError) => {
@@ -2262,6 +3812,10 @@ export function App() {
   }, [terminalTabs]);
 
   useEffect(() => {
+    portForwardPresetsRef.current = portForwardPresets;
+  }, [portForwardPresets]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(SESSION_SORT_MODE_STORAGE_KEY, sessionSortMode);
     } catch {
@@ -2277,6 +3831,20 @@ export function App() {
   useEffect(() => {
     const validSessionIds = new Set(sessions.map((session) => session.id));
     setSelectedSessionIds((prev) => prev.filter((sessionId) => validSessionIds.has(sessionId)));
+  }, [sessions]);
+
+  useEffect(() => {
+    const validSessionIds = new Set(sessions.map((session) => session.id));
+    setPortForwardPresets((prev) =>
+      prev.filter((preset) => validSessionIds.has(preset.sessionId))
+    );
+  }, [sessions]);
+
+  useEffect(() => {
+    const validSessionIds = new Set(sessions.map((session) => session.id));
+    setPortForwardEventHistory((prev) =>
+      prev.filter((entry) => validSessionIds.has(entry.sessionId))
+    );
   }, [sessions]);
 
   useEffect(() => {
@@ -2338,6 +3906,44 @@ export function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
+        SFTP_TRANSFER_HISTORY_STORAGE_KEY,
+        JSON.stringify(transferHistory)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [transferHistory]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PORT_FORWARD_PRESETS_STORAGE_KEY,
+        JSON.stringify(portForwardPresets)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [portForwardPresets]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PORT_FORWARD_EVENT_HISTORY_STORAGE_KEY,
+        JSON.stringify(portForwardEventHistory)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [portForwardEventHistory]);
+
+  useEffect(() => {
+    const validKeys = new Set(retryCenterEntries.map((entry) => entry.key));
+    setRetryCenterSelection((prev) => prev.filter((key) => validKeys.has(key)));
+  }, [retryCenterEntries]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
         SESSION_GROUPS_STORAGE_KEY,
         JSON.stringify({
           groups: normalizeSessionGroups(sessionGroupsState.groups)
@@ -2371,6 +3977,105 @@ export function App() {
       stopListening();
     };
   }, [appApi]);
+
+  useEffect(() => {
+    writeAppLog("info", "renderer:lifecycle", "Renderer initialized.");
+  }, [writeAppLog]);
+
+  useEffect(() => {
+    const onWindowError = (event: ErrorEvent) => {
+      const message = event.message?.trim() || "Unhandled window error.";
+      writeAppLog("error", "renderer:window-error", message, {
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: toLogDetails(event.error)
+      });
+    };
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      writeAppLog(
+        "error",
+        "renderer:unhandledrejection",
+        toLogMessage(event.reason),
+        toLogDetails(event.reason)
+      );
+    };
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onWindowError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, [writeAppLog]);
+
+  useEffect(() => {
+    if (!isSettingsOpen || activeSettingsSection !== "diagnostics") {
+      return;
+    }
+    void refreshLogInfo().catch((caughtError) => {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:diagnostics", "Failed to load log info.", caughtError);
+    });
+  }, [activeSettingsSection, isSettingsOpen, refreshLogInfo, writeAppLog]);
+
+  useEffect(() => {
+    if (!isSettingsOpen || activeSettingsSection !== "portForwarding") {
+      return;
+    }
+    void Promise.all([
+      refreshPortForwards(activeTabId),
+      refreshPortForwardEvents(activeTabId)
+    ]).catch((caughtError) => {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to load port forwarding diagnostics.",
+        caughtError
+      );
+    });
+  }, [
+    activeSettingsSection,
+    activeTabId,
+    isSettingsOpen,
+    refreshPortForwardEvents,
+    refreshPortForwards,
+    writeAppLog
+  ]);
+
+  useEffect(() => {
+    if (!isSettingsOpen || activeSettingsSection !== "portForwarding" || !activeTabId) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void Promise.all([
+        refreshPortForwards(activeTabId),
+        refreshPortForwardEvents(activeTabId)
+      ]).catch((caughtError) => {
+        const message = toPortForwardErrorMessage(caughtError);
+        setError(message);
+        setPortForwardStatusMessage(message);
+        writeAppLog(
+          "error",
+          "renderer:port-forwarding",
+          "Failed to auto-refresh port forwarding list.",
+          caughtError
+        );
+      });
+    }, 3_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [
+    activeSettingsSection,
+    activeTabId,
+    isSettingsOpen,
+    refreshPortForwardEvents,
+    refreshPortForwards,
+    writeAppLog
+  ]);
 
   useEffect(() => {
     if (terminalTabs.length === 0) {
@@ -2494,6 +4199,7 @@ export function App() {
 
   useEffect(() => {
     connectedTabIdsRef.current.clear();
+    autoRestoredPortForwardTabsRef.current.clear();
   }, [terminalApi]);
 
   useEffect(() => {
@@ -2521,6 +4227,9 @@ export function App() {
               )
             );
           }
+          if (tab) {
+            void restorePortForwardPresetsForTab(event.tabId, tab.sessionId);
+          }
           if (event.tabId === activeTabId) {
             void refreshServerHealth({
               tabId: event.tabId
@@ -2533,6 +4242,7 @@ export function App() {
           }
         } else {
           connectedTabIdsRef.current.delete(event.tabId);
+          autoRestoredPortForwardTabsRef.current.delete(event.tabId);
           if (event.tabId === activeTabId) {
             resetServerHealth("Terminal tab is not connected.");
             resetServerProcesses("Terminal tab is not connected.");
@@ -2541,6 +4251,7 @@ export function App() {
       }
       if (event.type === "error") {
         connectedTabIdsRef.current.delete(event.tabId);
+        autoRestoredPortForwardTabsRef.current.delete(event.tabId);
         if (event.tabId === activeTabId) {
           resetServerHealth(event.message);
           resetServerProcesses(event.message);
@@ -2571,6 +4282,7 @@ export function App() {
     refreshServerProcesses,
     resetServerHealth,
     resetServerProcesses,
+    restorePortForwardPresetsForTab,
     terminalApi,
     terminalTabs
   ]);
@@ -2869,6 +4581,9 @@ export function App() {
         closeAppDialog();
       }
       if (event.key === "Enter") {
+        if (appDialog.mode === "choice") {
+          return;
+        }
         if (appDialog.mode === "prompt" && appDialog.multiline && !event.ctrlKey && !event.metaKey) {
           return;
         }
@@ -2941,6 +4656,7 @@ export function App() {
       }
       uploadQueueRef.current = [];
       runningUploadIdsRef.current.clear();
+      autoRestoredPortForwardTabsRef.current.clear();
       isDrainingUploadQueueRef.current = false;
       downloadQueueRef.current = [];
       runningDownloadIdsRef.current.clear();
@@ -3018,6 +4734,227 @@ export function App() {
     },
     [buildDuplicateSessionName, showAppAlert]
   );
+
+  const importSessionsFromSshConfig = useCallback(async () => {
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!systemApi?.pickSshConfigFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selectedPath = await systemApi.pickSshConfigFile();
+      if (!selectedPath) {
+        return;
+      }
+      const parsed = await sessionsApi.parseSshConfig(selectedPath);
+      if (parsed.candidates.length === 0) {
+        await showAppAlert(
+          parsed.warnings.length > 0
+            ? `No importable Host entries were found.\n\n${parsed.warnings.join("\n")}`
+            : "No importable Host entries were found.",
+          {
+            title: "SSH Config Import"
+          }
+        );
+        return;
+      }
+
+      await showAppAlert("Review parsed hosts below before importing.", {
+        title: "SSH Config Preview",
+        confirmLabel: "Continue",
+        detailText: formatSshConfigPreview(parsed)
+      });
+
+      const targetGroupInput = await showAppPrompt(
+        "Set target group for imported sessions. Leave empty for Ungrouped.",
+        activeSessionGroup?.groupName ?? "",
+        {
+          title: "Import Target Group",
+          confirmLabel: "Continue"
+        }
+      );
+      if (targetGroupInput === null) {
+        return;
+      }
+      const targetGroup = targetGroupInput.trim();
+      const targetRemarkPrefix = `Imported from ${parsed.filePath}`;
+
+      let duplicateStrategy: "skip" | "overwrite" | "rename" = "skip";
+      const existingConnectionKeys = new Set(
+        sessions.map((session) =>
+          buildSessionConnectionKey(session.host, session.port, session.username)
+        )
+      );
+      const duplicateCount = parsed.candidates.filter((candidate) =>
+        existingConnectionKeys.has(
+          buildSessionConnectionKey(candidate.host, candidate.port, candidate.username)
+        )
+      ).length;
+      if (duplicateCount > 0) {
+        const selectedStrategy = await showAppChoice(
+          `Found ${duplicateCount} duplicate connection target(s). Choose how to handle duplicates.`,
+          [
+            {
+              value: "skip",
+              label: "Skip Duplicates"
+            },
+            {
+              value: "overwrite",
+              label: "Overwrite Existing"
+            },
+            {
+              value: "rename",
+              label: "Create Renamed Copies"
+            }
+          ],
+          {
+            title: "Duplicate Strategy",
+            cancelLabel: "Cancel"
+          }
+        );
+        if (!selectedStrategy) {
+          return;
+        }
+        duplicateStrategy = selectedStrategy as "skip" | "overwrite" | "rename";
+      }
+
+      const localSessions = [...sessions];
+      const sessionByConnection = new Map<string, SessionRecord>();
+      for (const session of localSessions) {
+        const key = buildSessionConnectionKey(session.host, session.port, session.username);
+        if (!sessionByConnection.has(key)) {
+          sessionByConnection.set(key, session);
+        }
+      }
+      const usedNames = new Set(localSessions.map((session) => session.name.trim().toLowerCase()));
+      const allocateImportName = (baseName: string): string => {
+        const base = baseName.trim() || "Imported Session";
+        if (!usedNames.has(base.toLowerCase())) {
+          usedNames.add(base.toLowerCase());
+          return base;
+        }
+        let suffix = 1;
+        while (usedNames.has(`${base} (${suffix})`.toLowerCase())) {
+          suffix += 1;
+        }
+        const next = `${base} (${suffix})`;
+        usedNames.add(next.toLowerCase());
+        return next;
+      };
+
+      let createdCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+      let firstImportedSessionId: string | null = null;
+
+      for (const candidate of parsed.candidates) {
+        const connectionKey = buildSessionConnectionKey(
+          candidate.host,
+          candidate.port,
+          candidate.username
+        );
+        const existing = sessionByConnection.get(connectionKey) ?? null;
+        if (existing && duplicateStrategy === "skip") {
+          skippedCount += 1;
+          continue;
+        }
+
+        const remarkLine = `${targetRemarkPrefix}:${candidate.sourceLine}`;
+        if (existing && duplicateStrategy === "overwrite") {
+          try {
+            const updated = await sessionsApi.update(existing.id, {
+              name: candidate.name,
+              host: candidate.host,
+              port: candidate.port,
+              username: candidate.username,
+              authType: candidate.authType,
+              privateKeyPath:
+                candidate.authType === "privateKey" ? candidate.privateKeyPath ?? "" : "",
+              groupId: targetGroup,
+              remark: remarkLine
+            });
+            updatedCount += 1;
+            if (!firstImportedSessionId) {
+              firstImportedSessionId = updated.id;
+            }
+            const index = localSessions.findIndex((session) => session.id === updated.id);
+            if (index >= 0) {
+              localSessions[index] = updated;
+            }
+            sessionByConnection.set(connectionKey, updated);
+            usedNames.add(updated.name.trim().toLowerCase());
+          } catch {
+            failedCount += 1;
+          }
+          continue;
+        }
+
+        const shouldRename = existing && duplicateStrategy === "rename";
+        const nextName = shouldRename
+          ? allocateImportName(`${candidate.name} imported`)
+          : candidate.name;
+        try {
+          const created = await sessionsApi.create({
+            name: nextName,
+            host: candidate.host,
+            port: candidate.port,
+            username: candidate.username,
+            authType: candidate.authType,
+            privateKeyPath:
+              candidate.authType === "privateKey" ? candidate.privateKeyPath ?? "" : "",
+            groupId: targetGroup,
+            remark: remarkLine,
+            favorite: false,
+            secret: ""
+          });
+          createdCount += 1;
+          if (!firstImportedSessionId) {
+            firstImportedSessionId = created.id;
+          }
+          localSessions.unshift(created);
+          const current = sessionByConnection.get(connectionKey);
+          if (!current) {
+            sessionByConnection.set(connectionKey, created);
+          }
+          usedNames.add(created.name.trim().toLowerCase());
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      if (targetGroup) {
+        setSessionGroupsState((prev) => ({
+          groups: normalizeSessionGroups([...prev.groups, targetGroup])
+        }));
+      }
+      if (createdCount > 0 || updatedCount > 0) {
+        setSessions(localSessions);
+        if (firstImportedSessionId) {
+          setSelectedSessionId(firstImportedSessionId);
+        }
+      }
+      await showAppAlert(
+        `Import completed.\nCreated: ${createdCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}\nFailed: ${failedCount}\nWarnings: ${parsed.warnings.length}`,
+        {
+          title: "SSH Config Import"
+        }
+      );
+    } catch (caughtError) {
+      setError(toLogMessage(caughtError));
+      writeAppLog("error", "renderer:sessions", "SSH config import failed.", caughtError);
+    }
+  }, [
+    activeSessionGroup?.groupName,
+    sessions,
+    sessionsApi,
+    showAppAlert,
+    showAppChoice,
+    showAppPrompt,
+    systemApi,
+    writeAppLog
+  ]);
 
   const closeCreateModal = () => {
     if (saving || testingConnection) {
@@ -3180,6 +5117,7 @@ export function App() {
 
     for (const tabId of uniqueTabIds) {
       connectedTabIdsRef.current.delete(tabId);
+      autoRestoredPortForwardTabsRef.current.delete(tabId);
       ensuredRemoteDirectoriesRef.current.delete(tabId);
       if (terminalApi) {
         void terminalApi.close(tabId);
@@ -3750,6 +5688,103 @@ export function App() {
     setIsSettingsOpen(false);
   }, []);
 
+  const openLogDirectory = useCallback(async () => {
+    try {
+      if (!systemApi?.openLocalPath || !systemApi.getLogInfo) {
+        throw new Error("Log bridge unavailable. Restart `pnpm dev`.");
+      }
+      const info = logInfo ?? (await systemApi.getLogInfo());
+      setLogInfo(info);
+      await systemApi.openLocalPath(info.logDirectoryPath);
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:diagnostics", "Failed to open log directory.", caughtError);
+    }
+  }, [logInfo, systemApi, writeAppLog]);
+
+  const copyLogFilePath = useCallback(async () => {
+    try {
+      if (!systemApi?.getLogInfo) {
+        throw new Error("Log bridge unavailable. Restart `pnpm dev`.");
+      }
+      const info = logInfo ?? (await systemApi.getLogInfo());
+      setLogInfo(info);
+      const copied = await copyTextToClipboard(info.logFilePath);
+      if (!copied) {
+        throw new Error("Clipboard unavailable.");
+      }
+      await showAppAlert("Log file path copied to clipboard.", {
+        title: "Diagnostics"
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:diagnostics", "Failed to copy log file path.", caughtError);
+    }
+  }, [logInfo, showAppAlert, systemApi, writeAppLog]);
+
+  const exportBugReportBundle = useCallback(async () => {
+    try {
+      if (!systemApi?.exportBugReport) {
+        throw new Error("Bug report bridge unavailable. Restart `pnpm dev`.");
+      }
+      setIsExportingBugReport(true);
+      const result = await systemApi.exportBugReport({
+        settingsSnapshot: {
+          appVersion: APP_VERSION,
+          connectionPreferences,
+          hotkeyPreferences,
+          fileOpenPreferences,
+          sftpTransferPreferences,
+          serverHealthAlertPreferences,
+          sessionSortMode
+        },
+        runtimeSnapshot: {
+          capturedAtIso: new Date().toISOString(),
+          sessionCount: sessions.length,
+          sessionGroupCount: sessionGroupOptions.length,
+          openTabCount: terminalTabs.length,
+          activeTabId,
+          selectedSessionId
+        }
+      });
+      if (result.canceled || !result.outputPath) {
+        return;
+      }
+      const copied = await copyTextToClipboard(result.outputPath);
+      await showAppAlert(
+        copied
+          ? `Bug report exported.\nPath copied to clipboard:\n${result.outputPath}`
+          : `Bug report exported:\n${result.outputPath}`,
+        {
+          title: "Diagnostics"
+        }
+      );
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:diagnostics", "Failed to export bug report.", caughtError);
+    } finally {
+      setIsExportingBugReport(false);
+    }
+  }, [
+    activeTabId,
+    connectionPreferences,
+    fileOpenPreferences,
+    hotkeyPreferences,
+    selectedSessionId,
+    serverHealthAlertPreferences,
+    sessionGroupOptions.length,
+    sessionSortMode,
+    sessions.length,
+    sftpTransferPreferences,
+    showAppAlert,
+    systemApi,
+    terminalTabs.length,
+    writeAppLog
+  ]);
+
   const copyClashDirectRules = async (session: SessionRecord) => {
     const text = buildClashDirectRules(session);
     try {
@@ -4047,14 +6082,312 @@ export function App() {
     }
   };
 
+  const resolveDownloadTargetConflicts = useCallback(
+    async (targets: DownloadTargetEntry[]): Promise<DownloadTargetEntry[] | null> => {
+      if (!systemApi || targets.length === 0) {
+        return targets;
+      }
+
+      const knownLocalNamesByDirectory = new Map<string, Set<string>>();
+      const plannedLocalNamesByDirectory = new Map<string, Set<string>>();
+      const getKnownLocalNames = async (directoryPath: string): Promise<Set<string>> => {
+        const normalizedDirectory = directoryPath.trim() || ".";
+        const cached = knownLocalNamesByDirectory.get(normalizedDirectory);
+        if (cached) {
+          return cached;
+        }
+        const listing = await systemApi.scanLocalPathEntries(normalizedDirectory);
+        if (listing.kind === "missing") {
+          const empty = new Set<string>();
+          knownLocalNamesByDirectory.set(normalizedDirectory, empty);
+          return empty;
+        }
+        if (listing.kind !== "directory") {
+          throw new Error(`Download destination is not a directory: ${normalizedDirectory}`);
+        }
+        const names = new Set<string>();
+        for (const filePath of listing.files) {
+          const name = getPathBaseName(filePath).trim();
+          if (name) {
+            names.add(name);
+          }
+        }
+        for (const childDirectoryPath of listing.directories) {
+          const name = getPathBaseName(childDirectoryPath).trim();
+          if (name) {
+            names.add(name);
+          }
+        }
+        knownLocalNamesByDirectory.set(normalizedDirectory, names);
+        return names;
+      };
+
+      type PreparedDownloadTarget = DownloadTargetEntry & {
+        directoryPath: string;
+        fileName: string;
+        knownNames: Set<string>;
+      };
+
+      const preparedTargets: PreparedDownloadTarget[] = [];
+      let conflictCount = 0;
+      for (const target of targets) {
+        const localPath = target.localPath.trim();
+        const remotePath = target.remotePath.trim();
+        if (!localPath || !remotePath) {
+          continue;
+        }
+        const directoryPath = getPathDirectoryName(localPath) || ".";
+        const fileName = getPathBaseName(localPath).trim();
+        if (!fileName) {
+          continue;
+        }
+        const knownNames = await getKnownLocalNames(directoryPath);
+        const plannedNames =
+          plannedLocalNamesByDirectory.get(directoryPath) ?? new Set(knownNames);
+        plannedLocalNamesByDirectory.set(directoryPath, plannedNames);
+        if (plannedNames.has(fileName)) {
+          conflictCount += 1;
+        }
+        plannedNames.add(fileName);
+        preparedTargets.push({
+          ...target,
+          localPath: joinLocalPath(directoryPath, fileName),
+          remotePath,
+          directoryPath,
+          fileName,
+          knownNames
+        });
+      }
+
+      if (conflictCount <= 0) {
+        return preparedTargets.map((target) => ({
+          name: target.name,
+          remotePath: target.remotePath,
+          localPath: target.localPath
+        }));
+      }
+
+      const strategyChoice = await showAppChoice(
+        `Found ${conflictCount} local conflicts in this download batch. Choose one strategy for all conflicts.`,
+        [
+          { value: "overwrite", label: "Overwrite" },
+          { value: "skip", label: "Skip" },
+          { value: "rename", label: "Rename" }
+        ],
+        {
+          title: "Download Conflicts",
+          cancelLabel: "Cancel Download"
+        }
+      );
+      const strategy = toTransferConflictStrategy(strategyChoice);
+      if (!strategy) {
+        return null;
+      }
+
+      const resolvedTargets: DownloadTargetEntry[] = [];
+      let skippedCount = 0;
+      for (const target of preparedTargets) {
+        const hasConflict = target.knownNames.has(target.fileName);
+        if (!hasConflict) {
+          target.knownNames.add(target.fileName);
+          resolvedTargets.push({
+            name: target.name,
+            remotePath: target.remotePath,
+            localPath: target.localPath
+          });
+          continue;
+        }
+
+        if (strategy === "skip") {
+          skippedCount += 1;
+          continue;
+        }
+
+        if (strategy === "overwrite") {
+          target.knownNames.add(target.fileName);
+          resolvedTargets.push({
+            name: target.name,
+            remotePath: target.remotePath,
+            localPath: target.localPath
+          });
+          continue;
+        }
+
+        const renamedFileName = pickAvailableFileName(target.fileName, target.knownNames);
+        target.knownNames.add(renamedFileName);
+        resolvedTargets.push({
+          name: target.name,
+          remotePath: target.remotePath,
+          localPath: joinLocalPath(target.directoryPath, renamedFileName)
+        });
+      }
+
+      if (strategy === "skip" && skippedCount > 0) {
+        await showAppAlert(`Skipped ${skippedCount} conflicting download item(s).`, {
+          title: "Download Conflicts"
+        });
+      }
+      return resolvedTargets;
+    },
+    [showAppAlert, showAppChoice, systemApi]
+  );
+
+  const resolveUploadPathEntryConflicts = useCallback(
+    async (
+      tabId: string,
+      remoteBaseDirectory: string,
+      entries: UploadPathEntry[]
+    ): Promise<UploadPathEntry[] | null> => {
+      if (!sftpApi || entries.length === 0) {
+        return entries;
+      }
+
+      const knownRemoteNamesByDirectory = new Map<string, Set<string>>();
+      const plannedRemoteNamesByDirectory = new Map<string, Set<string>>();
+      const getKnownRemoteNames = async (remoteDirectory: string): Promise<Set<string>> => {
+        const normalizedDirectory = normalizeRemoteDirectoryPath(remoteDirectory) || ".";
+        const cached = knownRemoteNamesByDirectory.get(normalizedDirectory);
+        if (cached) {
+          return cached;
+        }
+        try {
+          const listing = await sftpApi.listDirectory(tabId, normalizedDirectory);
+          const names = new Set(
+            listing.entries
+              .map((entry) => entry.name.trim())
+              .filter((name) => name.length > 0)
+          );
+          knownRemoteNamesByDirectory.set(normalizedDirectory, names);
+          return names;
+        } catch (caughtError) {
+          const message = (caughtError as Error).message ?? "";
+          if (isTabNotConnectedError(message)) {
+            throw caughtError;
+          }
+          const empty = new Set<string>();
+          knownRemoteNamesByDirectory.set(normalizedDirectory, empty);
+          return empty;
+        }
+      };
+
+      type PreparedUploadEntry = UploadPathEntry & {
+        localPath: string;
+        remoteDirectory: string;
+        targetName: string;
+        knownNames: Set<string>;
+      };
+
+      const preparedEntries: PreparedUploadEntry[] = [];
+      let conflictCount = 0;
+      for (const pathEntry of entries) {
+        const localPath = pathEntry.localPath.trim();
+        if (!localPath) {
+          continue;
+        }
+        const defaultName = getPathBaseName(localPath).trim();
+        const targetName = (pathEntry.remoteName?.trim() || defaultName).trim();
+        if (!targetName) {
+          continue;
+        }
+        const relativeDirectory = normalizeRelativeDirectoryPath(pathEntry.relativeDirectory);
+        const remoteDirectory = relativeDirectory
+          ? joinRemotePath(remoteBaseDirectory, relativeDirectory)
+          : remoteBaseDirectory;
+        const remoteDirectoryKey = normalizeRemoteDirectoryPath(remoteDirectory) || ".";
+        const knownNames = await getKnownRemoteNames(remoteDirectory);
+        const plannedNames =
+          plannedRemoteNamesByDirectory.get(remoteDirectoryKey) ?? new Set(knownNames);
+        plannedRemoteNamesByDirectory.set(remoteDirectoryKey, plannedNames);
+        if (plannedNames.has(targetName)) {
+          conflictCount += 1;
+        }
+        plannedNames.add(targetName);
+        preparedEntries.push({
+          ...pathEntry,
+          localPath,
+          remoteDirectory,
+          targetName,
+          knownNames
+        });
+      }
+
+      if (conflictCount <= 0) {
+        return preparedEntries.map((entry) => ({
+          localPath: entry.localPath,
+          relativeDirectory: entry.relativeDirectory,
+          remoteName: entry.targetName
+        }));
+      }
+
+      const strategyChoice = await showAppChoice(
+        `Found ${conflictCount} remote conflicts in this upload batch. Choose one strategy for all conflicts.`,
+        [
+          { value: "overwrite", label: "Overwrite" },
+          { value: "skip", label: "Skip" },
+          { value: "rename", label: "Rename" }
+        ],
+        {
+          title: "Upload Conflicts",
+          cancelLabel: "Cancel Upload"
+        }
+      );
+      const strategy = toTransferConflictStrategy(strategyChoice);
+      if (!strategy) {
+        return null;
+      }
+
+      const resolvedEntries: UploadPathEntry[] = [];
+      let skippedCount = 0;
+      for (const entry of preparedEntries) {
+        const hasConflict = entry.knownNames.has(entry.targetName);
+        if (!hasConflict) {
+          entry.knownNames.add(entry.targetName);
+          resolvedEntries.push({
+            localPath: entry.localPath,
+            relativeDirectory: entry.relativeDirectory,
+            remoteName: entry.targetName
+          });
+          continue;
+        }
+
+        if (strategy === "skip") {
+          skippedCount += 1;
+          continue;
+        }
+
+        if (strategy === "overwrite") {
+          entry.knownNames.add(entry.targetName);
+          resolvedEntries.push({
+            localPath: entry.localPath,
+            relativeDirectory: entry.relativeDirectory,
+            remoteName: entry.targetName
+          });
+          continue;
+        }
+
+        const renamedTargetName = pickAvailableFileName(entry.targetName, entry.knownNames);
+        entry.knownNames.add(renamedTargetName);
+        resolvedEntries.push({
+          localPath: entry.localPath,
+          relativeDirectory: entry.relativeDirectory,
+          remoteName: renamedTargetName
+        });
+      }
+
+      if (strategy === "skip" && skippedCount > 0) {
+        await showAppAlert(`Skipped ${skippedCount} conflicting upload item(s).`, {
+          title: "Upload Conflicts"
+        });
+      }
+      return resolvedEntries;
+    },
+    [sftpApi, showAppAlert, showAppChoice]
+  );
+
   const enqueueDownloadTargets = useCallback(
     (
       tabId: string,
-      targets: Array<{
-        name: string;
-        remotePath: string;
-        localPath: string;
-      }>,
+      targets: DownloadTargetEntry[],
       options?: {
         batchId?: string;
         incrementExistingBatchTotal?: boolean;
@@ -4176,7 +6509,7 @@ export function App() {
           total: 0
         }
       }));
-      let totalDiscoveredFiles = 0;
+      const discoveredFileTargets: DownloadTargetEntry[] = [];
       let skippedEntries = 0;
 
       while (directoryQueue.length > 0) {
@@ -4191,11 +6524,6 @@ export function App() {
         if (canceledDownloadBatchIdsRef.current.has(batchId)) {
           break;
         }
-        const currentDirectoryFileTargets: Array<{
-          name: string;
-          remotePath: string;
-          localPath: string;
-        }> = [];
         for (const childEntry of listing.entries) {
           if (canceledDownloadBatchIdsRef.current.has(batchId)) {
             break;
@@ -4213,7 +6541,7 @@ export function App() {
             continue;
           }
           if (childEntry.kind === "file") {
-            currentDirectoryFileTargets.push({
+            discoveredFileTargets.push({
               name: childEntry.name,
               remotePath: childEntry.path,
               localPath: joinLocalPath(destinationDirectory, nextLocalRelativePath)
@@ -4222,22 +6550,12 @@ export function App() {
           }
           skippedEntries += 1;
         }
-        if (canceledDownloadBatchIdsRef.current.has(batchId)) {
-          break;
-        }
-        if (currentDirectoryFileTargets.length > 0) {
-          totalDiscoveredFiles += enqueueDownloadTargets(activeTabId, currentDirectoryFileTargets, {
-            batchId,
-            incrementExistingBatchTotal: true,
-            suppressEmptyError: true
-          });
-        }
       }
 
       if (canceledDownloadBatchIdsRef.current.has(batchId)) {
         return;
       }
-      if (totalDiscoveredFiles === 0) {
+      if (discoveredFileTargets.length === 0) {
         setDownloadBatchByTab((prev) => {
           const current = prev[activeTabId];
           if (!current || current.batchId !== batchId) {
@@ -4253,9 +6571,40 @@ export function App() {
         return;
       }
 
+      const resolvedTargets = await resolveDownloadTargetConflicts(discoveredFileTargets);
+      if (!resolvedTargets) {
+        setDownloadBatchByTab((prev) => {
+          const current = prev[activeTabId];
+          if (!current || current.batchId !== batchId) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[activeTabId];
+          return next;
+        });
+        return;
+      }
+      const totalQueuedFiles = enqueueDownloadTargets(activeTabId, resolvedTargets, {
+        batchId,
+        incrementExistingBatchTotal: true,
+        suppressEmptyError: true
+      });
+      if (totalQueuedFiles === 0) {
+        setDownloadBatchByTab((prev) => {
+          const current = prev[activeTabId];
+          if (!current || current.batchId !== batchId) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[activeTabId];
+          return next;
+        });
+        return;
+      }
+
       if (skippedEntries > 0) {
         await showAppAlert(
-          `Queued ${totalDiscoveredFiles} files from "${targetEntry.name}". Skipped ${skippedEntries} unsupported entries.`,
+          `Queued ${totalQueuedFiles} files from "${targetEntry.name}". Skipped ${skippedEntries} unsupported entries.`,
           { title: "Download Folder" }
         );
       }
@@ -4303,26 +6652,109 @@ export function App() {
 
     try {
       setSftpError(null);
-      enqueueDownloadTargets(activeTabId, [
+      const resolvedTargets = await resolveDownloadTargetConflicts([
         {
           name: targetEntry.name,
           remotePath: targetEntry.path,
           localPath
         }
       ]);
+      if (!resolvedTargets || resolvedTargets.length === 0) {
+        return;
+      }
+      enqueueDownloadTargets(activeTabId, resolvedTargets);
     } catch (caughtError) {
       setSftpError((caughtError as Error).message);
     }
   };
 
+  const enqueueUploadTargets = useCallback(
+    (
+      tabId: string,
+      targets: Array<{
+        name?: string;
+        localPath: string;
+        remotePath: string;
+      }>,
+      options?: {
+        batchId?: string;
+        incrementExistingBatchTotal?: boolean;
+        suppressEmptyError?: boolean;
+      }
+    ): number => {
+      const batchId = options?.batchId?.trim()
+        ? options.batchId.trim()
+        : `batch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      if (canceledUploadBatchIdsRef.current.has(batchId)) {
+        return 0;
+      }
+      const queuedJobs: PendingUploadJob[] = [];
+      for (const target of targets) {
+        const localPath = target.localPath.trim();
+        const remotePath = target.remotePath.trim();
+        const fallbackName = getPathBaseName(remotePath) || getPathBaseName(localPath);
+        const name = (target.name?.trim() || fallbackName).trim();
+        if (!localPath || !remotePath || !name) {
+          continue;
+        }
+        const transferId = createTransferId("up");
+        const remoteDirectory = getPathDirectoryName(remotePath) || ".";
+        const nextJob: PendingUploadJob = {
+          tabId,
+          transferId,
+          batchId,
+          localPath,
+          remoteDirectory,
+          remotePath,
+          name
+        };
+        queuedJobs.push(nextJob);
+        applySftpTransferEvent({
+          tabId: nextJob.tabId,
+          transferId: nextJob.transferId,
+          direction: "upload",
+          status: "queued",
+          name: nextJob.name,
+          localPath: nextJob.localPath,
+          remotePath: nextJob.remotePath,
+          transferredBytes: 0,
+          totalBytes: 0,
+          message: "queued",
+          batchId
+        });
+      }
+      if (queuedJobs.length === 0) {
+        if (!options?.suppressEmptyError) {
+          setSftpError("No valid files to upload.");
+        }
+        return 0;
+      }
+      setUploadBatchByTab((prev) => {
+        const current = prev[tabId];
+        const total =
+          options?.incrementExistingBatchTotal && current && current.batchId === batchId
+            ? current.total + queuedJobs.length
+            : queuedJobs.length;
+        return {
+          ...prev,
+          [tabId]: {
+            batchId,
+            total
+          }
+        };
+      });
+      uploadQueueRef.current.push(...queuedJobs);
+      drainUploadQueue();
+      return queuedJobs.length;
+    },
+    [applySftpTransferEvent, drainUploadQueue]
+  );
+
   const enqueueUploadPathEntries = useCallback(
     (
       tabId: string,
       remoteBaseDirectory: string,
-      entries: Array<{
-        localPath: string;
-        relativeDirectory: string;
-      }>,
+      entries: UploadPathEntry[],
       options?: {
         batchId?: string;
         incrementExistingBatchTotal?: boolean;
@@ -4338,7 +6770,7 @@ export function App() {
       const queuedJobs: PendingUploadJob[] = [];
       for (const pathEntry of entries) {
         const localPath = pathEntry.localPath.trim();
-        const name = getPathBaseName(localPath);
+        const name = (pathEntry.remoteName?.trim() || getPathBaseName(localPath)).trim();
         if (!name) {
           continue;
         }
@@ -4427,7 +6859,7 @@ export function App() {
           total: 0
         }
       }));
-      let totalDiscoveredFiles = 0;
+      const discoveredEntries: UploadPathEntry[] = [];
       let skippedEntries = 0;
       const directoryQueue: Array<{
         localDirectoryPath: string;
@@ -4443,21 +6875,10 @@ export function App() {
           break;
         }
         if (listing.kind === "file") {
-          totalDiscoveredFiles += enqueueUploadPathEntries(
-            activeTabId,
-            sftpDirectory.cwd,
-            [
-              {
-                localPath: listing.path,
-                relativeDirectory: ""
-              }
-            ],
-            {
-              batchId,
-              incrementExistingBatchTotal: true,
-              suppressEmptyError: true
-            }
-          );
+          discoveredEntries.push({
+            localPath: listing.path,
+            relativeDirectory: ""
+          });
           continue;
         }
         if (listing.kind === "directory") {
@@ -4467,18 +6888,11 @@ export function App() {
             continue;
           }
           if (listing.files.length > 0) {
-            totalDiscoveredFiles += enqueueUploadPathEntries(
-              activeTabId,
-              sftpDirectory.cwd,
-              listing.files.map((localPath) => ({
+            discoveredEntries.push(
+              ...listing.files.map((localPath) => ({
                 localPath,
                 relativeDirectory: topName
-              })),
-              {
-                batchId,
-                incrementExistingBatchTotal: true,
-                suppressEmptyError: true
-              }
+              }))
             );
           }
           for (const childDirectoryPath of listing.directories) {
@@ -4517,18 +6931,11 @@ export function App() {
           continue;
         }
         if (listing.files.length > 0) {
-          totalDiscoveredFiles += enqueueUploadPathEntries(
-            activeTabId,
-            sftpDirectory.cwd,
-            listing.files.map((localPath) => ({
+          discoveredEntries.push(
+            ...listing.files.map((localPath) => ({
               localPath,
               relativeDirectory: currentDirectory.relativeDirectory
-            })),
-            {
-              batchId,
-              incrementExistingBatchTotal: true,
-              suppressEmptyError: true
-            }
+            }))
           );
         }
         for (const childDirectoryPath of listing.directories) {
@@ -4550,7 +6957,47 @@ export function App() {
       if (canceledUploadBatchIdsRef.current.has(batchId)) {
         return;
       }
-      if (totalDiscoveredFiles === 0) {
+      if (discoveredEntries.length === 0) {
+        setUploadBatchByTab((prev) => {
+          const current = prev[activeTabId];
+          if (!current || current.batchId !== batchId) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[activeTabId];
+          return next;
+        });
+        setSftpError("No valid files to upload.");
+        return;
+      }
+      const resolvedEntries = await resolveUploadPathEntryConflicts(
+        activeTabId,
+        sftpDirectory.cwd,
+        discoveredEntries
+      );
+      if (!resolvedEntries) {
+        setUploadBatchByTab((prev) => {
+          const current = prev[activeTabId];
+          if (!current || current.batchId !== batchId) {
+            return prev;
+          }
+          const next = { ...prev };
+          delete next[activeTabId];
+          return next;
+        });
+        return;
+      }
+      const totalQueuedFiles = enqueueUploadPathEntries(
+        activeTabId,
+        sftpDirectory.cwd,
+        resolvedEntries,
+        {
+          batchId,
+          incrementExistingBatchTotal: true,
+          suppressEmptyError: true
+        }
+      );
+      if (totalQueuedFiles === 0) {
         setUploadBatchByTab((prev) => {
           const current = prev[activeTabId];
           if (!current || current.batchId !== batchId) {
@@ -4565,7 +7012,7 @@ export function App() {
       }
       if (skippedEntries > 0) {
         await showAppAlert(
-          `Queued ${totalDiscoveredFiles} upload files. Skipped ${skippedEntries} unsupported entries.`,
+          `Queued ${totalQueuedFiles} upload files. Skipped ${skippedEntries} unsupported entries.`,
           { title: "Upload Summary" }
         );
       }
@@ -4794,6 +7241,304 @@ export function App() {
     );
   };
 
+  const markTransferHistoryRetryQueued = useCallback(
+    (
+      direction: SftpTransferEvent["direction"],
+      entries: Array<{
+        localPath: string;
+        remotePath: string;
+      }>
+    ) => {
+      if (!activeSessionId || entries.length === 0) {
+        return;
+      }
+      const retryKeys = new Set(
+        entries.map((entry) =>
+          createTransferHistoryKey(
+            activeSessionId,
+            direction,
+            entry.localPath.trim(),
+            entry.remotePath.trim()
+          )
+        )
+      );
+      const now = Date.now();
+      setTransferHistory((prev) => {
+        let changed = false;
+        const next = prev.map((item) => {
+          if (
+            item.sessionId !== activeSessionId ||
+            item.direction !== direction ||
+            item.status !== "failed" ||
+            !retryKeys.has(item.key)
+          ) {
+            return item;
+          }
+          changed = true;
+          const updated: SftpTransferHistoryItem = {
+            ...item,
+            status: "queued",
+            updatedAt: now,
+            message: "Retry queued."
+          };
+          return updated;
+        });
+        if (!changed) {
+          return prev;
+        }
+        next.sort((left, right) => right.updatedAt - left.updatedAt);
+        return next.slice(0, MAX_SFTP_TRANSFER_HISTORY);
+      });
+    },
+    [activeSessionId]
+  );
+
+  const openRetryCenter = useCallback(() => {
+    setIsRetryCenterOpen(true);
+  }, []);
+
+  const closeRetryCenter = useCallback(() => {
+    setIsRetryCenterOpen(false);
+    setRetryCenterSelection([]);
+  }, []);
+
+  const toggleRetryCenterEntrySelection = useCallback((key: string) => {
+    const normalized = key.trim();
+    if (!normalized) {
+      return;
+    }
+    setRetryCenterSelection((prev) => {
+      if (prev.includes(normalized)) {
+        return prev.filter((entryKey) => entryKey !== normalized);
+      }
+      return [...prev, normalized];
+    });
+  }, []);
+
+  const selectAllVisibleRetryCenterEntries = useCallback(() => {
+    setRetryCenterSelection(retryCenterEntries.map((entry) => entry.key));
+  }, [retryCenterEntries]);
+
+  const clearRetryCenterSelection = useCallback(() => {
+    setRetryCenterSelection([]);
+  }, []);
+
+  const retrySelectedRetryCenterEntries = async () => {
+    if (!activeTabId || !activeSessionId) {
+      await showAppAlert("Open a terminal tab for the target session first.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    if (selectedRetryCenterFailedEntries.length === 0) {
+      return;
+    }
+    const tabId = activeTabId;
+    const selectedKeys = new Set(selectedRetryCenterFailedEntries.map((entry) => entry.key));
+    const uploadTargetMap = new Map<
+      string,
+      { name: string; localPath: string; remotePath: string }
+    >();
+    const downloadTargetMap = new Map<
+      string,
+      { name: string; localPath: string; remotePath: string }
+    >();
+    for (const entry of selectedRetryCenterFailedEntries) {
+      const key = createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath);
+      const target = {
+        name: entry.name,
+        localPath: entry.localPath,
+        remotePath: entry.remotePath
+      };
+      if (entry.direction === "upload") {
+        uploadTargetMap.set(key, target);
+        continue;
+      }
+      downloadTargetMap.set(key, target);
+    }
+
+    let queuedCount = 0;
+    const uploadTargets = Array.from(uploadTargetMap.values());
+    if (uploadTargets.length > 0) {
+      const uploadQueued = enqueueUploadTargets(tabId, uploadTargets, {
+        suppressEmptyError: true
+      });
+      queuedCount += uploadQueued;
+      if (uploadQueued > 0) {
+        markTransferHistoryRetryQueued(
+          "upload",
+          uploadTargets.map((entry) => ({
+            localPath: entry.localPath,
+            remotePath: entry.remotePath
+          }))
+        );
+      }
+    }
+
+    const downloadTargets = Array.from(downloadTargetMap.values());
+    if (downloadTargets.length > 0) {
+      const resolvedTargets = await resolveDownloadTargetConflicts(
+        downloadTargets.map((entry) => ({
+          name: entry.name,
+          localPath: entry.localPath,
+          remotePath: entry.remotePath
+        }))
+      );
+      if (resolvedTargets && resolvedTargets.length > 0) {
+        const downloadQueued = enqueueDownloadTargets(tabId, resolvedTargets, {
+          suppressEmptyError: true
+        });
+        queuedCount += downloadQueued;
+        if (downloadQueued > 0) {
+          markTransferHistoryRetryQueued(
+            "download",
+            resolvedTargets.map((entry) => ({
+              localPath: entry.localPath,
+              remotePath: entry.remotePath
+            }))
+          );
+        }
+      }
+    }
+
+    if (queuedCount <= 0) {
+      await showAppAlert("No transfer tasks were requeued.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+
+    setRetryCenterSelection((prev) => prev.filter((key) => !selectedKeys.has(key)));
+    await showAppAlert(`Requeued ${queuedCount} transfer task(s) from history.`, {
+      title: "Retry Center"
+    });
+  };
+
+  const clearSelectedRetryCenterEntries = async () => {
+    if (selectedRetryCenterEntries.length === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete ${selectedRetryCenterEntries.length} selected history record(s)?`,
+      {
+        title: "Retry Center",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    const selectedKeys = new Set(selectedRetryCenterEntries.map((entry) => entry.key));
+    setTransferHistory((prev) => prev.filter((entry) => !selectedKeys.has(entry.key)));
+    setRetryCenterSelection([]);
+  };
+
+  const clearVisibleRetryCenterEntries = async () => {
+    if (retryCenterEntries.length === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete ${retryCenterEntries.length} visible history record(s)?`,
+      {
+        title: "Retry Center",
+        confirmLabel: "Delete Visible",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    const visibleKeys = new Set(retryCenterEntries.map((entry) => entry.key));
+    setTransferHistory((prev) => prev.filter((entry) => !visibleKeys.has(entry.key)));
+    setRetryCenterSelection([]);
+  };
+
+  const clearAllRetryCenterEntries = async () => {
+    if (transferHistory.length === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete all ${transferHistory.length} transfer history record(s)?`,
+      {
+        title: "Retry Center",
+        confirmLabel: "Delete All",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setTransferHistory([]);
+    setRetryCenterSelection([]);
+  };
+
+  const retryFailedUploads = async () => {
+    if (!activeTabId || failedUploadRetryCandidates.length === 0) {
+      return;
+    }
+    const tabId = activeTabId;
+    const sortedFailedTransfers = [...failedUploadRetryCandidates];
+    const queuedCount = enqueueUploadTargets(
+      tabId,
+      sortedFailedTransfers.map((transfer) => ({
+        name: transfer.name,
+        localPath: transfer.localPath,
+        remotePath: transfer.remotePath
+      })),
+      {
+        suppressEmptyError: true
+      }
+    );
+    if (queuedCount > 0) {
+      markTransferHistoryRetryQueued(
+        "upload",
+        sortedFailedTransfers.map((transfer) => ({
+          localPath: transfer.localPath,
+          remotePath: transfer.remotePath
+        }))
+      );
+      await showAppAlert(`Requeued ${queuedCount} failed upload task(s).`, {
+        title: "Retry Uploads"
+      });
+    }
+  };
+
+  const retryFailedDownloads = async () => {
+    if (!activeTabId || failedDownloadRetryCandidates.length === 0) {
+      return;
+    }
+    const tabId = activeTabId;
+    const sortedFailedTransfers = [...failedDownloadRetryCandidates];
+    const retryTargets = sortedFailedTransfers.map((transfer) => ({
+      name: transfer.name,
+      remotePath: transfer.remotePath,
+      localPath: transfer.localPath
+    }));
+    const resolvedTargets = await resolveDownloadTargetConflicts(retryTargets);
+    if (!resolvedTargets || resolvedTargets.length === 0) {
+      return;
+    }
+    const queuedCount = enqueueDownloadTargets(tabId, resolvedTargets, {
+      suppressEmptyError: true
+    });
+    if (queuedCount > 0) {
+      markTransferHistoryRetryQueued(
+        "download",
+        resolvedTargets.map((entry) => ({
+          localPath: entry.localPath,
+          remotePath: entry.remotePath
+        }))
+      );
+      await showAppAlert(`Requeued ${queuedCount} failed download task(s).`, {
+        title: "Retry Downloads"
+      });
+    }
+  };
+
   const onSftpDragOver = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -5014,6 +7759,13 @@ export function App() {
       }
     });
     sessionContextActions.push({
+      id: "import-ssh-config",
+      label: "Import SSH Config...",
+      run: () => {
+        void importSessionsFromSshConfig();
+      }
+    });
+    sessionContextActions.push({
       id: "new-group",
       label: "New Group",
       run: () => {
@@ -5076,6 +7828,13 @@ export function App() {
       }
     });
     sessionContextActions.push({
+      id: "import-ssh-config",
+      label: "Import SSH Config...",
+      run: () => {
+        void importSessionsFromSshConfig();
+      }
+    });
+    sessionContextActions.push({
       id: "select-all-groups",
       label: "Select All Groups",
       disabled: groupedSessions.length === 0,
@@ -5127,6 +7886,13 @@ export function App() {
       label: "New Session",
       run: () => {
         openCreateModal(contextTarget.groupName);
+      }
+    });
+    sessionContextActions.push({
+      id: "import-ssh-config",
+      label: "Import SSH Config...",
+      run: () => {
+        void importSessionsFromSshConfig();
       }
     });
     sessionContextActions.push({
@@ -6022,11 +8788,20 @@ export function App() {
       <section className="transfer-dock">
         <div className="transfer-dock__heading">
           <h3>Transfers</h3>
-          <span className="hint">
-            {activeTerminalTab
-              ? `Bound to ${activeTerminalTab.title}`
-              : "Open a terminal tab to manage transfers"}
-          </span>
+          <div className="transfer-dock__heading-actions">
+            <span className="hint">
+              {activeTerminalTab
+                ? `Bound to ${activeTerminalTab.title}`
+                : "Open a terminal tab to manage transfers"}
+            </span>
+            <button
+              className="secondary-button sftp-transfer-panel__clear"
+              onClick={openRetryCenter}
+              type="button"
+            >
+              Retry Center
+            </button>
+          </div>
         </div>
         <div className="transfer-dock__grid">
           <section className="transfer-dock__panel">
@@ -6037,6 +8812,16 @@ export function App() {
                 {sftpTransferPreferences.uploadConcurrency})
               </p>
               <div className="sftp-transfer-panel__actions">
+                <button
+                  className="secondary-button sftp-transfer-panel__clear"
+                  disabled={!canRetryFailedUploads}
+                  onClick={() => {
+                    void retryFailedUploads();
+                  }}
+                  type="button"
+                >
+                  Retry Failed ({failedUploadRetryCandidates.length})
+                </button>
                 <button
                   className="secondary-button sftp-transfer-panel__clear"
                   disabled={!canClearFinishedUploads}
@@ -6066,6 +8851,11 @@ export function App() {
               (failed {activeUploadProgressStats.failed}, canceled {activeUploadProgressStats.canceled},
               running {activeUploadProgressStats.running}, queued {activeUploadProgressStats.queued})
             </p>
+            {failedUploadHistory.length > 0 ? (
+              <p className="hint sftp-transfer-panel__batch-progress">
+                Stored failed retries for this session: {failedUploadHistory.length}
+              </p>
+            ) : null}
             {activeUploadTransfers.length > 0 ? (
               <ul className="sftp-transfer-list transfer-dock__list">
                 {activeUploadTransfers.map((transfer) => {
@@ -6109,6 +8899,16 @@ export function App() {
               <div className="sftp-transfer-panel__actions">
                 <button
                   className="secondary-button sftp-transfer-panel__clear"
+                  disabled={!canRetryFailedDownloads}
+                  onClick={() => {
+                    void retryFailedDownloads();
+                  }}
+                  type="button"
+                >
+                  Retry Failed ({failedDownloadRetryCandidates.length})
+                </button>
+                <button
+                  className="secondary-button sftp-transfer-panel__clear"
                   disabled={!canClearFinishedDownloads}
                   onClick={() => {
                     clearFinishedTransfers("download");
@@ -6136,6 +8936,11 @@ export function App() {
               (failed {activeDownloadProgressStats.failed}, canceled {activeDownloadProgressStats.canceled},
               running {activeDownloadProgressStats.running}, queued {activeDownloadProgressStats.queued})
             </p>
+            {failedDownloadHistory.length > 0 ? (
+              <p className="hint sftp-transfer-panel__batch-progress">
+                Stored failed retries for this session: {failedDownloadHistory.length}
+              </p>
+            ) : null}
             {activeDownloadTransfers.length > 0 ? (
               <ul className="sftp-transfer-list transfer-dock__list">
                 {activeDownloadTransfers.map((transfer) => {
@@ -6171,6 +8976,188 @@ export function App() {
           </section>
         </div>
       </section>
+
+      {isRetryCenterOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="modal modal--retry-center"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Transfer Retry Center"
+          >
+            <div className="modal__header">
+              <h3>Transfer Retry Center</h3>
+              <button className="icon-button" onClick={closeRetryCenter} type="button">
+                <UiIcon name="close" />
+              </button>
+            </div>
+            <p className="hint">
+              Persistent transfer history across restarts. Retry works for failed entries bound to
+              the active session tab.
+            </p>
+            <div className="retry-center__filters">
+              <label>
+                Scope
+                <select
+                  onChange={(event) =>
+                    setRetryCenterScope(event.target.value as TransferHistoryScope)
+                  }
+                  value={retryCenterScope}
+                >
+                  <option value="activeSession">Active Session</option>
+                  <option value="allSessions">All Sessions</option>
+                </select>
+              </label>
+              <label>
+                Direction
+                <select
+                  onChange={(event) =>
+                    setRetryCenterDirection(event.target.value as TransferHistoryDirectionFilter)
+                  }
+                  value={retryCenterDirection}
+                >
+                  <option value="all">All</option>
+                  <option value="upload">Upload</option>
+                  <option value="download">Download</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select
+                  onChange={(event) =>
+                    setRetryCenterStatus(event.target.value as TransferHistoryStatusFilter)
+                  }
+                  value={retryCenterStatus}
+                >
+                  <option value="all">All</option>
+                  <option value="failed">Failed</option>
+                  <option value="completed">Completed</option>
+                  <option value="canceled">Canceled</option>
+                  <option value="queued">Queued</option>
+                  <option value="running">Running</option>
+                </select>
+              </label>
+              <label className="retry-center__search">
+                Search
+                <input
+                  onChange={(event) => setRetryCenterQuery(event.target.value)}
+                  placeholder="name/local/remote/message"
+                  value={retryCenterQuery}
+                />
+              </label>
+            </div>
+            <p className="hint retry-center__summary">
+              Visible {retryCenterEntries.length} / Total {transferHistory.length}, Selected{" "}
+              {selectedRetryCenterEntries.length}, Selected failed (active session){" "}
+              {selectedRetryCenterFailedEntries.length}
+            </p>
+            <div className="retry-center__list-shell">
+              {retryCenterEntries.length > 0 ? (
+                <ul className="retry-center__list">
+                  {retryCenterEntries.map((entry) => {
+                    const selected = retryCenterSelectionSet.has(entry.key);
+                    return (
+                      <li
+                        className={selected ? "retry-center__item is-selected" : "retry-center__item"}
+                        key={entry.key}
+                      >
+                        <label className="retry-center__checkbox">
+                          <input
+                            checked={selected}
+                            onChange={() => toggleRetryCenterEntrySelection(entry.key)}
+                            type="checkbox"
+                          />
+                        </label>
+                        <span className={`retry-center__status retry-center__status--${entry.status}`}>
+                          {entry.status}
+                        </span>
+                        <div className="retry-center__body">
+                          <p className="retry-center__name">{entry.name}</p>
+                          <p
+                            className="retry-center__path"
+                            title={`${entry.localPath} -> ${entry.remotePath}`}
+                          >
+                            {`${entry.localPath} -> ${entry.remotePath}`}
+                          </p>
+                          <p className="retry-center__meta">
+                            {formatHistoryTimestamp(entry.updatedAt)} | {entry.direction} | attempts{" "}
+                            {entry.attemptCount}
+                            {entry.message ? ` | ${entry.message}` : ""}
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="hint">No transfer history records match the current filters.</p>
+              )}
+            </div>
+            <div className="modal__actions retry-center__actions">
+              <button
+                className="secondary-button"
+                disabled={retryCenterEntries.length === 0}
+                onClick={selectAllVisibleRetryCenterEntries}
+                type="button"
+              >
+                Select Visible
+              </button>
+              <button
+                className="secondary-button"
+                disabled={retryCenterSelection.length === 0}
+                onClick={clearRetryCenterSelection}
+                type="button"
+              >
+                Clear Selection
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canRetrySelectedRetryCenterEntries}
+                onClick={() => {
+                  void retrySelectedRetryCenterEntries();
+                }}
+                type="button"
+              >
+                Retry Selected Failed
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canClearSelectedRetryCenterEntries}
+                onClick={() => {
+                  void clearSelectedRetryCenterEntries();
+                }}
+                type="button"
+              >
+                Delete Selected
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canClearVisibleRetryCenterEntries}
+                onClick={() => {
+                  void clearVisibleRetryCenterEntries();
+                }}
+                type="button"
+              >
+                Delete Visible
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canClearAllRetryCenterEntries}
+                onClick={() => {
+                  void clearAllRetryCenterEntries();
+                }}
+                type="button"
+              >
+                Delete All
+              </button>
+              <button className="primary-button" onClick={closeRetryCenter} type="button">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {sftpToolbarMenu ? (
         <div
@@ -6525,6 +9512,442 @@ export function App() {
                   </>
                 ) : null}
 
+                {activeSettingsSection === "portForwarding" ? (
+                  <>
+                    <p className="hint">
+                      Port forwarding is bound to the active terminal tab and removed when that tab
+                      disconnects/closes.
+                    </p>
+                    <p className="hint">
+                      Active tab:{" "}
+                      {activeTerminalTab
+                        ? `${activeTerminalTab.title} (${isActiveTabConnected ? "connected" : "disconnected"})`
+                        : "None"}
+                    </p>
+                    <div className="settings-port-forward-grid">
+                      <label>
+                        Type
+                        <select
+                          disabled={portForwardBusy}
+                          onChange={(event) =>
+                            setPortForwardForm((prev) => ({
+                              ...prev,
+                              type: event.target.value as CreatePortForwardInput["type"]
+                            }))
+                          }
+                          value={portForwardForm.type}
+                        >
+                          <option value="local">Local (L)</option>
+                          <option value="remote">Remote (R)</option>
+                          <option value="dynamic">Dynamic SOCKS5 (D)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Listen Host
+                        <input
+                          disabled={portForwardBusy}
+                          onChange={(event) =>
+                            setPortForwardForm((prev) => ({
+                              ...prev,
+                              bindHost: event.target.value
+                            }))
+                          }
+                          placeholder="127.0.0.1"
+                          value={portForwardForm.bindHost}
+                        />
+                      </label>
+                      <label>
+                        Listen Port
+                        <input
+                          disabled={portForwardBusy}
+                          max={65535}
+                          min={1}
+                          onChange={(event) =>
+                            setPortForwardForm((prev) => ({
+                              ...prev,
+                              bindPort: event.target.value
+                            }))
+                          }
+                          type="number"
+                          value={portForwardForm.bindPort}
+                        />
+                      </label>
+                      {portForwardForm.type !== "dynamic" ? (
+                        <>
+                          <label>
+                            {portForwardForm.type === "local"
+                              ? "Remote Target Host"
+                              : "Local Target Host"}
+                            <input
+                              disabled={portForwardBusy}
+                              onChange={(event) =>
+                                setPortForwardForm((prev) => ({
+                                  ...prev,
+                                  targetHost: event.target.value
+                                }))
+                              }
+                              placeholder="127.0.0.1"
+                              value={portForwardForm.targetHost}
+                            />
+                          </label>
+                          <label>
+                            {portForwardForm.type === "local"
+                              ? "Remote Target Port"
+                              : "Local Target Port"}
+                            <input
+                              disabled={portForwardBusy}
+                              max={65535}
+                              min={1}
+                              onChange={(event) =>
+                                setPortForwardForm((prev) => ({
+                                  ...prev,
+                                  targetPort: event.target.value
+                                }))
+                              }
+                              type="number"
+                              value={portForwardForm.targetPort}
+                            />
+                          </label>
+                        </>
+                      ) : null}
+                    </div>
+                    <div className="modal__actions">
+                      <button
+                        className="secondary-button"
+                        disabled={portForwardBusy || !activeTabId}
+                        onClick={() => {
+                          void refreshPortForwards(activeTabId);
+                        }}
+                        type="button"
+                      >
+                        Refresh
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={portForwardBusy || !activeSessionId}
+                        onClick={() => {
+                          void savePortForwardPreset();
+                        }}
+                        type="button"
+                      >
+                        Save as Preset
+                      </button>
+                      <button
+                        className="primary-button"
+                        disabled={portForwardBusy || !activeTabId || !isActiveTabConnected}
+                        onClick={() => {
+                          void createPortForward();
+                        }}
+                        type="button"
+                      >
+                        {portForwardBusy ? "Working..." : "Create Forward"}
+                      </button>
+                    </div>
+                    <p className="settings-port-forward-section__title">Saved Presets</p>
+                    <div className="settings-port-forward-list-shell settings-port-forward-list-shell--presets">
+                      {activeSessionId ? (
+                        activePortForwardPresets.length > 0 ? (
+                          <ul className="settings-port-forward-list settings-port-forward-list--presets">
+                            {activePortForwardPresets.map((preset) => (
+                              <li className="settings-port-forward-item" key={preset.id}>
+                                <div className="settings-port-forward-item__header">
+                                  <p className="settings-port-forward-item__title">
+                                    {preset.name}
+                                  </p>
+                                  <p className="settings-port-forward-item__meta">
+                                    {formatPortForwardPreset(preset)}
+                                  </p>
+                                  <p className="settings-port-forward-item__meta">
+                                    Updated {new Date(preset.updatedAt).toLocaleString()}
+                                  </p>
+                                </div>
+                                <label className="settings-checkbox settings-port-forward-item__toggle">
+                                  <input
+                                    checked={preset.autoRestore}
+                                    disabled={portForwardBusy}
+                                    onChange={(event) =>
+                                      setPortForwardPresetAutoRestore(
+                                        preset.id,
+                                        event.target.checked
+                                      )
+                                    }
+                                    type="checkbox"
+                                  />
+                                  <span>Auto restore on connect</span>
+                                </label>
+                                <div className="modal__actions settings-port-forward-item__actions">
+                                  <button
+                                    className="secondary-button"
+                                    disabled={portForwardBusy}
+                                    onClick={() => {
+                                      setPortForwardForm(toPortForwardFormFromPreset(preset));
+                                    }}
+                                    type="button"
+                                  >
+                                    Fill Form
+                                  </button>
+                                  <button
+                                    className="secondary-button"
+                                    disabled={
+                                      portForwardBusy || !activeTabId || !isActiveTabConnected
+                                    }
+                                    onClick={() => {
+                                      void applyPortForwardPreset(preset);
+                                    }}
+                                    type="button"
+                                  >
+                                    Apply
+                                  </button>
+                                  <button
+                                    className="secondary-button"
+                                    disabled={portForwardBusy}
+                                    onClick={() => {
+                                      void deletePortForwardPreset(preset);
+                                    }}
+                                    type="button"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="hint">
+                            No saved presets for this session yet. Fill the form above and save one.
+                          </p>
+                        )
+                      ) : (
+                        <p className="hint">
+                          Open a session tab to manage presets for that session.
+                        </p>
+                      )}
+                    </div>
+                    <p className="settings-port-forward-section__title">Active Forwards</p>
+                    {portForwardStatusMessage ? (
+                      <p className="hint settings-port-forward-status-message">
+                        {portForwardStatusMessage}
+                      </p>
+                    ) : null}
+                    <div className="modal__actions settings-port-forward-diagnostics-actions">
+                      <button
+                        className="secondary-button"
+                        disabled={portForwardBusy || !activeTabId}
+                        onClick={() => {
+                          void Promise.all([
+                            refreshPortForwards(activeTabId),
+                            refreshPortForwardEvents(activeTabId)
+                          ]);
+                        }}
+                        type="button"
+                      >
+                        Refresh Diagnostics
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={!activeTabId}
+                        onClick={() => {
+                          void exportPortForwardSnapshot();
+                        }}
+                        type="button"
+                      >
+                        Export Snapshot
+                      </button>
+                    </div>
+                    <div className="settings-port-forward-list-shell">
+                      {portForwards.length > 0 ? (
+                        <ul className="settings-port-forward-list">
+                          {portForwards.map((forward) => (
+                            <li className="settings-port-forward-item" key={forward.id}>
+                              <div className="settings-port-forward-item__header">
+                                <div className="settings-port-forward-item__title-row">
+                                  <p className="settings-port-forward-item__title">
+                                    {formatPortForwardRecord(forward)}
+                                  </p>
+                                  <span
+                                    className={
+                                      forward.status === "degraded"
+                                        ? "settings-port-forward-status-badge is-degraded"
+                                        : "settings-port-forward-status-badge is-active"
+                                    }
+                                  >
+                                    {getPortForwardStatusLabel(forward)}
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="settings-port-forward-item__meta">
+                                Created {new Date(forward.createdAt).toLocaleString()}
+                              </p>
+                              <p className="settings-port-forward-item__meta">
+                                Connections {forward.totalConnections} (failed {forward.failedConnections})
+                              </p>
+                              {forward.lastActivityAt ? (
+                                <p className="settings-port-forward-item__meta">
+                                  Last activity {formatPortForwardTimestamp(forward.lastActivityAt)}
+                                </p>
+                              ) : null}
+                              {forward.lastError ? (
+                                <p className="hint settings-port-forward-item__error">
+                                  Last error ({formatPortForwardTimestamp(forward.lastErrorAt)}):{" "}
+                                  {forward.lastError}
+                                </p>
+                              ) : null}
+                              <button
+                                className="secondary-button"
+                                disabled={portForwardBusy || !activeTabId}
+                                onClick={() => {
+                                  void removePortForward(forward);
+                                }}
+                                type="button"
+                              >
+                                Remove
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="hint">
+                          No active port forwards for the current tab.
+                        </p>
+                      )}
+                    </div>
+                    <p className="settings-port-forward-section__title">Recent Events</p>
+                    <div className="settings-port-forward-events-toolbar">
+                      <label>
+                        Filter
+                        <select
+                          onChange={(event) =>
+                            setPortForwardEventFilter(event.target.value as PortForwardEventFilter)
+                          }
+                          value={portForwardEventFilter}
+                        >
+                          <option value="all">All</option>
+                          <option value="errors">Errors Only</option>
+                          <option value="lifecycle">Create/Remove</option>
+                          <option value="status">Degraded/Recovered</option>
+                        </select>
+                      </label>
+                      <button
+                        className="secondary-button"
+                        disabled={visiblePortForwardEventHistory.length === 0}
+                        onClick={() => {
+                          void clearVisiblePortForwardHistory();
+                        }}
+                        type="button"
+                      >
+                        Clear Visible
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={activePortForwardEventHistory.length === 0}
+                        onClick={() => {
+                          void clearSessionPortForwardHistory();
+                        }}
+                        type="button"
+                      >
+                        Clear Session
+                      </button>
+                    </div>
+                    <p className="hint settings-port-forward-events-summary">
+                      Session history {activePortForwardEventHistory.length}, visible{" "}
+                      {visiblePortForwardEventHistory.length}
+                    </p>
+                    <div className="settings-port-forward-list-shell settings-port-forward-list-shell--events">
+                      {visiblePortForwardEventHistory.length > 0 ? (
+                        <ul className="settings-port-forward-events-list">
+                          {visiblePortForwardEventHistory.map((event) => (
+                            <li
+                              className={
+                                event.level === "error"
+                                  ? "settings-port-forward-event-item is-error"
+                                  : "settings-port-forward-event-item"
+                              }
+                              key={event.id}
+                            >
+                              <p className="settings-port-forward-event-item__title">
+                                {formatPortForwardEventType(event.type)} {formatPortForwardEventSummary(event)}
+                              </p>
+                              <p className="settings-port-forward-event-item__meta">
+                                {formatPortForwardTimestamp(event.createdAt)} | {event.level.toUpperCase()}
+                              </p>
+                              <p className="settings-port-forward-event-item__message">
+                                {event.message}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="hint">
+                          {activeSessionId
+                            ? "No matching port forwarding events for the current filter."
+                            : "Open a session tab to view port forwarding event history."}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                ) : null}
+
+                {activeSettingsSection === "diagnostics" ? (
+                  <>
+                    <p className="hint">
+                      TermDock writes runtime diagnostics to local log files. Share these files
+                      when reporting bugs.
+                    </p>
+                    <p className="hint">
+                      Export Bug Report bundles logs, runtime metadata, and a safe settings
+                      snapshot into one zip package.
+                    </p>
+                    <label>
+                      Log Directory
+                      <input readOnly value={logInfo?.logDirectoryPath ?? "Not loaded yet"} />
+                    </label>
+                    <label>
+                      Log File
+                      <input readOnly value={logInfo?.logFilePath ?? "Not loaded yet"} />
+                    </label>
+                    <div className="modal__actions">
+                      <button
+                        className="secondary-button"
+                        onClick={() => {
+                          void refreshLogInfo().catch((caughtError) => {
+                            const message = toLogMessage(caughtError);
+                            setError(message);
+                            writeAppLog(
+                              "error",
+                              "renderer:diagnostics",
+                              "Failed to refresh log info.",
+                              caughtError
+                            );
+                          });
+                        }}
+                        type="button"
+                      >
+                        Refresh
+                      </button>
+                      <button className="secondary-button" onClick={() => {
+                        void openLogDirectory();
+                      }} type="button">
+                        Open Folder
+                      </button>
+                      <button className="secondary-button" onClick={() => {
+                        void copyLogFilePath();
+                      }} type="button">
+                        Copy Log File Path
+                      </button>
+                      <button
+                        className="primary-button"
+                        disabled={isExportingBugReport}
+                        onClick={() => {
+                          void exportBugReportBundle();
+                        }}
+                        type="button"
+                      >
+                        {isExportingBugReport ? "Exporting..." : "Export Bug Report"}
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+
                 <div className="modal__actions settings-panel__footer">
                   <button
                     className="primary-button"
@@ -6854,17 +10277,34 @@ export function App() {
                   {appDialog.cancelLabel}
                 </button>
               ) : null}
-              <button
-                className={
-                  appDialog.mode === "confirm" && appDialog.danger
-                    ? "primary-button app-dialog__confirm--danger"
-                    : "primary-button"
-                }
-                onClick={submitAppDialog}
-                type="button"
-              >
-                {appDialog.confirmLabel}
-              </button>
+              {appDialog.mode === "choice"
+                ? appDialog.options.map((option) => (
+                    <button
+                      className={
+                        option.danger
+                          ? "primary-button app-dialog__confirm--danger"
+                          : "primary-button"
+                      }
+                      key={option.value}
+                      onClick={() => resolveAppDialog(option.value)}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))
+                : (
+                    <button
+                      className={
+                        appDialog.mode === "confirm" && appDialog.danger
+                          ? "primary-button app-dialog__confirm--danger"
+                          : "primary-button"
+                      }
+                      onClick={submitAppDialog}
+                      type="button"
+                    >
+                      {appDialog.confirmLabel}
+                    </button>
+                  )}
             </div>
           </div>
         </div>

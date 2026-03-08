@@ -2,6 +2,8 @@
 
 This document describes how to run long-duration transfer stress tests against a real SSH/SFTP server.
 
+Last updated: 2026-03-08
+
 ## Goal
 
 - Reproduce and measure random disconnect issues during heavy upload workloads.
@@ -67,6 +69,23 @@ The script exits with code:
 - `0`: no disconnect/failure detected
 - `2`: disconnect or transfer/monitor failures detected
 - `1`: fatal setup/runtime error
+
+## Log Collection for Bug Triage
+
+When a soak run shows disconnects or failures, collect app diagnostics logs together with the soak summary:
+
+1. Open app `Settings > Diagnostics`.
+2. Click `Export Bug Report` and save the generated zip.
+3. (Optional) click `Open Folder` for raw logs.
+4. Attach the bug-report zip and soak summary JSON to bug reports.
+
+This shortens root-cause analysis for transfer/session issues.
+
+If the issue involves SSH tunnels/port forwarding, also collect forwarding diagnostics:
+
+1. Open app `Settings > Port Fwd` on the affected tab.
+2. Click `Export Snapshot`.
+3. Attach the snapshot text together with the bug-report zip and soak summary JSON.
 
 ## Recommended Test Matrix
 
