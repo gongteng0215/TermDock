@@ -40,14 +40,23 @@ import type {
   PortForwardEventRecord,
   PortForwardRecord,
   ServerHealthSnapshot,
-  ServerProcessSnapshot
+  ServerProcessSnapshot,
+  TerminalConnectionStatus
 } from "../shared/terminal";
-import { TerminalWorkspace } from "./components/terminal-workspace";
+import {
+  MAX_TERMINAL_COMMAND_HISTORY,
+  readTerminalCommandHistory,
+  TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
+  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
+  TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
+  TerminalWorkspace
+} from "./components/terminal-workspace";
 import type {
   ConnectionPreferences,
   HotkeyBindingPreference,
   HotkeyModifier,
   HotkeyPreferences,
+  TerminalCommandHistoryEntry,
   TerminalTab
 } from "./components/terminal-workspace";
 
@@ -66,17 +75,37 @@ const EMPTY_FORM: SessionCreateInput = {
 
 const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
+const HOTKEY_CONFLICT_NAV_STORAGE_KEY = "termdock.hotkey-conflict-nav.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
 const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
 const SFTP_TRANSFER_HISTORY_STORAGE_KEY = "termdock.sftp-transfer-history.v1";
+const SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY = "termdock.sftp-transfer-pending-restore.v1";
+const SFTP_CONFLICT_STRATEGY_STORAGE_KEY = "termdock.sftp-conflict-strategy.v1";
 const PORT_FORWARD_PRESETS_STORAGE_KEY = "termdock.port-forward-presets.v1";
 const PORT_FORWARD_EVENT_HISTORY_STORAGE_KEY = "termdock.port-forward-event-history.v1";
+const PORT_FORWARD_EVENT_VIEW_STORAGE_KEY = "termdock.port-forward-event-view.v1";
+const DISCONNECT_REPORT_HISTORY_STORAGE_KEY = "termdock.disconnect-report-history.v1";
+const DISCONNECT_REPORT_VIEW_STORAGE_KEY = "termdock.disconnect-report-view.v1";
+const RETRY_CENTER_VIEW_STORAGE_KEY = "termdock.retry-center-view.v1";
+const RETRY_CENTER_FAILURE_REASON_ALL = "__all__";
+const DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY =
+  "termdock.disconnect-report-capture-preferences.v1";
 const SESSION_GROUPS_STORAGE_KEY = "termdock.session-groups.v1";
 const SESSION_SORT_MODE_STORAGE_KEY = "termdock.session-sort-mode.v1";
+const SESSION_QUICK_PROFILES_STORAGE_KEY = "termdock.session-quick-profiles.v1";
+const COMMAND_SNIPPET_GROUPS_STORAGE_KEY = "termdock.command-snippet-groups.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const MAX_SFTP_TRANSFER_HISTORY = 800;
 const MAX_PORT_FORWARD_EVENT_HISTORY = 1200;
 const MAX_PORT_FORWARD_EVENT_HISTORY_PER_SESSION = 320;
+const MAX_DISCONNECT_REPORT_HISTORY = 120;
+const MAX_PENDING_TRANSFER_RESTORE_ITEMS = 2000;
+const MAX_SESSION_QUICK_PROFILES = 80;
+const MAX_COMMAND_SNIPPET_GROUPS = 40;
+const MAX_COMMAND_SNIPPETS_PER_GROUP = 120;
+const DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD = 100;
+const MIN_RETRY_BATCH_CONFIRM_THRESHOLD = 0;
+const MAX_RETRY_BATCH_CONFIRM_THRESHOLD = 2000;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
@@ -94,6 +123,11 @@ type SessionSortMode = "default" | "nameAsc" | "nameDesc" | "recent";
 type TransferHistoryScope = "activeSession" | "allSessions";
 type TransferHistoryDirectionFilter = "all" | SftpTransferEvent["direction"];
 type TransferHistoryStatusFilter = "all" | SftpTransferEvent["status"];
+type TransferHistoryTimeRange = "all" | "5m" | "30m" | "1h" | "24h";
+type RetryCenterListMode = "flat" | "groupedByReason";
+type RetryCenterGroupExportScope = "all" | "failed" | "retryable";
+type RetryCenterRetryScope = "all" | "upload" | "download";
+type TerminalCommandHistoryScope = "activeTab" | "allTabs";
 
 type HotkeyActionId = keyof HotkeyPreferences;
 
@@ -101,6 +135,13 @@ type HotkeyModifierOption = {
   value: HotkeyModifier;
   label: string;
 };
+
+interface HotkeyConflict {
+  signature: string;
+  modifier: HotkeyModifier;
+  key: string;
+  actions: HotkeyActionId[];
+}
 
 const HOTKEY_ACTION_ORDER: HotkeyActionId[] = [
   "openSessionTab",
@@ -120,6 +161,15 @@ interface SftpTransferPreferences {
   downloadConcurrency: number;
 }
 
+interface SessionTransferConflictStrategy {
+  upload?: TransferConflictStrategy;
+  download?: TransferConflictStrategy;
+}
+
+interface SessionTransferConflictStrategyState {
+  bySessionId: Record<string, SessionTransferConflictStrategy>;
+}
+
 interface SessionGroupsState {
   groups: string[];
 }
@@ -131,6 +181,50 @@ interface ServerHealthAlertPreferences {
   diskWarnPercent: number;
 }
 
+interface DisconnectReportFailureSample {
+  direction: SftpTransferEvent["direction"];
+  name: string;
+  message: string;
+  updatedAt: number;
+}
+
+interface DisconnectReportCapturePreferences {
+  enabled: boolean;
+}
+
+interface DisconnectReportItem {
+  id: string;
+  createdAt: string;
+  tabId: string;
+  tabTitle: string;
+  sessionId: string;
+  sessionName: string;
+  target: string;
+  trigger: "status" | "error";
+  status?: TerminalConnectionStatus;
+  message: string;
+  activeTabId: string | null;
+  wasActiveTab: boolean;
+  openTabCount: number;
+  connectedTabCount: number;
+  autoReconnect: boolean;
+  reconnectDelaySeconds: number;
+  uploadRunning: number;
+  uploadQueued: number;
+  downloadRunning: number;
+  downloadQueued: number;
+  pausedUpload: boolean;
+  pausedDownload: boolean;
+  portForwardTotal: number;
+  portForwardDegraded: number;
+  portForwardBusy: boolean;
+  serverHealthLoading: boolean;
+  serverProcessLoading: boolean;
+  serverHealthError?: string;
+  serverProcessError?: string;
+  recentFailures: DisconnectReportFailureSample[];
+}
+
 const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
   preferredProgramPath: ""
 };
@@ -138,11 +232,17 @@ const DEFAULT_SFTP_TRANSFER_PREFERENCES: SftpTransferPreferences = {
   uploadConcurrency: 2,
   downloadConcurrency: 2
 };
+const DEFAULT_SESSION_TRANSFER_CONFLICT_STRATEGY_STATE: SessionTransferConflictStrategyState = {
+  bySessionId: {}
+};
 const DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES: ServerHealthAlertPreferences = {
   enabled: true,
   cpuWarnPercent: 85,
   memoryWarnPercent: 85,
   diskWarnPercent: 90
+};
+const DEFAULT_DISCONNECT_REPORT_CAPTURE_PREFERENCES: DisconnectReportCapturePreferences = {
+  enabled: true
 };
 const DEFAULT_PORT_FORWARD_FORM: PortForwardFormState = {
   type: "local",
@@ -244,11 +344,67 @@ interface PortForwardPreset {
 }
 
 type PortForwardEventFilter = "all" | "errors" | "lifecycle" | "status";
+type PortForwardEventTimeRange = "all" | "5m" | "30m" | "1h" | "24h";
+type DisconnectReportScope = "allSessions" | "activeSession";
+type DisconnectReportTriggerFilter = "all" | DisconnectReportItem["trigger"];
+type DisconnectReportTimeRange = "all" | "5m" | "30m" | "1h" | "24h";
 
 interface PortForwardEventHistoryItem extends PortForwardEventRecord {
   key: string;
   sessionId: string;
 }
+
+interface PortForwardEventViewPreferences {
+  filter: PortForwardEventFilter;
+  timeRange: PortForwardEventTimeRange;
+  errorCode: string;
+  correlationQuery: string;
+}
+
+interface DisconnectReportViewPreferences {
+  scope: DisconnectReportScope;
+  trigger: DisconnectReportTriggerFilter;
+  timeRange: DisconnectReportTimeRange;
+  query: string;
+}
+
+interface RetryCenterViewPreferences {
+  scope: TransferHistoryScope;
+  direction: TransferHistoryDirectionFilter;
+  status: TransferHistoryStatusFilter;
+  timeRange: TransferHistoryTimeRange;
+  listMode: RetryCenterListMode;
+  failureReason: string;
+  lastRetryScope: RetryCenterRetryScope;
+  autoUseLastRetryScope: boolean;
+  retryBatchConfirmThreshold: number;
+  query: string;
+}
+
+const DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES: PortForwardEventViewPreferences = {
+  filter: "all",
+  timeRange: "all",
+  errorCode: "all",
+  correlationQuery: ""
+};
+const DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES: DisconnectReportViewPreferences = {
+  scope: "allSessions",
+  trigger: "all",
+  timeRange: "all",
+  query: ""
+};
+const DEFAULT_RETRY_CENTER_VIEW_PREFERENCES: RetryCenterViewPreferences = {
+  scope: "activeSession",
+  direction: "all",
+  status: "failed",
+  timeRange: "all",
+  listMode: "flat",
+  failureReason: RETRY_CENTER_FAILURE_REASON_ALL,
+  lastRetryScope: "all",
+  autoUseLastRetryScope: false,
+  retryBatchConfirmThreshold: DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD,
+  query: ""
+};
 
 interface PendingUploadJob {
   tabId: string;
@@ -258,6 +414,7 @@ interface PendingUploadJob {
   remoteDirectory: string;
   remotePath: string;
   name: string;
+  missingDirectoryRetryCount?: number;
 }
 
 interface PendingDownloadJob {
@@ -267,6 +424,53 @@ interface PendingDownloadJob {
   localPath: string;
   remotePath: string;
   name: string;
+}
+
+interface PendingTransferRestoreItem {
+  key: string;
+  sessionId: string;
+  direction: SftpTransferEvent["direction"];
+  localPath: string;
+  remotePath: string;
+  name: string;
+}
+
+interface SessionQuickProfile {
+  id: string;
+  name: string;
+  startupCommand: string;
+  confirmBeforeRun: boolean;
+}
+
+interface CommandSnippetItem {
+  id: string;
+  name: string;
+  template: string;
+  confirmBeforeRun: boolean;
+}
+
+interface CommandSnippetGroup {
+  id: string;
+  name: string;
+  snippets: CommandSnippetItem[];
+}
+
+interface SessionJsonImportCandidate {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authType: SessionCreateInput["authType"];
+  privateKeyPath: string;
+  groupId: string;
+  remark: string;
+  favorite: boolean;
+}
+
+interface SessionJsonImportParseResult {
+  candidates: SessionJsonImportCandidate[];
+  warnings: string[];
 }
 
 type TransferConflictStrategy = "overwrite" | "skip" | "rename";
@@ -292,6 +496,12 @@ interface SftpContextMenuState {
 interface SftpToolbarMenuState {
   x: number;
   y: number;
+}
+
+interface CommandHistoryContextMenuState {
+  x: number;
+  y: number;
+  entryId: string | null;
 }
 
 interface SftpContextAction {
@@ -334,6 +544,12 @@ interface SessionContextAction {
   run: () => void;
 }
 
+interface TransferDockNotice {
+  tabId: string;
+  level: "info" | "warn";
+  message: string;
+}
+
 type AppDialogMode = "alert" | "confirm" | "prompt" | "choice";
 
 interface AppDialogBaseState {
@@ -352,6 +568,7 @@ interface AppConfirmDialogState extends AppDialogBaseState {
   mode: "confirm";
   cancelLabel: string;
   danger?: boolean;
+  detailText?: string;
 }
 
 interface AppPromptDialogState extends AppDialogBaseState {
@@ -370,6 +587,7 @@ interface AppChoiceDialogOption {
 interface AppChoiceDialogState extends AppDialogBaseState {
   mode: "choice";
   cancelLabel: string;
+  detailText?: string;
   options: AppChoiceDialogOption[];
 }
 
@@ -390,6 +608,7 @@ interface AppConfirmDialogOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  detailText?: string;
 }
 
 interface AppPromptDialogOptions {
@@ -402,6 +621,7 @@ interface AppPromptDialogOptions {
 interface AppChoiceDialogOptions {
   title?: string;
   cancelLabel?: string;
+  detailText?: string;
 }
 
 type UiIconName =
@@ -536,6 +756,130 @@ function parseHotkeyBindingPreference(
     modifier: isHotkeyModifier(candidate.modifier) ? candidate.modifier : fallback.modifier,
     key: normalizeHotkeyKey(candidate.key, fallback.key)
   };
+}
+
+function parseHotkeyPreferencesSource(rawValue: unknown): HotkeyPreferences {
+  const defaults = createDefaultHotkeyPreferences();
+  if (!rawValue || typeof rawValue !== "object") {
+    return defaults;
+  }
+  const parsed = rawValue as Partial<HotkeyPreferences>;
+  const nextPreferences: HotkeyPreferences = {
+    openSessionTab: parseHotkeyBindingPreference(parsed.openSessionTab, defaults.openSessionTab),
+    closeActiveTab: parseHotkeyBindingPreference(parsed.closeActiveTab, defaults.closeActiveTab),
+    terminalCopy: parseHotkeyBindingPreference(parsed.terminalCopy, defaults.terminalCopy),
+    terminalPaste: parseHotkeyBindingPreference(parsed.terminalPaste, defaults.terminalPaste),
+    terminalSearch: parseHotkeyBindingPreference(parsed.terminalSearch, defaults.terminalSearch)
+  };
+  if (
+    isLegacyWindowsPrimaryHotkeyDefaults(nextPreferences) ||
+    isLegacyWindowsAltClipboardHotkeyDefaults(nextPreferences)
+  ) {
+    return createDefaultHotkeyPreferences();
+  }
+  return nextPreferences;
+}
+
+function parseImportedHotkeyPreferences(payload: unknown): HotkeyPreferences {
+  const root =
+    payload && typeof payload === "object" && "hotkeys" in payload
+      ? (payload as { hotkeys?: unknown }).hotkeys
+      : payload;
+  if (!root || typeof root !== "object") {
+    throw new Error("Invalid hotkey file: missing hotkeys object.");
+  }
+  const record = root as Record<string, unknown>;
+  const hasAnyKnownAction = HOTKEY_ACTION_ORDER.some((action) => action in record);
+  if (!hasAnyKnownAction) {
+    throw new Error("Invalid hotkey file: no recognized hotkey actions.");
+  }
+  return parseHotkeyPreferencesSource(root);
+}
+
+function areHotkeyBindingsEqual(
+  left: HotkeyBindingPreference,
+  right: HotkeyBindingPreference
+): boolean {
+  return (
+    left.enabled === right.enabled &&
+    left.modifier === right.modifier &&
+    normalizeHotkeyKey(left.key, "") === normalizeHotkeyKey(right.key, "")
+  );
+}
+
+function formatHotkeyBindingSummary(
+  binding: HotkeyBindingPreference,
+  isMacPlatform: boolean
+): string {
+  if (!binding.enabled) {
+    return "Disabled";
+  }
+  return formatHotkeyBindingLabel(binding, isMacPlatform);
+}
+
+function buildHotkeyPreferenceDiffLines(
+  current: HotkeyPreferences,
+  imported: HotkeyPreferences,
+  isMacPlatform: boolean
+): string[] {
+  const lines: string[] = [];
+  for (const action of HOTKEY_ACTION_ORDER) {
+    const currentBinding = current[action];
+    const importedBinding = imported[action];
+    if (areHotkeyBindingsEqual(currentBinding, importedBinding)) {
+      continue;
+    }
+    lines.push(
+      `${getHotkeyActionDescription(action)}: ${formatHotkeyBindingSummary(
+        currentBinding,
+        isMacPlatform
+      )} -> ${formatHotkeyBindingSummary(importedBinding, isMacPlatform)}`
+    );
+  }
+  return lines;
+}
+
+function formatHotkeyConflictLine(conflict: HotkeyConflict, isMacPlatform: boolean): string {
+  const bindingLabel = formatHotkeyBindingLabel(
+    {
+      enabled: true,
+      modifier: conflict.modifier,
+      key: conflict.key
+    },
+    isMacPlatform
+  );
+  const actions = conflict.actions
+    .map((action) => getHotkeyActionDescription(action))
+    .join(" / ");
+  return `${bindingLabel}: ${actions}`;
+}
+
+function buildHotkeyImportPreviewDetail(
+  diffLines: string[],
+  importedConflicts: HotkeyConflict[],
+  disabledByAutoResolve: HotkeyActionId[],
+  isMacPlatform: boolean
+): string {
+  const lines: string[] = [];
+  lines.push(`Changes (${diffLines.length}):`);
+  lines.push(...diffLines);
+  lines.push("");
+  if (importedConflicts.length > 0) {
+    lines.push(`Imported Conflicts (${importedConflicts.length}):`);
+    lines.push(...importedConflicts.map((conflict) => formatHotkeyConflictLine(conflict, isMacPlatform)));
+  } else {
+    lines.push("Imported Conflicts: none");
+  }
+  lines.push("");
+  if (disabledByAutoResolve.length > 0) {
+    lines.push(
+      `If you choose "Import + Auto Resolve", these actions will be disabled (${disabledByAutoResolve.length}):`
+    );
+    lines.push(...disabledByAutoResolve.map((action) => getHotkeyActionDescription(action)));
+  } else {
+    lines.push('If you choose "Import + Auto Resolve", no actions will be disabled.');
+  }
+  return lines.join("\n");
 }
 
 function isLegacyWindowsPrimaryHotkeyDefaults(preferences: HotkeyPreferences): boolean {
@@ -679,6 +1023,86 @@ function getHotkeyModifierOptions(isMacPlatform: boolean): HotkeyModifierOption[
   ];
 }
 
+function getHotkeyBindingSignature(binding: HotkeyBindingPreference): string {
+  const normalizedKey = normalizeHotkeyKey(binding.key, "");
+  if (!normalizedKey) {
+    return "";
+  }
+  return `${binding.modifier}:${normalizedKey}`;
+}
+
+function findHotkeyConflicts(preferences: HotkeyPreferences): HotkeyConflict[] {
+  const bySignature = new Map<string, HotkeyConflict>();
+  for (const action of HOTKEY_ACTION_ORDER) {
+    const binding = preferences[action];
+    if (!binding.enabled) {
+      continue;
+    }
+    const key = normalizeHotkeyKey(binding.key, "");
+    if (!key) {
+      continue;
+    }
+    const signature = `${binding.modifier}:${key}`;
+    const existing = bySignature.get(signature);
+    if (existing) {
+      existing.actions.push(action);
+      continue;
+    }
+    bySignature.set(signature, {
+      signature,
+      modifier: binding.modifier,
+      key,
+      actions: [action]
+    });
+  }
+  return Array.from(bySignature.values())
+    .filter((entry) => entry.actions.length > 1)
+    .sort((left, right) => {
+      if (left.actions.length !== right.actions.length) {
+        return right.actions.length - left.actions.length;
+      }
+      return left.signature.localeCompare(right.signature);
+    });
+}
+
+function autoResolveHotkeyConflicts(preferences: HotkeyPreferences): {
+  preferences: HotkeyPreferences;
+  disabledActions: HotkeyActionId[];
+} {
+  const seenSignatures = new Set<string>();
+  const nextPreferences: HotkeyPreferences = {
+    openSessionTab: { ...preferences.openSessionTab },
+    closeActiveTab: { ...preferences.closeActiveTab },
+    terminalCopy: { ...preferences.terminalCopy },
+    terminalPaste: { ...preferences.terminalPaste },
+    terminalSearch: { ...preferences.terminalSearch }
+  };
+  const disabledActions: HotkeyActionId[] = [];
+  for (const action of HOTKEY_ACTION_ORDER) {
+    const binding = nextPreferences[action];
+    if (!binding.enabled) {
+      continue;
+    }
+    const signature = getHotkeyBindingSignature(binding);
+    if (!signature) {
+      continue;
+    }
+    if (seenSignatures.has(signature)) {
+      nextPreferences[action] = {
+        ...binding,
+        enabled: false
+      };
+      disabledActions.push(action);
+      continue;
+    }
+    seenSignatures.add(signature);
+  }
+  return {
+    preferences: nextPreferences,
+    disabledActions
+  };
+}
+
 function getHotkeyActionDescription(action: HotkeyActionId): string {
   switch (action) {
     case "openSessionTab":
@@ -768,6 +1192,87 @@ function formatPortForwardEventType(type: PortForwardEventRecord["type"]): strin
 function formatPortForwardEventSummary(event: PortForwardEventRecord): string {
   const prefix = event.forwardType === "dynamic" ? "[D]" : event.forwardType === "remote" ? "[R]" : "[L]";
   return `${prefix} ${event.bindHost}:${event.bindPort}`;
+}
+
+function buildPortForwardEventCorrelationParts(event: PortForwardEventRecord): string[] {
+  const parts: string[] = [];
+  if (event.correlationKey) {
+    parts.push(`corr ${event.correlationKey}`);
+  }
+  if (event.connectionId) {
+    parts.push(`conn ${event.connectionId}`);
+  }
+  if (event.sourceEndpoint) {
+    parts.push(`src ${event.sourceEndpoint}`);
+  }
+  if (event.targetEndpoint) {
+    parts.push(`dst ${event.targetEndpoint}`);
+  }
+  if (event.errorCode) {
+    parts.push(`code ${event.errorCode}`);
+  }
+  return parts;
+}
+
+function formatPortForwardEventCorrelation(event: PortForwardEventRecord): string {
+  return buildPortForwardEventCorrelationParts(event).join(" | ");
+}
+
+function resolvePortForwardEventTimeRangeCutoff(
+  range: PortForwardEventTimeRange,
+  nowMs: number
+): number | null {
+  if (!Number.isFinite(nowMs) || nowMs <= 0 || range === "all") {
+    return null;
+  }
+  if (range === "5m") {
+    return nowMs - 5 * 60_000;
+  }
+  if (range === "30m") {
+    return nowMs - 30 * 60_000;
+  }
+  if (range === "1h") {
+    return nowMs - 60 * 60_000;
+  }
+  return nowMs - 24 * 60 * 60_000;
+}
+
+function resolveTransferHistoryTimeRangeCutoff(
+  range: TransferHistoryTimeRange,
+  nowMs: number
+): number | null {
+  if (!Number.isFinite(nowMs) || nowMs <= 0 || range === "all") {
+    return null;
+  }
+  if (range === "5m") {
+    return nowMs - 5 * 60_000;
+  }
+  if (range === "30m") {
+    return nowMs - 30 * 60_000;
+  }
+  if (range === "1h") {
+    return nowMs - 60 * 60_000;
+  }
+  return nowMs - 24 * 60 * 60_000;
+}
+
+function resolveDisconnectReportTimeRangeCutoff(
+  range: DisconnectReportTimeRange,
+  nowMs: number
+): number | null {
+  if (!Number.isFinite(nowMs) || nowMs <= 0 || range === "all") {
+    return null;
+  }
+  if (range === "5m") {
+    return nowMs - 5 * 60_000;
+  }
+  if (range === "30m") {
+    return nowMs - 30 * 60_000;
+  }
+  if (range === "1h") {
+    return nowMs - 60 * 60_000;
+  }
+  return nowMs - 24 * 60 * 60_000;
 }
 
 function toPortForwardErrorMessage(error: unknown): string {
@@ -901,6 +1406,25 @@ function isTabNotConnectedError(message: string): boolean {
   return /not connected/i.test(message);
 }
 
+function isRemotePathMissingError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(no such file|no such file or directory|cannot find the path|path does not exist)/i.test(
+    message
+  );
+}
+
+function isReconnectRecoverableError(message: string): boolean {
+  return /(not connected|disconnected|connection lost|connection reset|broken pipe|handshake|timed out|timeout)/i.test(
+    message
+  );
+}
+
+function isBridgeUnavailableError(message: string): boolean {
+  return /(bridge unavailable|bridge is not ready|restart `pnpm dev`)/i.test(message);
+}
+
 function isTransferCanceledMessage(message?: string): boolean {
   if (!message) {
     return false;
@@ -922,6 +1446,43 @@ function isSftpTransferStatus(value: unknown): value is SftpTransferEvent["statu
   );
 }
 
+function isTransferHistoryScopeValue(value: unknown): value is TransferHistoryScope {
+  return value === "activeSession" || value === "allSessions";
+}
+
+function isTransferHistoryDirectionFilterValue(
+  value: unknown
+): value is TransferHistoryDirectionFilter {
+  return value === "all" || value === "upload" || value === "download";
+}
+
+function isTransferHistoryStatusFilterValue(value: unknown): value is TransferHistoryStatusFilter {
+  return value === "all" || isSftpTransferStatus(value);
+}
+
+function isTransferHistoryTimeRangeValue(value: unknown): value is TransferHistoryTimeRange {
+  return value === "all" || value === "5m" || value === "30m" || value === "1h" || value === "24h";
+}
+
+function isRetryCenterListModeValue(value: unknown): value is RetryCenterListMode {
+  return value === "flat" || value === "groupedByReason";
+}
+
+function isRetryCenterRetryScopeValue(value: unknown): value is RetryCenterRetryScope {
+  return value === "all" || value === "upload" || value === "download";
+}
+
+function normalizeRetryCenterFailureReasonFilter(value: unknown): string {
+  if (typeof value !== "string") {
+    return RETRY_CENTER_FAILURE_REASON_ALL;
+  }
+  const normalized = value.trim().slice(0, 96);
+  if (normalized.toLowerCase() === "all") {
+    return RETRY_CENTER_FAILURE_REASON_ALL;
+  }
+  return normalized.length > 0 ? normalized : RETRY_CENTER_FAILURE_REASON_ALL;
+}
+
 function isPortForwardTypeValue(value: unknown): value is CreatePortForwardInput["type"] {
   return value === "local" || value === "remote" || value === "dynamic";
 }
@@ -937,6 +1498,26 @@ function isPortForwardEventTypeValue(value: unknown): value is PortForwardEventR
 
 function isPortForwardEventLevelValue(value: unknown): value is PortForwardEventRecord["level"] {
   return value === "info" || value === "error";
+}
+
+function isPortForwardEventFilterValue(value: unknown): value is PortForwardEventFilter {
+  return value === "all" || value === "errors" || value === "lifecycle" || value === "status";
+}
+
+function isPortForwardEventTimeRangeValue(value: unknown): value is PortForwardEventTimeRange {
+  return value === "all" || value === "5m" || value === "30m" || value === "1h" || value === "24h";
+}
+
+function isDisconnectReportScopeValue(value: unknown): value is DisconnectReportScope {
+  return value === "allSessions" || value === "activeSession";
+}
+
+function isDisconnectReportTriggerFilterValue(value: unknown): value is DisconnectReportTriggerFilter {
+  return value === "all" || value === "status" || value === "error";
+}
+
+function isDisconnectReportTimeRangeValue(value: unknown): value is DisconnectReportTimeRange {
+  return value === "all" || value === "5m" || value === "30m" || value === "1h" || value === "24h";
 }
 
 function isTerminalTransferStatus(status: SftpTransferEvent["status"]): boolean {
@@ -964,12 +1545,44 @@ function createTransferId(prefix: "up" | "down"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
+function createDisconnectReportId(): string {
+  return `dr-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
 function createPortForwardPresetId(): string {
   return `pfp-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
 function createPortForwardEventHistoryKey(sessionId: string, eventId: string): string {
   return `${sessionId}\u0000${eventId}`;
+}
+
+function toSafeFileNameSegment(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "snapshot";
+  }
+  const sanitized = trimmed.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  return sanitized || "snapshot";
+}
+
+function toIsoTimestamp(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "";
+  }
+  const value = new Date(timestamp);
+  if (!Number.isFinite(value.getTime())) {
+    return "";
+  }
+  return value.toISOString();
+}
+
+function escapeCsvCell(value: string | number | null | undefined): string {
+  const normalized = value == null ? "" : String(value);
+  if (!/[",\r\n]/.test(normalized)) {
+    return normalized;
+  }
+  return `"${normalized.replace(/"/g, "\"\"")}"`;
 }
 
 function getPathBaseName(pathValue: string): string {
@@ -979,6 +1592,141 @@ function getPathBaseName(pathValue: string): string {
     return normalized;
   }
   return normalized.slice(marker + 1);
+}
+
+function parseImportedCommandHistoryCommands(payload: unknown): string[] {
+  let rows: unknown[] = [];
+  if (Array.isArray(payload)) {
+    rows = payload;
+  } else if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    if (Array.isArray(record.commands)) {
+      rows = record.commands;
+    } else if (Array.isArray(record.entries)) {
+      rows = record.entries;
+    }
+  }
+  if (rows.length === 0) {
+    return [];
+  }
+  const parsed: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    let command = "";
+    if (typeof row === "string") {
+      command = row.trim();
+    } else if (row && typeof row === "object") {
+      const candidate = row as Record<string, unknown>;
+      command = typeof candidate.command === "string" ? candidate.command.trim() : "";
+    }
+    if (!command || seen.has(command)) {
+      continue;
+    }
+    seen.add(command);
+    parsed.push(command.slice(0, 4000));
+    if (parsed.length >= MAX_TERMINAL_COMMAND_HISTORY) {
+      break;
+    }
+  }
+  return parsed;
+}
+
+function parseSessionJsonImportCandidates(payload: unknown): SessionJsonImportParseResult {
+  const warnings: string[] = [];
+  const source =
+    payload && typeof payload === "object" && "sessions" in payload
+      ? (payload as { sessions?: unknown }).sessions
+      : payload;
+  if (!Array.isArray(source)) {
+    return {
+      candidates: [],
+      warnings: ["Import file does not contain a sessions array."]
+    };
+  }
+
+  const candidates: SessionJsonImportCandidate[] = [];
+  for (let index = 0; index < source.length; index += 1) {
+    const row = source[index];
+    if (!row || typeof row !== "object") {
+      warnings.push(`Row ${index + 1}: not an object, skipped.`);
+      continue;
+    }
+    const candidate = row as Record<string, unknown>;
+    const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    const host = typeof candidate.host === "string" ? candidate.host.trim() : "";
+    const username =
+      typeof candidate.username === "string" ? candidate.username.trim() : "";
+    const rawPort = candidate.port;
+    const parsedPort =
+      typeof rawPort === "number"
+        ? Math.trunc(rawPort)
+        : typeof rawPort === "string"
+          ? Number.parseInt(rawPort, 10)
+          : 22;
+    const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 22;
+    const authType =
+      candidate.authType === "privateKey" ? "privateKey" : "password";
+    const privateKeyPath =
+      typeof candidate.privateKeyPath === "string" ? candidate.privateKeyPath.trim() : "";
+    const groupId = typeof candidate.groupId === "string" ? candidate.groupId.trim() : "";
+    const remark = typeof candidate.remark === "string" ? candidate.remark.trim() : "";
+    const favorite = typeof candidate.favorite === "boolean" ? candidate.favorite : false;
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+
+    if (!name || !host || !username) {
+      warnings.push(`Row ${index + 1}: missing required field (name/host/username), skipped.`);
+      continue;
+    }
+    if (authType === "privateKey" && !privateKeyPath) {
+      warnings.push(`Row ${index + 1}: privateKey auth without key path; using password auth.`);
+    }
+    candidates.push({
+      id,
+      name,
+      host,
+      port,
+      username,
+      authType: authType === "privateKey" && privateKeyPath ? "privateKey" : "password",
+      privateKeyPath: authType === "privateKey" ? privateKeyPath : "",
+      groupId,
+      remark,
+      favorite
+    });
+  }
+  return {
+    candidates,
+    warnings
+  };
+}
+
+function formatSessionJsonImportPreview(result: SessionJsonImportParseResult): string {
+  const lines: string[] = [];
+  lines.push(`Importable sessions: ${result.candidates.length}`);
+  const previewRows = result.candidates.slice(0, 40);
+  for (const candidate of previewRows) {
+    const authLabel =
+      candidate.authType === "privateKey" && candidate.privateKeyPath
+        ? `key=${candidate.privateKeyPath}`
+        : "password";
+    const groupLabel = candidate.groupId || "Ungrouped";
+    lines.push(
+      `- ${candidate.name}: ${candidate.username}@${candidate.host}:${candidate.port} [${groupLabel}] (${authLabel})`
+    );
+  }
+  if (result.candidates.length > previewRows.length) {
+    lines.push(`... ${result.candidates.length - previewRows.length} more entries`);
+  }
+  if (result.warnings.length > 0) {
+    lines.push("");
+    lines.push("Warnings:");
+    for (const warning of result.warnings.slice(0, 20)) {
+      lines.push(`- ${warning}`);
+    }
+    if (result.warnings.length > 20) {
+      lines.push(`... ${result.warnings.length - 20} more warnings`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function getPathDirectoryName(pathValue: string): string {
@@ -1030,6 +1778,68 @@ function toTransferConflictStrategy(value: string | null): TransferConflictStrat
     return value;
   }
   return null;
+}
+
+function isTransferConflictStrategy(value: unknown): value is TransferConflictStrategy {
+  return value === "overwrite" || value === "skip" || value === "rename";
+}
+
+function parseTransferConflictChoice(
+  value: string | null
+): { strategy: TransferConflictStrategy; remember: boolean } | null {
+  if (value === "overwriteRemember") {
+    return { strategy: "overwrite", remember: true };
+  }
+  if (value === "skipRemember") {
+    return { strategy: "skip", remember: true };
+  }
+  if (value === "renameRemember") {
+    return { strategy: "rename", remember: true };
+  }
+  const strategy = toTransferConflictStrategy(value);
+  if (!strategy) {
+    return null;
+  }
+  return {
+    strategy,
+    remember: false
+  };
+}
+
+function formatTransferConflictStrategyLabel(strategy: TransferConflictStrategy | null | undefined): string {
+  if (strategy === "overwrite") {
+    return "Overwrite";
+  }
+  if (strategy === "skip") {
+    return "Skip";
+  }
+  if (strategy === "rename") {
+    return "Rename";
+  }
+  return "Not set";
+}
+
+async function runWithConcurrencyLimit<T>(
+  items: T[],
+  limit: number,
+  runner: (item: T) => Promise<void>
+): Promise<void> {
+  if (items.length === 0) {
+    return;
+  }
+  const workerCount = Math.max(1, Math.min(items.length, Math.trunc(limit) || 1));
+  let nextIndex = 0;
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= items.length) {
+        return;
+      }
+      await runner(items[currentIndex]);
+    }
+  });
+  await Promise.all(workers);
 }
 
 function joinRemotePath(parentPath: string, name: string): string {
@@ -1179,6 +1989,77 @@ function formatPercent(value: number): string {
   return `${Math.max(0, Math.min(100, value)).toFixed(1)}%`;
 }
 
+function classifyTransferFailureReason(message?: string): string {
+  const normalized = (message ?? "").trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return "Unknown";
+  }
+  const lowered = normalized.toLowerCase();
+  if (lowered.includes("permission denied") || lowered.includes("access denied")) {
+    return "Permission denied";
+  }
+  if (lowered.includes("no such file") || lowered.includes("not found")) {
+    return "Missing file or directory";
+  }
+  if (lowered.includes("already exists") || lowered.includes("file exists")) {
+    return "Target already exists";
+  }
+  if (lowered.includes("no space left") || lowered.includes("disk full") || lowered.includes("quota")) {
+    return "Storage full or quota limit";
+  }
+  if (lowered.includes("timed out") || lowered.includes("timeout")) {
+    return "Timeout";
+  }
+  if (
+    lowered.includes("not connected") ||
+    lowered.includes("connection lost") ||
+    lowered.includes("disconnected") ||
+    lowered.includes("connection reset") ||
+    lowered.includes("broken pipe") ||
+    lowered.includes("handshake")
+  ) {
+    return "Connection issue";
+  }
+  if (lowered.includes("canceled") || lowered.includes("cancelled")) {
+    return "Canceled";
+  }
+  if (lowered.includes("failure") || lowered.includes("failed")) {
+    return "Remote operation failure";
+  }
+  return normalized.slice(0, 96);
+}
+
+function getTransferFailureSuggestion(reason: string): string | null {
+  if (!reason || reason === "Unknown") {
+    return "Open Diagnostics and inspect the latest transfer logs before retrying.";
+  }
+  if (reason === "Permission denied") {
+    return "Verify remote path permissions/owner and confirm current SSH user has write access.";
+  }
+  if (reason === "Missing file or directory") {
+    return "Refresh remote directory and ensure target path exists. Recreate missing folders before retry.";
+  }
+  if (reason === "Target already exists") {
+    return "Use conflict strategy `Rename` or `Overwrite` for this batch, then retry failed items.";
+  }
+  if (reason === "Storage full or quota limit") {
+    return "Check disk/quota on remote host, free space, then retry failed transfers.";
+  }
+  if (reason === "Timeout") {
+    return "Reduce transfer concurrency in Settings > SFTP and retry with smaller batches.";
+  }
+  if (reason === "Connection issue") {
+    return "Reconnect session first, confirm network stability, then retry failed transfers.";
+  }
+  if (reason === "Canceled") {
+    return "Canceled items can be retried directly from Retry Center when needed.";
+  }
+  if (reason === "Remote operation failure") {
+    return "Inspect detailed backend error in Diagnostics and verify remote path/permissions.";
+  }
+  return "Use Diagnostics details for this error and retry selected items after remediation.";
+}
+
 function formatProcessPercent(value: number): string {
   if (!Number.isFinite(value) || value <= 0) {
     return "0.0%";
@@ -1287,6 +2168,16 @@ function parseTransferConcurrency(value: unknown, fallback: number): number {
   return Math.min(8, Math.max(1, Math.trunc(value)));
 }
 
+function parseRetryBatchConfirmThreshold(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(
+    MAX_RETRY_BATCH_CONFIRM_THRESHOLD,
+    Math.max(MIN_RETRY_BATCH_CONFIRM_THRESHOLD, Math.trunc(value))
+  );
+}
+
 function normalizeSessionGroupName(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1386,23 +2277,25 @@ function readHotkeyPreferences(): HotkeyPreferences {
       return createDefaultHotkeyPreferences();
     }
     const parsed = JSON.parse(rawValue) as Partial<HotkeyPreferences>;
-    const defaults = createDefaultHotkeyPreferences();
-    const nextPreferences: HotkeyPreferences = {
-      openSessionTab: parseHotkeyBindingPreference(parsed.openSessionTab, defaults.openSessionTab),
-      closeActiveTab: parseHotkeyBindingPreference(parsed.closeActiveTab, defaults.closeActiveTab),
-      terminalCopy: parseHotkeyBindingPreference(parsed.terminalCopy, defaults.terminalCopy),
-      terminalPaste: parseHotkeyBindingPreference(parsed.terminalPaste, defaults.terminalPaste),
-      terminalSearch: parseHotkeyBindingPreference(parsed.terminalSearch, defaults.terminalSearch)
-    };
-    if (
-      isLegacyWindowsPrimaryHotkeyDefaults(nextPreferences) ||
-      isLegacyWindowsAltClipboardHotkeyDefaults(nextPreferences)
-    ) {
-      return createDefaultHotkeyPreferences();
-    }
-    return nextPreferences;
+    return parseHotkeyPreferencesSource(parsed);
   } catch {
     return createDefaultHotkeyPreferences();
+  }
+}
+
+function readHotkeyConflictCursorSignature(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(HOTKEY_CONFLICT_NAV_STORAGE_KEY);
+    if (!rawValue) {
+      return null;
+    }
+    const normalized = rawValue.trim();
+    return normalized || null;
+  } catch {
+    return null;
   }
 }
 
@@ -1449,6 +2342,55 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
     };
   } catch {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
+  }
+}
+
+function readSessionTransferConflictStrategyState(): SessionTransferConflictStrategyState {
+  if (typeof window === "undefined") {
+    return DEFAULT_SESSION_TRANSFER_CONFLICT_STRATEGY_STATE;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SFTP_CONFLICT_STRATEGY_STORAGE_KEY);
+    if (!rawValue) {
+      return DEFAULT_SESSION_TRANSFER_CONFLICT_STRATEGY_STATE;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<SessionTransferConflictStrategyState>;
+    if (!parsed || typeof parsed !== "object") {
+      return DEFAULT_SESSION_TRANSFER_CONFLICT_STRATEGY_STATE;
+    }
+    const rawBySessionId =
+      parsed.bySessionId && typeof parsed.bySessionId === "object"
+        ? (parsed.bySessionId as Record<string, unknown>)
+        : {};
+    const bySessionId: Record<string, SessionTransferConflictStrategy> = {};
+    for (const [rawSessionId, rawValueBySession] of Object.entries(rawBySessionId)) {
+      const sessionId = rawSessionId.trim();
+      if (!sessionId || !rawValueBySession || typeof rawValueBySession !== "object") {
+        continue;
+      }
+      const candidate = rawValueBySession as {
+        upload?: unknown;
+        download?: unknown;
+      };
+      const upload = isTransferConflictStrategy(candidate.upload)
+        ? candidate.upload
+        : undefined;
+      const download = isTransferConflictStrategy(candidate.download)
+        ? candidate.download
+        : undefined;
+      if (!upload && !download) {
+        continue;
+      }
+      bySessionId[sessionId] = {
+        upload,
+        download
+      };
+    }
+    return {
+      bySessionId
+    };
+  } catch {
+    return DEFAULT_SESSION_TRANSFER_CONFLICT_STRATEGY_STATE;
   }
 }
 
@@ -1520,6 +2462,225 @@ function readSftpTransferHistory(): SftpTransferHistoryItem[] {
     }
     normalized.sort((left, right) => right.updatedAt - left.updatedAt);
     return normalized.slice(0, MAX_SFTP_TRANSFER_HISTORY);
+  } catch {
+    return [];
+  }
+}
+
+function normalizePendingTransferRestoreItems(payload: unknown): PendingTransferRestoreItem[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { items?: unknown }).items)
+      ? (payload as { items: unknown[] }).items
+      : [];
+  const normalized: PendingTransferRestoreItem[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<PendingTransferRestoreItem>;
+    const sessionId = typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+    const localPath = typeof candidate.localPath === "string" ? candidate.localPath.trim() : "";
+    const remotePath = typeof candidate.remotePath === "string" ? candidate.remotePath.trim() : "";
+    const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    const direction =
+      candidate.direction === "upload" || candidate.direction === "download"
+        ? candidate.direction
+        : null;
+    if (!sessionId || !localPath || !remotePath || !name || !direction) {
+      continue;
+    }
+    const key =
+      typeof candidate.key === "string" && candidate.key.trim().length > 0
+        ? candidate.key.trim()
+        : createTransferHistoryKey(sessionId, direction, localPath, remotePath);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push({
+      key,
+      sessionId,
+      direction,
+      localPath,
+      remotePath,
+      name
+    });
+    if (normalized.length >= MAX_PENDING_TRANSFER_RESTORE_ITEMS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function arePendingTransferRestoreItemsEqual(
+  left: PendingTransferRestoreItem[],
+  right: PendingTransferRestoreItem[]
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const leftItem = left[index];
+    const rightItem = right[index];
+    if (
+      leftItem.key !== rightItem.key ||
+      leftItem.sessionId !== rightItem.sessionId ||
+      leftItem.direction !== rightItem.direction ||
+      leftItem.localPath !== rightItem.localPath ||
+      leftItem.remotePath !== rightItem.remotePath ||
+      leftItem.name !== rightItem.name
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function readPendingTransferRestoreItems(): PendingTransferRestoreItem[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    return normalizePendingTransferRestoreItems(JSON.parse(rawValue));
+  } catch {
+    return [];
+  }
+}
+
+function readSessionQuickProfiles(): SessionQuickProfile[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SESSION_QUICK_PROFILES_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const normalized: SessionQuickProfile[] = [];
+    const seen = new Set<string>();
+    for (const row of parsed) {
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const candidate = row as Partial<SessionQuickProfile>;
+      const id =
+        typeof candidate.id === "string" && candidate.id.trim()
+          ? candidate.id.trim()
+          : `qp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      if (seen.has(id)) {
+        continue;
+      }
+      const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+      const startupCommand =
+        typeof candidate.startupCommand === "string" ? candidate.startupCommand.trim() : "";
+      if (!name || !startupCommand) {
+        continue;
+      }
+      seen.add(id);
+      normalized.push({
+        id,
+        name: name.slice(0, 80),
+        startupCommand: startupCommand.slice(0, 4000),
+        confirmBeforeRun: candidate.confirmBeforeRun === true
+      });
+      if (normalized.length >= MAX_SESSION_QUICK_PROFILES) {
+        break;
+      }
+    }
+    return normalized;
+  } catch {
+    return [];
+  }
+}
+
+function normalizeCommandSnippetGroups(payload: unknown): CommandSnippetGroup[] {
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { groups?: unknown }).groups)
+      ? (payload as { groups: unknown[] }).groups
+      : [];
+  const normalized: CommandSnippetGroup[] = [];
+  const seenGroupIds = new Set<string>();
+  for (const row of rows) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<CommandSnippetGroup>;
+    const groupId =
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id.trim()
+        : `sg-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    if (seenGroupIds.has(groupId)) {
+      continue;
+    }
+    const groupName = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    if (!groupName) {
+      continue;
+    }
+    const snippets = Array.isArray(candidate.snippets) ? candidate.snippets : [];
+    const normalizedSnippets: CommandSnippetItem[] = [];
+    const seenSnippetIds = new Set<string>();
+    for (const snippetRow of snippets) {
+      if (!snippetRow || typeof snippetRow !== "object") {
+        continue;
+      }
+      const snippet = snippetRow as Partial<CommandSnippetItem>;
+      const snippetId =
+        typeof snippet.id === "string" && snippet.id.trim()
+          ? snippet.id.trim()
+          : `sn-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      if (seenSnippetIds.has(snippetId)) {
+        continue;
+      }
+      const snippetName = typeof snippet.name === "string" ? snippet.name.trim() : "";
+      const template = typeof snippet.template === "string" ? snippet.template.trim() : "";
+      if (!snippetName || !template) {
+        continue;
+      }
+      seenSnippetIds.add(snippetId);
+      normalizedSnippets.push({
+        id: snippetId,
+        name: snippetName.slice(0, 80),
+        template: template.slice(0, 4000),
+        confirmBeforeRun: snippet.confirmBeforeRun === true
+      });
+      if (normalizedSnippets.length >= MAX_COMMAND_SNIPPETS_PER_GROUP) {
+        break;
+      }
+    }
+    seenGroupIds.add(groupId);
+    normalized.push({
+      id: groupId,
+      name: groupName.slice(0, 80),
+      snippets: normalizedSnippets
+    });
+    if (normalized.length >= MAX_COMMAND_SNIPPET_GROUPS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function readCommandSnippetGroups(): CommandSnippetGroup[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(COMMAND_SNIPPET_GROUPS_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    return normalizeCommandSnippetGroups(JSON.parse(rawValue));
   } catch {
     return [];
   }
@@ -1642,6 +2803,26 @@ function readPortForwardEventHistory(): PortForwardEventHistoryItem[] {
         typeof candidate.createdAt === "string" && candidate.createdAt.trim()
           ? candidate.createdAt.trim()
           : "";
+      const correlationKey =
+        typeof candidate.correlationKey === "string" && candidate.correlationKey.trim().length > 0
+          ? candidate.correlationKey.trim().slice(0, 120)
+          : undefined;
+      const connectionId =
+        typeof candidate.connectionId === "string" && candidate.connectionId.trim().length > 0
+          ? candidate.connectionId.trim().slice(0, 120)
+          : undefined;
+      const sourceEndpoint =
+        typeof candidate.sourceEndpoint === "string" && candidate.sourceEndpoint.trim().length > 0
+          ? candidate.sourceEndpoint.trim().slice(0, 180)
+          : undefined;
+      const targetEndpoint =
+        typeof candidate.targetEndpoint === "string" && candidate.targetEndpoint.trim().length > 0
+          ? candidate.targetEndpoint.trim().slice(0, 180)
+          : undefined;
+      const errorCode =
+        typeof candidate.errorCode === "string" && candidate.errorCode.trim().length > 0
+          ? candidate.errorCode.trim().slice(0, 40)
+          : undefined;
       if (
         !key ||
         !sessionId ||
@@ -1670,13 +2851,118 @@ function readPortForwardEventHistory(): PortForwardEventHistoryItem[] {
         level: candidate.level,
         type: candidate.type,
         message: message.slice(0, 600),
-        createdAt
+        createdAt,
+        correlationKey,
+        connectionId,
+        sourceEndpoint,
+        targetEndpoint,
+        errorCode
       });
     }
     normalized.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return normalized.slice(0, MAX_PORT_FORWARD_EVENT_HISTORY);
   } catch {
     return [];
+  }
+}
+
+function readPortForwardEventViewPreferences(): PortForwardEventViewPreferences {
+  const defaults = DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES;
+  if (typeof window === "undefined") {
+    return defaults;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(PORT_FORWARD_EVENT_VIEW_STORAGE_KEY);
+    if (!rawValue) {
+      return defaults;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<PortForwardEventViewPreferences>;
+    const errorCodeValue =
+      typeof parsed.errorCode === "string" && parsed.errorCode.trim().length > 0
+        ? parsed.errorCode.trim().slice(0, 60)
+        : defaults.errorCode;
+    return {
+      filter: isPortForwardEventFilterValue(parsed.filter) ? parsed.filter : defaults.filter,
+      timeRange: isPortForwardEventTimeRangeValue(parsed.timeRange)
+        ? parsed.timeRange
+        : defaults.timeRange,
+      errorCode: errorCodeValue,
+      correlationQuery:
+        typeof parsed.correlationQuery === "string"
+          ? parsed.correlationQuery.slice(0, 160)
+          : defaults.correlationQuery
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function readDisconnectReportViewPreferences(): DisconnectReportViewPreferences {
+  const defaults = DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES;
+  if (typeof window === "undefined") {
+    return defaults;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(DISCONNECT_REPORT_VIEW_STORAGE_KEY);
+    if (!rawValue) {
+      return defaults;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<DisconnectReportViewPreferences>;
+    return {
+      scope: isDisconnectReportScopeValue(parsed.scope) ? parsed.scope : defaults.scope,
+      trigger: isDisconnectReportTriggerFilterValue(parsed.trigger)
+        ? parsed.trigger
+        : defaults.trigger,
+      timeRange: isDisconnectReportTimeRangeValue(parsed.timeRange)
+        ? parsed.timeRange
+        : defaults.timeRange,
+      query:
+        typeof parsed.query === "string"
+          ? parsed.query.slice(0, 160)
+          : defaults.query
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function readRetryCenterViewPreferences(): RetryCenterViewPreferences {
+  const defaults = DEFAULT_RETRY_CENTER_VIEW_PREFERENCES;
+  if (typeof window === "undefined") {
+    return defaults;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(RETRY_CENTER_VIEW_STORAGE_KEY);
+    if (!rawValue) {
+      return defaults;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<RetryCenterViewPreferences>;
+    return {
+      scope: isTransferHistoryScopeValue(parsed.scope) ? parsed.scope : defaults.scope,
+      direction: isTransferHistoryDirectionFilterValue(parsed.direction)
+        ? parsed.direction
+        : defaults.direction,
+      status: isTransferHistoryStatusFilterValue(parsed.status) ? parsed.status : defaults.status,
+      timeRange: isTransferHistoryTimeRangeValue(parsed.timeRange)
+        ? parsed.timeRange
+        : defaults.timeRange,
+      listMode: isRetryCenterListModeValue(parsed.listMode) ? parsed.listMode : defaults.listMode,
+      failureReason: normalizeRetryCenterFailureReasonFilter(parsed.failureReason),
+      lastRetryScope: isRetryCenterRetryScopeValue(parsed.lastRetryScope)
+        ? parsed.lastRetryScope
+        : defaults.lastRetryScope,
+      autoUseLastRetryScope:
+        typeof parsed.autoUseLastRetryScope === "boolean"
+          ? parsed.autoUseLastRetryScope
+          : defaults.autoUseLastRetryScope,
+      retryBatchConfirmThreshold: parseRetryBatchConfirmThreshold(
+        parsed.retryBatchConfirmThreshold,
+        defaults.retryBatchConfirmThreshold
+      ),
+      query: typeof parsed.query === "string" ? parsed.query.slice(0, 160) : defaults.query
+    };
+  } catch {
+    return defaults;
   }
 }
 
@@ -1730,6 +3016,163 @@ function readServerHealthAlertPreferences(): ServerHealthAlertPreferences {
     };
   } catch {
     return DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES;
+  }
+}
+
+function readDisconnectReportCapturePreferences(): DisconnectReportCapturePreferences {
+  if (typeof window === "undefined") {
+    return DEFAULT_DISCONNECT_REPORT_CAPTURE_PREFERENCES;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(
+      DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY
+    );
+    if (!rawValue) {
+      return DEFAULT_DISCONNECT_REPORT_CAPTURE_PREFERENCES;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<DisconnectReportCapturePreferences>;
+    return {
+      enabled:
+        typeof parsed.enabled === "boolean"
+          ? parsed.enabled
+          : DEFAULT_DISCONNECT_REPORT_CAPTURE_PREFERENCES.enabled
+    };
+  } catch {
+    return DEFAULT_DISCONNECT_REPORT_CAPTURE_PREFERENCES;
+  }
+}
+
+function readDisconnectReportHistory(): DisconnectReportItem[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(DISCONNECT_REPORT_HISTORY_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const normalized: DisconnectReportItem[] = [];
+    for (const row of parsed) {
+      if (!row || typeof row !== "object") {
+        continue;
+      }
+      const candidate = row as Partial<DisconnectReportItem>;
+      const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+      const createdAt = typeof candidate.createdAt === "string" ? candidate.createdAt.trim() : "";
+      const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "";
+      const tabTitle = typeof candidate.tabTitle === "string" ? candidate.tabTitle.trim() : "";
+      const sessionId = typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+      const sessionName =
+        typeof candidate.sessionName === "string" ? candidate.sessionName.trim() : "";
+      const target = typeof candidate.target === "string" ? candidate.target.trim() : "";
+      const trigger = candidate.trigger === "error" ? "error" : candidate.trigger === "status" ? "status" : null;
+      const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
+      if (
+        !id ||
+        !createdAt ||
+        !tabId ||
+        !tabTitle ||
+        !sessionId ||
+        !sessionName ||
+        !target ||
+        !trigger ||
+        !message
+      ) {
+        continue;
+      }
+      const status =
+        candidate.status === "connected" ||
+        candidate.status === "connecting" ||
+        candidate.status === "closed"
+          ? candidate.status
+          : undefined;
+      const parseCount = (value: unknown): number =>
+        typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+      const parseBoolean = (value: unknown): boolean => value === true;
+      const parseText = (value: unknown, limit = 400): string | undefined => {
+        if (typeof value !== "string") {
+          return undefined;
+        }
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return undefined;
+        }
+        return trimmed.slice(0, limit);
+      };
+      const recentFailures: DisconnectReportFailureSample[] = Array.isArray(candidate.recentFailures)
+        ? candidate.recentFailures
+            .map((entry) => {
+              if (!entry || typeof entry !== "object") {
+                return null;
+              }
+              const failure = entry as Partial<DisconnectReportFailureSample>;
+              if (!isSftpTransferDirection(failure.direction)) {
+                return null;
+              }
+              const name = typeof failure.name === "string" ? failure.name.trim() : "";
+              const failureMessage =
+                typeof failure.message === "string" ? failure.message.trim() : "";
+              const updatedAt =
+                typeof failure.updatedAt === "number" && Number.isFinite(failure.updatedAt)
+                  ? Math.max(0, Math.trunc(failure.updatedAt))
+                  : 0;
+              if (!name || !failureMessage || !updatedAt) {
+                return null;
+              }
+              return {
+                direction: failure.direction,
+                name: name.slice(0, 220),
+                message: failureMessage.slice(0, 400),
+                updatedAt
+              } satisfies DisconnectReportFailureSample;
+            })
+            .filter((entry): entry is DisconnectReportFailureSample => !!entry)
+            .slice(0, 8)
+        : [];
+      normalized.push({
+        id,
+        createdAt,
+        tabId,
+        tabTitle,
+        sessionId,
+        sessionName,
+        target,
+        trigger,
+        status,
+        message: message.slice(0, 500),
+        activeTabId:
+          typeof candidate.activeTabId === "string" && candidate.activeTabId.trim().length > 0
+            ? candidate.activeTabId.trim()
+            : null,
+        wasActiveTab: parseBoolean(candidate.wasActiveTab),
+        openTabCount: parseCount(candidate.openTabCount),
+        connectedTabCount: parseCount(candidate.connectedTabCount),
+        autoReconnect: parseBoolean(candidate.autoReconnect),
+        reconnectDelaySeconds: Math.min(60, Math.max(1, parseCount(candidate.reconnectDelaySeconds) || 1)),
+        uploadRunning: parseCount(candidate.uploadRunning),
+        uploadQueued: parseCount(candidate.uploadQueued),
+        downloadRunning: parseCount(candidate.downloadRunning),
+        downloadQueued: parseCount(candidate.downloadQueued),
+        pausedUpload: parseBoolean(candidate.pausedUpload),
+        pausedDownload: parseBoolean(candidate.pausedDownload),
+        portForwardTotal: parseCount(candidate.portForwardTotal),
+        portForwardDegraded: parseCount(candidate.portForwardDegraded),
+        portForwardBusy: parseBoolean(candidate.portForwardBusy),
+        serverHealthLoading: parseBoolean(candidate.serverHealthLoading),
+        serverProcessLoading: parseBoolean(candidate.serverProcessLoading),
+        serverHealthError: parseText(candidate.serverHealthError),
+        serverProcessError: parseText(candidate.serverProcessError),
+        recentFailures
+      });
+    }
+    normalized.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return normalized.slice(0, MAX_DISCONNECT_REPORT_HISTORY);
+  } catch {
+    return [];
   }
 }
 
@@ -1913,12 +3356,51 @@ export function App() {
   const [hotkeyPreferences, setHotkeyPreferences] = useState<HotkeyPreferences>(
     () => readHotkeyPreferences()
   );
+  const hotkeyConflicts = useMemo(
+    () => findHotkeyConflicts(hotkeyPreferences),
+    [hotkeyPreferences]
+  );
+  const hotkeyConflictActionSet = useMemo(() => {
+    const next = new Set<HotkeyActionId>();
+    for (const conflict of hotkeyConflicts) {
+      for (const action of conflict.actions) {
+        next.add(action);
+      }
+    }
+    return next;
+  }, [hotkeyConflicts]);
+  const hotkeyConflictBindingByAction = useMemo(() => {
+    const next = new Map<HotkeyActionId, string>();
+    for (const conflict of hotkeyConflicts) {
+      const label = formatHotkeyBindingLabel(
+        {
+          enabled: true,
+          modifier: conflict.modifier,
+          key: conflict.key
+        },
+        isMacPlatform
+      );
+      for (const action of conflict.actions) {
+        next.set(action, label);
+      }
+    }
+    return next;
+  }, [hotkeyConflicts, isMacPlatform]);
+  const [hotkeyConflictCursorSignature, setHotkeyConflictCursorSignature] = useState<
+    string | null
+  >(() => readHotkeyConflictCursorSignature());
+  const [hotkeyFocusedAction, setHotkeyFocusedAction] = useState<HotkeyActionId | null>(null);
+  const [hotkeyConflictCursorIndex, setHotkeyConflictCursorIndex] = useState(0);
   const [fileOpenPreferences, setFileOpenPreferences] = useState<FileOpenPreferences>(
     () => readFileOpenPreferences()
   );
   const [sftpTransferPreferences, setSftpTransferPreferences] = useState<SftpTransferPreferences>(
     () => readSftpTransferPreferences()
   );
+  const [sessionTransferConflictStrategyState, setSessionTransferConflictStrategyState] =
+    useState<SessionTransferConflictStrategyState>(() =>
+      readSessionTransferConflictStrategyState()
+    );
   const [sessionGroupsState, setSessionGroupsState] = useState<SessionGroupsState>(
     () => readSessionGroupsState()
   );
@@ -1939,16 +3421,82 @@ export function App() {
   const [transferHistory, setTransferHistory] = useState<SftpTransferHistoryItem[]>(
     () => readSftpTransferHistory()
   );
+  const [pendingTransferRestoreItems, setPendingTransferRestoreItems] = useState<
+    PendingTransferRestoreItem[]
+  >(() => readPendingTransferRestoreItems());
+  const [pendingTransferRestoreResolved, setPendingTransferRestoreResolved] = useState(
+    () => readPendingTransferRestoreItems().length === 0
+  );
+  const [sessionQuickProfiles, setSessionQuickProfiles] = useState<SessionQuickProfile[]>(
+    () => readSessionQuickProfiles()
+  );
+  const [commandSnippetGroups, setCommandSnippetGroups] = useState<CommandSnippetGroup[]>(
+    () => readCommandSnippetGroups()
+  );
+  const [disconnectReportCapturePreferences, setDisconnectReportCapturePreferences] =
+    useState<DisconnectReportCapturePreferences>(() =>
+      readDisconnectReportCapturePreferences()
+    );
+  const [disconnectReports, setDisconnectReports] = useState<DisconnectReportItem[]>(
+    () => readDisconnectReportHistory()
+  );
+  const initialDisconnectReportViewPreferences = useMemo(
+    () => readDisconnectReportViewPreferences(),
+    []
+  );
+  const initialRetryCenterViewPreferences = useMemo(() => readRetryCenterViewPreferences(), []);
+  const [disconnectReportScope, setDisconnectReportScope] = useState<DisconnectReportScope>(
+    initialDisconnectReportViewPreferences.scope
+  );
+  const [disconnectReportTriggerFilter, setDisconnectReportTriggerFilter] =
+    useState<DisconnectReportTriggerFilter>(initialDisconnectReportViewPreferences.trigger);
+  const [disconnectReportTimeRange, setDisconnectReportTimeRange] =
+    useState<DisconnectReportTimeRange>(initialDisconnectReportViewPreferences.timeRange);
+  const [disconnectReportQuery, setDisconnectReportQuery] = useState(
+    initialDisconnectReportViewPreferences.query
+  );
   const [isRetryCenterOpen, setIsRetryCenterOpen] = useState(false);
-  const [retryCenterScope, setRetryCenterScope] = useState<TransferHistoryScope>("activeSession");
-  const [retryCenterDirection, setRetryCenterDirection] =
-    useState<TransferHistoryDirectionFilter>("all");
-  const [retryCenterStatus, setRetryCenterStatus] =
-    useState<TransferHistoryStatusFilter>("failed");
-  const [retryCenterQuery, setRetryCenterQuery] = useState("");
+  const [isOperationCenterOpen, setIsOperationCenterOpen] = useState(false);
+  const [isOperationCenterBulkCanceling, setIsOperationCenterBulkCanceling] = useState(false);
+  const [isOperationCenterReconnecting, setIsOperationCenterReconnecting] = useState(false);
+  const [retryCenterScope, setRetryCenterScope] = useState<TransferHistoryScope>(
+    initialRetryCenterViewPreferences.scope
+  );
+  const [retryCenterDirection, setRetryCenterDirection] = useState<TransferHistoryDirectionFilter>(
+    initialRetryCenterViewPreferences.direction
+  );
+  const [retryCenterStatus, setRetryCenterStatus] = useState<TransferHistoryStatusFilter>(
+    initialRetryCenterViewPreferences.status
+  );
+  const [retryCenterTimeRange, setRetryCenterTimeRange] = useState<TransferHistoryTimeRange>(
+    initialRetryCenterViewPreferences.timeRange
+  );
+  const [retryCenterListMode, setRetryCenterListMode] = useState<RetryCenterListMode>(
+    initialRetryCenterViewPreferences.listMode
+  );
+  const [retryCenterFailureReasonFilter, setRetryCenterFailureReasonFilter] = useState<string>(
+    initialRetryCenterViewPreferences.failureReason
+  );
+  const [retryCenterLastRetryScope, setRetryCenterLastRetryScope] =
+    useState<RetryCenterRetryScope>(initialRetryCenterViewPreferences.lastRetryScope);
+  const [retryCenterAutoUseLastRetryScope, setRetryCenterAutoUseLastRetryScope] = useState(
+    initialRetryCenterViewPreferences.autoUseLastRetryScope
+  );
+  const [retryBatchConfirmThreshold, setRetryBatchConfirmThreshold] = useState(
+    initialRetryCenterViewPreferences.retryBatchConfirmThreshold
+  );
+  const [retryCenterQuery, setRetryCenterQuery] = useState(initialRetryCenterViewPreferences.query);
   const [retryCenterSelection, setRetryCenterSelection] = useState<string[]>([]);
+  const [retryCenterCollapsedGroupKeys, setRetryCenterCollapsedGroupKeys] = useState<string[]>([]);
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null);
   const [sftpToolbarMenu, setSftpToolbarMenu] = useState<SftpToolbarMenuState | null>(null);
+  const [commandHistoryContextMenu, setCommandHistoryContextMenu] =
+    useState<CommandHistoryContextMenuState | null>(null);
+  const [isCommandHistoryManagerOpen, setIsCommandHistoryManagerOpen] = useState(false);
+  const [isCommandSnippetManagerOpen, setIsCommandSnippetManagerOpen] = useState(false);
+  const [commandSnippetManagerGroupId, setCommandSnippetManagerGroupId] = useState("");
+  const [commandSnippetManagerSnippetId, setCommandSnippetManagerSnippetId] = useState("");
+  const [commandHistorySelection, setCommandHistorySelection] = useState<string[]>([]);
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
   const [sftpError, setSftpError] = useState<string | null>(null);
   const [logInfo, setLogInfo] = useState<{
@@ -1968,8 +3516,20 @@ export function App() {
   const [portForwardEventHistory, setPortForwardEventHistory] = useState<
     PortForwardEventHistoryItem[]
   >(() => readPortForwardEventHistory());
+  const initialPortForwardEventViewPreferences = useMemo(
+    () => readPortForwardEventViewPreferences(),
+    []
+  );
   const [portForwardEventFilter, setPortForwardEventFilter] =
-    useState<PortForwardEventFilter>("all");
+    useState<PortForwardEventFilter>(initialPortForwardEventViewPreferences.filter);
+  const [portForwardEventTimeRange, setPortForwardEventTimeRange] =
+    useState<PortForwardEventTimeRange>(initialPortForwardEventViewPreferences.timeRange);
+  const [portForwardEventErrorCode, setPortForwardEventErrorCode] = useState(
+    initialPortForwardEventViewPreferences.errorCode
+  );
+  const [portForwardEventCorrelationQuery, setPortForwardEventCorrelationQuery] = useState(
+    initialPortForwardEventViewPreferences.correlationQuery
+  );
   const [sftpDeleteProgress, setSftpDeleteProgress] = useState<{
     name: string;
     kind: SftpEntry["kind"];
@@ -1983,8 +3543,34 @@ export function App() {
   const [serverHealthError, setServerHealthError] = useState<string | null>(null);
   const [serverProcessError, setServerProcessError] = useState<string | null>(null);
   const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
+  const [terminalCommandHistoryEntries, setTerminalCommandHistoryEntries] = useState<
+    TerminalCommandHistoryEntry[]
+  >(() => readTerminalCommandHistory());
+  const [terminalCommandHistoryScope, setTerminalCommandHistoryScope] =
+    useState<TerminalCommandHistoryScope>("allTabs");
+  const [terminalCommandHistoryQuery, setTerminalCommandHistoryQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const sessionsRef = useRef<SessionRecord[]>([]);
   const terminalTabsRef = useRef<TerminalTab[]>([]);
+  const activeTabIdRef = useRef<string | null>(null);
+  const sftpTransfersRef = useRef<SftpTransferItem[]>([]);
+  const transferHistoryRef = useRef<SftpTransferHistoryItem[]>([]);
+  const portForwardsRef = useRef<PortForwardRecord[]>([]);
+  const connectionPreferencesRef = useRef<ConnectionPreferences>(connectionPreferences);
+  const disconnectReportCapturePreferencesRef = useRef<DisconnectReportCapturePreferences>(
+    disconnectReportCapturePreferences
+  );
+  const pausedUploadTabsRef = useRef<Record<string, true>>({});
+  const pausedDownloadTabsRef = useRef<Record<string, true>>({});
+  const serverHealthLoadingRef = useRef<boolean>(serverHealthLoading);
+  const serverProcessLoadingRef = useRef<boolean>(serverProcessLoading);
+  const serverHealthErrorRef = useRef<string | null>(serverHealthError);
+  const serverProcessErrorRef = useRef<string | null>(serverProcessError);
+  const portForwardBusyRef = useRef<boolean>(portForwardBusy);
+  const intentionalTabCloseIdsRef = useRef<Set<string>>(new Set());
+  const disconnectReportFingerprintByTabRef = useRef<
+    Map<string, { fingerprint: string; capturedAt: number }>
+  >(new Map());
   const portForwardPresetsRef = useRef<PortForwardPreset[]>([]);
   const autoRestoredPortForwardTabsRef = useRef<Set<string>>(new Set());
   const connectedTabIdsRef = useRef<Set<string>>(new Set());
@@ -1995,13 +3581,18 @@ export function App() {
   const runningDownloadIdsRef = useRef<Map<string, string>>(new Map());
   const isDrainingDownloadQueueRef = useRef(false);
   const ensuredRemoteDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
+  const ensuringRemoteDirectoriesRef = useRef<Map<string, Map<string, Promise<void>>>>(new Map());
   const openingRemoteFilesRef = useRef<Set<string>>(new Set());
   const sftpContextMenuRef = useRef<HTMLDivElement | null>(null);
   const sftpToolbarMenuRef = useRef<HTMLDivElement | null>(null);
+  const commandHistoryContextMenuRef = useRef<HTMLDivElement | null>(null);
   const sessionContextMenuRef = useRef<HTMLDivElement | null>(null);
   const appDialogInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const appDialogResolverRef = useRef<((value: unknown) => void) | null>(null);
   const appDialogCancelValueRef = useRef<unknown>(undefined);
+  const appHintTimerRef = useRef<number | null>(null);
+  const hotkeyRowRefs = useRef<Map<HotkeyActionId, HTMLDivElement | null>>(new Map());
+  const hotkeyConflictHighlightTimerRef = useRef<number | null>(null);
   const previousServerHealthRef = useRef<ServerHealthSnapshot | null>(null);
   const serverHealthRequestInFlightTabsRef = useRef<Set<string>>(new Set());
   const serverProcessRequestInFlightTabsRef = useRef<Set<string>>(new Set());
@@ -2009,14 +3600,27 @@ export function App() {
   const downloadBatchNoticeRef = useRef<Set<string>>(new Set());
   const canceledUploadBatchIdsRef = useRef<Set<string>>(new Set());
   const canceledDownloadBatchIdsRef = useRef<Set<string>>(new Set());
+  const transferDockNoticeTimerRef = useRef<number | null>(null);
+  const pendingStartupCommandsByTabRef = useRef<Map<string, string[]>>(new Map());
+  const runStartupCommandsOnTabRef = useRef<
+    (tabId: string, commands: string[]) => Promise<void>
+  >(async () => undefined);
+  const pendingTransferRestoreNoticeShownRef = useRef(false);
   const [uploadBatchByTab, setUploadBatchByTab] = useState<
     Record<string, { batchId: string; total: number }>
   >({});
   const [downloadBatchByTab, setDownloadBatchByTab] = useState<
     Record<string, { batchId: string; total: number }>
   >({});
+  const [pausedUploadTabs, setPausedUploadTabs] = useState<Record<string, true>>({});
+  const [pausedDownloadTabs, setPausedDownloadTabs] = useState<Record<string, true>>({});
+  const [transferDockNotice, setTransferDockNotice] = useState<TransferDockNotice | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialogState | null>(null);
   const [appDialogInput, setAppDialogInput] = useState("");
+  const [appHintMessage, setAppHintMessage] = useState<{
+    level: "info" | "warn";
+    message: string;
+  } | null>(null);
   const [moveGroupDialog, setMoveGroupDialog] = useState<{
     sessionIds: string[];
     targetGroup: string;
@@ -2031,7 +3635,385 @@ export function App() {
     [activeTabId, terminalTabs]
   );
   const isActiveTabConnected = !!(activeTabId && connectedTabIdsRef.current.has(activeTabId));
+  const isActiveUploadQueuePaused = !!(activeTabId && pausedUploadTabs[activeTabId]);
+  const isActiveDownloadQueuePaused = !!(activeTabId && pausedDownloadTabs[activeTabId]);
+  const activeTransferDockNotice =
+    transferDockNotice && activeTabId && transferDockNotice.tabId === activeTabId
+      ? transferDockNotice
+      : null;
   const activeSessionId = activeTerminalTab?.sessionId ?? null;
+  const pendingTransferRestoreCount = pendingTransferRestoreItems.length;
+  const totalCommandSnippetCount = useMemo(
+    () => commandSnippetGroups.reduce((total, group) => total + group.snippets.length, 0),
+    [commandSnippetGroups]
+  );
+  const visibleTerminalCommandHistoryEntries = useMemo(() => {
+    const normalizedQuery = terminalCommandHistoryQuery.trim().toLowerCase();
+    const filtered = terminalCommandHistoryEntries.filter((entry) => {
+      if (terminalCommandHistoryScope === "activeTab" && activeTabId) {
+        if (entry.tabId !== activeTabId) {
+          return false;
+        }
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+      return (
+        entry.command.toLowerCase().includes(normalizedQuery) ||
+        entry.tabTitle.toLowerCase().includes(normalizedQuery)
+      );
+    });
+    return filtered.slice(0, 120);
+  }, [activeTabId, terminalCommandHistoryEntries, terminalCommandHistoryQuery, terminalCommandHistoryScope]);
+  const selectedCommandHistoryIdSet = useMemo(
+    () => new Set(commandHistorySelection),
+    [commandHistorySelection]
+  );
+  const visibleCommandHistoryIds = useMemo(
+    () => visibleTerminalCommandHistoryEntries.map((entry) => entry.id),
+    [visibleTerminalCommandHistoryEntries]
+  );
+  const allVisibleCommandHistorySelected =
+    visibleCommandHistoryIds.length > 0 &&
+    visibleCommandHistoryIds.every((entryId) => selectedCommandHistoryIdSet.has(entryId));
+  const copyTerminalCommandHistoryEntry = useCallback(
+    async (entry: TerminalCommandHistoryEntry) => {
+      try {
+        const copied = await copyTextToClipboard(entry.command);
+        if (copied) {
+          return;
+        }
+      } catch {
+        // Fall through and show error.
+      }
+      setError("Clipboard unavailable. Copy command manually.");
+    },
+    []
+  );
+  const runTerminalCommandHistoryEntry = useCallback(
+    async (entry: TerminalCommandHistoryEntry) => {
+      if (!terminalApi) {
+        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+        return;
+      }
+      const existingTabId = terminalTabsRef.current.some((tab) => tab.id === entry.tabId)
+        ? entry.tabId
+        : activeTabIdRef.current;
+      if (!existingTabId) {
+        setError("Open a terminal tab before running command history entries.");
+        return;
+      }
+      if (activeTabIdRef.current !== existingTabId) {
+        setActiveTabId(existingTabId);
+      }
+      try {
+        await terminalApi.write(existingTabId, `${entry.command}\n`);
+        window.dispatchEvent(
+          new CustomEvent(TERMINAL_COMMAND_HISTORY_APPEND_EVENT, {
+            detail: {
+              tabId: existingTabId,
+              command: entry.command
+            }
+          })
+        );
+      } catch (caughtError) {
+        setError((caughtError as Error).message);
+      }
+    },
+    [terminalApi]
+  );
+  const pasteTerminalCommandHistoryEntry = useCallback(
+    async (entry: TerminalCommandHistoryEntry) => {
+      if (!terminalApi) {
+        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+        return;
+      }
+      const targetTabId = activeTabIdRef.current;
+      if (!targetTabId) {
+        setError("Open and focus a terminal tab before pasting command history entries.");
+        return;
+      }
+      try {
+        await terminalApi.write(targetTabId, entry.command);
+      } catch (caughtError) {
+        setError((caughtError as Error).message);
+      }
+    },
+    [terminalApi]
+  );
+  const upsertTerminalCommandHistoryCommand = useCallback(
+    (
+      command: string,
+      options?: {
+        replaceEntryId?: string;
+        preferredTabId?: string;
+        preferredTabTitle?: string;
+      }
+    ): boolean => {
+      const normalizedCommand = command.trim();
+      if (!normalizedCommand) {
+        return false;
+      }
+      const replaceEntryId = options?.replaceEntryId?.trim() ?? "";
+      const preferredTabId = options?.preferredTabId?.trim();
+      const fallbackTabId = activeTabIdRef.current ?? terminalTabsRef.current[0]?.id ?? "__manual__";
+      const tabId = preferredTabId || fallbackTabId;
+      const tabTitleFromOpenTab =
+        terminalTabsRef.current.find((tab) => tab.id === tabId)?.title?.trim() ?? "";
+      const tabTitle =
+        options?.preferredTabTitle?.trim() ||
+        tabTitleFromOpenTab ||
+        (tabId === "__manual__" ? "Manual" : `Tab ${tabId}`);
+
+      if (replaceEntryId) {
+        window.dispatchEvent(
+          new CustomEvent(TERMINAL_COMMAND_HISTORY_REMOVE_EVENT, {
+            detail: {
+              entryId: replaceEntryId
+            }
+          })
+        );
+      }
+      window.dispatchEvent(
+        new CustomEvent(TERMINAL_COMMAND_HISTORY_APPEND_EVENT, {
+          detail: {
+            tabId,
+            command: normalizedCommand
+          }
+        })
+      );
+      setTerminalCommandHistoryEntries((prev) => {
+        const filtered = prev.filter((entry) => {
+          if (replaceEntryId && entry.id === replaceEntryId) {
+            return false;
+          }
+          return entry.command.trim() !== normalizedCommand;
+        });
+        const nextEntry: TerminalCommandHistoryEntry = {
+          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          tabId,
+          tabTitle,
+          command: normalizedCommand,
+          executedAt: Date.now()
+        };
+        return [nextEntry, ...filtered].slice(0, MAX_TERMINAL_COMMAND_HISTORY);
+      });
+      return true;
+    },
+    []
+  );
+  const deleteTerminalCommandHistoryEntries = useCallback((entryIds: string[]) => {
+    const normalizedEntryIds = Array.from(
+      new Set(entryIds.map((entryId) => entryId.trim()).filter((entryId) => entryId.length > 0))
+    );
+    if (normalizedEntryIds.length === 0) {
+      return;
+    }
+    const deleteSet = new Set(normalizedEntryIds);
+    setTerminalCommandHistoryEntries((prev) =>
+      prev.filter((entry) => !deleteSet.has(entry.id))
+    );
+    setCommandHistorySelection((prev) => prev.filter((entryId) => !deleteSet.has(entryId)));
+    for (const entryId of normalizedEntryIds) {
+      window.dispatchEvent(
+        new CustomEvent(TERMINAL_COMMAND_HISTORY_REMOVE_EVENT, {
+          detail: {
+            entryId
+          }
+        })
+      );
+    }
+  }, []);
+  const deleteTerminalCommandHistoryEntry = useCallback(
+    (entryId: string) => {
+      deleteTerminalCommandHistoryEntries([entryId]);
+    },
+    [deleteTerminalCommandHistoryEntries]
+  );
+  const toggleCommandHistorySelection = useCallback((entryId: string) => {
+    const normalizedEntryId = entryId.trim();
+    if (!normalizedEntryId) {
+      return;
+    }
+    setCommandHistorySelection((prev) => {
+      if (prev.includes(normalizedEntryId)) {
+        return prev.filter((value) => value !== normalizedEntryId);
+      }
+      return [...prev, normalizedEntryId];
+    });
+  }, []);
+  const toggleSelectAllVisibleCommandHistory = useCallback(() => {
+    if (visibleCommandHistoryIds.length === 0) {
+      return;
+    }
+    const visibleSet = new Set(visibleCommandHistoryIds);
+    setCommandHistorySelection((prev) => {
+      if (allVisibleCommandHistorySelected) {
+        return prev.filter((entryId) => !visibleSet.has(entryId));
+      }
+      const next = [...prev];
+      for (const entryId of visibleCommandHistoryIds) {
+        if (!next.includes(entryId)) {
+          next.push(entryId);
+        }
+      }
+      return next;
+    });
+  }, [allVisibleCommandHistorySelected, visibleCommandHistoryIds]);
+  const clearCommandHistorySelection = useCallback(() => {
+    setCommandHistorySelection([]);
+  }, []);
+  const openCommandHistoryManager = useCallback(() => {
+    setCommandHistoryContextMenu(null);
+    setIsCommandHistoryManagerOpen(true);
+  }, []);
+  const closeCommandHistoryManager = useCallback(() => {
+    setIsCommandHistoryManagerOpen(false);
+    setCommandHistorySelection([]);
+  }, []);
+  const openCommandSnippetManager = useCallback(() => {
+    setCommandHistoryContextMenu(null);
+    setIsCommandSnippetManagerOpen(true);
+  }, []);
+  const closeCommandSnippetManager = useCallback(() => {
+    setIsCommandSnippetManagerOpen(false);
+  }, []);
+  const deleteSelectedCommandHistoryEntries = useCallback(() => {
+    deleteTerminalCommandHistoryEntries(commandHistorySelection);
+  }, [commandHistorySelection, deleteTerminalCommandHistoryEntries]);
+  const deleteVisibleCommandHistoryEntries = useCallback(() => {
+    deleteTerminalCommandHistoryEntries(visibleCommandHistoryIds);
+  }, [deleteTerminalCommandHistoryEntries, visibleCommandHistoryIds]);
+  const deleteAllCommandHistoryEntries = useCallback(() => {
+    deleteTerminalCommandHistoryEntries(terminalCommandHistoryEntries.map((entry) => entry.id));
+  }, [deleteTerminalCommandHistoryEntries, terminalCommandHistoryEntries]);
+  useEffect(() => {
+    setCommandHistorySelection((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+      const validIdSet = new Set(terminalCommandHistoryEntries.map((entry) => entry.id));
+      const next = prev.filter((entryId) => validIdSet.has(entryId));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [terminalCommandHistoryEntries]);
+  useEffect(() => {
+    if (!isCommandHistoryManagerOpen) {
+      return;
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      closeCommandHistoryManager();
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [closeCommandHistoryManager, isCommandHistoryManagerOpen]);
+  useEffect(() => {
+    if (!isCommandHistoryManagerOpen) {
+      return;
+    }
+    setCommandHistoryContextMenu(null);
+  }, [isCommandHistoryManagerOpen]);
+  useEffect(() => {
+    if (!isCommandSnippetManagerOpen) {
+      return;
+    }
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      closeCommandSnippetManager();
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [closeCommandSnippetManager, isCommandSnippetManagerOpen]);
+  useEffect(() => {
+    if (!isCommandSnippetManagerOpen) {
+      return;
+    }
+    setCommandHistoryContextMenu(null);
+  }, [isCommandSnippetManagerOpen]);
+  const selectedCommandHistoryContextEntry = useMemo(() => {
+    if (!commandHistoryContextMenu || !commandHistoryContextMenu.entryId) {
+      return null;
+    }
+    return (
+      terminalCommandHistoryEntries.find(
+        (entry) => entry.id === commandHistoryContextMenu.entryId
+      ) ?? null
+    );
+  }, [commandHistoryContextMenu, terminalCommandHistoryEntries]);
+  const activeSessionTransferConflictStrategy = useMemo(() => {
+    if (!activeSessionId) {
+      return null;
+    }
+    const strategy = sessionTransferConflictStrategyState.bySessionId[activeSessionId];
+    return {
+      upload: strategy?.upload ?? null,
+      download: strategy?.download ?? null
+    };
+  }, [activeSessionId, sessionTransferConflictStrategyState.bySessionId]);
+  const visibleDisconnectReports = useMemo(() => {
+    let filtered = disconnectReports;
+    if (disconnectReportScope === "activeSession") {
+      if (!activeSessionId) {
+        return [] as DisconnectReportItem[];
+      }
+      filtered = filtered.filter((entry) => entry.sessionId === activeSessionId);
+    }
+    if (disconnectReportTriggerFilter !== "all") {
+      filtered = filtered.filter((entry) => entry.trigger === disconnectReportTriggerFilter);
+    }
+    const cutoffMs = resolveDisconnectReportTimeRangeCutoff(disconnectReportTimeRange, Date.now());
+    if (cutoffMs !== null) {
+      filtered = filtered.filter((entry) => {
+        const createdAtMs = new Date(entry.createdAt).getTime();
+        return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs;
+      });
+    }
+    const normalizedQuery = disconnectReportQuery.trim().toLowerCase();
+    if (normalizedQuery) {
+      filtered = filtered.filter((entry) =>
+        [
+          entry.sessionName,
+          entry.target,
+          entry.tabTitle,
+          entry.message,
+          entry.trigger,
+          entry.status ?? ""
+        ].some((value) => value.toLowerCase().includes(normalizedQuery))
+      );
+    }
+    return filtered
+      .slice()
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }, [
+    activeSessionId,
+    disconnectReportQuery,
+    disconnectReportScope,
+    disconnectReportTimeRange,
+    disconnectReportTriggerFilter,
+    disconnectReports
+  ]);
+  const hasCustomizedDisconnectReportView =
+    disconnectReportScope !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.scope ||
+    disconnectReportTriggerFilter !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.trigger ||
+    disconnectReportTimeRange !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.timeRange ||
+    disconnectReportQuery.trim().length > 0;
+  const resetDisconnectReportViewFilters = useCallback(() => {
+    setDisconnectReportScope(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.scope);
+    setDisconnectReportTriggerFilter(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.trigger);
+    setDisconnectReportTimeRange(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.timeRange);
+    setDisconnectReportQuery(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.query);
+  }, []);
   const activePortForwardPresets = useMemo(() => {
     if (!activeSessionId) {
       return [];
@@ -2048,22 +4030,145 @@ export function App() {
       .filter((entry) => entry.sessionId === activeSessionId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }, [activeSessionId, portForwardEventHistory]);
+  const portForwardEventErrorCodeOptions = useMemo(() => {
+    const codes = new Set<string>();
+    for (const entry of activePortForwardEventHistory) {
+      const code = entry.errorCode?.trim();
+      if (code) {
+        codes.add(code);
+      }
+    }
+    return ["all", ...Array.from(codes).sort((left, right) => left.localeCompare(right))];
+  }, [activePortForwardEventHistory]);
   const visiblePortForwardEventHistory = useMemo(() => {
-    if (portForwardEventFilter === "all") {
-      return activePortForwardEventHistory;
-    }
+    let filtered = activePortForwardEventHistory;
     if (portForwardEventFilter === "errors") {
-      return activePortForwardEventHistory.filter((entry) => entry.level === "error");
-    }
-    if (portForwardEventFilter === "lifecycle") {
-      return activePortForwardEventHistory.filter(
+      filtered = filtered.filter((entry) => entry.level === "error");
+    } else if (portForwardEventFilter === "lifecycle") {
+      filtered = filtered.filter(
         (entry) => entry.type === "created" || entry.type === "removed"
       );
+    } else if (portForwardEventFilter === "status") {
+      filtered = filtered.filter(
+        (entry) => entry.type === "statusDegraded" || entry.type === "statusRecovered"
+      );
     }
-    return activePortForwardEventHistory.filter(
-      (entry) => entry.type === "statusDegraded" || entry.type === "statusRecovered"
+    const cutoffMs = resolvePortForwardEventTimeRangeCutoff(
+      portForwardEventTimeRange,
+      Date.now()
     );
-  }, [activePortForwardEventHistory, portForwardEventFilter]);
+    if (cutoffMs !== null) {
+      filtered = filtered.filter((entry) => {
+        const eventTimeMs = new Date(entry.createdAt).getTime();
+        return Number.isFinite(eventTimeMs) && eventTimeMs >= cutoffMs;
+      });
+    }
+    const normalizedErrorCode = portForwardEventErrorCode.trim().toLowerCase();
+    if (normalizedErrorCode && normalizedErrorCode !== "all") {
+      filtered = filtered.filter(
+        (entry) => (entry.errorCode ?? "").trim().toLowerCase() === normalizedErrorCode
+      );
+    }
+    const normalizedCorrelationQuery = portForwardEventCorrelationQuery.trim().toLowerCase();
+    if (!normalizedCorrelationQuery) {
+      return filtered;
+    }
+    return filtered.filter((entry) => {
+      const correlation = (entry.correlationKey ?? "").toLowerCase();
+      const connection = (entry.connectionId ?? "").toLowerCase();
+      return (
+        correlation.includes(normalizedCorrelationQuery) ||
+        connection.includes(normalizedCorrelationQuery)
+      );
+    });
+  }, [
+    activePortForwardEventHistory,
+    portForwardEventErrorCode,
+    portForwardEventCorrelationQuery,
+    portForwardEventFilter,
+    portForwardEventTimeRange
+  ]);
+  const portForwardVisibleEventAnalytics = useMemo(() => {
+    const levelCounts: Record<PortForwardEventRecord["level"], number> = {
+      info: 0,
+      error: 0
+    };
+    const typeCounts: Record<PortForwardEventRecord["type"], number> = {
+      created: 0,
+      removed: 0,
+      statusRecovered: 0,
+      statusDegraded: 0
+    };
+    const errorCodeCounts = new Map<string, number>();
+    const correlationCounts = new Map<string, number>();
+    let earliestTimestampMs: number | null = null;
+    let latestTimestampMs: number | null = null;
+    for (const event of visiblePortForwardEventHistory) {
+      levelCounts[event.level] += 1;
+      typeCounts[event.type] += 1;
+      const errorCode = event.errorCode?.trim();
+      if (errorCode) {
+        errorCodeCounts.set(errorCode, (errorCodeCounts.get(errorCode) ?? 0) + 1);
+      }
+      const correlation = event.correlationKey?.trim();
+      if (correlation) {
+        correlationCounts.set(correlation, (correlationCounts.get(correlation) ?? 0) + 1);
+      }
+      const timestampMs = new Date(event.createdAt).getTime();
+      if (!Number.isFinite(timestampMs)) {
+        continue;
+      }
+      if (earliestTimestampMs === null || timestampMs < earliestTimestampMs) {
+        earliestTimestampMs = timestampMs;
+      }
+      if (latestTimestampMs === null || timestampMs > latestTimestampMs) {
+        latestTimestampMs = timestampMs;
+      }
+    }
+    const topErrorCodes = Array.from(errorCodeCounts.entries())
+      .map(([code, count]) => ({ code, count }))
+      .sort((left, right) => {
+        if (right.count !== left.count) {
+          return right.count - left.count;
+        }
+        return left.code.localeCompare(right.code);
+      })
+      .slice(0, 5);
+    const topCorrelations = Array.from(correlationCounts.entries())
+      .map(([correlationKey, count]) => ({ correlationKey, count }))
+      .sort((left, right) => {
+        if (right.count !== left.count) {
+          return right.count - left.count;
+        }
+        return left.correlationKey.localeCompare(right.correlationKey);
+      })
+      .slice(0, 5);
+    const totalVisible = visiblePortForwardEventHistory.length;
+    const totalErrors = levelCounts.error;
+    const errorRatioPercent = totalVisible > 0 ? (totalErrors / totalVisible) * 100 : 0;
+    return {
+      totalVisible,
+      totalErrors,
+      errorRatioPercent,
+      levelCounts,
+      typeCounts,
+      topErrorCodes,
+      topCorrelations,
+      earliestVisibleAt: earliestTimestampMs ? new Date(earliestTimestampMs).toISOString() : "",
+      latestVisibleAt: latestTimestampMs ? new Date(latestTimestampMs).toISOString() : ""
+    };
+  }, [visiblePortForwardEventHistory]);
+  const hasCustomizedPortForwardEventView =
+    portForwardEventFilter !== DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.filter ||
+    portForwardEventTimeRange !== DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.timeRange ||
+    portForwardEventErrorCode !== DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.errorCode ||
+    portForwardEventCorrelationQuery.trim().length > 0;
+  const resetPortForwardEventViewFilters = useCallback(() => {
+    setPortForwardEventFilter(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.filter);
+    setPortForwardEventTimeRange(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.timeRange);
+    setPortForwardEventErrorCode(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.errorCode);
+    setPortForwardEventCorrelationQuery(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.correlationQuery);
+  }, []);
   const sessionContextTarget = useMemo(() => {
     const target = sessionContextMenu?.target;
     if (!target || target.type !== "session") {
@@ -2209,6 +4314,389 @@ export function App() {
     },
     [systemApi]
   );
+  const captureDisconnectReport = useCallback(
+    (payload: {
+      tabId: string;
+      trigger: "status" | "error";
+      status?: TerminalConnectionStatus;
+      message?: string;
+    }) => {
+      const tabId = payload.tabId.trim();
+      if (!tabId) {
+        return;
+      }
+      if (!disconnectReportCapturePreferencesRef.current.enabled) {
+        return;
+      }
+      if (payload.trigger === "status" && payload.status === "connecting") {
+        return;
+      }
+      const tab = terminalTabsRef.current.find((item) => item.id === tabId);
+      if (!tab) {
+        return;
+      }
+      const now = Date.now();
+      const defaultMessage =
+        payload.trigger === "error"
+          ? "Terminal tab emitted an error."
+          : payload.status === "closed"
+            ? "Terminal tab closed."
+            : "Terminal tab disconnected.";
+      const normalizedMessage =
+        typeof payload.message === "string" && payload.message.trim().length > 0
+          ? payload.message.trim().slice(0, 500)
+          : defaultMessage;
+      const fingerprint = `${payload.trigger}|${payload.status ?? ""}|${normalizedMessage
+        .toLowerCase()
+        .slice(0, 220)}`;
+      const previousFingerprint = disconnectReportFingerprintByTabRef.current.get(tabId);
+      if (
+        previousFingerprint &&
+        previousFingerprint.fingerprint === fingerprint &&
+        now - previousFingerprint.capturedAt < 5000
+      ) {
+        return;
+      }
+      disconnectReportFingerprintByTabRef.current.set(tabId, {
+        fingerprint,
+        capturedAt: now
+      });
+      const session =
+        sessionsRef.current.find((item) => item.id === tab.sessionId) ?? null;
+      const sessionName = session?.name.trim() || tab.title;
+      const target = session
+        ? `${session.username}@${session.host}:${session.port}`
+        : `session:${tab.sessionId}`;
+      let uploadRunning = 0;
+      let uploadQueued = 0;
+      let downloadRunning = 0;
+      let downloadQueued = 0;
+      for (const transfer of sftpTransfersRef.current) {
+        if (transfer.tabId !== tabId) {
+          continue;
+        }
+        if (transfer.status !== "queued" && transfer.status !== "running") {
+          continue;
+        }
+        if (transfer.direction === "upload") {
+          if (transfer.status === "running") {
+            uploadRunning += 1;
+          } else {
+            uploadQueued += 1;
+          }
+        } else if (transfer.status === "running") {
+          downloadRunning += 1;
+        } else {
+          downloadQueued += 1;
+        }
+      }
+      const recentFailures = transferHistoryRef.current
+        .filter((entry) => entry.sessionId === tab.sessionId && entry.status === "failed")
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+        .slice(0, 8)
+        .map((entry) => ({
+          direction: entry.direction,
+          name: entry.name,
+          message: (entry.message ?? "failed").slice(0, 400),
+          updatedAt: entry.updatedAt
+        }));
+      const tabPortForwards = portForwardsRef.current.filter((entry) => entry.tabId === tabId);
+      const portForwardDegraded = tabPortForwards.filter(
+        (entry) => entry.status === "degraded"
+      ).length;
+      const activeTabId = activeTabIdRef.current;
+      const reconnectPreferences = connectionPreferencesRef.current;
+      const report: DisconnectReportItem = {
+        id: createDisconnectReportId(),
+        createdAt: new Date(now).toISOString(),
+        tabId,
+        tabTitle: tab.title,
+        sessionId: tab.sessionId,
+        sessionName,
+        target,
+        trigger: payload.trigger,
+        status: payload.status,
+        message: normalizedMessage,
+        activeTabId,
+        wasActiveTab: activeTabId === tabId,
+        openTabCount: terminalTabsRef.current.length,
+        connectedTabCount: connectedTabIdsRef.current.size,
+        autoReconnect: reconnectPreferences.autoReconnect,
+        reconnectDelaySeconds: reconnectPreferences.reconnectDelaySeconds,
+        uploadRunning,
+        uploadQueued,
+        downloadRunning,
+        downloadQueued,
+        pausedUpload: !!pausedUploadTabsRef.current[tabId],
+        pausedDownload: !!pausedDownloadTabsRef.current[tabId],
+        portForwardTotal: tabPortForwards.length,
+        portForwardDegraded,
+        portForwardBusy: portForwardBusyRef.current,
+        serverHealthLoading: serverHealthLoadingRef.current,
+        serverProcessLoading: serverProcessLoadingRef.current,
+        serverHealthError: serverHealthErrorRef.current ?? undefined,
+        serverProcessError: serverProcessErrorRef.current ?? undefined,
+        recentFailures
+      };
+      setDisconnectReports((prev) => [report, ...prev].slice(0, MAX_DISCONNECT_REPORT_HISTORY));
+      writeAppLog("warn", "renderer:diagnostics", "Captured disconnect report.", {
+        reportId: report.id,
+        tabId: report.tabId,
+        trigger: report.trigger,
+        status: report.status,
+        message: report.message,
+        uploadRunning: report.uploadRunning,
+        uploadQueued: report.uploadQueued,
+        downloadRunning: report.downloadRunning,
+        downloadQueued: report.downloadQueued,
+        portForwardTotal: report.portForwardTotal,
+        portForwardDegraded: report.portForwardDegraded
+      });
+    },
+    [writeAppLog]
+  );
+  const showTransferDockNotice = useCallback(
+    (tabId: string, level: TransferDockNotice["level"], message: string, durationMs = 6000) => {
+      if (transferDockNoticeTimerRef.current !== null) {
+        window.clearTimeout(transferDockNoticeTimerRef.current);
+        transferDockNoticeTimerRef.current = null;
+      }
+      setTransferDockNotice({
+        tabId,
+        level,
+        message
+      });
+      if (durationMs <= 0) {
+        return;
+      }
+      transferDockNoticeTimerRef.current = window.setTimeout(() => {
+        setTransferDockNotice((current) => {
+          if (!current) {
+            return null;
+          }
+          if (current.tabId !== tabId || current.message !== message) {
+            return current;
+          }
+          return null;
+        });
+        transferDockNoticeTimerRef.current = null;
+      }, durationMs);
+    },
+    []
+  );
+  const getSessionIdForTab = useCallback((tabId: string): string | null => {
+    const normalizedTabId = tabId.trim();
+    if (!normalizedTabId) {
+      return null;
+    }
+    const tab = terminalTabsRef.current.find((item) => item.id === normalizedTabId);
+    return tab?.sessionId ?? null;
+  }, []);
+  const collectPendingTransferRestoreSnapshot = useCallback((): PendingTransferRestoreItem[] => {
+    const tabSessionIdMap = new Map<string, string>();
+    for (const tab of terminalTabsRef.current) {
+      tabSessionIdMap.set(tab.id, tab.sessionId);
+    }
+    const deduped = new Map<string, PendingTransferRestoreItem>();
+    const appendItem = (
+      sessionId: string,
+      direction: SftpTransferEvent["direction"],
+      localPath: string,
+      remotePath: string,
+      name: string
+    ) => {
+      const normalizedSessionId = sessionId.trim();
+      const normalizedLocalPath = localPath.trim();
+      const normalizedRemotePath = remotePath.trim();
+      const normalizedName = name.trim();
+      if (
+        !normalizedSessionId ||
+        !normalizedLocalPath ||
+        !normalizedRemotePath ||
+        !normalizedName
+      ) {
+        return;
+      }
+      const key = createTransferHistoryKey(
+        normalizedSessionId,
+        direction,
+        normalizedLocalPath,
+        normalizedRemotePath
+      );
+      if (deduped.has(key)) {
+        return;
+      }
+      deduped.set(key, {
+        key,
+        sessionId: normalizedSessionId,
+        direction,
+        localPath: normalizedLocalPath,
+        remotePath: normalizedRemotePath,
+        name: normalizedName
+      });
+    };
+
+    for (const job of uploadQueueRef.current) {
+      const sessionId = tabSessionIdMap.get(job.tabId) ?? "";
+      if (!sessionId) {
+        continue;
+      }
+      appendItem(sessionId, "upload", job.localPath, job.remotePath, job.name);
+    }
+    for (const job of downloadQueueRef.current) {
+      const sessionId = tabSessionIdMap.get(job.tabId) ?? "";
+      if (!sessionId) {
+        continue;
+      }
+      appendItem(sessionId, "download", job.localPath, job.remotePath, job.name);
+    }
+    for (const transfer of sftpTransfersRef.current) {
+      if (transfer.status !== "queued" && transfer.status !== "running") {
+        continue;
+      }
+      const sessionId =
+        (typeof transfer.sessionId === "string" && transfer.sessionId.trim()) ||
+        tabSessionIdMap.get(transfer.tabId) ||
+        "";
+      if (!sessionId) {
+        continue;
+      }
+      appendItem(
+        sessionId,
+        transfer.direction,
+        transfer.localPath,
+        transfer.remotePath,
+        transfer.name
+      );
+    }
+    return Array.from(deduped.values()).slice(0, MAX_PENDING_TRANSFER_RESTORE_ITEMS);
+  }, []);
+  const rememberSessionTransferConflictStrategy = useCallback(
+    (
+      sessionId: string,
+      direction: "upload" | "download",
+      strategy: TransferConflictStrategy
+    ): void => {
+      const normalizedSessionId = sessionId.trim();
+      if (!normalizedSessionId) {
+        return;
+      }
+      setSessionTransferConflictStrategyState((prev) => {
+        const current = prev.bySessionId[normalizedSessionId] ?? {};
+        if (current[direction] === strategy) {
+          return prev;
+        }
+        return {
+          bySessionId: {
+            ...prev.bySessionId,
+            [normalizedSessionId]: {
+              ...current,
+              [direction]: strategy
+            }
+          }
+        };
+      });
+    },
+    []
+  );
+  const clearSessionTransferConflictStrategy = useCallback(
+    (sessionId: string, direction?: "upload" | "download"): void => {
+      const normalizedSessionId = sessionId.trim();
+      if (!normalizedSessionId) {
+        return;
+      }
+      setSessionTransferConflictStrategyState((prev) => {
+        const current = prev.bySessionId[normalizedSessionId];
+        if (!current) {
+          return prev;
+        }
+        if (!direction) {
+          const nextBySessionId = { ...prev.bySessionId };
+          delete nextBySessionId[normalizedSessionId];
+          return {
+            bySessionId: nextBySessionId
+          };
+        }
+        if (!current[direction]) {
+          return prev;
+        }
+        const nextEntry = {
+          ...current,
+          [direction]: undefined
+        };
+        if (!nextEntry.upload && !nextEntry.download) {
+          const nextBySessionId = { ...prev.bySessionId };
+          delete nextBySessionId[normalizedSessionId];
+          return {
+            bySessionId: nextBySessionId
+          };
+        }
+        return {
+          bySessionId: {
+            ...prev.bySessionId,
+            [normalizedSessionId]: nextEntry
+          }
+        };
+      });
+    },
+    []
+  );
+  useEffect(() => {
+    return () => {
+      if (transferDockNoticeTimerRef.current !== null) {
+        window.clearTimeout(transferDockNoticeTimerRef.current);
+        transferDockNoticeTimerRef.current = null;
+      }
+    };
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (hotkeyConflictHighlightTimerRef.current !== null) {
+        window.clearTimeout(hotkeyConflictHighlightTimerRef.current);
+        hotkeyConflictHighlightTimerRef.current = null;
+      }
+    };
+  }, []);
+  useEffect(() => {
+    if (hotkeyConflicts.length <= 0) {
+      setHotkeyConflictCursorIndex(0);
+      setHotkeyConflictCursorSignature(null);
+      return;
+    }
+    if (hotkeyConflictCursorSignature) {
+      const signatureIndex = hotkeyConflicts.findIndex(
+        (conflict) => conflict.signature === hotkeyConflictCursorSignature
+      );
+      if (signatureIndex >= 0) {
+        setHotkeyConflictCursorIndex(signatureIndex);
+        return;
+      }
+    }
+    setHotkeyConflictCursorIndex((prev) => Math.min(Math.max(prev, 0), hotkeyConflicts.length - 1));
+  }, [hotkeyConflictCursorSignature, hotkeyConflicts]);
+  useEffect(() => {
+    if (hotkeyConflicts.length <= 0) {
+      setHotkeyConflictCursorSignature(null);
+      return;
+    }
+    const boundedIndex = Math.min(Math.max(hotkeyConflictCursorIndex, 0), hotkeyConflicts.length - 1);
+    const nextSignature = hotkeyConflicts[boundedIndex]?.signature ?? null;
+    setHotkeyConflictCursorSignature((prev) => (prev === nextSignature ? prev : nextSignature));
+  }, [hotkeyConflictCursorIndex, hotkeyConflicts]);
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      if (hotkeyConflictCursorSignature) {
+        window.localStorage.setItem(HOTKEY_CONFLICT_NAV_STORAGE_KEY, hotkeyConflictCursorSignature);
+      } else {
+        window.localStorage.removeItem(HOTKEY_CONFLICT_NAV_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage failures; runtime state still works for this launch.
+    }
+  }, [hotkeyConflictCursorSignature]);
   const resolveAppDialog = useCallback((result: unknown) => {
     const resolver = appDialogResolverRef.current;
     appDialogResolverRef.current = null;
@@ -2233,18 +4721,51 @@ export function App() {
     },
     []
   );
+  const clearAppHintMessage = useCallback(() => {
+    if (appHintTimerRef.current !== null) {
+      window.clearTimeout(appHintTimerRef.current);
+      appHintTimerRef.current = null;
+    }
+    setAppHintMessage(null);
+  }, []);
+  const pushAppHintMessage = useCallback(
+    (message: string, options?: { level?: "info" | "warn"; durationMs?: number }) => {
+      const normalized = message.replace(/\s+/g, " ").trim();
+      if (!normalized) {
+        return;
+      }
+      const bounded =
+        normalized.length > 220 ? `${normalized.slice(0, 217)}...` : normalized;
+      if (appHintTimerRef.current !== null) {
+        window.clearTimeout(appHintTimerRef.current);
+        appHintTimerRef.current = null;
+      }
+      setAppHintMessage({
+        level: options?.level ?? "info",
+        message: bounded
+      });
+      const durationMs =
+        typeof options?.durationMs === "number" && Number.isFinite(options.durationMs)
+          ? Math.max(1200, Math.trunc(options.durationMs))
+          : 3600;
+      appHintTimerRef.current = window.setTimeout(() => {
+        appHintTimerRef.current = null;
+        setAppHintMessage(null);
+      }, durationMs);
+    },
+    []
+  );
   const showAppAlert = useCallback(
     async (message: string, options?: AppAlertDialogOptions): Promise<void> => {
-      const dialog: AppAlertDialogState = {
-        mode: "alert",
-        title: options?.title ?? "Notice",
-        message,
-        confirmLabel: options?.confirmLabel ?? "OK",
-        detailText: options?.detailText
-      };
-      await openAppDialog(dialog, undefined);
+      const title = (options?.title ?? "").trim();
+      const hasDetailText = typeof options?.detailText === "string" && options.detailText.trim().length > 0;
+      const summary = hasDetailText ? `${message} (details available)` : message;
+      pushAppHintMessage(summary, {
+        level: /error|fail|warning|warn/i.test(title) ? "warn" : "info",
+        durationMs: hasDetailText ? 5600 : 3600
+      });
     },
-    [openAppDialog]
+    [pushAppHintMessage]
   );
   const showAppConfirm = useCallback(
     async (message: string, options?: AppConfirmDialogOptions): Promise<boolean> => {
@@ -2254,7 +4775,8 @@ export function App() {
         message,
         confirmLabel: options?.confirmLabel ?? "Confirm",
         cancelLabel: options?.cancelLabel ?? "Cancel",
-        danger: options?.danger
+        danger: options?.danger,
+        detailText: options?.detailText
       };
       const result = await openAppDialog(dialog, false);
       return result === true;
@@ -2281,6 +4803,188 @@ export function App() {
     },
     [openAppDialog]
   );
+  const addTerminalCommandHistoryEntry = useCallback(async () => {
+    const input = await showAppPrompt("Enter command to add into history.", "", {
+      title: "Add Command History Entry",
+      confirmLabel: "Add"
+    });
+    if (input === null) {
+      return;
+    }
+    if (!upsertTerminalCommandHistoryCommand(input)) {
+      await showAppAlert("Command cannot be empty.", {
+        title: "Add Command History Entry"
+      });
+    }
+  }, [showAppAlert, showAppPrompt, upsertTerminalCommandHistoryCommand]);
+  const editTerminalCommandHistoryEntry = useCallback(
+    async (entry: TerminalCommandHistoryEntry) => {
+      const input = await showAppPrompt("Edit command text.", entry.command, {
+        title: "Edit Command History Entry",
+        confirmLabel: "Save"
+      });
+      if (input === null) {
+        return;
+      }
+      const normalizedInput = input.trim();
+      if (!normalizedInput) {
+        await showAppAlert("Command cannot be empty.", {
+          title: "Edit Command History Entry"
+        });
+        return;
+      }
+      if (normalizedInput === entry.command.trim()) {
+        return;
+      }
+      upsertTerminalCommandHistoryCommand(normalizedInput, {
+        replaceEntryId: entry.id,
+        preferredTabId: entry.tabId,
+        preferredTabTitle: entry.tabTitle
+      });
+    },
+    [showAppAlert, showAppPrompt, upsertTerminalCommandHistoryCommand]
+  );
+  const exportTerminalCommandHistory = useCallback(async () => {
+    try {
+      if (terminalCommandHistoryEntries.length === 0) {
+        await showAppAlert("No command history entries available to export.", {
+          title: "Export Command History"
+        });
+        return;
+      }
+      const generatedAtIso = new Date().toISOString();
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        count: terminalCommandHistoryEntries.length,
+        entries: terminalCommandHistoryEntries.map((entry) => ({
+          command: entry.command,
+          tabTitle: entry.tabTitle,
+          tabId: entry.tabId,
+          executedAt: entry.executedAt,
+          executedAtIso: toIsoTimestamp(entry.executedAt)
+        }))
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Command History",
+          defaultFileName: `termdock-command-history-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Command history exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Command history exported:\n${result.outputPath}`,
+            {
+              title: "Export Command History"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Command history JSON copied to clipboard.", {
+          title: "Export Command History"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the command history JSON manually.", {
+        title: "Export Command History",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:command-history",
+        "Failed to export command history.",
+        caughtError
+      );
+    }
+  }, [showAppAlert, systemApi, terminalCommandHistoryEntries, writeAppLog]);
+  const importTerminalCommandHistory = useCallback(async () => {
+    try {
+      if (!systemApi?.pickAndReadTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selected = await systemApi.pickAndReadTextFile({
+        title: "Import Command History",
+        buttonLabel: "Import",
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"]
+          },
+          {
+            name: "Text",
+            extensions: ["txt", "log"]
+          },
+          {
+            name: "All Files",
+            extensions: ["*"]
+          }
+        ]
+      });
+      if (selected.canceled || !selected.filePath) {
+        return;
+      }
+      const rawText = typeof selected.text === "string" ? selected.text : "";
+      if (!rawText.trim()) {
+        await showAppAlert("Selected file is empty.", {
+          title: "Import Command History"
+        });
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch (caughtError) {
+        await showAppAlert(`Invalid JSON format.\n${toLogMessage(caughtError)}`, {
+          title: "Import Command History"
+        });
+        return;
+      }
+      const commands = parseImportedCommandHistoryCommands(parsed);
+      if (commands.length === 0) {
+        await showAppAlert(
+          "No importable commands found.\nSupported formats: [\"cmd\"], { commands: [] }, { entries: [{ command }] }",
+          {
+            title: "Import Command History"
+          }
+        );
+        return;
+      }
+      for (let index = commands.length - 1; index >= 0; index -= 1) {
+        upsertTerminalCommandHistoryCommand(commands[index]);
+      }
+      await showAppAlert(
+        `Imported ${commands.length} command(s) from:\n${selected.filePath}`,
+        {
+          title: "Import Command History"
+        }
+      );
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:command-history",
+        "Failed to import command history.",
+        caughtError
+      );
+    }
+  }, [showAppAlert, systemApi, upsertTerminalCommandHistoryCommand, writeAppLog]);
   const refreshLogInfo = useCallback(async (): Promise<void> => {
     if (!systemApi?.getLogInfo) {
       setError("Log bridge unavailable. Restart `pnpm dev`.");
@@ -2395,13 +5099,17 @@ export function App() {
       if (!activeTabId || !activeTerminalTab) {
         throw new Error("Open a connected session tab first.");
       }
+      const generatedAtIso = new Date().toISOString();
       const lines: string[] = [];
       lines.push("# TermDock Port Forward Snapshot");
-      lines.push(`Generated: ${new Date().toISOString()}`);
+      lines.push(`Generated: ${generatedAtIso}`);
+      lines.push(`AppVersion: ${APP_VERSION}`);
       lines.push(`Tab: ${activeTerminalTab.title}`);
       lines.push(`TabId: ${activeTabId}`);
       lines.push(`SessionId: ${activeSessionId ?? "-"}`);
       lines.push(`Status: ${isActiveTabConnected ? "connected" : "disconnected"}`);
+      lines.push(`ForwardCount: ${portForwards.length}`);
+      lines.push(`EventHistoryCount: ${activePortForwardEventHistory.length}`);
       lines.push("");
       lines.push("## Active Forwards");
       if (portForwards.length === 0) {
@@ -2425,12 +5133,39 @@ export function App() {
         lines.push("- none");
       } else {
         for (const event of activePortForwardEventHistory.slice(0, 30)) {
+          const correlation = formatPortForwardEventCorrelation(event);
           lines.push(
-            `- ${event.createdAt} [${event.level.toUpperCase()}] ${formatPortForwardEventType(event.type)} ${formatPortForwardEventSummary(event)}: ${event.message}`
+            `- ${event.createdAt} [${event.level.toUpperCase()}] ${formatPortForwardEventType(event.type)} ${formatPortForwardEventSummary(event)}: ${event.message}${correlation ? ` | ${correlation}` : ""}`
           );
         }
       }
       const snapshotText = lines.join("\n");
+      if (systemApi?.saveTextFile) {
+        const baseName = toSafeFileNameSegment(activeTerminalTab.title);
+        const result = await systemApi.saveTextFile({
+          title: "Export Port Forward Snapshot",
+          defaultFileName: `termdock-port-forward-snapshot-${baseName}-${generatedAtIso.replace(/[:]/g, "-")}.txt`,
+          text: `${snapshotText}\n`,
+          filters: [
+            {
+              name: "Text",
+              extensions: ["txt"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Port forwarding snapshot exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Port forwarding snapshot exported:\n${result.outputPath}`,
+            {
+              title: "Port Forwarding Diagnostics"
+            }
+          );
+        }
+        return;
+      }
       const copied = await copyTextToClipboard(snapshotText);
       if (copied) {
         await showAppAlert("Port forwarding snapshot copied to clipboard.", {
@@ -2460,8 +5195,427 @@ export function App() {
     isActiveTabConnected,
     portForwards,
     showAppAlert,
+    systemApi,
     writeAppLog
   ]);
+  const exportVisiblePortForwardEventsJson = async (): Promise<void> => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        sessionId: activeSessionId ?? "",
+        tabId: activeTabId ?? "",
+        filters: {
+          eventType: portForwardEventFilter,
+          timeRange: portForwardEventTimeRange,
+          errorCode: portForwardEventErrorCode,
+          correlation: portForwardEventCorrelationQuery.trim()
+        },
+        counts: {
+          sessionHistory: activePortForwardEventHistory.length,
+          visible: visiblePortForwardEventHistory.length,
+          visibleErrors: portForwardVisibleEventAnalytics.totalErrors,
+          visibleErrorRatioPercent: Number(
+            portForwardVisibleEventAnalytics.errorRatioPercent.toFixed(2)
+          )
+        },
+        analytics: {
+          levelCounts: portForwardVisibleEventAnalytics.levelCounts,
+          typeCounts: portForwardVisibleEventAnalytics.typeCounts,
+          topErrorCodes: portForwardVisibleEventAnalytics.topErrorCodes,
+          topCorrelations: portForwardVisibleEventAnalytics.topCorrelations
+        },
+        events: visiblePortForwardEventHistory.map((event) => ({
+          id: event.id,
+          createdAt: event.createdAt,
+          level: event.level,
+          type: event.type,
+          summary: formatPortForwardEventSummary(event),
+          message: event.message,
+          correlationKey: event.correlationKey ?? "",
+          connectionId: event.connectionId ?? "",
+          sourceEndpoint: event.sourceEndpoint ?? "",
+          targetEndpoint: event.targetEndpoint ?? "",
+          errorCode: event.errorCode ?? "",
+          forwardId: event.forwardId,
+          tabId: event.tabId
+        }))
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      const baseName = toSafeFileNameSegment(
+        activeTerminalTab?.title || activeSessionId || "port-forward-events"
+      );
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Port Forward Events (JSON)",
+          defaultFileName: `termdock-port-forward-events-${baseName}-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Port forwarding events JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Port forwarding events JSON exported:\n${result.outputPath}`,
+            {
+              title: "Port Forwarding Events"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Port forwarding events JSON copied to clipboard.", {
+          title: "Port Forwarding Events"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the JSON below manually.", {
+        title: "Port Forwarding Events",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to export visible port forwarding events JSON.",
+        caughtError
+      );
+    }
+  };
+  const exportVisiblePortForwardEventsCsv = async (): Promise<void> => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const lines: string[] = [];
+      lines.push("# TermDock Port Forward Event Export");
+      lines.push("# Format: CSV");
+      lines.push(`# Generated: ${generatedAtIso}`);
+      lines.push(`# AppVersion: ${APP_VERSION}`);
+      lines.push(
+        `# Filters: type=${portForwardEventFilter}, timeRange=${portForwardEventTimeRange}, errorCode=${portForwardEventErrorCode}, correlation=${portForwardEventCorrelationQuery.trim() || "-"}`
+      );
+      lines.push(
+        `# Counts: session=${activePortForwardEventHistory.length}, visible=${visiblePortForwardEventHistory.length}`
+      );
+      lines.push(
+        `# VisibleErrorRatio: ${Number(portForwardVisibleEventAnalytics.errorRatioPercent.toFixed(2))}% (${portForwardVisibleEventAnalytics.totalErrors}/${portForwardVisibleEventAnalytics.totalVisible})`
+      );
+      lines.push("");
+      lines.push(
+        [
+          "createdAt",
+          "level",
+          "type",
+          "summary",
+          "message",
+          "correlationKey",
+          "connectionId",
+          "sourceEndpoint",
+          "targetEndpoint",
+          "errorCode",
+          "forwardId",
+          "tabId",
+          "eventId"
+        ].join(",")
+      );
+      for (const event of visiblePortForwardEventHistory) {
+        lines.push(
+          [
+            event.createdAt,
+            event.level,
+            event.type,
+            formatPortForwardEventSummary(event),
+            event.message,
+            event.correlationKey ?? "",
+            event.connectionId ?? "",
+            event.sourceEndpoint ?? "",
+            event.targetEndpoint ?? "",
+            event.errorCode ?? "",
+            event.forwardId,
+            event.tabId,
+            event.id
+          ]
+            .map((value) => escapeCsvCell(value))
+            .join(",")
+        );
+      }
+      const exportText = `${lines.join("\n")}\n`;
+      const baseName = toSafeFileNameSegment(
+        activeTerminalTab?.title || activeSessionId || "port-forward-events"
+      );
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Port Forward Events (CSV)",
+          defaultFileName: `termdock-port-forward-events-${baseName}-${generatedAtIso.replace(/[:]/g, "-")}.csv`,
+          text: exportText,
+          filters: [
+            {
+              name: "CSV",
+              extensions: ["csv"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Port forwarding events CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Port forwarding events CSV exported:\n${result.outputPath}`,
+            {
+              title: "Port Forwarding Events"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Port forwarding events CSV copied to clipboard.", {
+          title: "Port Forwarding Events"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the CSV below manually.", {
+        title: "Port Forwarding Events",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to export visible port forwarding events CSV.",
+        caughtError
+      );
+    }
+  };
+  const exportPortForwardEventAnalyticsJson = async (): Promise<void> => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        sessionId: activeSessionId ?? "",
+        tabId: activeTabId ?? "",
+        filters: {
+          eventType: portForwardEventFilter,
+          timeRange: portForwardEventTimeRange,
+          errorCode: portForwardEventErrorCode,
+          correlation: portForwardEventCorrelationQuery.trim()
+        },
+        counts: {
+          sessionHistory: activePortForwardEventHistory.length,
+          visible: visiblePortForwardEventHistory.length
+        },
+        analytics: {
+          totalVisible: portForwardVisibleEventAnalytics.totalVisible,
+          totalErrors: portForwardVisibleEventAnalytics.totalErrors,
+          errorRatioPercent: Number(portForwardVisibleEventAnalytics.errorRatioPercent.toFixed(2)),
+          levelCounts: portForwardVisibleEventAnalytics.levelCounts,
+          typeCounts: portForwardVisibleEventAnalytics.typeCounts,
+          topErrorCodes: portForwardVisibleEventAnalytics.topErrorCodes,
+          topCorrelations: portForwardVisibleEventAnalytics.topCorrelations,
+          earliestVisibleAt: portForwardVisibleEventAnalytics.earliestVisibleAt,
+          latestVisibleAt: portForwardVisibleEventAnalytics.latestVisibleAt
+        },
+        samples: {
+          latestVisibleEvents: visiblePortForwardEventHistory.slice(0, 40).map((event) => ({
+            id: event.id,
+            createdAt: event.createdAt,
+            level: event.level,
+            type: event.type,
+            summary: formatPortForwardEventSummary(event),
+            message: event.message,
+            correlationKey: event.correlationKey ?? "",
+            connectionId: event.connectionId ?? "",
+            sourceEndpoint: event.sourceEndpoint ?? "",
+            targetEndpoint: event.targetEndpoint ?? "",
+            errorCode: event.errorCode ?? "",
+            forwardId: event.forwardId,
+            tabId: event.tabId
+          }))
+        }
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      const baseName = toSafeFileNameSegment(
+        activeTerminalTab?.title || activeSessionId || "port-forward-event-analytics"
+      );
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Port Forward Analytics (JSON)",
+          defaultFileName: `termdock-port-forward-event-analytics-${baseName}-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Port forwarding analytics JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Port forwarding analytics JSON exported:\n${result.outputPath}`,
+            {
+              title: "Port Forwarding Events"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Port forwarding analytics JSON copied to clipboard.", {
+          title: "Port Forwarding Events"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the analytics JSON below manually.", {
+        title: "Port Forwarding Events",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to export port forwarding analytics JSON.",
+        caughtError
+      );
+    }
+  };
+  const exportPortForwardEventAnalyticsCsv = async (): Promise<void> => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const lines: string[] = [];
+      lines.push("# TermDock Port Forward Event Analytics Export");
+      lines.push("# Format: CSV");
+      lines.push(`# Generated: ${generatedAtIso}`);
+      lines.push(`# AppVersion: ${APP_VERSION}`);
+      lines.push(
+        `# Filters: type=${portForwardEventFilter}, timeRange=${portForwardEventTimeRange}, errorCode=${portForwardEventErrorCode}, correlation=${portForwardEventCorrelationQuery.trim() || "-"}`
+      );
+      lines.push(
+        `# Counts: session=${activePortForwardEventHistory.length}, visible=${visiblePortForwardEventHistory.length}`
+      );
+      lines.push("");
+      lines.push("metric,value");
+      lines.push(
+        `totalVisible,${escapeCsvCell(portForwardVisibleEventAnalytics.totalVisible)}`
+      );
+      lines.push(`totalErrors,${escapeCsvCell(portForwardVisibleEventAnalytics.totalErrors)}`);
+      lines.push(
+        `errorRatioPercent,${escapeCsvCell(
+          Number(portForwardVisibleEventAnalytics.errorRatioPercent.toFixed(2))
+        )}`
+      );
+      lines.push(
+        `earliestVisibleAt,${escapeCsvCell(portForwardVisibleEventAnalytics.earliestVisibleAt || "-")}`
+      );
+      lines.push(
+        `latestVisibleAt,${escapeCsvCell(portForwardVisibleEventAnalytics.latestVisibleAt || "-")}`
+      );
+      lines.push("");
+      lines.push("level,count");
+      lines.push(`info,${escapeCsvCell(portForwardVisibleEventAnalytics.levelCounts.info)}`);
+      lines.push(`error,${escapeCsvCell(portForwardVisibleEventAnalytics.levelCounts.error)}`);
+      lines.push("");
+      lines.push("type,count");
+      lines.push(`created,${escapeCsvCell(portForwardVisibleEventAnalytics.typeCounts.created)}`);
+      lines.push(`removed,${escapeCsvCell(portForwardVisibleEventAnalytics.typeCounts.removed)}`);
+      lines.push(
+        `statusDegraded,${escapeCsvCell(portForwardVisibleEventAnalytics.typeCounts.statusDegraded)}`
+      );
+      lines.push(
+        `statusRecovered,${escapeCsvCell(portForwardVisibleEventAnalytics.typeCounts.statusRecovered)}`
+      );
+      lines.push("");
+      lines.push("topErrorCode,count");
+      if (portForwardVisibleEventAnalytics.topErrorCodes.length === 0) {
+        lines.push([ "-", 0 ].map((value) => escapeCsvCell(value)).join(","));
+      } else {
+        for (const entry of portForwardVisibleEventAnalytics.topErrorCodes) {
+          lines.push([entry.code, entry.count].map((value) => escapeCsvCell(value)).join(","));
+        }
+      }
+      lines.push("");
+      lines.push("topCorrelationKey,count");
+      if (portForwardVisibleEventAnalytics.topCorrelations.length === 0) {
+        lines.push([ "-", 0 ].map((value) => escapeCsvCell(value)).join(","));
+      } else {
+        for (const entry of portForwardVisibleEventAnalytics.topCorrelations) {
+          lines.push(
+            [entry.correlationKey, entry.count]
+              .map((value) => escapeCsvCell(value))
+              .join(",")
+          );
+        }
+      }
+      const exportText = `${lines.join("\n")}\n`;
+      const baseName = toSafeFileNameSegment(
+        activeTerminalTab?.title || activeSessionId || "port-forward-event-analytics"
+      );
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Port Forward Analytics (CSV)",
+          defaultFileName: `termdock-port-forward-event-analytics-${baseName}-${generatedAtIso.replace(/[:]/g, "-")}.csv`,
+          text: exportText,
+          filters: [
+            {
+              name: "CSV",
+              extensions: ["csv"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Port forwarding analytics CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Port forwarding analytics CSV exported:\n${result.outputPath}`,
+            {
+              title: "Port Forwarding Events"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Port forwarding analytics CSV copied to clipboard.", {
+          title: "Port Forwarding Events"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the analytics CSV below manually.", {
+        title: "Port Forwarding Events",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to export port forwarding analytics CSV.",
+        caughtError
+      );
+    }
+  };
   const clearVisiblePortForwardHistory = useCallback(async (): Promise<void> => {
     if (!activeSessionId || visiblePortForwardEventHistory.length === 0) {
       return;
@@ -2815,6 +5969,7 @@ export function App() {
         message,
         confirmLabel: "",
         cancelLabel: options?.cancelLabel ?? "Cancel",
+        detailText: options?.detailText,
         options: choices
       };
       const result = await openAppDialog(dialog, null);
@@ -2842,6 +5997,14 @@ export function App() {
     }
     resolveAppDialog(undefined);
   }, [appDialog, appDialogInput, resolveAppDialog]);
+  useEffect(() => {
+    return () => {
+      if (appHintTimerRef.current !== null) {
+        window.clearTimeout(appHintTimerRef.current);
+        appHintTimerRef.current = null;
+      }
+    };
+  }, []);
   const editingSession = useMemo(
     () => sessions.find((session) => session.id === editingSessionId) ?? null,
     [editingSessionId, sessions]
@@ -3154,6 +6317,44 @@ export function App() {
       queued: activeDownloadQueueStats.queued
     };
   }, [activeDownloadBatchProgress, activeDownloadQueueStats]);
+  const buildBatchFailureDetailText = useCallback(
+    (
+      tabId: string,
+      batchId: string,
+      direction: "upload" | "download",
+      totalFailed: number
+    ): string | undefined => {
+      if (totalFailed <= 0) {
+        return undefined;
+      }
+      const failedItems = sftpTransfers
+        .filter(
+          (transfer) =>
+            transfer.tabId === tabId &&
+            transfer.direction === direction &&
+            transfer.batchId === batchId &&
+            transfer.status === "failed"
+        )
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+        .slice(0, 12);
+      if (failedItems.length === 0) {
+        return undefined;
+      }
+      const lines = failedItems.map((item, index) => {
+        const route =
+          direction === "upload"
+            ? `${item.localPath} -> ${item.remotePath}`
+            : `${item.remotePath} -> ${item.localPath}`;
+        const message = item.message?.trim() || "failed";
+        return `${index + 1}. ${item.name} | ${route} | ${message}`;
+      });
+      const remaining = Math.max(0, totalFailed - failedItems.length);
+      const remainingHint =
+        remaining > 0 ? `\n... ${remaining} more failed item(s) not shown.` : "";
+      return `Failed items (${failedItems.length}/${totalFailed} shown):\n${lines.join("\n")}${remainingHint}`;
+    },
+    [sftpTransfers]
+  );
   const canClearFinishedUploads =
     !!activeTabId &&
     (activeUploadQueueStats.completed +
@@ -3168,8 +6369,99 @@ export function App() {
       0);
   const canRetryFailedUploads = !!activeTabId && failedUploadRetryCandidates.length > 0;
   const canRetryFailedDownloads = !!activeTabId && failedDownloadRetryCandidates.length > 0;
-  const retryCenterEntries = useMemo(() => {
+  const failedRetryCandidateTotal =
+    failedUploadRetryCandidates.length + failedDownloadRetryCandidates.length;
+  const canRetryAllFailedTransfers = !!activeTabId && failedRetryCandidateTotal > 0;
+  const operationCenterTransferTabSummaries = useMemo(() => {
+    const byTabId = new Map<
+      string,
+      {
+        tabId: string;
+        title: string;
+        connected: boolean;
+        uploadRunning: number;
+        uploadQueued: number;
+        downloadRunning: number;
+        downloadQueued: number;
+        totalActive: number;
+      }
+    >();
+    for (const tab of terminalTabs) {
+      byTabId.set(tab.id, {
+        tabId: tab.id,
+        title: tab.title,
+        connected: connectedTabIdsRef.current.has(tab.id),
+        uploadRunning: 0,
+        uploadQueued: 0,
+        downloadRunning: 0,
+        downloadQueued: 0,
+        totalActive: 0
+      });
+    }
+    for (const transfer of sftpTransfers) {
+      if (transfer.status !== "queued" && transfer.status !== "running") {
+        continue;
+      }
+      const current = byTabId.get(transfer.tabId) ?? {
+        tabId: transfer.tabId,
+        title: transfer.tabId,
+        connected: connectedTabIdsRef.current.has(transfer.tabId),
+        uploadRunning: 0,
+        uploadQueued: 0,
+        downloadRunning: 0,
+        downloadQueued: 0,
+        totalActive: 0
+      };
+      if (transfer.direction === "upload") {
+        if (transfer.status === "running") {
+          current.uploadRunning += 1;
+        } else {
+          current.uploadQueued += 1;
+        }
+      } else if (transfer.status === "running") {
+        current.downloadRunning += 1;
+      } else {
+        current.downloadQueued += 1;
+      }
+      byTabId.set(transfer.tabId, current);
+    }
+    const summaries = Array.from(byTabId.values())
+      .map((entry) => ({
+        ...entry,
+        totalActive:
+          entry.uploadRunning +
+          entry.uploadQueued +
+          entry.downloadRunning +
+          entry.downloadQueued
+      }))
+      .filter((entry) => entry.totalActive > 0)
+      .sort((left, right) => {
+        if (right.totalActive !== left.totalActive) {
+          return right.totalActive - left.totalActive;
+        }
+        return left.title.localeCompare(right.title);
+      })
+      .slice(0, 12);
+    return summaries;
+  }, [sftpTransfers, terminalTabs]);
+  const operationCenterActiveCount =
+    operationCenterTransferTabSummaries.length +
+    (sftpDeleteProgress ? 1 : 0) +
+    (portForwardBusy ? 1 : 0);
+  const hasOperationCenterActivity = operationCenterActiveCount > 0;
+  const retryCenterSessionMetaById = useMemo(() => {
+    const map = new Map<string, { sessionName: string; groupName: string }>();
+    for (const session of sessions) {
+      map.set(session.id, {
+        sessionName: session.name.trim() || session.id,
+        groupName: session.groupId?.trim() || "Ungrouped"
+      });
+    }
+    return map;
+  }, [sessions]);
+  const retryCenterEntriesWithoutFailureReasonFilter = useMemo(() => {
     const normalizedQuery = retryCenterQuery.trim().toLowerCase();
+    const cutoffMs = resolveTransferHistoryTimeRangeCutoff(retryCenterTimeRange, Date.now());
     const filtered = transferHistory.filter((entry) => {
       if (retryCenterScope === "activeSession") {
         if (!activeSessionId || entry.sessionId !== activeSessionId) {
@@ -3180,6 +6472,9 @@ export function App() {
         return false;
       }
       if (retryCenterStatus !== "all" && entry.status !== retryCenterStatus) {
+        return false;
+      }
+      if (cutoffMs !== null && entry.updatedAt < cutoffMs) {
         return false;
       }
       if (!normalizedQuery) {
@@ -3199,8 +6494,235 @@ export function App() {
     retryCenterQuery,
     retryCenterScope,
     retryCenterStatus,
+    retryCenterTimeRange,
     transferHistory
   ]);
+  const retryCenterFailureReasonOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of retryCenterEntriesWithoutFailureReasonFilter) {
+      if (entry.status !== "failed") {
+        continue;
+      }
+      const reason = classifyTransferFailureReason(entry.message);
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([reason, total]) => ({ reason, total }))
+      .sort((left, right) => {
+        if (right.total !== left.total) {
+          return right.total - left.total;
+        }
+        return left.reason.localeCompare(right.reason);
+      })
+      .slice(0, 24);
+  }, [retryCenterEntriesWithoutFailureReasonFilter]);
+  const retryCenterResolvedFailureReasonFilter = useMemo(() => {
+    if (retryCenterFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL) {
+      return RETRY_CENTER_FAILURE_REASON_ALL;
+    }
+    return retryCenterFailureReasonOptions.some(
+      (entry) => entry.reason === retryCenterFailureReasonFilter
+    )
+      ? retryCenterFailureReasonFilter
+      : RETRY_CENTER_FAILURE_REASON_ALL;
+  }, [retryCenterFailureReasonFilter, retryCenterFailureReasonOptions]);
+  const retryCenterEntries = useMemo(() => {
+    if (retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL) {
+      return retryCenterEntriesWithoutFailureReasonFilter;
+    }
+    return retryCenterEntriesWithoutFailureReasonFilter.filter(
+      (entry) =>
+        entry.status === "failed" &&
+        classifyTransferFailureReason(entry.message) === retryCenterResolvedFailureReasonFilter
+    );
+  }, [retryCenterEntriesWithoutFailureReasonFilter, retryCenterResolvedFailureReasonFilter]);
+  const retryCenterGroupedEntries = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        failureReason: string | null;
+        order: number;
+        total: number;
+        failedCount: number;
+        activeSessionFailedCount: number;
+        latestUpdatedAt: number;
+        entries: SftpTransferHistoryItem[];
+      }
+    >();
+    for (const entry of retryCenterEntries) {
+      const groupReason =
+        entry.status === "failed"
+          ? classifyTransferFailureReason(entry.message)
+          : `Status: ${entry.status}`;
+      const groupKey = entry.status === "failed" ? `failed:${groupReason}` : `status:${entry.status}`;
+      const groupLabel = entry.status === "failed" ? `Failed: ${groupReason}` : groupReason;
+      const current = grouped.get(groupKey);
+      if (!current) {
+        grouped.set(groupKey, {
+          key: groupKey,
+          label: groupLabel,
+          failureReason: entry.status === "failed" ? groupReason : null,
+          order: entry.status === "failed" ? 0 : 1,
+          total: 1,
+          failedCount: entry.status === "failed" ? 1 : 0,
+          activeSessionFailedCount:
+            entry.status === "failed" && !!activeSessionId && entry.sessionId === activeSessionId
+              ? 1
+              : 0,
+          latestUpdatedAt: entry.updatedAt,
+          entries: [entry]
+        });
+        continue;
+      }
+      current.total += 1;
+      current.latestUpdatedAt = Math.max(current.latestUpdatedAt, entry.updatedAt);
+      if (entry.status === "failed") {
+        current.failedCount += 1;
+        if (activeSessionId && entry.sessionId === activeSessionId) {
+          current.activeSessionFailedCount += 1;
+        }
+      }
+      current.entries.push(entry);
+    }
+    return Array.from(grouped.values()).sort((left, right) => {
+      if (left.order !== right.order) {
+        return left.order - right.order;
+      }
+      if (right.total !== left.total) {
+        return right.total - left.total;
+      }
+      if (right.latestUpdatedAt !== left.latestUpdatedAt) {
+        return right.latestUpdatedAt - left.latestUpdatedAt;
+      }
+      return left.label.localeCompare(right.label);
+    });
+  }, [activeSessionId, retryCenterEntries]);
+  const retryCenterCollapsedGroupKeySet = useMemo(
+    () => new Set(retryCenterCollapsedGroupKeys),
+    [retryCenterCollapsedGroupKeys]
+  );
+  const isRetryCenterGroupedView = retryCenterListMode === "groupedByReason";
+  const retryCenterAnalytics = useMemo(() => {
+    const statusCounts: Record<SftpTransferEvent["status"], number> = {
+      queued: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      canceled: 0
+    };
+    const directionCounts: Record<SftpTransferEvent["direction"], number> = {
+      upload: 0,
+      download: 0
+    };
+    const sessionCounts = new Map<
+      string,
+      {
+        sessionId: string;
+        sessionName: string;
+        groupName: string;
+        total: number;
+        failed: number;
+      }
+    >();
+    const groupCounts = new Map<string, number>();
+    const failureReasonCounts = new Map<string, number>();
+    for (const entry of retryCenterEntries) {
+      directionCounts[entry.direction] += 1;
+      statusCounts[entry.status] += 1;
+      const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
+      const sessionName = sessionMeta?.sessionName ?? entry.sessionId;
+      const groupName = sessionMeta?.groupName ?? "Unknown";
+      const currentSessionCount = sessionCounts.get(entry.sessionId);
+      if (!currentSessionCount) {
+        sessionCounts.set(entry.sessionId, {
+          sessionId: entry.sessionId,
+          sessionName,
+          groupName,
+          total: 1,
+          failed: entry.status === "failed" ? 1 : 0
+        });
+      } else {
+        currentSessionCount.total += 1;
+        if (entry.status === "failed") {
+          currentSessionCount.failed += 1;
+        }
+      }
+      if (entry.status === "failed") {
+        const failureReason = classifyTransferFailureReason(entry.message);
+        failureReasonCounts.set(failureReason, (failureReasonCounts.get(failureReason) ?? 0) + 1);
+      }
+      groupCounts.set(groupName, (groupCounts.get(groupName) ?? 0) + 1);
+    }
+    const totalCount = retryCenterEntries.length;
+    const failedCount = statusCounts.failed;
+    const failedRatioPercent = totalCount > 0 ? (failedCount / totalCount) * 100 : 0;
+    const topSessions = Array.from(sessionCounts.values())
+      .sort((left, right) => {
+        if (right.total !== left.total) {
+          return right.total - left.total;
+        }
+        if (right.failed !== left.failed) {
+          return right.failed - left.failed;
+        }
+        return left.sessionName.localeCompare(right.sessionName);
+      })
+      .slice(0, 3);
+    const topGroups = Array.from(groupCounts.entries())
+      .map(([groupName, total]) => ({ groupName, total }))
+      .sort((left, right) => {
+        if (right.total !== left.total) {
+          return right.total - left.total;
+        }
+        return left.groupName.localeCompare(right.groupName);
+      })
+      .slice(0, 3);
+    const topFailureReasons = Array.from(failureReasonCounts.entries())
+      .map(([reason, total]) => ({
+        reason,
+        total
+      }))
+      .sort((left, right) => {
+        if (right.total !== left.total) {
+          return right.total - left.total;
+        }
+        return left.reason.localeCompare(right.reason);
+      })
+      .slice(0, 5);
+    return {
+      totalCount,
+      failedCount,
+      failedRatioPercent,
+      directionCounts,
+      statusCounts,
+      topSessions,
+      topGroups,
+      topFailureReasons
+    };
+  }, [retryCenterEntries, retryCenterSessionMetaById]);
+  const retryCenterVisibleExportEntries = useMemo(
+    () =>
+      retryCenterEntries.map((entry) => {
+        const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
+        return {
+          key: entry.key,
+          sessionId: entry.sessionId,
+          sessionName: sessionMeta?.sessionName ?? entry.sessionId,
+          groupName: sessionMeta?.groupName ?? "Unknown",
+          direction: entry.direction,
+          status: entry.status,
+          name: entry.name,
+          localPath: entry.localPath,
+          remotePath: entry.remotePath,
+          attemptCount: entry.attemptCount,
+          updatedAt: entry.updatedAt,
+          updatedAtIso: toIsoTimestamp(entry.updatedAt),
+          message: entry.message ?? ""
+        };
+      }),
+    [retryCenterEntries, retryCenterSessionMetaById]
+  );
   const retryCenterSelectionSet = useMemo(
     () => new Set(retryCenterSelection),
     [retryCenterSelection]
@@ -3219,11 +6741,324 @@ export function App() {
       ),
     [activeSessionId, selectedRetryCenterEntries]
   );
+  const visibleRetryCenterFailedEntries = useMemo(
+    () =>
+      retryCenterEntries.filter(
+        (entry) =>
+          entry.status === "failed" && !!activeSessionId && entry.sessionId === activeSessionId
+      ),
+    [activeSessionId, retryCenterEntries]
+  );
+  const visibleRetryCenterFailedReasonCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of visibleRetryCenterFailedEntries) {
+      const reason = classifyTransferFailureReason(entry.message);
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+    return counts;
+  }, [visibleRetryCenterFailedEntries]);
+  const retryCenterTopFailureReasonRetryRows = useMemo(
+    () =>
+      retryCenterAnalytics.topFailureReasons.map((entry) => ({
+        reason: entry.reason,
+        totalVisible: entry.total,
+        activeSessionVisibleFailed: visibleRetryCenterFailedReasonCounts.get(entry.reason) ?? 0,
+        isCurrentFilter:
+          retryCenterResolvedFailureReasonFilter !== RETRY_CENTER_FAILURE_REASON_ALL &&
+          retryCenterResolvedFailureReasonFilter === entry.reason
+      })),
+    [
+      retryCenterAnalytics.topFailureReasons,
+      retryCenterResolvedFailureReasonFilter,
+      visibleRetryCenterFailedReasonCounts
+    ]
+  );
+  const retryCenterFailureSuggestionRows = useMemo(
+    () =>
+      retryCenterTopFailureReasonRetryRows
+        .map((entry) => ({
+          reason: entry.reason,
+          suggestion: getTransferFailureSuggestion(entry.reason)
+        }))
+        .filter(
+          (entry): entry is { reason: string; suggestion: string } =>
+            typeof entry.suggestion === "string" && entry.suggestion.length > 0
+        ),
+    [retryCenterTopFailureReasonRetryRows]
+  );
   const canRetrySelectedRetryCenterEntries =
     !!activeTabId && selectedRetryCenterFailedEntries.length > 0;
+  const canRetryVisibleRetryCenterEntries = !!activeTabId && visibleRetryCenterFailedEntries.length > 0;
   const canClearSelectedRetryCenterEntries = selectedRetryCenterEntries.length > 0;
   const canClearVisibleRetryCenterEntries = retryCenterEntries.length > 0;
   const canClearAllRetryCenterEntries = transferHistory.length > 0;
+  const canExportRetryCenterAnalytics = transferHistory.length > 0;
+  const retryCenterSelectedFailureReasonLabel =
+    retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL
+      ? "All"
+      : retryCenterResolvedFailureReasonFilter;
+  const retryCenterFailureReasonExportValue =
+    retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL
+      ? "all"
+      : retryCenterResolvedFailureReasonFilter;
+  const retryCenterLastRetryScopeLabel =
+    retryCenterLastRetryScope === "upload"
+      ? "Upload Only"
+      : retryCenterLastRetryScope === "download"
+        ? "Download Only"
+        : "All Retryable";
+  const hasCustomizedRetryCenterView =
+    retryCenterScope !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.scope ||
+    retryCenterDirection !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.direction ||
+    retryCenterStatus !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.status ||
+    retryCenterTimeRange !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.timeRange ||
+    retryCenterListMode !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.listMode ||
+    retryCenterResolvedFailureReasonFilter !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.failureReason ||
+    retryCenterLastRetryScope !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.lastRetryScope ||
+    retryCenterAutoUseLastRetryScope !==
+      DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.autoUseLastRetryScope ||
+    retryBatchConfirmThreshold !==
+      DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.retryBatchConfirmThreshold ||
+    retryCenterQuery.trim().length > 0;
+  const resetRetryCenterViewFilters = useCallback(() => {
+    setRetryCenterScope(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.scope);
+    setRetryCenterDirection(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.direction);
+    setRetryCenterStatus(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.status);
+    setRetryCenterTimeRange(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.timeRange);
+    setRetryCenterListMode(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.listMode);
+    setRetryCenterFailureReasonFilter(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.failureReason);
+    setRetryCenterLastRetryScope(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.lastRetryScope);
+    setRetryCenterAutoUseLastRetryScope(
+      DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.autoUseLastRetryScope
+    );
+    setRetryBatchConfirmThreshold(
+      DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.retryBatchConfirmThreshold
+    );
+    setRetryCenterQuery(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.query);
+    setRetryCenterCollapsedGroupKeys([]);
+  }, []);
+  const toggleRetryCenterGroupCollapsed = useCallback((groupKey: string) => {
+    const normalized = groupKey.trim();
+    if (!normalized) {
+      return;
+    }
+    setRetryCenterCollapsedGroupKeys((prev) => {
+      if (prev.includes(normalized)) {
+        return prev.filter((key) => key !== normalized);
+      }
+      return [...prev, normalized];
+    });
+  }, []);
+  const collapseAllRetryCenterGroups = useCallback(() => {
+    setRetryCenterCollapsedGroupKeys(retryCenterGroupedEntries.map((entry) => entry.key));
+  }, [retryCenterGroupedEntries]);
+  const expandAllRetryCenterGroups = useCallback(() => {
+    setRetryCenterCollapsedGroupKeys([]);
+  }, []);
+  const canCollapseAllRetryCenterGroups =
+    retryCenterGroupedEntries.length > 0 &&
+    retryCenterGroupedEntries.some((entry) => !retryCenterCollapsedGroupKeySet.has(entry.key));
+  const canExpandAllRetryCenterGroups =
+    retryCenterGroupedEntries.length > 0 &&
+    retryCenterGroupedEntries.some((entry) => retryCenterCollapsedGroupKeySet.has(entry.key));
+  const selectRetryCenterGroupEntries = useCallback(
+    (groupKey: string) => {
+      const targetGroup = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
+      if (!targetGroup || targetGroup.entries.length === 0) {
+        return;
+      }
+      const targetKeys = new Set(targetGroup.entries.map((entry) => entry.key));
+      setRetryCenterSelection((prev) => {
+        const next = [...prev];
+        for (const key of targetKeys) {
+          if (!next.includes(key)) {
+            next.push(key);
+          }
+        }
+        return next;
+      });
+    },
+    [retryCenterGroupedEntries]
+  );
+  const getRetryCenterGroupEntriesForRetryScope = useCallback(
+    (
+      group: (typeof retryCenterGroupedEntries)[number],
+      retryScope: RetryCenterRetryScope
+    ): SftpTransferHistoryItem[] => {
+      if (!activeSessionId) {
+        return [];
+      }
+      const retryableEntries = group.entries.filter(
+        (entry) => entry.status === "failed" && entry.sessionId === activeSessionId
+      );
+      if (retryScope === "upload") {
+        return retryableEntries.filter((entry) => entry.direction === "upload");
+      }
+      if (retryScope === "download") {
+        return retryableEntries.filter((entry) => entry.direction === "download");
+      }
+      return retryableEntries;
+    },
+    [activeSessionId]
+  );
+  const chooseRetryCenterGroupRetryScope = async (
+    group: (typeof retryCenterGroupedEntries)[number]
+  ): Promise<RetryCenterRetryScope | null> => {
+    const retryableEntries = getRetryCenterGroupEntriesForRetryScope(group, "all");
+    if (retryableEntries.length === 0) {
+      await showAppAlert("No active-session failed records can be retried for this group.", {
+        title: "Retry Center"
+      });
+      return null;
+    }
+    return chooseRetryCenterRetryScope(
+      retryableEntries,
+      `Choose retry scope for "${group.label}".`
+    );
+  };
+  const retryRetryCenterGroupFailedEntries = async (groupKey: string) => {
+    if (!activeTabId || !activeSessionId) {
+      await showAppAlert("Open a terminal tab for the target session first.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    const targetGroup = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
+    if (!targetGroup) {
+      return;
+    }
+    const retryScope = await chooseRetryCenterGroupRetryScope(targetGroup);
+    if (!retryScope) {
+      return;
+    }
+    const targetEntries = getRetryCenterGroupEntriesForRetryScope(targetGroup, retryScope);
+    if (targetEntries.length === 0) {
+      await showAppAlert("No transfer tasks were requeued.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    const confirmed = await confirmRetryBatchIfNeeded(
+      targetEntries.length,
+      `group "${targetGroup.label}"`
+    );
+    if (!confirmed) {
+      return;
+    }
+    const tabId = activeTabId;
+    const targetKeys = new Set(targetEntries.map((entry) => entry.key));
+    const uploadTargetMap = new Map<
+      string,
+      { name: string; localPath: string; remotePath: string }
+    >();
+    const downloadTargetMap = new Map<
+      string,
+      { name: string; localPath: string; remotePath: string }
+    >();
+    for (const entry of targetEntries) {
+      const key = createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath);
+      const target = {
+        name: entry.name,
+        localPath: entry.localPath,
+        remotePath: entry.remotePath
+      };
+      if (entry.direction === "upload") {
+        uploadTargetMap.set(key, target);
+        continue;
+      }
+      downloadTargetMap.set(key, target);
+    }
+
+    let queuedCount = 0;
+    const uploadTargets = Array.from(uploadTargetMap.values());
+    if (uploadTargets.length > 0) {
+      const uploadQueued = enqueueUploadTargets(tabId, uploadTargets, {
+        suppressEmptyError: true
+      });
+      queuedCount += uploadQueued;
+      if (uploadQueued > 0) {
+        markTransferHistoryRetryQueued(
+          "upload",
+          uploadTargets.map((entry) => ({
+            localPath: entry.localPath,
+            remotePath: entry.remotePath
+          }))
+        );
+      }
+    }
+
+    const downloadTargets = Array.from(downloadTargetMap.values());
+    if (downloadTargets.length > 0) {
+      const resolvedTargets = await resolveDownloadTargetConflicts(
+        downloadTargets.map((entry) => ({
+          name: entry.name,
+          localPath: entry.localPath,
+          remotePath: entry.remotePath
+        })),
+        {
+          tabId,
+          sessionId: activeSessionId
+        }
+      );
+      if (resolvedTargets && resolvedTargets.length > 0) {
+        const downloadQueued = enqueueDownloadTargets(tabId, resolvedTargets, {
+          suppressEmptyError: true
+        });
+        queuedCount += downloadQueued;
+        if (downloadQueued > 0) {
+          markTransferHistoryRetryQueued(
+            "download",
+            resolvedTargets.map((entry) => ({
+              localPath: entry.localPath,
+              remotePath: entry.remotePath
+            }))
+          );
+        }
+      }
+    }
+
+    if (queuedCount <= 0) {
+      await showAppAlert("No transfer tasks were requeued.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+
+    setRetryCenterSelection((prev) => prev.filter((key) => !targetKeys.has(key)));
+    const scopeLabel =
+      retryScope === "upload"
+        ? "upload-only"
+        : retryScope === "download"
+          ? "download-only"
+          : "all retryable";
+    await showAppAlert(
+      `Requeued ${queuedCount} failed transfer task(s) from group "${targetGroup.label}" (${scopeLabel}).`,
+      {
+        title: "Retry Center"
+      }
+    );
+  };
+  const clearRetryCenterGroupEntries = async (groupKey: string) => {
+    const targetGroup = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
+    if (!targetGroup || targetGroup.entries.length === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete ${targetGroup.total} visible history record(s) in group "${targetGroup.label}"?`,
+      {
+        title: "Retry Center",
+        confirmLabel: "Delete Group",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    const targetKeys = new Set(targetGroup.entries.map((entry) => entry.key));
+    setTransferHistory((prev) => prev.filter((entry) => !targetKeys.has(entry.key)));
+    setRetryCenterSelection((prev) => prev.filter((key) => !targetKeys.has(key)));
+  };
   const canDownloadSelectedSftpEntry =
     !!selectedSftpEntry &&
     (selectedSftpEntry.kind === "file" || selectedSftpEntry.kind === "directory");
@@ -3381,6 +7216,11 @@ export function App() {
     }
   }, []);
 
+  const resetEnsuredRemoteDirectoryCacheForTab = useCallback((tabId: string) => {
+    ensuredRemoteDirectoriesRef.current.delete(tabId);
+    ensuringRemoteDirectoriesRef.current.delete(tabId);
+  }, []);
+
   const ensureRemoteDirectoryForUpload = useCallback(
     async (tabId: string, remoteDirectory: string) => {
       if (!sftpApi) {
@@ -3395,6 +7235,9 @@ export function App() {
       if (cache.has(normalized)) {
         return;
       }
+      const inFlightByPath =
+        ensuringRemoteDirectoriesRef.current.get(tabId) ?? new Map<string, Promise<void>>();
+      ensuringRemoteDirectoriesRef.current.set(tabId, inFlightByPath);
 
       const isAbsolute = normalized.startsWith("/");
       const segments = normalized.split("/").filter(Boolean);
@@ -3405,16 +7248,28 @@ export function App() {
           currentPath = nextPath;
           continue;
         }
-        try {
-          await sftpApi.createDirectory(tabId, currentPath, segment);
-        } catch (caughtError) {
-          try {
-            await sftpApi.listDirectory(tabId, nextPath);
-          } catch {
-            throw caughtError;
-          }
+        const inFlight = inFlightByPath.get(nextPath);
+        if (inFlight) {
+          await inFlight;
+          currentPath = nextPath;
+          continue;
         }
-        cache.add(nextPath);
+        const ensureTask = (async () => {
+          try {
+            await sftpApi.createDirectory(tabId, currentPath, segment);
+          } catch (caughtError) {
+            try {
+              await sftpApi.listDirectory(tabId, nextPath);
+            } catch {
+              throw caughtError;
+            }
+          }
+          cache.add(nextPath);
+        })().finally(() => {
+          inFlightByPath.delete(nextPath);
+        });
+        inFlightByPath.set(nextPath, ensureTask);
+        await ensureTask;
         currentPath = nextPath;
       }
       cache.add(normalized);
@@ -3448,22 +7303,68 @@ export function App() {
         })()
           .catch((caughtError) => {
             const message = (caughtError as Error)?.message ?? "Upload failed.";
-            if (!isTransferCanceledMessage(message)) {
-              setSftpError(message);
-              applySftpTransferEvent({
-                tabId: nextJob.tabId,
-                transferId: nextJob.transferId,
-                direction: "upload",
-                status: "failed",
-                batchId: nextJob.batchId,
-                name: nextJob.name,
-                localPath: nextJob.localPath,
-                remotePath: nextJob.remotePath,
-                transferredBytes: 0,
-                totalBytes: 0,
-                message
-              });
+            if (isTransferCanceledMessage(message)) {
+              return;
             }
+            if (isRemotePathMissingError(message)) {
+              const retryCount = nextJob.missingDirectoryRetryCount ?? 0;
+              if (retryCount < 1) {
+                resetEnsuredRemoteDirectoryCacheForTab(nextJob.tabId);
+                uploadQueueRef.current.unshift({
+                  ...nextJob,
+                  missingDirectoryRetryCount: retryCount + 1
+                });
+                writeAppLog(
+                  "warn",
+                  "renderer:sftp-transfer",
+                  "Upload hit missing remote path. Cleared ensured-directory cache and requeued once.",
+                  {
+                    tabId: nextJob.tabId,
+                    transferId: nextJob.transferId,
+                    remoteDirectory: nextJob.remoteDirectory,
+                    remotePath: nextJob.remotePath
+                  }
+                );
+                return;
+              }
+            }
+            if (isTabNotConnectedError(message)) {
+              connectedTabIdsRef.current.delete(nextJob.tabId);
+              setPausedUploadTabs((prev) => {
+                if (prev[nextJob.tabId]) {
+                  return prev;
+                }
+                return {
+                  ...prev,
+                  [nextJob.tabId]: true
+                };
+              });
+              uploadQueueRef.current.unshift(nextJob);
+              setSftpError("Terminal tab disconnected. Reconnect to resume queued uploads.");
+              return;
+            }
+            setPausedUploadTabs((prev) => {
+              if (!prev[nextJob.tabId]) {
+                return prev;
+              }
+              const next = { ...prev };
+              delete next[nextJob.tabId];
+              return next;
+            });
+            setSftpError(message);
+            applySftpTransferEvent({
+              tabId: nextJob.tabId,
+              transferId: nextJob.transferId,
+              direction: "upload",
+              status: "failed",
+              batchId: nextJob.batchId,
+              name: nextJob.name,
+              localPath: nextJob.localPath,
+              remotePath: nextJob.remotePath,
+              transferredBytes: 0,
+              totalBytes: 0,
+              message
+            });
           })
           .finally(() => {
             runningUploadIdsRef.current.delete(nextJob.transferId);
@@ -3476,8 +7377,10 @@ export function App() {
   }, [
     applySftpTransferEvent,
     ensureRemoteDirectoryForUpload,
+    resetEnsuredRemoteDirectoryCacheForTab,
     sftpApi,
-    sftpTransferPreferences.uploadConcurrency
+    sftpTransferPreferences.uploadConcurrency,
+    writeAppLog
   ]);
 
   const drainDownloadQueue = useCallback(() => {
@@ -3504,22 +7407,46 @@ export function App() {
           )
           .catch((caughtError) => {
             const message = (caughtError as Error)?.message ?? "Download failed.";
-            if (!isTransferCanceledMessage(message)) {
-              setSftpError(message);
-              applySftpTransferEvent({
-                tabId: nextJob.tabId,
-                transferId: nextJob.transferId,
-                direction: "download",
-                status: "failed",
-                batchId: nextJob.batchId,
-                name: nextJob.name,
-                localPath: nextJob.localPath,
-                remotePath: nextJob.remotePath,
-                transferredBytes: 0,
-                totalBytes: 0,
-                message
-              });
+            if (isTransferCanceledMessage(message)) {
+              return;
             }
+            if (isTabNotConnectedError(message)) {
+              connectedTabIdsRef.current.delete(nextJob.tabId);
+              setPausedDownloadTabs((prev) => {
+                if (prev[nextJob.tabId]) {
+                  return prev;
+                }
+                return {
+                  ...prev,
+                  [nextJob.tabId]: true
+                };
+              });
+              downloadQueueRef.current.unshift(nextJob);
+              setSftpError("Terminal tab disconnected. Reconnect to resume queued downloads.");
+              return;
+            }
+            setPausedDownloadTabs((prev) => {
+              if (!prev[nextJob.tabId]) {
+                return prev;
+              }
+              const next = { ...prev };
+              delete next[nextJob.tabId];
+              return next;
+            });
+            setSftpError(message);
+            applySftpTransferEvent({
+              tabId: nextJob.tabId,
+              transferId: nextJob.transferId,
+              direction: "download",
+              status: "failed",
+              batchId: nextJob.batchId,
+              name: nextJob.name,
+              localPath: nextJob.localPath,
+              remotePath: nextJob.remotePath,
+              transferredBytes: 0,
+              totalBytes: 0,
+              message
+            });
           })
           .finally(() => {
             runningDownloadIdsRef.current.delete(nextJob.transferId);
@@ -3723,6 +7650,10 @@ export function App() {
     setSftpToolbarMenu(null);
   }, []);
 
+  const closeCommandHistoryContextMenu = useCallback(() => {
+    setCommandHistoryContextMenu(null);
+  }, []);
+
   const openSftpContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLElement>, entry?: SftpEntry) => {
       event.preventDefault();
@@ -3757,6 +7688,36 @@ export function App() {
       });
     },
     [closeSftpContextMenu]
+  );
+
+  const openCommandHistoryContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>, entryId: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setCommandHistoryContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        entryId
+      });
+    },
+    []
+  );
+
+  const openCommandHistoryPanelContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".command-history-panel__item")) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setCommandHistoryContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        entryId: null
+      });
+    },
+    []
   );
 
   useEffect(() => {
@@ -3808,8 +7769,120 @@ export function App() {
   }, [sessionsApi]);
 
   useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
     terminalTabsRef.current = terminalTabs;
   }, [terminalTabs]);
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  useEffect(() => {
+    sftpTransfersRef.current = sftpTransfers;
+  }, [sftpTransfers]);
+
+  useEffect(() => {
+    transferHistoryRef.current = transferHistory;
+  }, [transferHistory]);
+
+  useEffect(() => {
+    const snapshot = collectPendingTransferRestoreSnapshot();
+    const shouldPreservePendingRestore =
+      !pendingTransferRestoreResolved &&
+      pendingTransferRestoreItems.length > 0 &&
+      snapshot.length === 0;
+    if (shouldPreservePendingRestore) {
+      return;
+    }
+    if (!arePendingTransferRestoreItemsEqual(pendingTransferRestoreItems, snapshot)) {
+      setPendingTransferRestoreItems(snapshot);
+    }
+    try {
+      if (snapshot.length === 0) {
+        window.localStorage.removeItem(SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY,
+          JSON.stringify(snapshot)
+        );
+      }
+    } catch {
+      // Ignore storage failures; runtime state still applies.
+    }
+  }, [
+    collectPendingTransferRestoreSnapshot,
+    pendingTransferRestoreItems,
+    pendingTransferRestoreResolved,
+    sftpTransfers,
+    terminalTabs
+  ]);
+
+  useEffect(() => {
+    if (pendingTransferRestoreResolved || pendingTransferRestoreItems.length === 0) {
+      pendingTransferRestoreNoticeShownRef.current = false;
+      return;
+    }
+    if (pendingTransferRestoreNoticeShownRef.current) {
+      return;
+    }
+    const targetTabId = activeTabIdRef.current ?? terminalTabsRef.current[0]?.id ?? "";
+    if (!targetTabId) {
+      return;
+    }
+    pendingTransferRestoreNoticeShownRef.current = true;
+    showTransferDockNotice(
+      targetTabId,
+      "warn",
+      `Detected ${pendingTransferRestoreItems.length} pending transfer task(s) from previous run.`
+    );
+  }, [
+    pendingTransferRestoreItems.length,
+    pendingTransferRestoreResolved,
+    showTransferDockNotice
+  ]);
+
+  useEffect(() => {
+    portForwardsRef.current = portForwards;
+  }, [portForwards]);
+
+  useEffect(() => {
+    connectionPreferencesRef.current = connectionPreferences;
+  }, [connectionPreferences]);
+
+  useEffect(() => {
+    disconnectReportCapturePreferencesRef.current = disconnectReportCapturePreferences;
+  }, [disconnectReportCapturePreferences]);
+
+  useEffect(() => {
+    pausedUploadTabsRef.current = pausedUploadTabs;
+  }, [pausedUploadTabs]);
+
+  useEffect(() => {
+    pausedDownloadTabsRef.current = pausedDownloadTabs;
+  }, [pausedDownloadTabs]);
+
+  useEffect(() => {
+    serverHealthLoadingRef.current = serverHealthLoading;
+  }, [serverHealthLoading]);
+
+  useEffect(() => {
+    serverProcessLoadingRef.current = serverProcessLoading;
+  }, [serverProcessLoading]);
+
+  useEffect(() => {
+    serverHealthErrorRef.current = serverHealthError;
+  }, [serverHealthError]);
+
+  useEffect(() => {
+    serverProcessErrorRef.current = serverProcessError;
+  }, [serverProcessError]);
+
+  useEffect(() => {
+    portForwardBusyRef.current = portForwardBusy;
+  }, [portForwardBusy]);
 
   useEffect(() => {
     portForwardPresetsRef.current = portForwardPresets;
@@ -3848,6 +7921,27 @@ export function App() {
   }, [sessions]);
 
   useEffect(() => {
+    const validSessionIds = new Set(sessions.map((session) => session.id));
+    setSessionTransferConflictStrategyState((prev) => {
+      const nextBySessionId: Record<string, SessionTransferConflictStrategy> = {};
+      let changed = false;
+      for (const [sessionId, strategy] of Object.entries(prev.bySessionId)) {
+        if (!validSessionIds.has(sessionId)) {
+          changed = true;
+          continue;
+        }
+        nextBySessionId[sessionId] = strategy;
+      }
+      if (!changed) {
+        return prev;
+      }
+      return {
+        bySessionId: nextBySessionId
+      };
+    });
+  }, [sessions]);
+
+  useEffect(() => {
     if (!activeSessionGroup) {
       setSelectedSessionIds([]);
       return;
@@ -3869,6 +7963,17 @@ export function App() {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
   }, [connectionPreferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(disconnectReportCapturePreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [disconnectReportCapturePreferences]);
 
   useEffect(() => {
     try {
@@ -3906,6 +8011,28 @@ export function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
+        TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
+        JSON.stringify(terminalCommandHistoryEntries.slice(0, MAX_TERMINAL_COMMAND_HISTORY))
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [terminalCommandHistoryEntries]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SFTP_CONFLICT_STRATEGY_STORAGE_KEY,
+        JSON.stringify(sessionTransferConflictStrategyState)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sessionTransferConflictStrategyState]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
         SFTP_TRANSFER_HISTORY_STORAGE_KEY,
         JSON.stringify(transferHistory)
       );
@@ -3913,6 +8040,108 @@ export function App() {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
   }, [transferHistory]);
+
+  useEffect(() => {
+    try {
+      if (sessionQuickProfiles.length === 0) {
+        window.localStorage.removeItem(SESSION_QUICK_PROFILES_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          SESSION_QUICK_PROFILES_STORAGE_KEY,
+          JSON.stringify(sessionQuickProfiles.slice(0, MAX_SESSION_QUICK_PROFILES))
+        );
+      }
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sessionQuickProfiles]);
+
+  useEffect(() => {
+    try {
+      if (commandSnippetGroups.length === 0) {
+        window.localStorage.removeItem(COMMAND_SNIPPET_GROUPS_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          COMMAND_SNIPPET_GROUPS_STORAGE_KEY,
+          JSON.stringify(commandSnippetGroups.slice(0, MAX_COMMAND_SNIPPET_GROUPS))
+        );
+      }
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [commandSnippetGroups]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DISCONNECT_REPORT_HISTORY_STORAGE_KEY,
+        JSON.stringify(disconnectReports)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [disconnectReports]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DISCONNECT_REPORT_VIEW_STORAGE_KEY,
+        JSON.stringify({
+          scope: disconnectReportScope,
+          trigger: disconnectReportTriggerFilter,
+          timeRange: disconnectReportTimeRange,
+          query: disconnectReportQuery.slice(0, 160)
+        } satisfies DisconnectReportViewPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [
+    disconnectReportQuery,
+    disconnectReportScope,
+    disconnectReportTimeRange,
+    disconnectReportTriggerFilter
+  ]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        RETRY_CENTER_VIEW_STORAGE_KEY,
+        JSON.stringify({
+          scope: retryCenterScope,
+          direction: retryCenterDirection,
+          status: retryCenterStatus,
+          timeRange: retryCenterTimeRange,
+          listMode: retryCenterListMode,
+          failureReason: retryCenterFailureReasonExportValue,
+          lastRetryScope: retryCenterLastRetryScope,
+          autoUseLastRetryScope: retryCenterAutoUseLastRetryScope,
+          retryBatchConfirmThreshold,
+          query: retryCenterQuery.slice(0, 160)
+        } satisfies RetryCenterViewPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [
+    retryCenterAutoUseLastRetryScope,
+    retryBatchConfirmThreshold,
+    retryCenterDirection,
+    retryCenterLastRetryScope,
+    retryCenterListMode,
+    retryCenterQuery,
+    retryCenterResolvedFailureReasonFilter,
+    retryCenterScope,
+    retryCenterStatus,
+    retryCenterTimeRange
+  ]);
+
+  useEffect(() => {
+    if (retryCenterFailureReasonFilter === retryCenterResolvedFailureReasonFilter) {
+      return;
+    }
+    setRetryCenterFailureReasonFilter(retryCenterResolvedFailureReasonFilter);
+  }, [retryCenterFailureReasonFilter, retryCenterResolvedFailureReasonFilter]);
 
   useEffect(() => {
     try {
@@ -3935,6 +8164,32 @@ export function App() {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
   }, [portForwardEventHistory]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        PORT_FORWARD_EVENT_VIEW_STORAGE_KEY,
+        JSON.stringify({
+          filter: portForwardEventFilter,
+          timeRange: portForwardEventTimeRange,
+          errorCode: portForwardEventErrorCode.slice(0, 60) || "all",
+          correlationQuery: portForwardEventCorrelationQuery.slice(0, 160)
+        } satisfies PortForwardEventViewPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [
+    portForwardEventErrorCode,
+    portForwardEventCorrelationQuery,
+    portForwardEventFilter,
+    portForwardEventTimeRange
+  ]);
+
+  useEffect(() => {
+    const validGroupKeys = new Set(retryCenterGroupedEntries.map((entry) => entry.key));
+    setRetryCenterCollapsedGroupKeys((prev) => prev.filter((key) => validGroupKeys.has(key)));
+  }, [retryCenterGroupedEntries]);
 
   useEffect(() => {
     const validKeys = new Set(retryCenterEntries.map((entry) => entry.key));
@@ -4200,6 +8455,12 @@ export function App() {
   useEffect(() => {
     connectedTabIdsRef.current.clear();
     autoRestoredPortForwardTabsRef.current.clear();
+    intentionalTabCloseIdsRef.current.clear();
+    pendingStartupCommandsByTabRef.current.clear();
+    ensuredRemoteDirectoriesRef.current.clear();
+    ensuringRemoteDirectoriesRef.current.clear();
+    setPausedUploadTabs({});
+    setPausedDownloadTabs({});
   }, [terminalApi]);
 
   useEffect(() => {
@@ -4210,10 +8471,49 @@ export function App() {
     const stopListening = terminalApi.onEvent((event) => {
       if (event.type === "status") {
         if (event.status === "connected") {
+          intentionalTabCloseIdsRef.current.delete(event.tabId);
           connectedTabIdsRef.current.add(event.tabId);
+          setPausedUploadTabs((prev) => {
+            if (!prev[event.tabId]) {
+              return prev;
+            }
+            const next = { ...prev };
+            delete next[event.tabId];
+            return next;
+          });
+          setPausedDownloadTabs((prev) => {
+            if (!prev[event.tabId]) {
+              return prev;
+            }
+            const next = { ...prev };
+            delete next[event.tabId];
+            return next;
+          });
+          writeAppLog("info", "renderer:terminal", "Terminal tab connected.", {
+            tabId: event.tabId,
+            status: event.status
+          });
+          const pendingStartupCommands = pendingStartupCommandsByTabRef.current.get(event.tabId);
+          if (pendingStartupCommands && pendingStartupCommands.length > 0) {
+            pendingStartupCommandsByTabRef.current.delete(event.tabId);
+            void runStartupCommandsOnTabRef.current(event.tabId, pendingStartupCommands).catch(
+              (caughtError) => {
+              setError(toLogMessage(caughtError));
+              writeAppLog(
+                "warn",
+                "renderer:session-profile",
+                "Failed to execute queued startup commands.",
+                {
+                  tabId: event.tabId,
+                  message: toLogMessage(caughtError)
+                }
+              );
+              }
+            );
+          }
           drainUploadQueue();
           drainDownloadQueue();
-          const tab = terminalTabs.find((item) => item.id === event.tabId);
+          const tab = terminalTabsRef.current.find((item) => item.id === event.tabId);
           if (tab) {
             const connectedAt = new Date().toISOString();
             setSessions((prev) =>
@@ -4230,7 +8530,7 @@ export function App() {
           if (tab) {
             void restorePortForwardPresetsForTab(event.tabId, tab.sessionId);
           }
-          if (event.tabId === activeTabId) {
+          if (event.tabId === activeTabIdRef.current) {
             void refreshServerHealth({
               tabId: event.tabId
             });
@@ -4240,19 +8540,65 @@ export function App() {
               });
             }
           }
-        } else {
+        } else if (event.status === "connecting") {
           connectedTabIdsRef.current.delete(event.tabId);
           autoRestoredPortForwardTabsRef.current.delete(event.tabId);
-          if (event.tabId === activeTabId) {
+          ensuredRemoteDirectoriesRef.current.delete(event.tabId);
+          ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+          writeAppLog("info", "renderer:terminal", "Terminal tab connecting.", {
+            tabId: event.tabId,
+            status: event.status
+          });
+          if (event.tabId === activeTabIdRef.current) {
+            resetServerHealth("Terminal tab is reconnecting...");
+            resetServerProcesses("Terminal tab is reconnecting...");
+          }
+        } else {
+          const expectedClose = intentionalTabCloseIdsRef.current.has(event.tabId);
+          connectedTabIdsRef.current.delete(event.tabId);
+          autoRestoredPortForwardTabsRef.current.delete(event.tabId);
+          ensuredRemoteDirectoriesRef.current.delete(event.tabId);
+          ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+          writeAppLog("warn", "renderer:terminal", "Terminal tab disconnected.", {
+            tabId: event.tabId,
+            status: event.status,
+            expectedClose
+          });
+          if (!expectedClose) {
+            captureDisconnectReport({
+              tabId: event.tabId,
+              trigger: "status",
+              status: event.status,
+              message: "Terminal tab disconnected."
+            });
+          }
+          intentionalTabCloseIdsRef.current.delete(event.tabId);
+          if (event.tabId === activeTabIdRef.current) {
             resetServerHealth("Terminal tab is not connected.");
             resetServerProcesses("Terminal tab is not connected.");
           }
         }
       }
       if (event.type === "error") {
+        const expectedClose = intentionalTabCloseIdsRef.current.has(event.tabId);
         connectedTabIdsRef.current.delete(event.tabId);
         autoRestoredPortForwardTabsRef.current.delete(event.tabId);
-        if (event.tabId === activeTabId) {
+        ensuredRemoteDirectoriesRef.current.delete(event.tabId);
+        ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+        writeAppLog("error", "renderer:terminal", "Terminal tab error.", {
+          tabId: event.tabId,
+          message: event.message,
+          expectedClose
+        });
+        if (!expectedClose) {
+          captureDisconnectReport({
+            tabId: event.tabId,
+            trigger: "error",
+            message: event.message
+          });
+        }
+        intentionalTabCloseIdsRef.current.delete(event.tabId);
+        if (event.tabId === activeTabIdRef.current) {
           resetServerHealth(event.message);
           resetServerProcesses(event.message);
         }
@@ -4260,7 +8606,7 @@ export function App() {
       if (event.type !== "status" || event.status !== "connected") {
         return;
       }
-      if (!activeTabId || event.tabId !== activeTabId) {
+      if (!activeTabIdRef.current || event.tabId !== activeTabIdRef.current) {
         return;
       }
       void loadSftpDirectory(".", {
@@ -4273,7 +8619,7 @@ export function App() {
       stopListening();
     };
   }, [
-    activeTabId,
+    captureDisconnectReport,
     drainDownloadQueue,
     drainUploadQueue,
     isServerHealthDetailOpen,
@@ -4284,7 +8630,7 @@ export function App() {
     resetServerProcesses,
     restorePortForwardPresetsForTab,
     terminalApi,
-    terminalTabs
+    writeAppLog
   ]);
 
   useEffect(() => {
@@ -4304,6 +8650,26 @@ export function App() {
       ) {
         setSftpError(event.message);
       }
+      if (event.status === "failed" && !isTransferCanceledMessage(event.message)) {
+        writeAppLog("warn", "renderer:sftp-transfer", "SFTP transfer failed.", {
+          tabId: event.tabId,
+          transferId: event.transferId,
+          direction: event.direction,
+          name: event.name,
+          localPath: event.localPath,
+          remotePath: event.remotePath,
+          message: event.message
+        });
+      } else if (event.status === "canceled") {
+        writeAppLog("info", "renderer:sftp-transfer", "SFTP transfer canceled.", {
+          tabId: event.tabId,
+          transferId: event.transferId,
+          direction: event.direction,
+          name: event.name,
+          localPath: event.localPath,
+          remotePath: event.remotePath
+        });
+      }
 
       if (
         (event.status === "completed" || event.status === "canceled") &&
@@ -4320,7 +8686,7 @@ export function App() {
     return () => {
       stopListening();
     };
-  }, [activeTabId, applySftpTransferEvent, loadSftpDirectory, sftpApi, sftpDirectory?.cwd]);
+  }, [activeTabId, applySftpTransferEvent, loadSftpDirectory, sftpApi, sftpDirectory?.cwd, writeAppLog]);
 
   useEffect(() => {
     if (!activeTabId || !activeUploadBatchProgress || !activeUploadBatchProgress.done) {
@@ -4339,9 +8705,29 @@ export function App() {
     if (canceled > 0) {
       detailParts.push(`${canceled} canceled`);
     }
-    void showAppAlert(`Upload batch finished: ${detailParts.join(", ")}.`, {
-      title: "Upload Summary"
+    const summaryMessage = `Upload batch finished: ${detailParts.join(", ")}.`;
+    const failureDetailText = buildBatchFailureDetailText(activeTabId, batchId, "upload", failed);
+    writeAppLog(failed > 0 ? "warn" : "info", "renderer:sftp-batch", "Upload batch finished.", {
+      tabId: activeTabId,
+      batchId,
+      completed,
+      failed,
+      canceled,
+      total
     });
+    if (failureDetailText) {
+      writeAppLog("warn", "renderer:sftp-batch", "Upload batch failure details.", {
+        tabId: activeTabId,
+        batchId,
+        detailText: failureDetailText
+      });
+    }
+    showTransferDockNotice(
+      activeTabId,
+      failed > 0 ? "warn" : "info",
+      failed > 0 ? `${summaryMessage} Open Retry Center for failed items.` : summaryMessage,
+      failed > 0 ? 12000 : 5000
+    );
     setUploadBatchByTab((prev) => {
       const current = prev[activeTabId];
       if (!current || current.batchId !== batchId) {
@@ -4351,7 +8737,7 @@ export function App() {
       delete next[activeTabId];
       return next;
     });
-  }, [activeTabId, activeUploadBatchProgress, showAppAlert]);
+  }, [activeTabId, activeUploadBatchProgress, buildBatchFailureDetailText, showTransferDockNotice, writeAppLog]);
 
   useEffect(() => {
     if (!activeTabId || !activeDownloadBatchProgress || !activeDownloadBatchProgress.done) {
@@ -4370,9 +8756,34 @@ export function App() {
     if (canceled > 0) {
       detailParts.push(`${canceled} canceled`);
     }
-    void showAppAlert(`Download batch finished: ${detailParts.join(", ")}.`, {
-      title: "Download Summary"
-    });
+    const summaryMessage = `Download batch finished: ${detailParts.join(", ")}.`;
+    const failureDetailText = buildBatchFailureDetailText(activeTabId, batchId, "download", failed);
+    writeAppLog(
+      failed > 0 ? "warn" : "info",
+      "renderer:sftp-batch",
+      "Download batch finished.",
+      {
+        tabId: activeTabId,
+        batchId,
+        completed,
+        failed,
+        canceled,
+        total
+      }
+    );
+    if (failureDetailText) {
+      writeAppLog("warn", "renderer:sftp-batch", "Download batch failure details.", {
+        tabId: activeTabId,
+        batchId,
+        detailText: failureDetailText
+      });
+    }
+    showTransferDockNotice(
+      activeTabId,
+      failed > 0 ? "warn" : "info",
+      failed > 0 ? `${summaryMessage} Open Retry Center for failed items.` : summaryMessage,
+      failed > 0 ? 12000 : 5000
+    );
     setDownloadBatchByTab((prev) => {
       const current = prev[activeTabId];
       if (!current || current.batchId !== batchId) {
@@ -4382,7 +8793,7 @@ export function App() {
       delete next[activeTabId];
       return next;
     });
-  }, [activeDownloadBatchProgress, activeTabId, showAppAlert]);
+  }, [activeDownloadBatchProgress, activeTabId, buildBatchFailureDetailText, showTransferDockNotice, writeAppLog]);
 
   useEffect(() => {
     if (!sftpContextMenu) {
@@ -4453,6 +8864,56 @@ export function App() {
       window.removeEventListener("scroll", onWindowLayoutChange, true);
     };
   }, [closeSftpToolbarMenu, sftpToolbarMenu]);
+
+  useEffect(() => {
+    if (!commandHistoryContextMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (commandHistoryContextMenuRef.current?.contains(target)) {
+        return;
+      }
+      closeCommandHistoryContextMenu();
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeCommandHistoryContextMenu();
+      }
+    };
+
+    const onWindowLayoutChange = () => {
+      closeCommandHistoryContextMenu();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onEscape);
+    window.addEventListener("resize", onWindowLayoutChange);
+    window.addEventListener("scroll", onWindowLayoutChange, true);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("resize", onWindowLayoutChange);
+      window.removeEventListener("scroll", onWindowLayoutChange, true);
+    };
+  }, [closeCommandHistoryContextMenu, commandHistoryContextMenu]);
+
+  useEffect(() => {
+    if (!commandHistoryContextMenu) {
+      return;
+    }
+    if (!commandHistoryContextMenu.entryId) {
+      return;
+    }
+    const hasEntry = terminalCommandHistoryEntries.some(
+      (entry) => entry.id === commandHistoryContextMenu.entryId
+    );
+    if (!hasEntry) {
+      closeCommandHistoryContextMenu();
+    }
+  }, [closeCommandHistoryContextMenu, commandHistoryContextMenu, terminalCommandHistoryEntries]);
 
   const closeSessionContextMenu = useCallback(() => {
     setSessionContextMenu(null);
@@ -4662,6 +9123,7 @@ export function App() {
       runningDownloadIdsRef.current.clear();
       isDrainingDownloadQueueRef.current = false;
       ensuredRemoteDirectoriesRef.current.clear();
+      ensuringRemoteDirectoriesRef.current.clear();
       uploadBatchNoticeRef.current.clear();
       downloadBatchNoticeRef.current.clear();
       canceledUploadBatchIdsRef.current.clear();
@@ -4734,6 +9196,184 @@ export function App() {
     },
     [buildDuplicateSessionName, showAppAlert]
   );
+
+  const exportHotkeyPreferences = useCallback(async () => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        hotkeys: hotkeyPreferences
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Hotkeys",
+          defaultFileName: `termdock-hotkeys-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Hotkeys exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Hotkeys exported:\n${result.outputPath}`,
+            {
+              title: "Export Hotkeys"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Hotkeys JSON copied to clipboard.", {
+          title: "Export Hotkeys"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the hotkeys JSON manually.", {
+        title: "Export Hotkeys",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:hotkeys", "Failed to export hotkeys.", caughtError);
+    }
+  }, [hotkeyPreferences, showAppAlert, systemApi, writeAppLog]);
+
+  const importHotkeyPreferences = useCallback(async () => {
+    try {
+      if (!systemApi?.pickAndReadTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selected = await systemApi.pickAndReadTextFile({
+        title: "Import Hotkeys",
+        buttonLabel: "Import",
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"]
+          },
+          {
+            name: "Text",
+            extensions: ["txt", "log"]
+          },
+          {
+            name: "All Files",
+            extensions: ["*"]
+          }
+        ]
+      });
+      if (selected.canceled || !selected.filePath) {
+        return;
+      }
+      const rawText = typeof selected.text === "string" ? selected.text : "";
+      if (!rawText.trim()) {
+        await showAppAlert("Selected file is empty.", {
+          title: "Import Hotkeys"
+        });
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch (caughtError) {
+        await showAppAlert(
+          `Invalid JSON format.\n${toLogMessage(caughtError)}`,
+          {
+            title: "Import Hotkeys"
+          }
+        );
+        return;
+      }
+      const importedPreferences = parseImportedHotkeyPreferences(parsed);
+      const diffLines = buildHotkeyPreferenceDiffLines(
+        hotkeyPreferences,
+        importedPreferences,
+        isMacPlatform
+      );
+      if (diffLines.length === 0) {
+        await showAppAlert("No hotkey changes detected in the selected file.", {
+          title: "Import Hotkeys"
+        });
+        return;
+      }
+      const importedConflicts = findHotkeyConflicts(importedPreferences);
+      const autoResolvedImport = autoResolveHotkeyConflicts(importedPreferences);
+      const disabledByAutoResolve = autoResolvedImport.disabledActions;
+      const previewDetailText = buildHotkeyImportPreviewDetail(
+        diffLines,
+        importedConflicts,
+        disabledByAutoResolve,
+        isMacPlatform
+      );
+      const sourceName = getPathBaseName(selected.filePath);
+      const conflictSummary =
+        importedConflicts.length > 0
+          ? `Detected ${importedConflicts.length} shortcut conflict(s) in imported hotkeys.`
+          : "No shortcut conflicts detected in imported hotkeys.";
+      const importChoice = await showAppChoice(
+        `Import hotkeys from "${sourceName}"?\n${conflictSummary}`,
+        [
+          {
+            value: "import",
+            label: "Import"
+          },
+          {
+            value: "importAndResolve",
+            label: "Import + Auto Resolve"
+          }
+        ],
+        {
+          title: "Import Hotkeys",
+          cancelLabel: "Cancel",
+          detailText: previewDetailText
+        }
+      );
+      if (!importChoice) {
+        return;
+      }
+      const shouldAutoResolve = importChoice === "importAndResolve";
+      const finalPreferences = shouldAutoResolve
+        ? autoResolvedImport.preferences
+        : importedPreferences;
+      setHotkeyPreferences(finalPreferences);
+      setError(null);
+      if (shouldAutoResolve) {
+        if (disabledByAutoResolve.length > 0) {
+          await showAppAlert(
+            `Hotkeys imported and auto-resolved.\nDisabled ${disabledByAutoResolve.length} duplicate action(s).`,
+            {
+              title: "Import Hotkeys",
+              detailText: disabledByAutoResolve
+                .map((action) => getHotkeyActionDescription(action))
+                .join("\n")
+            }
+          );
+        } else {
+          await showAppAlert("Hotkeys imported. No duplicates needed auto-resolve.", {
+            title: "Import Hotkeys"
+          });
+        }
+      } else {
+        await showAppAlert(`Hotkeys imported from:\n${selected.filePath}`, {
+          title: "Import Hotkeys"
+        });
+      }
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:hotkeys", "Failed to import hotkeys.", caughtError);
+    }
+  }, [hotkeyPreferences, isMacPlatform, showAppAlert, showAppChoice, systemApi, writeAppLog]);
 
   const importSessionsFromSshConfig = useCallback(async () => {
     try {
@@ -4956,6 +9596,479 @@ export function App() {
     writeAppLog
   ]);
 
+  const importSessionsFromJson = useCallback(async () => {
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!systemApi?.pickAndReadTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selected = await systemApi.pickAndReadTextFile({
+        title: "Import Sessions JSON",
+        buttonLabel: "Import",
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"]
+          },
+          {
+            name: "All Files",
+            extensions: ["*"]
+          }
+        ]
+      });
+      if (selected.canceled || !selected.filePath) {
+        return;
+      }
+      const rawText = typeof selected.text === "string" ? selected.text : "";
+      if (!rawText.trim()) {
+        await showAppAlert("Selected file is empty.", {
+          title: "Import Sessions JSON"
+        });
+        return;
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch (caughtError) {
+        await showAppAlert(`Invalid JSON format.\n${toLogMessage(caughtError)}`, {
+          title: "Import Sessions JSON"
+        });
+        return;
+      }
+      const parsedImport = parseSessionJsonImportCandidates(parsed);
+      if (parsedImport.candidates.length === 0) {
+        await showAppAlert(
+          parsedImport.warnings.length > 0
+            ? `No importable sessions found.\n\n${parsedImport.warnings.join("\n")}`
+            : "No importable sessions found.",
+          {
+            title: "Import Sessions JSON"
+          }
+        );
+        return;
+      }
+      await showAppAlert("Review parsed sessions before import.", {
+        title: "Sessions JSON Preview",
+        confirmLabel: "Continue",
+        detailText: formatSessionJsonImportPreview(parsedImport)
+      });
+      const groupMode = await showAppChoice(
+        "Choose target group strategy for imported sessions.",
+        [
+          { value: "keepSource", label: "Keep Group from File" },
+          { value: "forceCurrent", label: "Force Active Group" },
+          { value: "ungrouped", label: "Move to Ungrouped" }
+        ],
+        {
+          title: "Group Strategy"
+        }
+      );
+      if (!groupMode) {
+        return;
+      }
+      const forcedGroup =
+        groupMode === "forceCurrent" ? (activeSessionGroup?.groupName?.trim() ?? "") : "";
+      const existingConnectionKeys = new Set(
+        sessions.map((session) =>
+          buildSessionConnectionKey(session.host, session.port, session.username)
+        )
+      );
+      const duplicateCount = parsedImport.candidates.filter((candidate) =>
+        existingConnectionKeys.has(
+          buildSessionConnectionKey(candidate.host, candidate.port, candidate.username)
+        )
+      ).length;
+      let duplicateStrategy: "skip" | "overwrite" | "rename" = "skip";
+      if (duplicateCount > 0) {
+        const choice = await showAppChoice(
+          `Found ${duplicateCount} duplicate connection target(s). Choose duplicate strategy.`,
+          [
+            { value: "skip", label: "Skip Duplicates" },
+            { value: "overwrite", label: "Overwrite Existing" },
+            { value: "rename", label: "Create Renamed Copies" }
+          ],
+          {
+            title: "Duplicate Strategy"
+          }
+        );
+        if (!choice) {
+          return;
+        }
+        duplicateStrategy = choice as "skip" | "overwrite" | "rename";
+      }
+      const confirmed = await showAppConfirm(
+        `Import ${parsedImport.candidates.length} session(s) from ${getPathBaseName(selected.filePath)}?\nGroup strategy: ${groupMode}\nDuplicate strategy: ${duplicateStrategy}`,
+        {
+          title: "Import Sessions JSON",
+          confirmLabel: "Import",
+          cancelLabel: "Cancel"
+        }
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      const localSessions = [...sessions];
+      const sessionByConnection = new Map<string, SessionRecord>();
+      for (const session of localSessions) {
+        const key = buildSessionConnectionKey(session.host, session.port, session.username);
+        if (!sessionByConnection.has(key)) {
+          sessionByConnection.set(key, session);
+        }
+      }
+      const usedNames = new Set(localSessions.map((session) => session.name.trim().toLowerCase()));
+      const allocateImportName = (baseName: string): string => {
+        const base = baseName.trim() || "Imported Session";
+        if (!usedNames.has(base.toLowerCase())) {
+          usedNames.add(base.toLowerCase());
+          return base;
+        }
+        let suffix = 1;
+        while (usedNames.has(`${base} (${suffix})`.toLowerCase())) {
+          suffix += 1;
+        }
+        const next = `${base} (${suffix})`;
+        usedNames.add(next.toLowerCase());
+        return next;
+      };
+
+      const importedGroupNames = new Set<string>();
+      let createdCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+      let firstImportedSessionId: string | null = null;
+      const sourceRemarkPrefix = `Imported JSON: ${selected.filePath}`;
+
+      for (const candidate of parsedImport.candidates) {
+        const connectionKey = buildSessionConnectionKey(
+          candidate.host,
+          candidate.port,
+          candidate.username
+        );
+        const existing = sessionByConnection.get(connectionKey) ?? null;
+        if (existing && duplicateStrategy === "skip") {
+          skippedCount += 1;
+          continue;
+        }
+        const groupId =
+          groupMode === "keepSource"
+            ? candidate.groupId.trim()
+            : groupMode === "forceCurrent"
+              ? forcedGroup
+              : "";
+        if (groupId) {
+          importedGroupNames.add(groupId);
+        }
+        const remarkParts = [candidate.remark.trim(), sourceRemarkPrefix].filter(Boolean);
+        const remark = remarkParts.join(" | ");
+
+        if (existing && duplicateStrategy === "overwrite") {
+          try {
+            const updated = await sessionsApi.update(existing.id, {
+              name: candidate.name,
+              host: candidate.host,
+              port: candidate.port,
+              username: candidate.username,
+              authType: candidate.authType,
+              privateKeyPath:
+                candidate.authType === "privateKey" ? candidate.privateKeyPath : "",
+              groupId,
+              remark,
+              favorite: candidate.favorite
+            });
+            updatedCount += 1;
+            if (!firstImportedSessionId) {
+              firstImportedSessionId = updated.id;
+            }
+            const index = localSessions.findIndex((entry) => entry.id === updated.id);
+            if (index >= 0) {
+              localSessions[index] = updated;
+            }
+            sessionByConnection.set(connectionKey, updated);
+            usedNames.add(updated.name.trim().toLowerCase());
+          } catch {
+            failedCount += 1;
+          }
+          continue;
+        }
+
+        const shouldRename = existing && duplicateStrategy === "rename";
+        const nextName = shouldRename
+          ? allocateImportName(`${candidate.name} imported`)
+          : allocateImportName(candidate.name);
+        try {
+          const created = await sessionsApi.create({
+            name: nextName,
+            host: candidate.host,
+            port: candidate.port,
+            username: candidate.username,
+            authType: candidate.authType,
+            privateKeyPath:
+              candidate.authType === "privateKey" ? candidate.privateKeyPath : "",
+            groupId,
+            remark,
+            favorite: candidate.favorite,
+            secret: ""
+          });
+          createdCount += 1;
+          if (!firstImportedSessionId) {
+            firstImportedSessionId = created.id;
+          }
+          localSessions.unshift(created);
+          if (!sessionByConnection.has(connectionKey)) {
+            sessionByConnection.set(connectionKey, created);
+          }
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      if (importedGroupNames.size > 0) {
+        setSessionGroupsState((prev) => ({
+          groups: normalizeSessionGroups([...prev.groups, ...Array.from(importedGroupNames)])
+        }));
+      }
+      if (createdCount > 0 || updatedCount > 0) {
+        setSessions(localSessions);
+        if (firstImportedSessionId) {
+          setSelectedSessionId(firstImportedSessionId);
+        }
+      }
+      await showAppAlert(
+        `Import completed.\nCreated: ${createdCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}\nFailed: ${failedCount}\nWarnings: ${parsedImport.warnings.length}`,
+        {
+          title: "Import Sessions JSON"
+        }
+      );
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:sessions", "Session JSON import failed.", caughtError);
+    }
+  }, [
+    activeSessionGroup?.groupName,
+    sessions,
+    sessionsApi,
+    showAppAlert,
+    showAppChoice,
+    showAppConfirm,
+    systemApi,
+    writeAppLog
+  ]);
+
+  const exportAllSessionsWithGroups = useCallback(async () => {
+    try {
+      if (sessions.length === 0) {
+        await showAppAlert("No sessions available to export.", {
+          title: "Session Export"
+        });
+        return;
+      }
+      const generatedAtIso = new Date().toISOString();
+      const groups = sessionGroupOptions.map((groupName) => {
+        const count = sessions.filter(
+          (session) => (session.groupId?.trim() ?? "") === groupName
+        ).length;
+        return {
+          groupId: groupName,
+          groupName,
+          sessionCount: count
+        };
+      });
+      const ungroupedCount = sessions.filter((session) => !(session.groupId?.trim() ?? "")).length;
+      if (ungroupedCount > 0) {
+        groups.push({
+          groupId: "",
+          groupName: "Ungrouped",
+          sessionCount: ungroupedCount
+        });
+      }
+      const sessionRows = [...sessions]
+        .sort((left, right) => {
+          const leftGroup = left.groupId?.trim() ?? "";
+          const rightGroup = right.groupId?.trim() ?? "";
+          if (leftGroup !== rightGroup) {
+            if (!leftGroup) {
+              return 1;
+            }
+            if (!rightGroup) {
+              return -1;
+            }
+            return leftGroup.localeCompare(rightGroup);
+          }
+          return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+        })
+        .map((session) => {
+          const groupId = session.groupId?.trim() ?? "";
+          return {
+            id: session.id,
+            name: session.name,
+            host: session.host,
+            port: session.port,
+            username: session.username,
+            authType: session.authType,
+            privateKeyPath: session.privateKeyPath ?? "",
+            groupId,
+            groupName: groupId || "Ungrouped",
+            remark: session.remark ?? "",
+            favorite: session.favorite,
+            hasSecret: session.hasSecret,
+            lastConnectedAt: session.lastConnectedAt ?? "",
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt
+          };
+        });
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        sessionCount: sessionRows.length,
+        groupCount: groups.length,
+        groups,
+        sessions: sessionRows
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export All Sessions",
+          defaultFileName: `termdock-sessions-all-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Session export completed.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Session export completed:\n${result.outputPath}`,
+            {
+              title: "Session Export"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("All session data copied to clipboard as JSON.", {
+          title: "Session Export"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the session export below manually.", {
+        title: "Session Export",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:sessions", "Failed to export all sessions.", caughtError);
+    }
+  }, [sessionGroupOptions, sessions, showAppAlert, systemApi, writeAppLog]);
+
+  const exportAllSessionGroups = useCallback(async () => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const groupNames = [...sessionGroupOptions];
+      const groupRows = groupNames.map((groupName) => {
+        const groupSessions = sessions
+          .filter((session) => (session.groupId?.trim() ?? "") === groupName)
+          .sort((left, right) =>
+            left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+          );
+        return {
+          groupId: groupName,
+          groupName,
+          sessionCount: groupSessions.length,
+          sessions: groupSessions.map((session) => ({
+            id: session.id,
+            name: session.name,
+            host: session.host,
+            port: session.port,
+            username: session.username,
+            favorite: session.favorite,
+            lastConnectedAt: session.lastConnectedAt ?? ""
+          }))
+        };
+      });
+      const ungroupedSessions = sessions
+        .filter((session) => !(session.groupId?.trim() ?? ""))
+        .sort((left, right) =>
+          left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+        );
+      if (ungroupedSessions.length > 0) {
+        groupRows.push({
+          groupId: "",
+          groupName: "Ungrouped",
+          sessionCount: ungroupedSessions.length,
+          sessions: ungroupedSessions.map((session) => ({
+            id: session.id,
+            name: session.name,
+            host: session.host,
+            port: session.port,
+            username: session.username,
+            favorite: session.favorite,
+            lastConnectedAt: session.lastConnectedAt ?? ""
+          }))
+        });
+      }
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        groupCount: groupRows.length,
+        groups: groupRows
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export All Groups",
+          defaultFileName: `termdock-groups-all-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Group export completed.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Group export completed:\n${result.outputPath}`,
+            {
+              title: "Group Export"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("All group data copied to clipboard as JSON.", {
+          title: "Group Export"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the group export below manually.", {
+        title: "Group Export",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:sessions", "Failed to export all groups.", caughtError);
+    }
+  }, [sessionGroupOptions, sessions, showAppAlert, systemApi, writeAppLog]);
+
   const closeCreateModal = () => {
     if (saving || testingConnection) {
       return;
@@ -5084,29 +10197,779 @@ export function App() {
     }
   };
 
-  const openTerminalTab = useCallback((session: SessionRecord) => {
-    if (!terminalApi) {
-      setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+  const runStartupCommandsOnTab = useCallback(
+    async (tabId: string, commands: string[]): Promise<void> => {
+      if (!terminalApi) {
+        return;
+      }
+      const normalizedCommands = commands
+        .map((command) => command.trim())
+        .filter((command) => command.length > 0)
+        .slice(0, 20);
+      if (normalizedCommands.length === 0) {
+        return;
+      }
+      for (const command of normalizedCommands) {
+        await terminalApi.write(tabId, `${command}\n`);
+      }
+      writeAppLog("info", "renderer:session-profile", "Executed startup commands on terminal tab.", {
+        tabId,
+        commandCount: normalizedCommands.length
+      });
+    },
+    [terminalApi, writeAppLog]
+  );
+
+  useEffect(() => {
+    runStartupCommandsOnTabRef.current = runStartupCommandsOnTab;
+  }, [runStartupCommandsOnTab]);
+
+  const queueStartupCommandsForTab = useCallback(
+    (tabId: string, commands: string[]): void => {
+      const normalizedTabId = tabId.trim();
+      const normalizedCommands = commands
+        .map((command) => command.trim())
+        .filter((command) => command.length > 0)
+        .slice(0, 20);
+      if (!normalizedTabId || normalizedCommands.length === 0) {
+        return;
+      }
+      if (connectedTabIdsRef.current.has(normalizedTabId)) {
+        void runStartupCommandsOnTab(normalizedTabId, normalizedCommands).catch((caughtError) => {
+          setError(toLogMessage(caughtError));
+        });
+        return;
+      }
+      const queued = pendingStartupCommandsByTabRef.current.get(normalizedTabId) ?? [];
+      pendingStartupCommandsByTabRef.current.set(
+        normalizedTabId,
+        [...queued, ...normalizedCommands].slice(0, 40)
+      );
+    },
+    [runStartupCommandsOnTab]
+  );
+
+  const openTerminalTab = useCallback(
+    (
+      session: SessionRecord,
+      options?: {
+        startupCommands?: string[];
+      }
+    ): string | null => {
+      if (!terminalApi) {
+        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+        return null;
+      }
+      const startupCommands = options?.startupCommands ?? [];
+      const existingOpened = terminalTabsRef.current.find((tab) => tab.sessionId === session.id);
+      if (existingOpened) {
+        setActiveTabId(existingOpened.id);
+        queueStartupCommandsForTab(existingOpened.id, startupCommands);
+        return existingOpened.id;
+      }
+
+      const id = `${session.id}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      setTerminalTabs((prev) => {
+        const existingTab = prev.find((tab) => tab.sessionId === session.id);
+        if (existingTab) {
+          return prev;
+        }
+        const existingTabs = prev.filter((tab) => tab.sessionId === session.id);
+        const nextInstance = existingTabs.reduce((max, tab) => {
+          return Math.max(max, getSafeTabInstance(tab.instance));
+        }, 0) + 1;
+        const title = formatTabTitle(session.name, nextInstance);
+        const nextTab: TerminalTab = {
+          id,
+          sessionId: session.id,
+          title,
+          instance: nextInstance
+        };
+        return [...prev, nextTab];
+      });
+      setActiveTabId(id);
+      queueStartupCommandsForTab(id, startupCommands);
+      return id;
+    },
+    [queueStartupCommandsForTab, terminalApi]
+  );
+
+  const runSessionQuickProfile = useCallback(
+    async (session: SessionRecord, profile: SessionQuickProfile): Promise<void> => {
+      const normalizedCommand = profile.startupCommand.trim();
+      if (!normalizedCommand) {
+        await showAppAlert("Quick profile command is empty.", {
+          title: "Quick Profile"
+        });
+        return;
+      }
+      if (profile.confirmBeforeRun) {
+        const confirmed = await showAppConfirm(
+          `Run quick profile "${profile.name}" on "${session.name}"?\n\nCommand:\n${normalizedCommand}`,
+          {
+            title: "Quick Profile",
+            confirmLabel: "Run",
+            cancelLabel: "Cancel"
+          }
+        );
+        if (!confirmed) {
+          return;
+        }
+      }
+      const tabId = openTerminalTab(session, {
+        startupCommands: [normalizedCommand]
+      });
+      if (!tabId) {
+        return;
+      }
+      setError(null);
+    },
+    [openTerminalTab, showAppAlert, showAppConfirm]
+  );
+
+  const createSessionQuickProfileForSession = useCallback(
+    async (session: SessionRecord): Promise<void> => {
+      const profileNameInput = await showAppPrompt(
+        "Enter quick profile name.",
+        `${session.name} quick`,
+        {
+          title: "New Quick Profile",
+          confirmLabel: "Continue"
+        }
+      );
+      if (profileNameInput === null) {
+        return;
+      }
+      const profileName = profileNameInput.trim().slice(0, 80);
+      if (!profileName) {
+        await showAppAlert("Profile name cannot be empty.", {
+          title: "New Quick Profile"
+        });
+        return;
+      }
+      const commandInput = await showAppPrompt(
+        "Enter startup command (supports multiline).",
+        "",
+        {
+          title: "Quick Profile Command",
+          confirmLabel: "Save",
+          multiline: true
+        }
+      );
+      if (commandInput === null) {
+        return;
+      }
+      const startupCommand = commandInput.trim().slice(0, 4000);
+      if (!startupCommand) {
+        await showAppAlert("Startup command cannot be empty.", {
+          title: "Quick Profile Command"
+        });
+        return;
+      }
+      const confirmChoice = await showAppChoice(
+        "Require confirmation before running this profile?",
+        [
+          { value: "yes", label: "Yes" },
+          { value: "no", label: "No" }
+        ],
+        {
+          title: "Quick Profile"
+        }
+      );
+      if (!confirmChoice) {
+        return;
+      }
+      const profile: SessionQuickProfile = {
+        id: `qp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        name: profileName,
+        startupCommand,
+        confirmBeforeRun: confirmChoice === "yes"
+      };
+      setSessionQuickProfiles((prev) => [profile, ...prev].slice(0, MAX_SESSION_QUICK_PROFILES));
+      await showAppAlert(
+        `Quick profile "${profile.name}" saved. Use "Run Quick Profile..." to execute on a session.`,
+        {
+          title: "Quick Profile"
+        }
+      );
+    },
+    [showAppAlert, showAppChoice, showAppPrompt]
+  );
+
+  const runSessionQuickProfileChooser = useCallback(
+    async (session: SessionRecord): Promise<void> => {
+      if (sessionQuickProfiles.length === 0) {
+        await showAppAlert("No quick profiles available. Create one first.", {
+          title: "Quick Profile"
+        });
+        return;
+      }
+      const profileChoice = await showAppChoice(
+        `Choose quick profile for "${session.name}".`,
+        sessionQuickProfiles.map((profile) => ({
+          value: profile.id,
+          label: profile.name
+        })),
+        {
+          title: "Run Quick Profile"
+        }
+      );
+      if (!profileChoice) {
+        return;
+      }
+      const profile = sessionQuickProfiles.find((entry) => entry.id === profileChoice);
+      if (!profile) {
+        return;
+      }
+      await runSessionQuickProfile(session, profile);
+    },
+    [runSessionQuickProfile, sessionQuickProfiles, showAppAlert, showAppChoice]
+  );
+
+  const manageSessionQuickProfilesForSession = useCallback(
+    async (session: SessionRecord): Promise<void> => {
+      if (sessionQuickProfiles.length === 0) {
+        await createSessionQuickProfileForSession(session);
+        return;
+      }
+      const profileChoice = await showAppChoice(
+        "Select quick profile to manage.",
+        sessionQuickProfiles.map((profile) => ({
+          value: profile.id,
+          label: profile.name
+        })),
+        {
+          title: "Manage Quick Profiles"
+        }
+      );
+      if (!profileChoice) {
+        return;
+      }
+      const profile = sessionQuickProfiles.find((entry) => entry.id === profileChoice);
+      if (!profile) {
+        return;
+      }
+      const action = await showAppChoice(
+        `Profile "${profile.name}"`,
+        [
+          { value: "run", label: "Run" },
+          { value: "edit", label: "Edit" },
+          { value: "delete", label: "Delete", danger: true }
+        ],
+        {
+          title: "Manage Quick Profile"
+        }
+      );
+      if (!action) {
+        return;
+      }
+      if (action === "run") {
+        await runSessionQuickProfile(session, profile);
+        return;
+      }
+      if (action === "edit") {
+        const nextNameInput = await showAppPrompt("Edit profile name.", profile.name, {
+          title: "Edit Quick Profile",
+          confirmLabel: "Continue"
+        });
+        if (nextNameInput === null) {
+          return;
+        }
+        const nextName = nextNameInput.trim().slice(0, 80);
+        if (!nextName) {
+          await showAppAlert("Profile name cannot be empty.", {
+            title: "Edit Quick Profile"
+          });
+          return;
+        }
+        const nextCommandInput = await showAppPrompt(
+          "Edit startup command (supports multiline).",
+          profile.startupCommand,
+          {
+            title: "Edit Quick Profile",
+            confirmLabel: "Save",
+            multiline: true
+          }
+        );
+        if (nextCommandInput === null) {
+          return;
+        }
+        const nextCommand = nextCommandInput.trim().slice(0, 4000);
+        if (!nextCommand) {
+          await showAppAlert("Startup command cannot be empty.", {
+            title: "Edit Quick Profile"
+          });
+          return;
+        }
+        const confirmChoice = await showAppChoice(
+          "Require confirmation before running this profile?",
+          [
+            { value: "yes", label: "Yes" },
+            { value: "no", label: "No" }
+          ],
+          {
+            title: "Edit Quick Profile"
+          }
+        );
+        if (!confirmChoice) {
+          return;
+        }
+        setSessionQuickProfiles((prev) =>
+          prev.map((entry) =>
+            entry.id === profile.id
+              ? {
+                  ...entry,
+                  name: nextName,
+                  startupCommand: nextCommand,
+                  confirmBeforeRun: confirmChoice === "yes"
+                }
+              : entry
+          )
+        );
+        return;
+      }
+      const confirmed = await showAppConfirm(`Delete quick profile "${profile.name}"?`, {
+        title: "Delete Quick Profile",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        danger: true
+      });
+      if (!confirmed) {
+        return;
+      }
+      setSessionQuickProfiles((prev) => prev.filter((entry) => entry.id !== profile.id));
+    },
+    [
+      createSessionQuickProfileForSession,
+      runSessionQuickProfile,
+      sessionQuickProfiles,
+      showAppAlert,
+      showAppChoice,
+      showAppConfirm,
+      showAppPrompt
+    ]
+  );
+
+  const renderCommandSnippetTemplate = useCallback(
+    async (template: string): Promise<string> => {
+      const tabId = activeTabIdRef.current;
+      const tab = tabId ? terminalTabsRef.current.find((entry) => entry.id === tabId) ?? null : null;
+      const session = tab
+        ? sessionsRef.current.find((entry) => entry.id === tab.sessionId) ?? null
+        : null;
+      const now = new Date();
+      const replacements: Record<string, string> = {
+        "${date}": now.toLocaleDateString(),
+        "${time}": now.toLocaleTimeString(),
+        "${datetime}": now.toLocaleString(),
+        "${tabTitle}": tab?.title ?? "",
+        "${sessionName}": session?.name ?? "",
+        "${host}": session?.host ?? "",
+        "${username}": session?.username ?? ""
+      };
+      let rendered = template;
+      if (rendered.includes("${clipboard}") && systemApi?.readClipboardText) {
+        try {
+          replacements["${clipboard}"] = await systemApi.readClipboardText();
+        } catch {
+          replacements["${clipboard}"] = "";
+        }
+      } else {
+        replacements["${clipboard}"] = "";
+      }
+      for (const [token, value] of Object.entries(replacements)) {
+        rendered = rendered.replaceAll(token, value);
+      }
+      return rendered.trim();
+    },
+    [systemApi]
+  );
+
+  const runCommandSnippet = useCallback(
+    async (snippet: CommandSnippetItem): Promise<void> => {
+      if (!terminalApi) {
+        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+        return;
+      }
+      const tabId = activeTabIdRef.current;
+      if (!tabId) {
+        setError("Open and focus a terminal tab before running snippets.");
+        return;
+      }
+      const rendered = await renderCommandSnippetTemplate(snippet.template);
+      if (!rendered) {
+        await showAppAlert("Snippet resolved to an empty command.", {
+          title: "Run Snippet"
+        });
+        return;
+      }
+      if (snippet.confirmBeforeRun) {
+        const confirmed = await showAppConfirm(
+          `Run snippet "${snippet.name}" on current tab?\n\nCommand:\n${rendered}`,
+          {
+            title: "Run Snippet",
+            confirmLabel: "Run",
+            cancelLabel: "Cancel"
+          }
+        );
+        if (!confirmed) {
+          return;
+        }
+      }
+      await terminalApi.write(tabId, `${rendered}\n`);
+      const tabTitle =
+        terminalTabsRef.current.find((entry) => entry.id === tabId)?.title ?? `Tab ${tabId}`;
+      upsertTerminalCommandHistoryCommand(rendered, {
+        preferredTabId: tabId,
+        preferredTabTitle: tabTitle
+      });
+    },
+    [
+      renderCommandSnippetTemplate,
+      showAppAlert,
+      showAppConfirm,
+      terminalApi,
+      upsertTerminalCommandHistoryCommand
+    ]
+  );
+
+  const importCommandSnippetGroups = useCallback(async () => {
+    if (!systemApi?.pickAndReadTextFile) {
+      throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+    }
+    const selected = await systemApi.pickAndReadTextFile({
+      title: "Import Snippet Groups",
+      buttonLabel: "Import",
+      filters: [
+        { name: "JSON", extensions: ["json"] },
+        { name: "All Files", extensions: ["*"] }
+      ]
+    });
+    if (selected.canceled || !selected.filePath) {
       return;
     }
+    const parsed = JSON.parse(selected.text);
+    const imported = normalizeCommandSnippetGroups(parsed);
+    if (imported.length === 0) {
+      await showAppAlert("No valid snippet groups found in selected file.", {
+        title: "Import Snippet Groups"
+      });
+      return;
+    }
+    setCommandSnippetGroups(imported);
+    await showAppAlert(
+      `Imported ${imported.length} snippet group(s), ${imported.reduce(
+        (total, group) => total + group.snippets.length,
+        0
+      )} snippet(s).`,
+      {
+        title: "Import Snippet Groups"
+      }
+    );
+  }, [showAppAlert, systemApi]);
 
-    const id = `${session.id}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    setTerminalTabs((prev) => {
-      const existingTabs = prev.filter((tab) => tab.sessionId === session.id);
-      const nextInstance = existingTabs.reduce((max, tab) => {
-        return Math.max(max, getSafeTabInstance(tab.instance));
-      }, 0) + 1;
-      const title = formatTabTitle(session.name, nextInstance);
-      const nextTab: TerminalTab = {
-        id,
-        sessionId: session.id,
-        title,
-        instance: nextInstance
-      };
-      return [...prev, nextTab];
+  const exportCommandSnippetGroups = useCallback(async () => {
+    if (commandSnippetGroups.length === 0) {
+      await showAppAlert("No snippet groups available to export.", {
+        title: "Export Snippet Groups"
+      });
+      return;
+    }
+    const payload = {
+      exportedAtIso: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      groupCount: commandSnippetGroups.length,
+      snippetCount: commandSnippetGroups.reduce((total, group) => total + group.snippets.length, 0),
+      groups: commandSnippetGroups
+    };
+    const content = `${JSON.stringify(payload, null, 2)}\n`;
+    if (systemApi?.saveTextFile) {
+      const result = await systemApi.saveTextFile({
+        title: "Export Snippet Groups",
+        defaultFileName: `termdock-snippet-groups-${new Date().toISOString().replace(/[:]/g, "-")}.json`,
+        text: content,
+        filters: [{ name: "JSON", extensions: ["json"] }]
+      });
+      if (!result.canceled && result.outputPath) {
+        await showAppAlert(`Snippet groups exported:\n${result.outputPath}`, {
+          title: "Export Snippet Groups"
+        });
+      }
+      return;
+    }
+    const copied = await copyTextToClipboard(content);
+    await showAppAlert(copied ? "Snippet groups JSON copied to clipboard." : content, {
+      title: "Export Snippet Groups",
+      detailText: copied ? undefined : content
     });
-    setActiveTabId(id);
-  }, [terminalApi]);
+  }, [commandSnippetGroups, showAppAlert, systemApi]);
+
+  const selectedCommandSnippetManagerGroup = useMemo(
+    () =>
+      commandSnippetGroups.find((group) => group.id === commandSnippetManagerGroupId) ??
+      commandSnippetGroups[0] ??
+      null,
+    [commandSnippetGroups, commandSnippetManagerGroupId]
+  );
+  const selectedCommandSnippetManagerSnippet = useMemo(() => {
+    if (!selectedCommandSnippetManagerGroup) {
+      return null;
+    }
+    return (
+      selectedCommandSnippetManagerGroup.snippets.find(
+        (snippet) => snippet.id === commandSnippetManagerSnippetId
+      ) ??
+      selectedCommandSnippetManagerGroup.snippets[0] ??
+      null
+    );
+  }, [commandSnippetManagerSnippetId, selectedCommandSnippetManagerGroup]);
+  useEffect(() => {
+    if (!isCommandSnippetManagerOpen) {
+      return;
+    }
+    if (commandSnippetGroups.length === 0) {
+      if (commandSnippetManagerGroupId) {
+        setCommandSnippetManagerGroupId("");
+      }
+      if (commandSnippetManagerSnippetId) {
+        setCommandSnippetManagerSnippetId("");
+      }
+      return;
+    }
+    const nextGroup =
+      commandSnippetGroups.find((group) => group.id === commandSnippetManagerGroupId) ??
+      commandSnippetGroups[0];
+    if (nextGroup.id !== commandSnippetManagerGroupId) {
+      setCommandSnippetManagerGroupId(nextGroup.id);
+    }
+    if (nextGroup.snippets.length === 0) {
+      if (commandSnippetManagerSnippetId) {
+        setCommandSnippetManagerSnippetId("");
+      }
+      return;
+    }
+    const hasSelectedSnippet = nextGroup.snippets.some(
+      (snippet) => snippet.id === commandSnippetManagerSnippetId
+    );
+    if (!hasSelectedSnippet) {
+      setCommandSnippetManagerSnippetId(nextGroup.snippets[0].id);
+    }
+  }, [
+    commandSnippetGroups,
+    commandSnippetManagerGroupId,
+    commandSnippetManagerSnippetId,
+    isCommandSnippetManagerOpen
+  ]);
+  const updateCommandSnippetManagerGroupName = useCallback((groupId: string, nextName: string) => {
+    const normalizedName = nextName.slice(0, 80);
+    setCommandSnippetGroups((prev) =>
+      prev.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              name: normalizedName
+            }
+          : group
+      )
+    );
+  }, []);
+  const addCommandSnippetManagerGroup = useCallback(() => {
+    if (commandSnippetGroups.length >= MAX_COMMAND_SNIPPET_GROUPS) {
+      setError(`Snippet groups are limited to ${MAX_COMMAND_SNIPPET_GROUPS}.`);
+      return;
+    }
+    const nextGroupId = `sg-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const nextGroupName = `Group ${commandSnippetGroups.length + 1}`;
+    setCommandSnippetGroups((prev) => [
+      ...prev,
+      {
+        id: nextGroupId,
+        name: nextGroupName,
+        snippets: []
+      }
+    ]);
+    setCommandSnippetManagerGroupId(nextGroupId);
+    setCommandSnippetManagerSnippetId("");
+  }, [commandSnippetGroups.length]);
+  const deleteCommandSnippetManagerGroup = useCallback(async () => {
+    if (!selectedCommandSnippetManagerGroup) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete snippet group "${selectedCommandSnippetManagerGroup.name}" and all snippets in it?`,
+      {
+        title: "Delete Snippet Group",
+        confirmLabel: "Delete Group",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setCommandSnippetGroups((prev) =>
+      prev.filter((group) => group.id !== selectedCommandSnippetManagerGroup.id)
+    );
+  }, [selectedCommandSnippetManagerGroup, showAppConfirm]);
+  const addCommandSnippetManagerSnippet = useCallback(() => {
+    if (!selectedCommandSnippetManagerGroup) {
+      addCommandSnippetManagerGroup();
+      return;
+    }
+    if (selectedCommandSnippetManagerGroup.snippets.length >= MAX_COMMAND_SNIPPETS_PER_GROUP) {
+      setError(
+        `Snippets per group are limited to ${MAX_COMMAND_SNIPPETS_PER_GROUP}. Delete or export existing snippets first.`
+      );
+      return;
+    }
+    const nextSnippetId = `sn-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const nextSnippet: CommandSnippetItem = {
+      id: nextSnippetId,
+      name: `Snippet ${selectedCommandSnippetManagerGroup.snippets.length + 1}`,
+      template: "echo \"snippet\"",
+      confirmBeforeRun: false
+    };
+    setCommandSnippetGroups((prev) =>
+      prev.map((group) =>
+        group.id === selectedCommandSnippetManagerGroup.id
+          ? {
+              ...group,
+              snippets: [...group.snippets, nextSnippet]
+            }
+          : group
+      )
+    );
+    setCommandSnippetManagerSnippetId(nextSnippetId);
+  }, [addCommandSnippetManagerGroup, selectedCommandSnippetManagerGroup]);
+  const updateCommandSnippetManagerSnippetName = useCallback(
+    (snippetId: string, nextName: string) => {
+      if (!selectedCommandSnippetManagerGroup) {
+        return;
+      }
+      const normalizedName = nextName.slice(0, 80);
+      setCommandSnippetGroups((prev) =>
+        prev.map((group) =>
+          group.id === selectedCommandSnippetManagerGroup.id
+            ? {
+                ...group,
+                snippets: group.snippets.map((snippet) =>
+                  snippet.id === snippetId
+                    ? {
+                        ...snippet,
+                        name: normalizedName
+                      }
+                    : snippet
+                )
+              }
+            : group
+        )
+      );
+    },
+    [selectedCommandSnippetManagerGroup]
+  );
+  const updateCommandSnippetManagerSnippetTemplate = useCallback(
+    (snippetId: string, nextTemplate: string) => {
+      if (!selectedCommandSnippetManagerGroup) {
+        return;
+      }
+      const normalizedTemplate = nextTemplate.slice(0, 4000);
+      setCommandSnippetGroups((prev) =>
+        prev.map((group) =>
+          group.id === selectedCommandSnippetManagerGroup.id
+            ? {
+                ...group,
+                snippets: group.snippets.map((snippet) =>
+                  snippet.id === snippetId
+                    ? {
+                        ...snippet,
+                        template: normalizedTemplate
+                      }
+                    : snippet
+                )
+              }
+            : group
+        )
+      );
+    },
+    [selectedCommandSnippetManagerGroup]
+  );
+  const updateCommandSnippetManagerSnippetConfirm = useCallback(
+    (snippetId: string, nextConfirmBeforeRun: boolean) => {
+      if (!selectedCommandSnippetManagerGroup) {
+        return;
+      }
+      setCommandSnippetGroups((prev) =>
+        prev.map((group) =>
+          group.id === selectedCommandSnippetManagerGroup.id
+            ? {
+                ...group,
+                snippets: group.snippets.map((snippet) =>
+                  snippet.id === snippetId
+                    ? {
+                        ...snippet,
+                        confirmBeforeRun: nextConfirmBeforeRun
+                      }
+                    : snippet
+                )
+              }
+            : group
+        )
+      );
+    },
+    [selectedCommandSnippetManagerGroup]
+  );
+  const runSelectedCommandSnippetManagerSnippet = useCallback(async () => {
+    if (!selectedCommandSnippetManagerSnippet) {
+      return;
+    }
+    await runCommandSnippet(selectedCommandSnippetManagerSnippet);
+  }, [runCommandSnippet, selectedCommandSnippetManagerSnippet]);
+  const deleteCommandSnippetManagerSnippet = useCallback(async () => {
+    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerSnippet) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete snippet "${selectedCommandSnippetManagerSnippet.name}" from "${selectedCommandSnippetManagerGroup.name}"?`,
+      {
+        title: "Delete Snippet",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setCommandSnippetGroups((prev) =>
+      prev.map((group) =>
+        group.id === selectedCommandSnippetManagerGroup.id
+          ? {
+              ...group,
+              snippets: group.snippets.filter(
+                (snippet) => snippet.id !== selectedCommandSnippetManagerSnippet.id
+              )
+            }
+          : group
+      )
+    );
+  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerSnippet, showAppConfirm]);
+  const clearAllCommandSnippetGroups = useCallback(async () => {
+    const confirmed = await showAppConfirm(
+      `Delete all snippet groups and snippets (${commandSnippetGroups.length} group(s), ${totalCommandSnippetCount} snippet(s))?`,
+      {
+        title: "Clear Snippet Groups",
+        confirmLabel: "Delete All",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setCommandSnippetGroups([]);
+    setCommandSnippetManagerGroupId("");
+    setCommandSnippetManagerSnippetId("");
+  }, [commandSnippetGroups.length, showAppConfirm, totalCommandSnippetCount]);
 
   const closeTerminalTabs = useCallback((tabIds: string[]) => {
     const uniqueTabIds = Array.from(new Set(tabIds.filter(Boolean)));
@@ -5116,9 +10979,15 @@ export function App() {
     const tabIdSet = new Set(uniqueTabIds);
 
     for (const tabId of uniqueTabIds) {
+      intentionalTabCloseIdsRef.current.add(tabId);
+      window.setTimeout(() => {
+        intentionalTabCloseIdsRef.current.delete(tabId);
+      }, 15_000);
+      pendingStartupCommandsByTabRef.current.delete(tabId);
       connectedTabIdsRef.current.delete(tabId);
       autoRestoredPortForwardTabsRef.current.delete(tabId);
       ensuredRemoteDirectoriesRef.current.delete(tabId);
+      ensuringRemoteDirectoriesRef.current.delete(tabId);
       if (terminalApi) {
         void terminalApi.close(tabId);
       }
@@ -5139,6 +11008,28 @@ export function App() {
       return changed ? next : prev;
     });
     setDownloadBatchByTab((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const tabId of uniqueTabIds) {
+        if (tabId in next) {
+          delete next[tabId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setPausedUploadTabs((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const tabId of uniqueTabIds) {
+        if (tabId in next) {
+          delete next[tabId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setPausedDownloadTabs((prev) => {
       let changed = false;
       const next = { ...prev };
       for (const tabId of uniqueTabIds) {
@@ -5403,6 +11294,106 @@ export function App() {
       }
     }));
   };
+
+  const registerHotkeyRowRef = useCallback(
+    (action: HotkeyActionId, element: HTMLDivElement | null) => {
+      if (element) {
+        hotkeyRowRefs.current.set(action, element);
+      } else {
+        hotkeyRowRefs.current.delete(action);
+      }
+    },
+    []
+  );
+
+  const focusHotkeyAction = useCallback((action: HotkeyActionId) => {
+    const targetElement = hotkeyRowRefs.current.get(action) ?? null;
+    if (!targetElement) {
+      return;
+    }
+    targetElement.scrollIntoView({
+      behavior: "smooth",
+      block: "center"
+    });
+    if (hotkeyConflictHighlightTimerRef.current !== null) {
+      window.clearTimeout(hotkeyConflictHighlightTimerRef.current);
+      hotkeyConflictHighlightTimerRef.current = null;
+    }
+    setHotkeyFocusedAction(action);
+    hotkeyConflictHighlightTimerRef.current = window.setTimeout(() => {
+      setHotkeyFocusedAction((current) => (current === action ? null : current));
+      hotkeyConflictHighlightTimerRef.current = null;
+    }, 2200);
+  }, []);
+
+  const focusHotkeyConflictAtIndex = useCallback(
+    (index: number) => {
+      if (hotkeyConflicts.length <= 0) {
+        return;
+      }
+      const normalizedIndex =
+        ((Math.trunc(index) % hotkeyConflicts.length) + hotkeyConflicts.length) %
+        hotkeyConflicts.length;
+      const targetConflict = hotkeyConflicts[normalizedIndex];
+      const targetAction = targetConflict.actions[0];
+      setHotkeyConflictCursorIndex(normalizedIndex);
+      setHotkeyConflictCursorSignature(targetConflict.signature);
+      focusHotkeyAction(targetAction);
+    },
+    [focusHotkeyAction, hotkeyConflicts]
+  );
+
+  const focusPreviousHotkeyConflict = useCallback(() => {
+    focusHotkeyConflictAtIndex(hotkeyConflictCursorIndex - 1);
+  }, [focusHotkeyConflictAtIndex, hotkeyConflictCursorIndex]);
+
+  const focusNextHotkeyConflict = useCallback(() => {
+    focusHotkeyConflictAtIndex(hotkeyConflictCursorIndex + 1);
+  }, [focusHotkeyConflictAtIndex, hotkeyConflictCursorIndex]);
+
+  const resolveHotkeyConflicts = useCallback(() => {
+    setHotkeyPreferences((prev) => {
+      const resolved = autoResolveHotkeyConflicts(prev);
+      return resolved.disabledActions.length > 0 ? resolved.preferences : prev;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isSettingsOpen || activeSettingsSection !== "hotkeys" || hotkeyConflicts.length <= 0) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isEditableTarget(event.target)) {
+        return;
+      }
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+        return;
+      }
+      const code = event.code.trim();
+      const key = event.key.trim();
+      const isPrevious = code === "BracketLeft" || key === "[";
+      const isNext = code === "BracketRight" || key === "]";
+      if (!isPrevious && !isNext) {
+        return;
+      }
+      event.preventDefault();
+      if (isPrevious) {
+        focusPreviousHotkeyConflict();
+        return;
+      }
+      focusNextHotkeyConflict();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [
+    activeSettingsSection,
+    focusNextHotkeyConflict,
+    focusPreviousHotkeyConflict,
+    hotkeyConflicts.length,
+    isSettingsOpen
+  ]);
 
   const setPreferredOpenProgramPath = (value: string) => {
     setFileOpenPreferences((prev) => ({
@@ -5688,6 +11679,96 @@ export function App() {
     setIsSettingsOpen(false);
   }, []);
 
+  const dismissGlobalError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  const openDiagnosticsFromError = useCallback(() => {
+    openSettingsPanel("diagnostics");
+  }, [openSettingsPanel]);
+
+  const reconnectActiveTabFromError = useCallback(async () => {
+    try {
+      if (!terminalApi) {
+        throw new Error("Terminal bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!activeTabId || !activeSessionId) {
+        throw new Error("Open and select a terminal tab, then retry reconnect.");
+      }
+      await terminalApi.connect(activeTabId, activeSessionId);
+      setError(null);
+      writeAppLog("info", "renderer:error-bar", "Manual reconnect requested from global error bar.", {
+        tabId: activeTabId,
+        sessionId: activeSessionId
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:error-bar",
+        "Manual reconnect action failed from global error bar.",
+        caughtError
+      );
+    }
+  }, [activeSessionId, activeTabId, terminalApi, writeAppLog]);
+
+  const copyGlobalErrorMessage = useCallback(async () => {
+    if (!error) {
+      return;
+    }
+    try {
+      const copied = await copyTextToClipboard(error);
+      if (!copied) {
+        throw new Error("Clipboard unavailable.");
+      }
+      await showAppAlert("Error message copied to clipboard.", {
+        title: "Diagnostics"
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:error-bar", "Failed to copy global error message.", caughtError);
+    }
+  }, [error, showAppAlert, writeAppLog]);
+
+  const globalErrorRecovery = useMemo(() => {
+    const message = error?.trim() ?? "";
+    if (!message) {
+      return {
+        canReconnect: false,
+        canOpenLogs: false,
+        canCopyLatestDisconnectReport: false,
+        hint: ""
+      };
+    }
+    const reconnectLike = isReconnectRecoverableError(message);
+    const bridgeLike = isBridgeUnavailableError(message);
+    return {
+      canReconnect:
+        reconnectLike &&
+        !!terminalApi &&
+        !!activeTabId &&
+        !!activeSessionId &&
+        !isActiveTabConnected,
+      canOpenLogs: !!(systemApi?.openLocalPath && systemApi.getLogInfo),
+      canCopyLatestDisconnectReport: disconnectReports.length > 0,
+      hint: bridgeLike
+        ? "Bridge/runtime issue detected. Open Diagnostics and logs."
+        : reconnectLike
+          ? "Connection issue detected. Reconnect may recover quickly."
+          : ""
+    };
+  }, [
+    activeSessionId,
+    activeTabId,
+    disconnectReports.length,
+    error,
+    isActiveTabConnected,
+    systemApi,
+    terminalApi
+  ]);
+
   const openLogDirectory = useCallback(async () => {
     try {
       if (!systemApi?.openLocalPath || !systemApi.getLogInfo) {
@@ -5730,6 +11811,13 @@ export function App() {
         throw new Error("Bug report bridge unavailable. Restart `pnpm dev`.");
       }
       setIsExportingBugReport(true);
+      const disconnectReportSnapshot = {
+        capturedAtIso: new Date().toISOString(),
+        totalReports: disconnectReports.length,
+        latestReportId: disconnectReports[0]?.id ?? "",
+        latestCreatedAt: disconnectReports[0]?.createdAt ?? "",
+        reports: disconnectReports.slice(0, 64)
+      };
       const result = await systemApi.exportBugReport({
         settingsSnapshot: {
           appVersion: APP_VERSION,
@@ -5746,8 +11834,10 @@ export function App() {
           sessionGroupCount: sessionGroupOptions.length,
           openTabCount: terminalTabs.length,
           activeTabId,
-          selectedSessionId
-        }
+          selectedSessionId,
+          disconnectReportCount: disconnectReports.length
+        },
+        disconnectReports: disconnectReportSnapshot
       });
       if (result.canceled || !result.outputPath) {
         return;
@@ -5771,6 +11861,7 @@ export function App() {
   }, [
     activeTabId,
     connectionPreferences,
+    disconnectReports,
     fileOpenPreferences,
     hotkeyPreferences,
     selectedSessionId,
@@ -5784,6 +11875,287 @@ export function App() {
     terminalTabs.length,
     writeAppLog
   ]);
+
+  const copyDisconnectReportJson = useCallback(
+    async (report: DisconnectReportItem) => {
+      try {
+        const payload = {
+          appVersion: APP_VERSION,
+          copiedAtIso: new Date().toISOString(),
+          report
+        };
+        const copied = await copyTextToClipboard(`${JSON.stringify(payload, null, 2)}\n`);
+        if (!copied) {
+          throw new Error("Clipboard unavailable.");
+        }
+        await showAppAlert("Disconnect report JSON copied to clipboard.", {
+          title: "Diagnostics"
+        });
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        writeAppLog(
+          "error",
+          "renderer:diagnostics",
+          "Failed to copy disconnect report JSON.",
+          caughtError
+        );
+      }
+    },
+    [showAppAlert, writeAppLog]
+  );
+
+  const exportDisconnectReportsJson = useCallback(async () => {
+    if (visibleDisconnectReports.length === 0) {
+      await showAppAlert("No matching disconnect reports for the current filter.", {
+        title: "Diagnostics"
+      });
+      return;
+    }
+    const payload = {
+      appVersion: APP_VERSION,
+      exportedAtIso: new Date().toISOString(),
+      reportCount: visibleDisconnectReports.length,
+      totalReportCount: disconnectReports.length,
+      reports: visibleDisconnectReports
+    };
+    const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+    try {
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Disconnect Reports (JSON)",
+          defaultFileName: `termdock-disconnect-reports-${Date.now()}${hasCustomizedDisconnectReportView ? "-filtered" : ""}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copied = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copied
+              ? `Disconnect reports exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Disconnect reports exported:\n${result.outputPath}`,
+            {
+              title: "Diagnostics"
+            }
+          );
+          return;
+        }
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Disconnect reports JSON copied to clipboard.", {
+          title: "Diagnostics"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the disconnect reports below manually.", {
+        title: "Diagnostics",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:diagnostics", "Failed to export disconnect reports.", caughtError);
+    }
+  }, [
+    disconnectReports.length,
+    hasCustomizedDisconnectReportView,
+    showAppAlert,
+    systemApi,
+    visibleDisconnectReports,
+    writeAppLog
+  ]);
+
+  const exportDisconnectReportsCsv = useCallback(async () => {
+    if (visibleDisconnectReports.length === 0) {
+      await showAppAlert("No matching disconnect reports for the current filter.", {
+        title: "Diagnostics"
+      });
+      return;
+    }
+    const lines: string[] = [];
+    lines.push("# TermDock Disconnect Reports");
+    lines.push(`generatedAtIso,${escapeCsvCell(new Date().toISOString())}`);
+    lines.push(`reportCount,${visibleDisconnectReports.length}`);
+    lines.push(`totalReportCount,${disconnectReports.length}`);
+    lines.push("");
+    lines.push(
+      [
+        "id",
+        "createdAt",
+        "sessionName",
+        "target",
+        "tabTitle",
+        "trigger",
+        "status",
+        "message",
+        "connectedTabCount",
+        "openTabCount",
+        "uploadRunning",
+        "uploadQueued",
+        "downloadRunning",
+        "downloadQueued",
+        "portForwardTotal",
+        "portForwardDegraded",
+        "autoReconnect",
+        "reconnectDelaySeconds",
+        "recentFailures"
+      ].join(",")
+    );
+    for (const report of visibleDisconnectReports) {
+      const recentFailures = report.recentFailures
+        .slice(0, 5)
+        .map(
+          (failure) =>
+            `${failure.direction}:${failure.name} (${classifyTransferFailureReason(failure.message)})`
+        )
+        .join(" | ");
+      lines.push(
+        [
+          escapeCsvCell(report.id),
+          escapeCsvCell(report.createdAt),
+          escapeCsvCell(report.sessionName),
+          escapeCsvCell(report.target),
+          escapeCsvCell(report.tabTitle),
+          escapeCsvCell(report.trigger),
+          escapeCsvCell(report.status ?? ""),
+          escapeCsvCell(report.message),
+          escapeCsvCell(report.connectedTabCount),
+          escapeCsvCell(report.openTabCount),
+          escapeCsvCell(report.uploadRunning),
+          escapeCsvCell(report.uploadQueued),
+          escapeCsvCell(report.downloadRunning),
+          escapeCsvCell(report.downloadQueued),
+          escapeCsvCell(report.portForwardTotal),
+          escapeCsvCell(report.portForwardDegraded),
+          escapeCsvCell(report.autoReconnect ? "true" : "false"),
+          escapeCsvCell(report.reconnectDelaySeconds),
+          escapeCsvCell(recentFailures)
+        ].join(",")
+      );
+    }
+    const exportText = `${lines.join("\n")}\n`;
+    try {
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Disconnect Reports (CSV)",
+          defaultFileName: `termdock-disconnect-reports-${Date.now()}${hasCustomizedDisconnectReportView ? "-filtered" : ""}.csv`,
+          text: exportText,
+          filters: [
+            {
+              name: "CSV",
+              extensions: ["csv"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copied = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copied
+              ? `Disconnect reports CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Disconnect reports CSV exported:\n${result.outputPath}`,
+            {
+              title: "Diagnostics"
+            }
+          );
+          return;
+        }
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Disconnect reports CSV copied to clipboard.", {
+          title: "Diagnostics"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the disconnect reports CSV below manually.", {
+        title: "Diagnostics",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:diagnostics", "Failed to export disconnect reports CSV.", caughtError);
+    }
+  }, [
+    disconnectReports.length,
+    hasCustomizedDisconnectReportView,
+    showAppAlert,
+    systemApi,
+    visibleDisconnectReports,
+    writeAppLog
+  ]);
+
+  const copyLatestDisconnectReport = useCallback(async () => {
+    const latestReport = disconnectReports[0];
+    if (!latestReport) {
+      await showAppAlert("No disconnect reports captured yet.", {
+        title: "Diagnostics"
+      });
+      return;
+    }
+    await copyDisconnectReportJson(latestReport);
+  }, [copyDisconnectReportJson, disconnectReports, showAppAlert]);
+
+  const copyLatestVisibleDisconnectReport = useCallback(async () => {
+    const latestReport = visibleDisconnectReports[0];
+    if (!latestReport) {
+      await showAppAlert("No matching disconnect reports for the current filter.", {
+        title: "Diagnostics"
+      });
+      return;
+    }
+    await copyDisconnectReportJson(latestReport);
+  }, [copyDisconnectReportJson, showAppAlert, visibleDisconnectReports]);
+
+  const clearVisibleDisconnectReportsHistory = useCallback(async () => {
+    if (visibleDisconnectReports.length === 0) {
+      return;
+    }
+    const visibleIds = new Set(visibleDisconnectReports.map((entry) => entry.id));
+    const confirmed = await showAppConfirm(
+      `Clear ${visibleDisconnectReports.length} visible disconnect report(s)?`,
+      {
+        title: "Diagnostics",
+        confirmLabel: "Clear Visible",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDisconnectReports((prev) => prev.filter((entry) => !visibleIds.has(entry.id)));
+    await showAppAlert("Visible disconnect reports cleared.", {
+      title: "Diagnostics"
+    });
+  }, [showAppAlert, showAppConfirm, visibleDisconnectReports]);
+
+  const clearDisconnectReportsHistory = useCallback(async () => {
+    if (disconnectReports.length === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Clear ${disconnectReports.length} disconnect report(s)?`,
+      {
+        title: "Diagnostics",
+        confirmLabel: "Clear",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDisconnectReports([]);
+    disconnectReportFingerprintByTabRef.current.clear();
+    await showAppAlert("Disconnect reports cleared.", {
+      title: "Diagnostics"
+    });
+  }, [disconnectReports.length, showAppAlert, showAppConfirm]);
 
   const copyClashDirectRules = async (session: SessionRecord) => {
     const text = buildClashDirectRules(session);
@@ -5910,6 +12282,7 @@ export function App() {
     setSftpError(null);
     try {
       await sftpApi.createDirectory(activeTabId, sftpDirectory.cwd, trimmedName);
+      resetEnsuredRemoteDirectoryCacheForTab(activeTabId);
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
       setSftpError((caughtError as Error).message);
@@ -5950,6 +12323,7 @@ export function App() {
     setSftpError(null);
     try {
       await sftpApi.renamePath(activeTabId, targetEntry.path, trimmedName);
+      resetEnsuredRemoteDirectoryCacheForTab(activeTabId);
       setSelectedSftpPath(null);
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
@@ -5994,6 +12368,7 @@ export function App() {
     });
     try {
       await sftpApi.deletePath(activeTabId, targetEntry.path, targetEntry.kind);
+      resetEnsuredRemoteDirectoryCacheForTab(activeTabId);
       setSelectedSftpPath(null);
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
@@ -6083,7 +12458,13 @@ export function App() {
   };
 
   const resolveDownloadTargetConflicts = useCallback(
-    async (targets: DownloadTargetEntry[]): Promise<DownloadTargetEntry[] | null> => {
+    async (
+      targets: DownloadTargetEntry[],
+      context?: {
+        tabId?: string;
+        sessionId?: string;
+      }
+    ): Promise<DownloadTargetEntry[] | null> => {
       if (!systemApi || targets.length === 0) {
         return targets;
       }
@@ -6128,8 +12509,14 @@ export function App() {
         knownNames: Set<string>;
       };
 
-      const preparedTargets: PreparedDownloadTarget[] = [];
-      let conflictCount = 0;
+      const preparedInputs: Array<{
+        name: string;
+        remotePath: string;
+        localPath: string;
+        directoryPath: string;
+        fileName: string;
+      }> = [];
+      const uniqueDirectories = new Set<string>();
       for (const target of targets) {
         const localPath = target.localPath.trim();
         const remotePath = target.remotePath.trim();
@@ -6141,20 +12528,37 @@ export function App() {
         if (!fileName) {
           continue;
         }
-        const knownNames = await getKnownLocalNames(directoryPath);
+        preparedInputs.push({
+          name: target.name,
+          remotePath,
+          localPath: joinLocalPath(directoryPath, fileName),
+          directoryPath,
+          fileName
+        });
+        uniqueDirectories.add(directoryPath);
+      }
+
+      await runWithConcurrencyLimit(Array.from(uniqueDirectories), 6, async (directoryPath) => {
+        await getKnownLocalNames(directoryPath);
+      });
+
+      const preparedTargets: PreparedDownloadTarget[] = [];
+      let conflictCount = 0;
+      for (const target of preparedInputs) {
+        const knownNames = knownLocalNamesByDirectory.get(target.directoryPath) ?? new Set<string>();
         const plannedNames =
-          plannedLocalNamesByDirectory.get(directoryPath) ?? new Set(knownNames);
-        plannedLocalNamesByDirectory.set(directoryPath, plannedNames);
-        if (plannedNames.has(fileName)) {
+          plannedLocalNamesByDirectory.get(target.directoryPath) ?? new Set(knownNames);
+        plannedLocalNamesByDirectory.set(target.directoryPath, plannedNames);
+        if (plannedNames.has(target.fileName)) {
           conflictCount += 1;
         }
-        plannedNames.add(fileName);
+        plannedNames.add(target.fileName);
         preparedTargets.push({
-          ...target,
-          localPath: joinLocalPath(directoryPath, fileName),
-          remotePath,
-          directoryPath,
-          fileName,
+          name: target.name,
+          remotePath: target.remotePath,
+          localPath: target.localPath,
+          directoryPath: target.directoryPath,
+          fileName: target.fileName,
           knownNames
         });
       }
@@ -6167,21 +12571,50 @@ export function App() {
         }));
       }
 
-      const strategyChoice = await showAppChoice(
-        `Found ${conflictCount} local conflicts in this download batch. Choose one strategy for all conflicts.`,
-        [
-          { value: "overwrite", label: "Overwrite" },
-          { value: "skip", label: "Skip" },
-          { value: "rename", label: "Rename" }
-        ],
-        {
-          title: "Download Conflicts",
-          cancelLabel: "Cancel Download"
+      const explicitSessionId =
+        typeof context?.sessionId === "string" ? context.sessionId.trim() : "";
+      const contextTabId = typeof context?.tabId === "string" ? context.tabId.trim() : "";
+      const sessionIdForStrategy =
+        explicitSessionId ||
+        (contextTabId ? getSessionIdForTab(contextTabId) ?? "" : activeSessionId ?? "");
+      const rememberedStrategy = sessionIdForStrategy
+        ? sessionTransferConflictStrategyState.bySessionId[sessionIdForStrategy]?.download
+        : undefined;
+      let strategy: TransferConflictStrategy;
+      if (rememberedStrategy) {
+        strategy = rememberedStrategy;
+      } else {
+        const strategyChoice = await showAppChoice(
+          `Found ${conflictCount} local conflicts in this download batch. Choose one strategy for all conflicts.`,
+          [
+            { value: "overwrite", label: "Overwrite (Once)" },
+            { value: "skip", label: "Skip (Once)" },
+            { value: "rename", label: "Rename (Once)" },
+            { value: "overwriteRemember", label: "Overwrite + Remember for Session" },
+            { value: "skipRemember", label: "Skip + Remember for Session" },
+            { value: "renameRemember", label: "Rename + Remember for Session" }
+          ],
+          {
+            title: "Download Conflicts",
+            cancelLabel: "Cancel Download"
+          }
+        );
+        const parsedChoice = parseTransferConflictChoice(strategyChoice);
+        if (!parsedChoice) {
+          return null;
         }
-      );
-      const strategy = toTransferConflictStrategy(strategyChoice);
-      if (!strategy) {
-        return null;
+        strategy = parsedChoice.strategy;
+        if (parsedChoice.remember && sessionIdForStrategy) {
+          rememberSessionTransferConflictStrategy(sessionIdForStrategy, "download", strategy);
+          if (contextTabId) {
+            showTransferDockNotice(
+              contextTabId,
+              "info",
+              `Saved download conflict default for this session: ${formatTransferConflictStrategyLabel(strategy)}.`,
+              6000
+            );
+          }
+        }
       }
 
       const resolvedTargets: DownloadTargetEntry[] = [];
@@ -6229,7 +12662,16 @@ export function App() {
       }
       return resolvedTargets;
     },
-    [showAppAlert, showAppChoice, systemApi]
+    [
+      activeSessionId,
+      getSessionIdForTab,
+      rememberSessionTransferConflictStrategy,
+      sessionTransferConflictStrategyState.bySessionId,
+      showAppAlert,
+      showAppChoice,
+      showTransferDockNotice,
+      systemApi
+    ]
   );
 
   const resolveUploadPathEntryConflicts = useCallback(
@@ -6273,12 +12715,20 @@ export function App() {
       type PreparedUploadEntry = UploadPathEntry & {
         localPath: string;
         remoteDirectory: string;
+        remoteDirectoryKey: string;
         targetName: string;
         knownNames: Set<string>;
       };
 
-      const preparedEntries: PreparedUploadEntry[] = [];
-      let conflictCount = 0;
+      const preparedInputs: Array<{
+        localPath: string;
+        relativeDirectory: string;
+        remoteName?: string;
+        remoteDirectory: string;
+        remoteDirectoryKey: string;
+        targetName: string;
+      }> = [];
+      const remoteDirectoryEntries = new Map<string, string>();
       for (const pathEntry of entries) {
         const localPath = pathEntry.localPath.trim();
         if (!localPath) {
@@ -6294,19 +12744,41 @@ export function App() {
           ? joinRemotePath(remoteBaseDirectory, relativeDirectory)
           : remoteBaseDirectory;
         const remoteDirectoryKey = normalizeRemoteDirectoryPath(remoteDirectory) || ".";
-        const knownNames = await getKnownRemoteNames(remoteDirectory);
+        preparedInputs.push({
+          localPath,
+          relativeDirectory: pathEntry.relativeDirectory,
+          remoteName: pathEntry.remoteName,
+          remoteDirectory,
+          remoteDirectoryKey,
+          targetName
+        });
+        if (!remoteDirectoryEntries.has(remoteDirectoryKey)) {
+          remoteDirectoryEntries.set(remoteDirectoryKey, remoteDirectory);
+        }
+      }
+
+      await runWithConcurrencyLimit(Array.from(remoteDirectoryEntries.values()), 6, async (directory) => {
+        await getKnownRemoteNames(directory);
+      });
+
+      const preparedEntries: PreparedUploadEntry[] = [];
+      let conflictCount = 0;
+      for (const entry of preparedInputs) {
+        const knownNames = knownRemoteNamesByDirectory.get(entry.remoteDirectoryKey) ?? new Set<string>();
         const plannedNames =
-          plannedRemoteNamesByDirectory.get(remoteDirectoryKey) ?? new Set(knownNames);
-        plannedRemoteNamesByDirectory.set(remoteDirectoryKey, plannedNames);
-        if (plannedNames.has(targetName)) {
+          plannedRemoteNamesByDirectory.get(entry.remoteDirectoryKey) ?? new Set(knownNames);
+        plannedRemoteNamesByDirectory.set(entry.remoteDirectoryKey, plannedNames);
+        if (plannedNames.has(entry.targetName)) {
           conflictCount += 1;
         }
-        plannedNames.add(targetName);
+        plannedNames.add(entry.targetName);
         preparedEntries.push({
-          ...pathEntry,
-          localPath,
-          remoteDirectory,
-          targetName,
+          localPath: entry.localPath,
+          relativeDirectory: entry.relativeDirectory,
+          remoteName: entry.remoteName,
+          remoteDirectory: entry.remoteDirectory,
+          remoteDirectoryKey: entry.remoteDirectoryKey,
+          targetName: entry.targetName,
           knownNames
         });
       }
@@ -6319,21 +12791,43 @@ export function App() {
         }));
       }
 
-      const strategyChoice = await showAppChoice(
-        `Found ${conflictCount} remote conflicts in this upload batch. Choose one strategy for all conflicts.`,
-        [
-          { value: "overwrite", label: "Overwrite" },
-          { value: "skip", label: "Skip" },
-          { value: "rename", label: "Rename" }
-        ],
-        {
-          title: "Upload Conflicts",
-          cancelLabel: "Cancel Upload"
+      const sessionIdForStrategy = getSessionIdForTab(tabId) ?? activeSessionId ?? "";
+      const rememberedStrategy = sessionIdForStrategy
+        ? sessionTransferConflictStrategyState.bySessionId[sessionIdForStrategy]?.upload
+        : undefined;
+      let strategy: TransferConflictStrategy;
+      if (rememberedStrategy) {
+        strategy = rememberedStrategy;
+      } else {
+        const strategyChoice = await showAppChoice(
+          `Found ${conflictCount} remote conflicts in this upload batch. Choose one strategy for all conflicts.`,
+          [
+            { value: "overwrite", label: "Overwrite (Once)" },
+            { value: "skip", label: "Skip (Once)" },
+            { value: "rename", label: "Rename (Once)" },
+            { value: "overwriteRemember", label: "Overwrite + Remember for Session" },
+            { value: "skipRemember", label: "Skip + Remember for Session" },
+            { value: "renameRemember", label: "Rename + Remember for Session" }
+          ],
+          {
+            title: "Upload Conflicts",
+            cancelLabel: "Cancel Upload"
+          }
+        );
+        const parsedChoice = parseTransferConflictChoice(strategyChoice);
+        if (!parsedChoice) {
+          return null;
         }
-      );
-      const strategy = toTransferConflictStrategy(strategyChoice);
-      if (!strategy) {
-        return null;
+        strategy = parsedChoice.strategy;
+        if (parsedChoice.remember && sessionIdForStrategy) {
+          rememberSessionTransferConflictStrategy(sessionIdForStrategy, "upload", strategy);
+          showTransferDockNotice(
+            tabId,
+            "info",
+            `Saved upload conflict default for this session: ${formatTransferConflictStrategyLabel(strategy)}.`,
+            6000
+          );
+        }
       }
 
       const resolvedEntries: UploadPathEntry[] = [];
@@ -6381,7 +12875,16 @@ export function App() {
       }
       return resolvedEntries;
     },
-    [sftpApi, showAppAlert, showAppChoice]
+    [
+      activeSessionId,
+      getSessionIdForTab,
+      rememberSessionTransferConflictStrategy,
+      sessionTransferConflictStrategyState.bySessionId,
+      sftpApi,
+      showAppAlert,
+      showAppChoice,
+      showTransferDockNotice
+    ]
   );
 
   const enqueueDownloadTargets = useCallback(
@@ -6571,7 +13074,10 @@ export function App() {
         return;
       }
 
-      const resolvedTargets = await resolveDownloadTargetConflicts(discoveredFileTargets);
+      const resolvedTargets = await resolveDownloadTargetConflicts(discoveredFileTargets, {
+        tabId: activeTabId,
+        sessionId: activeSessionId ?? undefined
+      });
       if (!resolvedTargets) {
         setDownloadBatchByTab((prev) => {
           const current = prev[activeTabId];
@@ -6601,6 +13107,14 @@ export function App() {
         });
         return;
       }
+      writeAppLog("info", "renderer:sftp-batch", "Queued download directory batch.", {
+        tabId: activeTabId,
+        batchId,
+        sourcePath: targetEntry.path,
+        destinationDirectory,
+        queuedFiles: totalQueuedFiles,
+        skippedEntries
+      });
 
       if (skippedEntries > 0) {
         await showAppAlert(
@@ -6652,13 +13166,19 @@ export function App() {
 
     try {
       setSftpError(null);
-      const resolvedTargets = await resolveDownloadTargetConflicts([
+      const resolvedTargets = await resolveDownloadTargetConflicts(
+        [
+          {
+            name: targetEntry.name,
+            remotePath: targetEntry.path,
+            localPath
+          }
+        ],
         {
-          name: targetEntry.name,
-          remotePath: targetEntry.path,
-          localPath
+          tabId: activeTabId,
+          sessionId: activeSessionId ?? undefined
         }
-      ]);
+      );
       if (!resolvedTargets || resolvedTargets.length === 0) {
         return;
       }
@@ -7010,6 +13530,13 @@ export function App() {
         setSftpError("No valid files to upload.");
         return;
       }
+      writeAppLog("info", "renderer:sftp-batch", "Queued upload batch.", {
+        tabId: activeTabId,
+        batchId,
+        remoteDirectory: sftpDirectory.cwd,
+        queuedFiles: totalQueuedFiles,
+        skippedEntries
+      });
       if (skippedEntries > 0) {
         await showAppAlert(
           `Queued ${totalQueuedFiles} upload files. Skipped ${skippedEntries} unsupported entries.`,
@@ -7097,135 +13624,452 @@ export function App() {
     }
   };
 
-  const cancelAllActiveUploads = async () => {
-    if (!activeTabId) {
-      return;
-    }
-    const tabId = activeTabId;
-    const activeBatchId = uploadBatchByTab[tabId]?.batchId;
-    if (activeBatchId) {
-      canceledUploadBatchIdsRef.current.add(activeBatchId);
-    }
-    setUploadBatchByTab((prev) => {
-      if (!prev[tabId]) {
-        return prev;
+  const cancelAllUploadsForTab = useCallback(
+    async (tabId: string): Promise<void> => {
+      const normalizedTabId = tabId.trim();
+      if (!normalizedTabId) {
+        return;
       }
-      const next = { ...prev };
-      delete next[tabId];
-      return next;
-    });
-    const queuedJobs = uploadQueueRef.current.filter((job) => job.tabId === tabId);
-    const queuedTransferIds = new Set(queuedJobs.map((job) => job.transferId));
-    if (queuedJobs.length > 0) {
-      uploadQueueRef.current = uploadQueueRef.current.filter((job) => job.tabId !== tabId);
-      for (const job of queuedJobs) {
-        applySftpTransferEvent({
-          tabId: job.tabId,
-          transferId: job.transferId,
-          direction: "upload",
-          status: "canceled",
-          batchId: job.batchId,
-          name: job.name,
-          localPath: job.localPath,
-          remotePath: job.remotePath,
-          transferredBytes: 0,
-          totalBytes: 0,
-          message: "canceled"
-        });
+      const activeBatchId = uploadBatchByTab[normalizedTabId]?.batchId;
+      if (activeBatchId) {
+        canceledUploadBatchIdsRef.current.add(activeBatchId);
       }
-    }
-    const transferIdsToCancel = new Set<string>();
-    for (const transfer of sftpTransfers) {
-      if (
-        transfer.tabId !== tabId ||
-        transfer.direction !== "upload" ||
-        (transfer.status !== "queued" && transfer.status !== "running")
-      ) {
-        continue;
+      setUploadBatchByTab((prev) => {
+        if (!prev[normalizedTabId]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedTabId];
+        return next;
+      });
+      setPausedUploadTabs((prev) => {
+        if (!prev[normalizedTabId]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedTabId];
+        return next;
+      });
+      const queuedJobs = uploadQueueRef.current.filter((job) => job.tabId === normalizedTabId);
+      const queuedTransferIds = new Set(queuedJobs.map((job) => job.transferId));
+      if (queuedJobs.length > 0) {
+        uploadQueueRef.current = uploadQueueRef.current.filter((job) => job.tabId !== normalizedTabId);
+        for (const job of queuedJobs) {
+          applySftpTransferEvent({
+            tabId: job.tabId,
+            transferId: job.transferId,
+            direction: "upload",
+            status: "canceled",
+            batchId: job.batchId,
+            name: job.name,
+            localPath: job.localPath,
+            remotePath: job.remotePath,
+            transferredBytes: 0,
+            totalBytes: 0,
+            message: "canceled"
+          });
+        }
       }
-      if (!queuedTransferIds.has(transfer.transferId)) {
-        transferIdsToCancel.add(transfer.transferId);
+      const transferIdsToCancel = new Set<string>();
+      for (const transfer of sftpTransfers) {
+        if (
+          transfer.tabId !== normalizedTabId ||
+          transfer.direction !== "upload" ||
+          (transfer.status !== "queued" && transfer.status !== "running")
+        ) {
+          continue;
+        }
+        if (!queuedTransferIds.has(transfer.transferId)) {
+          transferIdsToCancel.add(transfer.transferId);
+        }
       }
-    }
-    for (const [transferId, runningTabId] of runningUploadIdsRef.current.entries()) {
-      if (runningTabId === tabId) {
-        transferIdsToCancel.add(transferId);
+      for (const [transferId, runningTabId] of runningUploadIdsRef.current.entries()) {
+        if (runningTabId === normalizedTabId) {
+          transferIdsToCancel.add(transferId);
+        }
       }
-    }
-    if (!sftpApi) {
+      if (!sftpApi) {
+        drainUploadQueue();
+        return;
+      }
+      await Promise.allSettled(
+        Array.from(transferIdsToCancel).map((transferId) =>
+          sftpApi.cancelUpload(normalizedTabId, transferId)
+        )
+      );
       drainUploadQueue();
-      return;
-    }
-    await Promise.allSettled(
-      Array.from(transferIdsToCancel).map((transferId) => sftpApi.cancelUpload(tabId, transferId))
-    );
-    drainUploadQueue();
-  };
+    },
+    [applySftpTransferEvent, drainUploadQueue, sftpApi, sftpTransfers, uploadBatchByTab]
+  );
 
-  const cancelAllActiveDownloads = async () => {
+  const cancelAllDownloadsForTab = useCallback(
+    async (tabId: string): Promise<void> => {
+      const normalizedTabId = tabId.trim();
+      if (!normalizedTabId) {
+        return;
+      }
+      const activeBatchId = downloadBatchByTab[normalizedTabId]?.batchId;
+      if (activeBatchId) {
+        canceledDownloadBatchIdsRef.current.add(activeBatchId);
+      }
+      setDownloadBatchByTab((prev) => {
+        if (!prev[normalizedTabId]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedTabId];
+        return next;
+      });
+      setPausedDownloadTabs((prev) => {
+        if (!prev[normalizedTabId]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedTabId];
+        return next;
+      });
+      const queuedJobs = downloadQueueRef.current.filter((job) => job.tabId === normalizedTabId);
+      const queuedTransferIds = new Set(queuedJobs.map((job) => job.transferId));
+      if (queuedJobs.length > 0) {
+        downloadQueueRef.current = downloadQueueRef.current.filter(
+          (job) => job.tabId !== normalizedTabId
+        );
+        for (const job of queuedJobs) {
+          applySftpTransferEvent({
+            tabId: job.tabId,
+            transferId: job.transferId,
+            direction: "download",
+            status: "canceled",
+            batchId: job.batchId,
+            name: job.name,
+            localPath: job.localPath,
+            remotePath: job.remotePath,
+            transferredBytes: 0,
+            totalBytes: 0,
+            message: "canceled"
+          });
+        }
+      }
+      const transferIdsToCancel = new Set<string>();
+      for (const transfer of sftpTransfers) {
+        if (
+          transfer.tabId !== normalizedTabId ||
+          transfer.direction !== "download" ||
+          (transfer.status !== "queued" && transfer.status !== "running")
+        ) {
+          continue;
+        }
+        if (!queuedTransferIds.has(transfer.transferId)) {
+          transferIdsToCancel.add(transfer.transferId);
+        }
+      }
+      for (const [transferId, runningTabId] of runningDownloadIdsRef.current.entries()) {
+        if (runningTabId === normalizedTabId) {
+          transferIdsToCancel.add(transferId);
+        }
+      }
+      if (!sftpApi) {
+        drainDownloadQueue();
+        return;
+      }
+      await Promise.allSettled(
+        Array.from(transferIdsToCancel).map((transferId) =>
+          sftpApi.cancelDownload(normalizedTabId, transferId)
+        )
+      );
+      drainDownloadQueue();
+    },
+    [applySftpTransferEvent, downloadBatchByTab, drainDownloadQueue, sftpApi, sftpTransfers]
+  );
+
+  const cancelTransferTasksForTab = useCallback(
+    async (tabId: string): Promise<void> => {
+      await cancelAllUploadsForTab(tabId);
+      await cancelAllDownloadsForTab(tabId);
+    },
+    [cancelAllDownloadsForTab, cancelAllUploadsForTab]
+  );
+
+  const cancelAllActiveUploads = useCallback(async () => {
     if (!activeTabId) {
       return;
     }
-    const tabId = activeTabId;
-    const activeBatchId = downloadBatchByTab[tabId]?.batchId;
-    if (activeBatchId) {
-      canceledDownloadBatchIdsRef.current.add(activeBatchId);
-    }
-    setDownloadBatchByTab((prev) => {
-      if (!prev[tabId]) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[tabId];
-      return next;
-    });
-    const queuedJobs = downloadQueueRef.current.filter((job) => job.tabId === tabId);
-    const queuedTransferIds = new Set(queuedJobs.map((job) => job.transferId));
-    if (queuedJobs.length > 0) {
-      downloadQueueRef.current = downloadQueueRef.current.filter((job) => job.tabId !== tabId);
-      for (const job of queuedJobs) {
-        applySftpTransferEvent({
-          tabId: job.tabId,
-          transferId: job.transferId,
-          direction: "download",
-          status: "canceled",
-          batchId: job.batchId,
-          name: job.name,
-          localPath: job.localPath,
-          remotePath: job.remotePath,
-          transferredBytes: 0,
-          totalBytes: 0,
-          message: "canceled"
-        });
-      }
-    }
-    const transferIdsToCancel = new Set<string>();
-    for (const transfer of sftpTransfers) {
-      if (
-        transfer.tabId !== tabId ||
-        transfer.direction !== "download" ||
-        (transfer.status !== "queued" && transfer.status !== "running")
-      ) {
-        continue;
-      }
-      if (!queuedTransferIds.has(transfer.transferId)) {
-        transferIdsToCancel.add(transfer.transferId);
-      }
-    }
-    for (const [transferId, runningTabId] of runningDownloadIdsRef.current.entries()) {
-      if (runningTabId === tabId) {
-        transferIdsToCancel.add(transferId);
-      }
-    }
-    if (!sftpApi) {
-      drainDownloadQueue();
+    await cancelAllUploadsForTab(activeTabId);
+  }, [activeTabId, cancelAllUploadsForTab]);
+
+  const cancelAllActiveDownloads = useCallback(async () => {
+    if (!activeTabId) {
       return;
     }
-    await Promise.allSettled(
-      Array.from(transferIdsToCancel).map((transferId) => sftpApi.cancelDownload(tabId, transferId))
+    await cancelAllDownloadsForTab(activeTabId);
+  }, [activeTabId, cancelAllDownloadsForTab]);
+
+  const cancelAllTransfersAcrossTabs = useCallback(async () => {
+    if (isOperationCenterBulkCanceling) {
+      return;
+    }
+    if (operationCenterTransferTabSummaries.length === 0) {
+      if (activeTabId) {
+        showTransferDockNotice(activeTabId, "info", "No active transfer tasks across tabs.");
+      }
+      return;
+    }
+    setIsOperationCenterBulkCanceling(true);
+    try {
+      for (const summary of operationCenterTransferTabSummaries) {
+        await cancelTransferTasksForTab(summary.tabId);
+      }
+      if (activeTabId) {
+        showTransferDockNotice(
+          activeTabId,
+          "warn",
+          `Canceled active transfer tasks across ${operationCenterTransferTabSummaries.length} tab(s).`,
+          8000
+        );
+      }
+    } finally {
+      setIsOperationCenterBulkCanceling(false);
+    }
+  }, [
+    activeTabId,
+    cancelTransferTasksForTab,
+    isOperationCenterBulkCanceling,
+    operationCenterTransferTabSummaries,
+    showTransferDockNotice
+  ]);
+
+  const clearPendingTransferRestoreQueue = useCallback(
+    (markResolved = true) => {
+      setPendingTransferRestoreItems([]);
+      if (markResolved) {
+        setPendingTransferRestoreResolved(true);
+      }
+      try {
+        window.localStorage.removeItem(SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures; runtime state still applies.
+      }
+    },
+    []
+  );
+
+  const discardPendingTransferRestoreQueue = useCallback(async () => {
+    if (pendingTransferRestoreItems.length === 0) {
+      clearPendingTransferRestoreQueue(true);
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Discard ${pendingTransferRestoreItems.length} saved pending transfer task(s) from previous run?`,
+      {
+        title: "Discard Pending Queue",
+        confirmLabel: "Discard",
+        cancelLabel: "Cancel",
+        danger: true
+      }
     );
-    drainDownloadQueue();
-  };
+    if (!confirmed) {
+      return;
+    }
+    clearPendingTransferRestoreQueue(true);
+    if (activeTabId) {
+      showTransferDockNotice(activeTabId, "warn", "Discarded saved pending transfer queue.");
+    }
+  }, [
+    activeTabId,
+    clearPendingTransferRestoreQueue,
+    pendingTransferRestoreItems.length,
+    showAppConfirm,
+    showTransferDockNotice
+  ]);
+
+  const restorePendingTransferRestoreQueue = useCallback(async () => {
+    if (pendingTransferRestoreItems.length === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Restore ${pendingTransferRestoreItems.length} saved pending transfer task(s)? Missing sessions will be skipped.`,
+      {
+        title: "Restore Pending Queue",
+        confirmLabel: "Restore",
+        cancelLabel: "Cancel"
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const uploadTargetsByTab = new Map<
+      string,
+      Array<{
+        name: string;
+        localPath: string;
+        remotePath: string;
+      }>
+    >();
+    const downloadTargetsByTab = new Map<string, DownloadTargetEntry[]>();
+    let skippedMissingSessions = 0;
+    let skippedInvalidEntries = 0;
+    let openedTabs = 0;
+
+    for (const item of pendingTransferRestoreItems) {
+      const session = sessionsRef.current.find((entry) => entry.id === item.sessionId) ?? null;
+      if (!session) {
+        skippedMissingSessions += 1;
+        continue;
+      }
+      const localPath = item.localPath.trim();
+      const remotePath = item.remotePath.trim();
+      const name = item.name.trim();
+      if (!localPath || !remotePath || !name) {
+        skippedInvalidEntries += 1;
+        continue;
+      }
+
+      let tabId = terminalTabsRef.current.find((tab) => tab.sessionId === session.id)?.id ?? null;
+      if (!tabId) {
+        const openedTabId = openTerminalTab(session);
+        if (!openedTabId) {
+          skippedInvalidEntries += 1;
+          continue;
+        }
+        tabId = openedTabId;
+        openedTabs += 1;
+      }
+
+      if (item.direction === "upload") {
+        const targets = uploadTargetsByTab.get(tabId) ?? [];
+        if (
+          !targets.some(
+            (entry) =>
+              entry.localPath.trim() === localPath && entry.remotePath.trim() === remotePath
+          )
+        ) {
+          targets.push({
+            name,
+            localPath,
+            remotePath
+          });
+        }
+        uploadTargetsByTab.set(tabId, targets);
+      } else {
+        const targets = downloadTargetsByTab.get(tabId) ?? [];
+        if (
+          !targets.some(
+            (entry) =>
+              entry.localPath.trim() === localPath && entry.remotePath.trim() === remotePath
+          )
+        ) {
+          targets.push({
+            name,
+            localPath,
+            remotePath
+          });
+        }
+        downloadTargetsByTab.set(tabId, targets);
+      }
+    }
+
+    let queuedUploads = 0;
+    let queuedDownloads = 0;
+    for (const [tabId, targets] of uploadTargetsByTab.entries()) {
+      queuedUploads += enqueueUploadTargets(tabId, targets, { suppressEmptyError: true });
+    }
+    for (const [tabId, targets] of downloadTargetsByTab.entries()) {
+      queuedDownloads += enqueueDownloadTargets(tabId, targets, { suppressEmptyError: true });
+    }
+
+    clearPendingTransferRestoreQueue(true);
+    await showAppAlert(
+      `Restore completed.\nQueued uploads: ${queuedUploads}\nQueued downloads: ${queuedDownloads}\nOpened tabs: ${openedTabs}\nSkipped missing sessions: ${skippedMissingSessions}\nSkipped invalid entries: ${skippedInvalidEntries}`,
+      {
+        title: "Restore Pending Queue"
+      }
+    );
+  }, [
+    clearPendingTransferRestoreQueue,
+    enqueueDownloadTargets,
+    enqueueUploadTargets,
+    openTerminalTab,
+    pendingTransferRestoreItems,
+    showAppAlert,
+    showAppConfirm
+  ]);
+
+  const reconnectOperationTabById = useCallback(
+    async (tabId: string): Promise<boolean> => {
+      const normalizedTabId = tabId.trim();
+      if (!normalizedTabId || !terminalApi) {
+        return false;
+      }
+      const tab = terminalTabsRef.current.find((entry) => entry.id === normalizedTabId);
+      if (!tab) {
+        return false;
+      }
+      try {
+        await terminalApi.connect(normalizedTabId, tab.sessionId);
+        return true;
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        writeAppLog(
+          "warn",
+          "renderer:operation-center",
+          "Reconnect action failed for operation-center tab.",
+          {
+            tabId: normalizedTabId,
+            sessionId: tab.sessionId,
+            message
+          }
+        );
+        return false;
+      }
+    },
+    [terminalApi, writeAppLog]
+  );
+
+  const reconnectDisconnectedOperationTabs = useCallback(async () => {
+    if (isOperationCenterReconnecting) {
+      return;
+    }
+    const targets = operationCenterTransferTabSummaries.filter((entry) => !entry.connected);
+    if (targets.length === 0) {
+      if (activeTabId) {
+        showTransferDockNotice(activeTabId, "info", "No disconnected transfer tabs to reconnect.");
+      }
+      return;
+    }
+    setIsOperationCenterReconnecting(true);
+    try {
+      let successCount = 0;
+      let failedCount = 0;
+      for (const target of targets) {
+        const ok = await reconnectOperationTabById(target.tabId);
+        if (ok) {
+          successCount += 1;
+        } else {
+          failedCount += 1;
+        }
+      }
+      if (activeTabId) {
+        showTransferDockNotice(
+          activeTabId,
+          failedCount > 0 ? "warn" : "info",
+          failedCount > 0
+            ? `Reconnect completed: ${successCount} succeeded, ${failedCount} failed.`
+            : `Reconnect completed: ${successCount} tab(s) requested.`,
+          8000
+        );
+      }
+    } finally {
+      setIsOperationCenterReconnecting(false);
+    }
+  }, [
+    activeTabId,
+    isOperationCenterReconnecting,
+    operationCenterTransferTabSummaries,
+    reconnectOperationTabById,
+    showTransferDockNotice
+  ]);
 
   const clearFinishedTransfers = (direction: "upload" | "download") => {
     if (!activeTabId) {
@@ -7302,6 +14146,14 @@ export function App() {
     setRetryCenterSelection([]);
   }, []);
 
+  const openOperationCenter = useCallback(() => {
+    setIsOperationCenterOpen(true);
+  }, []);
+
+  const closeOperationCenter = useCallback(() => {
+    setIsOperationCenterOpen(false);
+  }, []);
+
   const toggleRetryCenterEntrySelection = useCallback((key: string) => {
     const normalized = key.trim();
     if (!normalized) {
@@ -7323,7 +14175,754 @@ export function App() {
     setRetryCenterSelection([]);
   }, []);
 
-  const retrySelectedRetryCenterEntries = async () => {
+  const exportRetryCenterVisibleHistoryJson = async () => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const exportPayload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        filters: {
+          scope: retryCenterScope,
+          direction: retryCenterDirection,
+          status: retryCenterStatus,
+          timeRange: retryCenterTimeRange,
+          listMode: retryCenterListMode,
+          failureReason: retryCenterFailureReasonExportValue,
+          query: retryCenterQuery.trim()
+        },
+        stats: {
+          visibleCount: retryCenterEntries.length,
+          totalHistoryCount: transferHistory.length,
+          selectedCount: selectedRetryCenterEntries.length,
+          failedVisibleCount: retryCenterAnalytics.failedCount,
+          failedVisibleRatioPercent: Number(
+            retryCenterAnalytics.failedRatioPercent.toFixed(2)
+          ),
+          directionCounts: retryCenterAnalytics.directionCounts,
+          statusCounts: retryCenterAnalytics.statusCounts,
+          topSessions: retryCenterAnalytics.topSessions,
+          topGroups: retryCenterAnalytics.topGroups,
+          topFailureReasons: retryCenterAnalytics.topFailureReasons
+        },
+        entries: retryCenterVisibleExportEntries
+      };
+      const exportText = `${JSON.stringify(exportPayload, null, 2)}\n`;
+      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
+      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Retry Center (JSON)",
+          defaultFileName: `termdock-retry-center-${scopeSegment}-${dateSegment}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Retry Center JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Retry Center JSON exported:\n${result.outputPath}`,
+            {
+              title: "Retry Center"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Retry Center JSON copied to clipboard.", {
+          title: "Retry Center"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the JSON below manually.", {
+        title: "Retry Center",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:retry-center",
+        "Failed to export retry center JSON.",
+        caughtError
+      );
+    }
+  };
+
+  const exportRetryCenterVisibleHistoryCsv = async () => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const lines: string[] = [];
+      lines.push("# TermDock Retry Center Export");
+      lines.push(`# Format: CSV`);
+      lines.push(`# Generated: ${generatedAtIso}`);
+      lines.push(`# AppVersion: ${APP_VERSION}`);
+      lines.push(
+        `# Filters: scope=${retryCenterScope}, direction=${retryCenterDirection}, status=${retryCenterStatus}, timeRange=${retryCenterTimeRange}, listMode=${retryCenterListMode}, failureReason=${retryCenterFailureReasonExportValue}, query=${retryCenterQuery.trim() || "-"}`
+      );
+      lines.push(
+        `# Counts: visible=${retryCenterEntries.length}, total=${transferHistory.length}, selected=${selectedRetryCenterEntries.length}`
+      );
+      lines.push(
+        `# TopFailureReasons: ${
+          retryCenterAnalytics.topFailureReasons.length > 0
+            ? retryCenterAnalytics.topFailureReasons
+                .map((entry) => `${entry.reason}(${entry.total})`)
+                .join(" | ")
+            : "-"
+        }`
+      );
+      lines.push("");
+      lines.push(
+        [
+          "key",
+          "sessionId",
+          "sessionName",
+          "groupName",
+          "direction",
+          "status",
+          "name",
+          "localPath",
+          "remotePath",
+          "attemptCount",
+          "updatedAt",
+          "updatedAtIso",
+          "message"
+        ].join(",")
+      );
+      for (const entry of retryCenterVisibleExportEntries) {
+        lines.push(
+          [
+            entry.key,
+            entry.sessionId,
+            entry.sessionName,
+            entry.groupName,
+            entry.direction,
+            entry.status,
+            entry.name,
+            entry.localPath,
+            entry.remotePath,
+            entry.attemptCount,
+            entry.updatedAt,
+            entry.updatedAtIso,
+            entry.message
+          ]
+            .map((value) => escapeCsvCell(value))
+            .join(",")
+        );
+      }
+      const exportText = `${lines.join("\n")}\n`;
+      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
+      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Retry Center (CSV)",
+          defaultFileName: `termdock-retry-center-${scopeSegment}-${dateSegment}.csv`,
+          text: exportText,
+          filters: [
+            {
+              name: "CSV",
+              extensions: ["csv"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Retry Center CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Retry Center CSV exported:\n${result.outputPath}`,
+            {
+              title: "Retry Center"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Retry Center CSV copied to clipboard.", {
+          title: "Retry Center"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the CSV below manually.", {
+        title: "Retry Center",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:retry-center",
+        "Failed to export retry center CSV.",
+        caughtError
+      );
+    }
+  };
+
+  const chooseRetryCenterGroupExportScope = async (
+    groupKey: string,
+    format: "json" | "csv"
+  ): Promise<RetryCenterGroupExportScope | null> => {
+    const group = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
+    if (!group || group.entries.length === 0) {
+      await showAppAlert("No visible records in this group to export.", {
+        title: "Retry Center"
+      });
+      return null;
+    }
+    const choices: AppChoiceDialogOption[] = [
+      {
+        value: "all",
+        label: `All (${group.total})`
+      }
+    ];
+    if (group.failedCount > 0) {
+      choices.push({
+        value: "failed",
+        label: `Failed (${group.failedCount})`
+      });
+    }
+    if (group.activeSessionFailedCount > 0) {
+      choices.push({
+        value: "retryable",
+        label: `Retryable Active Session (${group.activeSessionFailedCount})`
+      });
+    }
+    if (choices.length === 1) {
+      return "all";
+    }
+    const choice = await showAppChoice(
+      `Choose ${format.toUpperCase()} export scope for "${group.label}".`,
+      choices,
+      {
+        title: "Retry Center",
+        cancelLabel: "Cancel"
+      }
+    );
+    if (choice !== "all" && choice !== "failed" && choice !== "retryable") {
+      return null;
+    }
+    return choice;
+  };
+
+  const getRetryCenterGroupEntriesForExportScope = (
+    group: (typeof retryCenterGroupedEntries)[number],
+    exportScope: RetryCenterGroupExportScope
+  ): SftpTransferHistoryItem[] => {
+    if (exportScope === "all") {
+      return group.entries;
+    }
+    if (exportScope === "failed") {
+      return group.entries.filter((entry) => entry.status === "failed");
+    }
+    if (!activeSessionId) {
+      return [];
+    }
+    return group.entries.filter(
+      (entry) => entry.status === "failed" && entry.sessionId === activeSessionId
+    );
+  };
+
+  const exportRetryCenterGroupHistoryJson = async (
+    groupKey: string,
+    exportScope: RetryCenterGroupExportScope = "all"
+  ) => {
+    const group = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
+    if (!group || group.entries.length === 0) {
+      await showAppAlert("No visible records in this group to export.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    const scopedEntries = getRetryCenterGroupEntriesForExportScope(group, exportScope);
+    if (scopedEntries.length === 0) {
+      await showAppAlert(`No "${exportScope}" records available in this group.`, {
+        title: "Retry Center"
+      });
+      return;
+    }
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const exportEntries = scopedEntries.map((entry) => {
+        const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
+        return {
+          key: entry.key,
+          sessionId: entry.sessionId,
+          sessionName: sessionMeta?.sessionName ?? entry.sessionId,
+          groupName: sessionMeta?.groupName ?? "Unknown",
+          direction: entry.direction,
+          status: entry.status,
+          name: entry.name,
+          localPath: entry.localPath,
+          remotePath: entry.remotePath,
+          attemptCount: entry.attemptCount,
+          updatedAt: entry.updatedAt,
+          updatedAtIso: toIsoTimestamp(entry.updatedAt),
+          failureReason:
+            entry.status === "failed" ? classifyTransferFailureReason(entry.message) : "",
+          message: entry.message ?? ""
+        };
+      });
+      const exportPayload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        filters: {
+          scope: retryCenterScope,
+          direction: retryCenterDirection,
+          status: retryCenterStatus,
+          timeRange: retryCenterTimeRange,
+          listMode: retryCenterListMode,
+          failureReason: retryCenterFailureReasonExportValue,
+          groupExportScope: exportScope,
+          query: retryCenterQuery.trim()
+        },
+        group: {
+          key: group.key,
+          label: group.label,
+          total: group.total,
+          failedCount: group.failedCount,
+          activeSessionFailedCount: group.activeSessionFailedCount,
+          exportedCount: scopedEntries.length
+        },
+        entries: exportEntries
+      };
+      const exportText = `${JSON.stringify(exportPayload, null, 2)}\n`;
+      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
+      const groupSegment =
+        group.label
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 48) || "group";
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Retry Center Group (JSON)",
+          defaultFileName: `termdock-retry-center-group-${groupSegment}-${exportScope}-${dateSegment}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Retry Center group JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Retry Center group JSON exported:\n${result.outputPath}`,
+            {
+              title: "Retry Center"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Retry Center group JSON copied to clipboard.", {
+          title: "Retry Center"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the JSON below manually.", {
+        title: "Retry Center",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:retry-center",
+        "Failed to export retry center group JSON.",
+        caughtError
+      );
+    }
+  };
+
+  const exportRetryCenterGroupHistoryCsv = async (
+    groupKey: string,
+    exportScope: RetryCenterGroupExportScope = "all"
+  ) => {
+    const group = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
+    if (!group || group.entries.length === 0) {
+      await showAppAlert("No visible records in this group to export.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    const scopedEntries = getRetryCenterGroupEntriesForExportScope(group, exportScope);
+    if (scopedEntries.length === 0) {
+      await showAppAlert(`No "${exportScope}" records available in this group.`, {
+        title: "Retry Center"
+      });
+      return;
+    }
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const lines: string[] = [];
+      lines.push("# TermDock Retry Center Group Export");
+      lines.push(`# Format: CSV`);
+      lines.push(`# Generated: ${generatedAtIso}`);
+      lines.push(`# AppVersion: ${APP_VERSION}`);
+      lines.push(
+        `# Filters: scope=${retryCenterScope}, direction=${retryCenterDirection}, status=${retryCenterStatus}, timeRange=${retryCenterTimeRange}, listMode=${retryCenterListMode}, failureReason=${retryCenterFailureReasonExportValue}, groupExportScope=${exportScope}, query=${retryCenterQuery.trim() || "-"}`
+      );
+      lines.push(
+        `# Group: key=${group.key}, label=${group.label}, total=${group.total}, failed=${group.failedCount}, activeSessionFailed=${group.activeSessionFailedCount}, exportedCount=${scopedEntries.length}`
+      );
+      lines.push("");
+      lines.push(
+        [
+          "key",
+          "sessionId",
+          "sessionName",
+          "groupName",
+          "direction",
+          "status",
+          "name",
+          "localPath",
+          "remotePath",
+          "attemptCount",
+          "updatedAt",
+          "updatedAtIso",
+          "failureReason",
+          "message"
+        ].join(",")
+      );
+      for (const entry of scopedEntries) {
+        const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
+        lines.push(
+          [
+            entry.key,
+            entry.sessionId,
+            sessionMeta?.sessionName ?? entry.sessionId,
+            sessionMeta?.groupName ?? "Unknown",
+            entry.direction,
+            entry.status,
+            entry.name,
+            entry.localPath,
+            entry.remotePath,
+            entry.attemptCount,
+            entry.updatedAt,
+            toIsoTimestamp(entry.updatedAt),
+            entry.status === "failed" ? classifyTransferFailureReason(entry.message) : "",
+            entry.message ?? ""
+          ]
+            .map((value) => escapeCsvCell(value))
+            .join(",")
+        );
+      }
+      const exportText = `${lines.join("\n")}\n`;
+      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
+      const groupSegment =
+        group.label
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 48) || "group";
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Retry Center Group (CSV)",
+          defaultFileName: `termdock-retry-center-group-${groupSegment}-${exportScope}-${dateSegment}.csv`,
+          text: exportText,
+          filters: [
+            {
+              name: "CSV",
+              extensions: ["csv"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Retry Center group CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Retry Center group CSV exported:\n${result.outputPath}`,
+            {
+              title: "Retry Center"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Retry Center group CSV copied to clipboard.", {
+          title: "Retry Center"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the CSV below manually.", {
+        title: "Retry Center",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:retry-center",
+        "Failed to export retry center group CSV.",
+        caughtError
+      );
+    }
+  };
+
+  const exportRetryCenterGroupHistoryJsonWithScopeChoice = async (groupKey: string) => {
+    const exportScope = await chooseRetryCenterGroupExportScope(groupKey, "json");
+    if (!exportScope) {
+      return;
+    }
+    await exportRetryCenterGroupHistoryJson(groupKey, exportScope);
+  };
+
+  const exportRetryCenterGroupHistoryCsvWithScopeChoice = async (groupKey: string) => {
+    const exportScope = await chooseRetryCenterGroupExportScope(groupKey, "csv");
+    if (!exportScope) {
+      return;
+    }
+    await exportRetryCenterGroupHistoryCsv(groupKey, exportScope);
+  };
+
+  const exportRetryCenterAnalyticsJson = async () => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const failedVisibleEntries = retryCenterVisibleExportEntries
+        .filter((entry) => entry.status === "failed")
+        .slice(0, 40);
+      const exportPayload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        filters: {
+          scope: retryCenterScope,
+          direction: retryCenterDirection,
+          status: retryCenterStatus,
+          timeRange: retryCenterTimeRange,
+          listMode: retryCenterListMode,
+          failureReason: retryCenterFailureReasonExportValue,
+          query: retryCenterQuery.trim()
+        },
+        stats: {
+          visibleCount: retryCenterEntries.length,
+          totalHistoryCount: transferHistory.length,
+          selectedCount: selectedRetryCenterEntries.length,
+          failedVisibleCount: retryCenterAnalytics.failedCount,
+          failedVisibleRatioPercent: Number(
+            retryCenterAnalytics.failedRatioPercent.toFixed(2)
+          ),
+          directionCounts: retryCenterAnalytics.directionCounts,
+          statusCounts: retryCenterAnalytics.statusCounts,
+          topSessions: retryCenterAnalytics.topSessions,
+          topGroups: retryCenterAnalytics.topGroups,
+          topFailureReasons: retryCenterAnalytics.topFailureReasons
+        },
+        samples: {
+          latestFailedEntries: failedVisibleEntries
+        }
+      };
+      const exportText = `${JSON.stringify(exportPayload, null, 2)}\n`;
+      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
+      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Retry Center Analytics (JSON)",
+          defaultFileName: `termdock-retry-center-analytics-${scopeSegment}-${dateSegment}.json`,
+          text: exportText,
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Retry Center analytics JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Retry Center analytics JSON exported:\n${result.outputPath}`,
+            {
+              title: "Retry Center"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Retry Center analytics JSON copied to clipboard.", {
+          title: "Retry Center"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the analytics JSON below manually.", {
+        title: "Retry Center",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:retry-center",
+        "Failed to export retry center analytics JSON.",
+        caughtError
+      );
+    }
+  };
+
+  const exportRetryCenterAnalyticsCsv = async () => {
+    try {
+      const generatedAtIso = new Date().toISOString();
+      const lines: string[] = [];
+      lines.push("# TermDock Retry Center Analytics");
+      lines.push(`# Generated: ${generatedAtIso}`);
+      lines.push(`# AppVersion: ${APP_VERSION}`);
+      lines.push(
+        `# Filters: scope=${retryCenterScope}, direction=${retryCenterDirection}, status=${retryCenterStatus}, timeRange=${retryCenterTimeRange}, listMode=${retryCenterListMode}, failureReason=${retryCenterFailureReasonExportValue}, query=${retryCenterQuery.trim() || "-"}`
+      );
+      lines.push("");
+      lines.push("metric,value");
+      lines.push(`visibleCount,${escapeCsvCell(retryCenterEntries.length)}`);
+      lines.push(`totalHistoryCount,${escapeCsvCell(transferHistory.length)}`);
+      lines.push(`selectedCount,${escapeCsvCell(selectedRetryCenterEntries.length)}`);
+      lines.push(`failedVisibleCount,${escapeCsvCell(retryCenterAnalytics.failedCount)}`);
+      lines.push(
+        `failedVisibleRatioPercent,${escapeCsvCell(
+          Number(retryCenterAnalytics.failedRatioPercent.toFixed(2))
+        )}`
+      );
+      lines.push("");
+      lines.push("direction,count");
+      lines.push(`upload,${escapeCsvCell(retryCenterAnalytics.directionCounts.upload)}`);
+      lines.push(`download,${escapeCsvCell(retryCenterAnalytics.directionCounts.download)}`);
+      lines.push("");
+      lines.push("status,count");
+      lines.push(`queued,${escapeCsvCell(retryCenterAnalytics.statusCounts.queued)}`);
+      lines.push(`running,${escapeCsvCell(retryCenterAnalytics.statusCounts.running)}`);
+      lines.push(`completed,${escapeCsvCell(retryCenterAnalytics.statusCounts.completed)}`);
+      lines.push(`failed,${escapeCsvCell(retryCenterAnalytics.statusCounts.failed)}`);
+      lines.push(`canceled,${escapeCsvCell(retryCenterAnalytics.statusCounts.canceled)}`);
+      lines.push("");
+      lines.push("topSessionId,topSessionName,topGroupName,total,failed");
+      if (retryCenterAnalytics.topSessions.length === 0) {
+        lines.push([ "-", "-", "-", 0, 0 ].map((value) => escapeCsvCell(value)).join(","));
+      } else {
+        for (const entry of retryCenterAnalytics.topSessions) {
+          lines.push(
+            [
+              entry.sessionId,
+              entry.sessionName,
+              entry.groupName,
+              entry.total,
+              entry.failed
+            ]
+              .map((value) => escapeCsvCell(value))
+              .join(",")
+          );
+        }
+      }
+      lines.push("");
+      lines.push("topGroupName,total");
+      if (retryCenterAnalytics.topGroups.length === 0) {
+        lines.push([ "-", 0 ].map((value) => escapeCsvCell(value)).join(","));
+      } else {
+        for (const entry of retryCenterAnalytics.topGroups) {
+          lines.push([entry.groupName, entry.total].map((value) => escapeCsvCell(value)).join(","));
+        }
+      }
+      lines.push("");
+      lines.push("topFailureReason,total");
+      if (retryCenterAnalytics.topFailureReasons.length === 0) {
+        lines.push([ "-", 0 ].map((value) => escapeCsvCell(value)).join(","));
+      } else {
+        for (const entry of retryCenterAnalytics.topFailureReasons) {
+          lines.push([entry.reason, entry.total].map((value) => escapeCsvCell(value)).join(","));
+        }
+      }
+      const exportText = `${lines.join("\n")}\n`;
+      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
+      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Retry Center Analytics (CSV)",
+          defaultFileName: `termdock-retry-center-analytics-${scopeSegment}-${dateSegment}.csv`,
+          text: exportText,
+          filters: [
+            {
+              name: "CSV",
+              extensions: ["csv"]
+            }
+          ]
+        });
+        if (!result.canceled && result.outputPath) {
+          const copiedPath = await copyTextToClipboard(result.outputPath);
+          await showAppAlert(
+            copiedPath
+              ? `Retry Center analytics CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
+              : `Retry Center analytics CSV exported:\n${result.outputPath}`,
+            {
+              title: "Retry Center"
+            }
+          );
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      if (copied) {
+        await showAppAlert("Retry Center analytics CSV copied to clipboard.", {
+          title: "Retry Center"
+        });
+        return;
+      }
+      await showAppAlert("Clipboard unavailable. Copy the analytics CSV below manually.", {
+        title: "Retry Center",
+        detailText: exportText
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:retry-center",
+        "Failed to export retry center analytics CSV.",
+        caughtError
+      );
+    }
+  };
+
+  const confirmRetryBatchIfNeeded = async (count: number, label: string): Promise<boolean> => {
+    if (retryBatchConfirmThreshold <= 0) {
+      return true;
+    }
+    if (count < retryBatchConfirmThreshold) {
+      return true;
+    }
+    return showAppConfirm(
+      `Requeue ${count} failed transfer task(s) for ${label}? This exceeds your retry confirmation threshold (${retryBatchConfirmThreshold}).`,
+      {
+        title: "Retry Confirmation",
+        confirmLabel: "Retry",
+        cancelLabel: "Cancel"
+      }
+    );
+  };
+
+  const retrySelectedRetryCenterEntries = async (retryScope: RetryCenterRetryScope = "all") => {
     if (!activeTabId || !activeSessionId) {
       await showAppAlert("Open a terminal tab for the target session first.", {
         title: "Retry Center"
@@ -7333,8 +14932,25 @@ export function App() {
     if (selectedRetryCenterFailedEntries.length === 0) {
       return;
     }
+    const targetEntries = getRetryCenterEntriesForRetryScope(
+      selectedRetryCenterFailedEntries,
+      retryScope
+    );
+    if (targetEntries.length === 0) {
+      await showAppAlert("No transfer tasks were requeued.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    const confirmed = await confirmRetryBatchIfNeeded(
+      targetEntries.length,
+      "selected retry-center records"
+    );
+    if (!confirmed) {
+      return;
+    }
     const tabId = activeTabId;
-    const selectedKeys = new Set(selectedRetryCenterFailedEntries.map((entry) => entry.key));
+    const selectedKeys = new Set(targetEntries.map((entry) => entry.key));
     const uploadTargetMap = new Map<
       string,
       { name: string; localPath: string; remotePath: string }
@@ -7343,7 +14959,7 @@ export function App() {
       string,
       { name: string; localPath: string; remotePath: string }
     >();
-    for (const entry of selectedRetryCenterFailedEntries) {
+    for (const entry of targetEntries) {
       const key = createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath);
       const target = {
         name: entry.name,
@@ -7382,7 +14998,11 @@ export function App() {
           name: entry.name,
           localPath: entry.localPath,
           remotePath: entry.remotePath
-        }))
+        })),
+        {
+          tabId,
+          sessionId: activeSessionId
+        }
       );
       if (resolvedTargets && resolvedTargets.length > 0) {
         const downloadQueued = enqueueDownloadTargets(tabId, resolvedTargets, {
@@ -7409,9 +15029,345 @@ export function App() {
     }
 
     setRetryCenterSelection((prev) => prev.filter((key) => !selectedKeys.has(key)));
-    await showAppAlert(`Requeued ${queuedCount} transfer task(s) from history.`, {
+    const scopeSuffix =
+      retryScope === "upload"
+        ? " (upload-only)"
+        : retryScope === "download"
+          ? " (download-only)"
+          : "";
+    await showAppAlert(`Requeued ${queuedCount} transfer task(s) from history${scopeSuffix}.`, {
       title: "Retry Center"
     });
+  };
+
+  const retrySelectedRetryCenterEntriesWithScopeChoice = async () => {
+    if (!activeTabId || !activeSessionId) {
+      await showAppAlert("Open a terminal tab for the target session first.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    if (selectedRetryCenterFailedEntries.length === 0) {
+      return;
+    }
+    const retryScope = await chooseRetryCenterSelectedRetryScope(selectedRetryCenterFailedEntries);
+    if (!retryScope) {
+      return;
+    }
+    await retrySelectedRetryCenterEntries(retryScope);
+  };
+
+  const getRetryCenterEntriesForRetryScope = useCallback(
+    (entries: SftpTransferHistoryItem[], retryScope: RetryCenterRetryScope) => {
+      if (retryScope === "upload") {
+        return entries.filter((entry) => entry.direction === "upload");
+      }
+      if (retryScope === "download") {
+        return entries.filter((entry) => entry.direction === "download");
+      }
+      return entries;
+    },
+    []
+  );
+
+  const chooseRetryCenterRetryScopeByCounts = async (
+    counts: {
+      all: number;
+      upload: number;
+      download: number;
+    },
+    message: string
+  ): Promise<RetryCenterRetryScope | null> => {
+    if (counts.all <= 0) {
+      return null;
+    }
+    const choices: AppChoiceDialogOption[] = [
+      {
+        value: "all",
+        label: `All Retryable (${counts.all})`
+      }
+    ];
+    if (counts.upload > 0) {
+      choices.push({
+        value: "upload",
+        label: `Upload Only (${counts.upload})`
+      });
+    }
+    if (counts.download > 0) {
+      choices.push({
+        value: "download",
+        label: `Download Only (${counts.download})`
+      });
+    }
+    if (choices.length === 1) {
+      setRetryCenterLastRetryScope("all");
+      return "all";
+    }
+    if (retryCenterAutoUseLastRetryScope) {
+      const preferredChoice = choices.find((entry) => entry.value === retryCenterLastRetryScope);
+      if (preferredChoice) {
+        setRetryCenterLastRetryScope(preferredChoice.value as RetryCenterRetryScope);
+        return preferredChoice.value as RetryCenterRetryScope;
+      }
+    }
+    let dialogChoices = choices;
+    const preferredChoice = choices.find((entry) => entry.value === retryCenterLastRetryScope);
+    if (preferredChoice) {
+      const remainingChoices = choices.filter((entry) => entry.value !== retryCenterLastRetryScope);
+      dialogChoices = [
+        {
+          ...preferredChoice,
+          label: `${preferredChoice.label} (Last Used)`
+        },
+        ...remainingChoices
+      ];
+    }
+    const choice = await showAppChoice(message, dialogChoices, {
+      title: "Retry Center",
+      cancelLabel: "Cancel"
+    });
+    if (choice !== "all" && choice !== "upload" && choice !== "download") {
+      return null;
+    }
+    setRetryCenterLastRetryScope(choice);
+    return choice;
+  };
+
+  const chooseRetryCenterRetryScope = async (
+    baseEntries: SftpTransferHistoryItem[],
+    message: string
+  ): Promise<RetryCenterRetryScope | null> =>
+    chooseRetryCenterRetryScopeByCounts(
+      {
+        all: baseEntries.length,
+        upload: baseEntries.filter((entry) => entry.direction === "upload").length,
+        download: baseEntries.filter((entry) => entry.direction === "download").length
+      },
+      message
+    );
+
+  const chooseRetryCenterVisibleRetryScope = async (
+    baseEntries: SftpTransferHistoryItem[],
+    failureReason?: string
+  ): Promise<RetryCenterRetryScope | null> => {
+    const message =
+      typeof failureReason === "string" && failureReason.trim()
+        ? `Choose retry scope for visible "${failureReason}" failures.`
+        : "Choose retry scope for visible failed records.";
+    return chooseRetryCenterRetryScope(baseEntries, message);
+  };
+
+  const chooseRetryCenterSelectedRetryScope = async (
+    baseEntries: SftpTransferHistoryItem[]
+  ): Promise<RetryCenterRetryScope | null> =>
+    chooseRetryCenterRetryScope(baseEntries, "Choose retry scope for selected failed records.");
+
+  const retryVisibleRetryCenterEntries = async (
+    failureReason?: string,
+    retryScope: RetryCenterRetryScope = "all"
+  ) => {
+    if (!activeTabId || !activeSessionId) {
+      await showAppAlert("Open a terminal tab for the target session first.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    const scopedVisibleEntries =
+      typeof failureReason === "string" && failureReason.trim()
+        ? visibleRetryCenterFailedEntries.filter(
+            (entry) => classifyTransferFailureReason(entry.message) === failureReason
+          )
+        : visibleRetryCenterFailedEntries;
+    const targetEntries = getRetryCenterEntriesForRetryScope(scopedVisibleEntries, retryScope);
+    if (targetEntries.length === 0) {
+      if (failureReason) {
+        await showAppAlert(
+          `No visible failed records for reason "${failureReason}" under the active session.`,
+          {
+            title: "Retry Center"
+          }
+        );
+      }
+      return;
+    }
+    const retryLabel =
+      typeof failureReason === "string" && failureReason.trim()
+        ? `visible failure reason "${failureReason}"`
+        : "visible failed records";
+    const confirmed = await confirmRetryBatchIfNeeded(targetEntries.length, retryLabel);
+    if (!confirmed) {
+      return;
+    }
+    const tabId = activeTabId;
+    const visibleKeys = new Set(targetEntries.map((entry) => entry.key));
+    const uploadTargetMap = new Map<
+      string,
+      { name: string; localPath: string; remotePath: string }
+    >();
+    const downloadTargetMap = new Map<
+      string,
+      { name: string; localPath: string; remotePath: string }
+    >();
+    for (const entry of targetEntries) {
+      const key = createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath);
+      const target = {
+        name: entry.name,
+        localPath: entry.localPath,
+        remotePath: entry.remotePath
+      };
+      if (entry.direction === "upload") {
+        uploadTargetMap.set(key, target);
+        continue;
+      }
+      downloadTargetMap.set(key, target);
+    }
+
+    let queuedCount = 0;
+    const uploadTargets = Array.from(uploadTargetMap.values());
+    if (uploadTargets.length > 0) {
+      const uploadQueued = enqueueUploadTargets(tabId, uploadTargets, {
+        suppressEmptyError: true
+      });
+      queuedCount += uploadQueued;
+      if (uploadQueued > 0) {
+        markTransferHistoryRetryQueued(
+          "upload",
+          uploadTargets.map((entry) => ({
+            localPath: entry.localPath,
+            remotePath: entry.remotePath
+          }))
+        );
+      }
+    }
+
+    const downloadTargets = Array.from(downloadTargetMap.values());
+    if (downloadTargets.length > 0) {
+      const resolvedTargets = await resolveDownloadTargetConflicts(
+        downloadTargets.map((entry) => ({
+          name: entry.name,
+          localPath: entry.localPath,
+          remotePath: entry.remotePath
+        })),
+        {
+          tabId,
+          sessionId: activeSessionId
+        }
+      );
+      if (resolvedTargets && resolvedTargets.length > 0) {
+        const downloadQueued = enqueueDownloadTargets(tabId, resolvedTargets, {
+          suppressEmptyError: true
+        });
+        queuedCount += downloadQueued;
+        if (downloadQueued > 0) {
+          markTransferHistoryRetryQueued(
+            "download",
+            resolvedTargets.map((entry) => ({
+              localPath: entry.localPath,
+              remotePath: entry.remotePath
+            }))
+          );
+        }
+      }
+    }
+
+    if (queuedCount <= 0) {
+      await showAppAlert("No transfer tasks were requeued.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+
+    setRetryCenterSelection((prev) => prev.filter((key) => !visibleKeys.has(key)));
+    if (failureReason) {
+      const scopeSuffix =
+        retryScope === "upload"
+          ? " (upload-only)"
+          : retryScope === "download"
+            ? " (download-only)"
+            : "";
+      await showAppAlert(
+        `Requeued ${queuedCount} visible failed transfer task(s) for reason "${failureReason}"${scopeSuffix}.`,
+        {
+          title: "Retry Center"
+        }
+      );
+      return;
+    }
+    const scopeSuffix =
+      retryScope === "upload"
+        ? " (upload-only)"
+        : retryScope === "download"
+          ? " (download-only)"
+          : "";
+    await showAppAlert(`Requeued ${queuedCount} visible failed transfer task(s)${scopeSuffix}.`, {
+      title: "Retry Center"
+    });
+  };
+
+  const retryVisibleRetryCenterEntriesWithScopeChoice = async (failureReason?: string) => {
+    if (!activeTabId || !activeSessionId) {
+      await showAppAlert("Open a terminal tab for the target session first.", {
+        title: "Retry Center"
+      });
+      return;
+    }
+    const baseEntries =
+      typeof failureReason === "string" && failureReason.trim()
+        ? visibleRetryCenterFailedEntries.filter(
+            (entry) => classifyTransferFailureReason(entry.message) === failureReason
+          )
+        : visibleRetryCenterFailedEntries;
+    if (baseEntries.length === 0) {
+      if (failureReason) {
+        await showAppAlert(
+          `No visible failed records for reason "${failureReason}" under the active session.`,
+          {
+            title: "Retry Center"
+          }
+        );
+      }
+      return;
+    }
+    const retryScope = await chooseRetryCenterVisibleRetryScope(baseEntries, failureReason);
+    if (!retryScope) {
+      return;
+    }
+    await retryVisibleRetryCenterEntries(failureReason, retryScope);
+  };
+
+  const clearVisibleRetryCenterEntriesByFailureReason = async (failureReason: string) => {
+    const normalizedReason = failureReason.trim();
+    if (!normalizedReason) {
+      return;
+    }
+    const targetEntries = retryCenterEntries.filter(
+      (entry) =>
+        entry.status === "failed" && classifyTransferFailureReason(entry.message) === normalizedReason
+    );
+    if (targetEntries.length === 0) {
+      await showAppAlert(
+        `No visible failed history records found for reason "${normalizedReason}".`,
+        {
+          title: "Retry Center"
+        }
+      );
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete ${targetEntries.length} visible failed history record(s) with reason "${normalizedReason}"?`,
+      {
+        title: "Retry Center",
+        confirmLabel: "Delete Reason",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    const targetKeys = new Set(targetEntries.map((entry) => entry.key));
+    setTransferHistory((prev) => prev.filter((entry) => !targetKeys.has(entry.key)));
+    setRetryCenterSelection((prev) => prev.filter((key) => !targetKeys.has(key)));
   };
 
   const clearSelectedRetryCenterEntries = async () => {
@@ -7476,15 +15432,19 @@ export function App() {
     setRetryCenterSelection([]);
   };
 
-  const retryFailedUploads = async () => {
-    if (!activeTabId || failedUploadRetryCandidates.length === 0) {
-      return;
-    }
-    const tabId = activeTabId;
-    const sortedFailedTransfers = [...failedUploadRetryCandidates];
+  type FailedRetryCandidate = {
+    name: string;
+    localPath: string;
+    remotePath: string;
+  };
+
+  const queueFailedUploadRetryCandidates = (
+    tabId: string,
+    retryCandidates: FailedRetryCandidate[]
+  ) => {
     const queuedCount = enqueueUploadTargets(
       tabId,
-      sortedFailedTransfers.map((transfer) => ({
+      retryCandidates.map((transfer) => ({
         name: transfer.name,
         localPath: transfer.localPath,
         remotePath: transfer.remotePath
@@ -7496,31 +15456,31 @@ export function App() {
     if (queuedCount > 0) {
       markTransferHistoryRetryQueued(
         "upload",
-        sortedFailedTransfers.map((transfer) => ({
+        retryCandidates.map((transfer) => ({
           localPath: transfer.localPath,
           remotePath: transfer.remotePath
         }))
       );
-      await showAppAlert(`Requeued ${queuedCount} failed upload task(s).`, {
-        title: "Retry Uploads"
-      });
     }
+    return queuedCount;
   };
 
-  const retryFailedDownloads = async () => {
-    if (!activeTabId || failedDownloadRetryCandidates.length === 0) {
-      return;
-    }
-    const tabId = activeTabId;
-    const sortedFailedTransfers = [...failedDownloadRetryCandidates];
-    const retryTargets = sortedFailedTransfers.map((transfer) => ({
+  const queueFailedDownloadRetryCandidates = async (
+    tabId: string,
+    retryCandidates: FailedRetryCandidate[],
+    sessionId?: string
+  ) => {
+    const retryTargets = retryCandidates.map((transfer) => ({
       name: transfer.name,
       remotePath: transfer.remotePath,
       localPath: transfer.localPath
     }));
-    const resolvedTargets = await resolveDownloadTargetConflicts(retryTargets);
+    const resolvedTargets = await resolveDownloadTargetConflicts(retryTargets, {
+      tabId,
+      sessionId
+    });
     if (!resolvedTargets || resolvedTargets.length === 0) {
-      return;
+      return 0;
     }
     const queuedCount = enqueueDownloadTargets(tabId, resolvedTargets, {
       suppressEmptyError: true
@@ -7533,10 +15493,131 @@ export function App() {
           remotePath: entry.remotePath
         }))
       );
+    }
+    return queuedCount;
+  };
+
+  const retryFailedUploads = async () => {
+    if (!activeTabId || failedUploadRetryCandidates.length === 0) {
+      return;
+    }
+    const tabId = activeTabId;
+    const sortedFailedTransfers = [...failedUploadRetryCandidates];
+    const confirmed = await confirmRetryBatchIfNeeded(
+      sortedFailedTransfers.length,
+      "failed upload candidates"
+    );
+    if (!confirmed) {
+      return;
+    }
+    const queuedCount = queueFailedUploadRetryCandidates(tabId, sortedFailedTransfers);
+    if (queuedCount > 0) {
+      await showAppAlert(`Requeued ${queuedCount} failed upload task(s).`, {
+        title: "Retry Uploads"
+      });
+    }
+  };
+
+  const retryFailedDownloads = async () => {
+    if (!activeTabId || failedDownloadRetryCandidates.length === 0) {
+      return;
+    }
+    const tabId = activeTabId;
+    const sortedFailedTransfers = [...failedDownloadRetryCandidates];
+    const confirmed = await confirmRetryBatchIfNeeded(
+      sortedFailedTransfers.length,
+      "failed download candidates"
+    );
+    if (!confirmed) {
+      return;
+    }
+    const queuedCount = await queueFailedDownloadRetryCandidates(
+      tabId,
+      sortedFailedTransfers,
+      activeSessionId ?? undefined
+    );
+    if (queuedCount > 0) {
       await showAppAlert(`Requeued ${queuedCount} failed download task(s).`, {
         title: "Retry Downloads"
       });
     }
+  };
+
+  const retryAllFailedTransfers = async (retryScope: RetryCenterRetryScope = "all") => {
+    if (!activeTabId || failedRetryCandidateTotal <= 0) {
+      return;
+    }
+    const tabId = activeTabId;
+    const uploadCandidates =
+      retryScope === "download" ? [] : [...failedUploadRetryCandidates];
+    const downloadCandidates =
+      retryScope === "upload" ? [] : [...failedDownloadRetryCandidates];
+    const targetCount = uploadCandidates.length + downloadCandidates.length;
+    if (targetCount <= 0) {
+      await showAppAlert("No transfer tasks were requeued.", {
+        title: "Retry Transfers"
+      });
+      return;
+    }
+    const scopeLabel =
+      retryScope === "upload"
+        ? "all failed upload candidates"
+        : retryScope === "download"
+          ? "all failed download candidates"
+          : "all failed transfer candidates";
+    const confirmed = await confirmRetryBatchIfNeeded(targetCount, scopeLabel);
+    if (!confirmed) {
+      return;
+    }
+    const uploadQueued =
+      uploadCandidates.length > 0
+        ? queueFailedUploadRetryCandidates(tabId, uploadCandidates)
+        : 0;
+    const downloadQueued =
+      downloadCandidates.length > 0
+        ? await queueFailedDownloadRetryCandidates(
+            tabId,
+            downloadCandidates,
+            activeSessionId ?? undefined
+          )
+        : 0;
+    const queuedTotal = uploadQueued + downloadQueued;
+    if (queuedTotal <= 0) {
+      await showAppAlert("No transfer tasks were requeued.", {
+        title: "Retry Transfers"
+      });
+      return;
+    }
+    const scopeSuffix =
+      retryScope === "upload"
+        ? " (upload-only)"
+        : retryScope === "download"
+          ? " (download-only)"
+          : "";
+    await showAppAlert(
+      `Requeued ${queuedTotal} failed transfer task(s)${scopeSuffix}. Upload ${uploadQueued}, Download ${downloadQueued}.`,
+      {
+        title: "Retry Transfers"
+      }
+    );
+  };
+
+  const retryAllFailedTransfersWithScopeChoice = async () => {
+    if (!activeTabId || failedRetryCandidateTotal <= 0) {
+      return;
+    }
+    const retryScope = await chooseRetryCenterRetryScopeByCounts(
+      {
+        all: failedRetryCandidateTotal,
+        upload: failedUploadRetryCandidates.length,
+        download: failedDownloadRetryCandidates.length
+      },
+      "Choose retry scope for all failed transfer candidates."
+    );
+    if (!retryScope) {
+      return;
+    }
+    await retryAllFailedTransfers(retryScope);
   };
 
   const onSftpDragOver = (event: DragEvent<HTMLElement>) => {
@@ -7706,6 +15787,31 @@ export function App() {
           openDuplicateSessionModal(sessionContextTarget);
         }
       });
+      sessionContextActions.push({
+        id: "run-quick-profile",
+        label:
+          sessionQuickProfiles.length > 0
+            ? `Run Quick Profile... (${sessionQuickProfiles.length})`
+            : "Run Quick Profile...",
+        disabled: sessionQuickProfiles.length === 0,
+        run: () => {
+          void runSessionQuickProfileChooser(sessionContextTarget);
+        }
+      });
+      sessionContextActions.push({
+        id: "create-quick-profile",
+        label: "Save Quick Profile...",
+        run: () => {
+          void createSessionQuickProfileForSession(sessionContextTarget);
+        }
+      });
+      sessionContextActions.push({
+        id: "manage-quick-profile",
+        label: "Manage Quick Profiles...",
+        run: () => {
+          void manageSessionQuickProfilesForSession(sessionContextTarget);
+        }
+      });
     }
     sessionContextActions.push({
       id: "move-session-group",
@@ -7763,6 +15869,27 @@ export function App() {
       label: "Import SSH Config...",
       run: () => {
         void importSessionsFromSshConfig();
+      }
+    });
+    sessionContextActions.push({
+      id: "import-sessions-json",
+      label: "Import Sessions JSON...",
+      run: () => {
+        void importSessionsFromJson();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-all-sessions",
+      label: "Export All Sessions...",
+      run: () => {
+        void exportAllSessionsWithGroups();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-all-groups",
+      label: "Export All Groups...",
+      run: () => {
+        void exportAllSessionGroups();
       }
     });
     sessionContextActions.push({
@@ -7835,6 +15962,27 @@ export function App() {
       }
     });
     sessionContextActions.push({
+      id: "import-sessions-json",
+      label: "Import Sessions JSON...",
+      run: () => {
+        void importSessionsFromJson();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-all-sessions",
+      label: "Export All Sessions...",
+      run: () => {
+        void exportAllSessionsWithGroups();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-all-groups",
+      label: "Export All Groups...",
+      run: () => {
+        void exportAllSessionGroups();
+      }
+    });
+    sessionContextActions.push({
       id: "select-all-groups",
       label: "Select All Groups",
       disabled: groupedSessions.length === 0,
@@ -7893,6 +16041,27 @@ export function App() {
       label: "Import SSH Config...",
       run: () => {
         void importSessionsFromSshConfig();
+      }
+    });
+    sessionContextActions.push({
+      id: "import-sessions-json",
+      label: "Import Sessions JSON...",
+      run: () => {
+        void importSessionsFromJson();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-all-sessions",
+      label: "Export All Sessions...",
+      run: () => {
+        void exportAllSessionsWithGroups();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-all-groups",
+      label: "Export All Groups...",
+      run: () => {
+        void exportAllSessionGroups();
       }
     });
     sessionContextActions.push({
@@ -8363,6 +16532,7 @@ export function App() {
             onCloseTabsLeft={closeTabsLeft}
             onCloseTabsRight={closeTabsRight}
             onCloseOtherTabs={closeOtherTabs}
+            onCommandHistoryChange={setTerminalCommandHistoryEntries}
             onError={setError}
             onSelectTab={setActiveTabId}
             systemApi={systemApi}
@@ -8540,7 +16710,7 @@ export function App() {
               )}
             </div>
           </section>
-          <section className="panel__section">
+          <section className="panel__section panel__section--server-health">
             <div className="panel__heading">
               <h2>Server Health</h2>
               <div className="server-health__actions">
@@ -8782,6 +16952,74 @@ export function App() {
               <p className="hint">Open and connect a terminal tab to monitor server status.</p>
             )}
           </section>
+          <section className="panel__section panel__section--command-history">
+            <div className="panel__heading">
+              <h2>Command History</h2>
+              <div className="command-history-panel__heading-actions">
+                <span className="panel__badge">
+                  {visibleTerminalCommandHistoryEntries.length}/{terminalCommandHistoryEntries.length}
+                </span>
+                <button
+                  className="secondary-button secondary-button--small"
+                  onClick={() => {
+                    void openCommandSnippetManager();
+                  }}
+                  type="button"
+                >
+                  Snippets ({totalCommandSnippetCount})
+                </button>
+                <button
+                  className="secondary-button secondary-button--small"
+                  onClick={openCommandHistoryManager}
+                  type="button"
+                >
+                  Manage
+                </button>
+              </div>
+            </div>
+            <div className="command-history-panel__filters">
+              <select
+                onChange={(event) =>
+                  setTerminalCommandHistoryScope(event.target.value as TerminalCommandHistoryScope)
+                }
+                value={terminalCommandHistoryScope}
+              >
+                <option value="activeTab">Active Tab</option>
+                <option value="allTabs">All Tabs</option>
+              </select>
+              <input
+                onChange={(event) => setTerminalCommandHistoryQuery(event.target.value)}
+                placeholder="Search command/tab"
+                value={terminalCommandHistoryQuery}
+              />
+            </div>
+            <div
+              className="command-history-panel__list-shell"
+              onContextMenu={openCommandHistoryPanelContextMenu}
+            >
+              {visibleTerminalCommandHistoryEntries.length === 0 ? (
+                <p className="hint command-history-panel__empty">No command history entries.</p>
+              ) : (
+                <ul className="command-history-panel__list">
+                  {visibleTerminalCommandHistoryEntries.map((entry) => (
+                    <li
+                      className="command-history-panel__item"
+                      key={entry.id}
+                      onDoubleClick={() => {
+                        void pasteTerminalCommandHistoryEntry(entry);
+                      }}
+                      onContextMenu={(event) => openCommandHistoryContextMenu(event, entry.id)}
+                      title="Double-click to paste into active terminal. Right-click for actions."
+                    >
+                      <p className="command-history-panel__command">
+                        <code>{entry.command}</code>
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
         </aside>
       </main>
 
@@ -8789,17 +17027,71 @@ export function App() {
         <div className="transfer-dock__heading">
           <h3>Transfers</h3>
           <div className="transfer-dock__heading-actions">
-            <span className="hint">
-              {activeTerminalTab
-                ? `Bound to ${activeTerminalTab.title}`
-                : "Open a terminal tab to manage transfers"}
-            </span>
+            <div className="transfer-dock__heading-meta">
+              <span className="hint transfer-dock__binding">
+                {activeTerminalTab
+                  ? `Bound to ${activeTerminalTab.title}`
+                  : "Open a terminal tab to manage transfers"}
+              </span>
+              <span
+                className={
+                  activeTransferDockNotice
+                    ? `hint transfer-dock__notice transfer-dock__notice--${activeTransferDockNotice.level}`
+                    : "hint transfer-dock__notice transfer-dock__notice--placeholder"
+                }
+              >
+                {activeTransferDockNotice?.message ?? "\u00A0"}
+              </span>
+            </div>
             <button
-              className="secondary-button sftp-transfer-panel__clear"
+              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
+              disabled={pendingTransferRestoreCount === 0}
+              onClick={() => {
+                void restorePendingTransferRestoreQueue();
+              }}
+              type="button"
+            >
+              Restore Pending <span className="transfer-dock__count">({pendingTransferRestoreCount})</span>
+            </button>
+            <button
+              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
+              disabled={pendingTransferRestoreCount === 0}
+              onClick={() => {
+                void discardPendingTransferRestoreQueue();
+              }}
+              type="button"
+            >
+              Discard Pending
+            </button>
+            <button
+              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
+              disabled={!canRetryAllFailedTransfers}
+              onClick={() => {
+                void retryAllFailedTransfersWithScopeChoice();
+              }}
+              title="Retry all failed upload/download candidates with retry-scope strategy"
+              type="button"
+            >
+              Retry All Failed{" "}
+              <span className="transfer-dock__count">({failedRetryCandidateTotal})</span>
+            </button>
+            <button
+              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
               onClick={openRetryCenter}
               type="button"
             >
               Retry Center
+            </button>
+            <button
+              className={
+                hasOperationCenterActivity
+                  ? "secondary-button sftp-transfer-panel__clear transfer-dock__action-button operation-center__trigger is-active"
+                  : "secondary-button sftp-transfer-panel__clear transfer-dock__action-button operation-center__trigger"
+              }
+              onClick={openOperationCenter}
+              type="button"
+            >
+              Operation Center <span className="transfer-dock__count">({operationCenterActiveCount})</span>
             </button>
           </div>
         </div>
@@ -8851,6 +17143,11 @@ export function App() {
               (failed {activeUploadProgressStats.failed}, canceled {activeUploadProgressStats.canceled},
               running {activeUploadProgressStats.running}, queued {activeUploadProgressStats.queued})
             </p>
+            {isActiveUploadQueuePaused ? (
+              <p className="hint sftp-transfer-panel__batch-progress">
+                Queue paused: terminal disconnected. Reconnect this tab to resume uploads.
+              </p>
+            ) : null}
             {failedUploadHistory.length > 0 ? (
               <p className="hint sftp-transfer-panel__batch-progress">
                 Stored failed retries for this session: {failedUploadHistory.length}
@@ -8936,6 +17233,11 @@ export function App() {
               (failed {activeDownloadProgressStats.failed}, canceled {activeDownloadProgressStats.canceled},
               running {activeDownloadProgressStats.running}, queued {activeDownloadProgressStats.queued})
             </p>
+            {isActiveDownloadQueuePaused ? (
+              <p className="hint sftp-transfer-panel__batch-progress">
+                Queue paused: terminal disconnected. Reconnect this tab to resume downloads.
+              </p>
+            ) : null}
             {failedDownloadHistory.length > 0 ? (
               <p className="hint sftp-transfer-panel__batch-progress">
                 Stored failed retries for this session: {failedDownloadHistory.length}
@@ -8976,6 +17278,342 @@ export function App() {
           </section>
         </div>
       </section>
+      <section className="app-inline-hint-panel" aria-live="polite" aria-atomic="true">
+        <p
+          className={
+            appHintMessage
+              ? appHintMessage.level === "warn"
+                ? "app-inline-hint-panel__text is-warn"
+                : "app-inline-hint-panel__text is-info"
+              : "app-inline-hint-panel__text is-placeholder"
+          }
+          title={appHintMessage?.message ?? ""}
+        >
+          {appHintMessage?.message ?? "\u00A0"}
+        </p>
+        {appHintMessage ? (
+          <button className="icon-button app-inline-hint-panel__close" onClick={clearAppHintMessage} type="button">
+            <UiIcon name="close" />
+          </button>
+        ) : (
+          <span className="app-inline-hint-panel__spacer" aria-hidden="true" />
+        )}
+      </section>
+
+      {isOperationCenterOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="modal modal--operation-center"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Operation Center"
+          >
+            <div className="modal__header">
+              <h3>Operation Center</h3>
+              <button className="icon-button" onClick={closeOperationCenter} type="button">
+                <UiIcon name="close" />
+              </button>
+            </div>
+            <p className="hint">
+              Consolidated view for long-running operations across open workspace tabs.
+            </p>
+            <div className="operation-center__grid">
+              <article className="operation-center__card">
+                <div className="operation-center__card-header">
+                  <p className="operation-center__title">Upload Queue</p>
+                  <span
+                    className={
+                      activeUploadQueueStats.running + activeUploadQueueStats.queued > 0
+                        ? "operation-center__state is-active"
+                        : "operation-center__state is-idle"
+                    }
+                  >
+                    {activeUploadQueueStats.running + activeUploadQueueStats.queued > 0
+                      ? "Active"
+                      : "Idle"}
+                  </span>
+                </div>
+                <p className="operation-center__meta">
+                  running {activeUploadQueueStats.running} | queued {activeUploadQueueStats.queued}
+                </p>
+                <p className="operation-center__meta">
+                  progress {activeUploadProgressStats.completed}/{activeUploadProgressStats.total} |
+                  failed {activeUploadProgressStats.failed} | canceled{" "}
+                  {activeUploadProgressStats.canceled}
+                </p>
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!activeTabId}
+                    onClick={() => {
+                      void cancelAllActiveUploads();
+                    }}
+                    type="button"
+                  >
+                    Cancel All Uploads
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!canRetryFailedUploads}
+                    onClick={() => {
+                      void retryFailedUploads();
+                    }}
+                    type="button"
+                  >
+                    Retry Failed
+                  </button>
+                </div>
+              </article>
+
+              <article className="operation-center__card">
+                <div className="operation-center__card-header">
+                  <p className="operation-center__title">Download Queue</p>
+                  <span
+                    className={
+                      activeDownloadQueueStats.running + activeDownloadQueueStats.queued > 0
+                        ? "operation-center__state is-active"
+                        : "operation-center__state is-idle"
+                    }
+                  >
+                    {activeDownloadQueueStats.running + activeDownloadQueueStats.queued > 0
+                      ? "Active"
+                      : "Idle"}
+                  </span>
+                </div>
+                <p className="operation-center__meta">
+                  running {activeDownloadQueueStats.running} | queued {activeDownloadQueueStats.queued}
+                </p>
+                <p className="operation-center__meta">
+                  progress {activeDownloadProgressStats.completed}/{activeDownloadProgressStats.total} |
+                  failed {activeDownloadProgressStats.failed} | canceled{" "}
+                  {activeDownloadProgressStats.canceled}
+                </p>
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!activeTabId}
+                    onClick={() => {
+                      void cancelAllActiveDownloads();
+                    }}
+                    type="button"
+                  >
+                    Cancel All Downloads
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!canRetryFailedDownloads}
+                    onClick={() => {
+                      void retryFailedDownloads();
+                    }}
+                    type="button"
+                  >
+                    Retry Failed
+                  </button>
+                </div>
+              </article>
+
+              <article className="operation-center__card">
+                <div className="operation-center__card-header">
+                  <p className="operation-center__title">Remote Delete</p>
+                  <span
+                    className={
+                      sftpDeleteProgress
+                        ? "operation-center__state is-active"
+                        : "operation-center__state is-idle"
+                    }
+                  >
+                    {sftpDeleteProgress ? "Running" : "Idle"}
+                  </span>
+                </div>
+                {sftpDeleteProgress ? (
+                  <p className="operation-center__meta operation-center__meta--wrap">
+                    Deleting {sftpDeleteProgress.kind === "directory" ? "directory" : "file"} "
+                    {sftpDeleteProgress.name}"...
+                  </p>
+                ) : (
+                  <p className="operation-center__meta">No active delete operation.</p>
+                )}
+                <p className="operation-center__meta operation-center__meta--muted">
+                  Delete cancellation is not available yet in current backend flow.
+                </p>
+              </article>
+
+              <article className="operation-center__card">
+                <div className="operation-center__card-header">
+                  <p className="operation-center__title">Port Forwarding Ops</p>
+                  <span
+                    className={
+                      portForwardBusy
+                        ? "operation-center__state is-active"
+                        : "operation-center__state is-idle"
+                    }
+                  >
+                    {portForwardBusy ? "Working" : "Idle"}
+                  </span>
+                </div>
+                <p className="operation-center__meta">
+                  active forwards {portForwards.length} | event history{" "}
+                  {activePortForwardEventHistory.length}
+                </p>
+                <p className="operation-center__meta">
+                  status: {portForwardStatusMessage?.trim() || "No recent status message."}
+                </p>
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={() => {
+                      closeOperationCenter();
+                      openSettingsPanel("portForwarding");
+                    }}
+                    type="button"
+                  >
+                    Open Port Fwd
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={() => {
+                      closeOperationCenter();
+                      openSettingsPanel("diagnostics");
+                    }}
+                    type="button"
+                  >
+                    Open Diagnostics
+                  </button>
+                </div>
+              </article>
+
+              <article className="operation-center__card operation-center__card--wide">
+                <div className="operation-center__card-header">
+                  <p className="operation-center__title">All Tabs Transfer Activity</p>
+                  <span
+                    className={
+                      operationCenterTransferTabSummaries.length > 0
+                        ? "operation-center__state is-active"
+                        : "operation-center__state is-idle"
+                    }
+                  >
+                    {operationCenterTransferTabSummaries.length > 0
+                      ? `${operationCenterTransferTabSummaries.length} tab(s)`
+                      : "Idle"}
+                  </span>
+                </div>
+                {operationCenterTransferTabSummaries.length > 0 ? (
+                  <ul className="operation-center__tab-list">
+                    {operationCenterTransferTabSummaries.map((summary) => (
+                      <li className="operation-center__tab-item" key={summary.tabId}>
+                        <div className="operation-center__tab-main">
+                          <p className="operation-center__tab-title">{summary.title}</p>
+                          <p className="operation-center__meta">
+                            U(r{summary.uploadRunning}/q{summary.uploadQueued}) | D(r
+                            {summary.downloadRunning}/q{summary.downloadQueued}) | total{" "}
+                            {summary.totalActive}
+                          </p>
+                        </div>
+                        <div className="operation-center__tab-actions">
+                          <span
+                            className={
+                              summary.connected
+                                ? "operation-center__state is-active"
+                                : "operation-center__state is-idle"
+                            }
+                          >
+                            {summary.connected ? "Connected" : "Disconnected"}
+                          </span>
+                          <button
+                            className="secondary-button secondary-button--small"
+                            onClick={() => {
+                              setActiveTabId(summary.tabId);
+                            }}
+                            type="button"
+                          >
+                            Focus Tab
+                          </button>
+                          <button
+                            className="secondary-button secondary-button--small"
+                            disabled={summary.connected || isOperationCenterReconnecting}
+                            onClick={() => {
+                              void reconnectOperationTabById(summary.tabId);
+                            }}
+                            type="button"
+                          >
+                            Reconnect Tab
+                          </button>
+                          <button
+                            className="secondary-button secondary-button--small"
+                            disabled={isOperationCenterBulkCanceling}
+                            onClick={() => {
+                              void cancelTransferTasksForTab(summary.tabId);
+                            }}
+                            type="button"
+                          >
+                            Cancel Tab Tasks
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="operation-center__meta">No queued/running transfer activity across tabs.</p>
+                )}
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={
+                      operationCenterTransferTabSummaries.filter((entry) => !entry.connected)
+                        .length === 0 || isOperationCenterReconnecting
+                    }
+                    onClick={() => {
+                      void reconnectDisconnectedOperationTabs();
+                    }}
+                    type="button"
+                  >
+                    {isOperationCenterReconnecting
+                      ? "Reconnecting..."
+                      : "Reconnect Disconnected Tabs"}
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={
+                      operationCenterTransferTabSummaries.length === 0 ||
+                      isOperationCenterBulkCanceling
+                    }
+                    onClick={() => {
+                      void cancelAllTransfersAcrossTabs();
+                    }}
+                    type="button"
+                  >
+                    {isOperationCenterBulkCanceling
+                      ? "Canceling..."
+                      : "Cancel All Transfers (All Tabs)"}
+                  </button>
+                </div>
+              </article>
+            </div>
+            {!hasOperationCenterActivity ? (
+              <p className="hint operation-center__idle-note">
+                No high-latency operation is active right now. Queues and long jobs are idle.
+              </p>
+            ) : null}
+            <div className="modal__actions">
+              <button
+                className="secondary-button"
+                disabled={!canRetryAllFailedTransfers}
+                onClick={() => {
+                  void retryAllFailedTransfersWithScopeChoice();
+                }}
+                title="Retry all failed upload/download candidates with retry-scope strategy"
+                type="button"
+              >
+                Retry All Failed ({failedRetryCandidateTotal})
+              </button>
+              <button className="primary-button" onClick={closeOperationCenter} type="button">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isRetryCenterOpen ? (
         <div className="modal-backdrop" role="presentation">
@@ -9038,6 +17676,77 @@ export function App() {
                   <option value="running">Running</option>
                 </select>
               </label>
+              <label>
+                Time Range
+                <select
+                  onChange={(event) =>
+                    setRetryCenterTimeRange(event.target.value as TransferHistoryTimeRange)
+                  }
+                  value={retryCenterTimeRange}
+                >
+                  <option value="all">All</option>
+                  <option value="5m">Last 5m</option>
+                  <option value="30m">Last 30m</option>
+                  <option value="1h">Last 1h</option>
+                  <option value="24h">Last 24h</option>
+                </select>
+              </label>
+              <label>
+                View
+                <select
+                  onChange={(event) => setRetryCenterListMode(event.target.value as RetryCenterListMode)}
+                  value={retryCenterListMode}
+                >
+                  <option value="flat">Flat List</option>
+                  <option value="groupedByReason">Grouped by Failure</option>
+                </select>
+              </label>
+              <label>
+                Failure Reason
+                <select
+                  onChange={(event) => setRetryCenterFailureReasonFilter(event.target.value)}
+                  value={retryCenterResolvedFailureReasonFilter}
+                >
+                  <option value={RETRY_CENTER_FAILURE_REASON_ALL}>
+                    All ({retryCenterFailureReasonOptions.reduce((total, entry) => total + entry.total, 0)})
+                  </option>
+                  {retryCenterFailureReasonOptions.map((entry) => (
+                    <option key={entry.reason} value={entry.reason}>
+                      {`${entry.reason} (${entry.total})`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Default Retry Scope
+                <select
+                  onChange={(event) =>
+                    setRetryCenterLastRetryScope(event.target.value as RetryCenterRetryScope)
+                  }
+                  value={retryCenterLastRetryScope}
+                >
+                  <option value="all">All Retryable</option>
+                  <option value="upload">Upload Only</option>
+                  <option value="download">Download Only</option>
+                </select>
+              </label>
+              <label>
+                Retry Confirm Threshold
+                <input
+                  max={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
+                  min={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
+                  onChange={(event) => {
+                    setRetryBatchConfirmThreshold((prev) =>
+                      parseRetryBatchConfirmThreshold(Number(event.target.value), prev)
+                    );
+                  }}
+                  type="number"
+                  value={retryBatchConfirmThreshold}
+                />
+              </label>
+              <p className="hint">
+                Set <code>0</code> to disable large-batch retry confirmations.
+              </p>
               <label className="retry-center__search">
                 Search
                 <input
@@ -9046,50 +17755,328 @@ export function App() {
                   value={retryCenterQuery}
                 />
               </label>
+              <button
+                className="secondary-button secondary-button--small retry-center__filter-reset"
+                disabled={!hasCustomizedRetryCenterView}
+                onClick={resetRetryCenterViewFilters}
+                type="button"
+              >
+                Reset Filters
+              </button>
+              <button
+                aria-pressed={retryCenterAutoUseLastRetryScope}
+                className="secondary-button secondary-button--small retry-center__filter-reset"
+                onClick={() => {
+                  setRetryCenterAutoUseLastRetryScope((prev) => !prev);
+                }}
+                title="Automatically use last retry scope and skip retry-scope chooser"
+                type="button"
+              >
+                {retryCenterAutoUseLastRetryScope ? "Auto Retry Scope: On" : "Auto Retry Scope: Off"}
+              </button>
             </div>
             <p className="hint retry-center__summary">
               Visible {retryCenterEntries.length} / Total {transferHistory.length}, Selected{" "}
               {selectedRetryCenterEntries.length}, Selected failed (active session){" "}
-              {selectedRetryCenterFailedEntries.length}
+              {selectedRetryCenterFailedEntries.length}, Visible failed (active session){" "}
+              {visibleRetryCenterFailedEntries.length}, Dock failed candidates U{" "}
+              {failedUploadRetryCandidates.length} / D {failedDownloadRetryCandidates.length},
+              Failure reason {retryCenterSelectedFailureReasonLabel},
+              Default scope {retryCenterLastRetryScopeLabel}
+              {retryCenterAutoUseLastRetryScope ? " (auto)" : ""}, Large retry confirm{" "}
+              {retryBatchConfirmThreshold <= 0
+                ? "off"
+                : `>=${retryBatchConfirmThreshold}`}
+              {isRetryCenterGroupedView
+                ? `, Groups ${retryCenterGroupedEntries.length}, Collapsed ${retryCenterCollapsedGroupKeySet.size}`
+                : ""}
             </p>
+            <div className="retry-center__analytics">
+              <article className="retry-center__metric">
+                <p className="retry-center__metric-label">Failure Ratio</p>
+                <p className="retry-center__metric-value">
+                  {formatPercent(retryCenterAnalytics.failedRatioPercent)}
+                </p>
+                <p className="retry-center__metric-meta">
+                  Failed {retryCenterAnalytics.failedCount}/{retryCenterAnalytics.totalCount}
+                </p>
+              </article>
+              <article className="retry-center__metric">
+                <p className="retry-center__metric-label">Direction Breakdown</p>
+                <p className="retry-center__metric-value">
+                  U {retryCenterAnalytics.directionCounts.upload} | D{" "}
+                  {retryCenterAnalytics.directionCounts.download}
+                </p>
+                <p className="retry-center__metric-meta">
+                  completed {retryCenterAnalytics.statusCounts.completed} | failed{" "}
+                  {retryCenterAnalytics.statusCounts.failed} | canceled{" "}
+                  {retryCenterAnalytics.statusCounts.canceled}
+                </p>
+              </article>
+              <article className="retry-center__metric">
+                <p className="retry-center__metric-label">Top Sessions / Groups</p>
+                <p className="retry-center__metric-meta">
+                  {retryCenterAnalytics.topSessions.length > 0
+                    ? retryCenterAnalytics.topSessions
+                        .map((entry) => `${entry.sessionName} (${entry.total})`)
+                        .join(" | ")
+                    : "No visible records"}
+                </p>
+                <p className="retry-center__metric-meta">
+                  {retryCenterAnalytics.topGroups.length > 0
+                    ? retryCenterAnalytics.topGroups
+                        .map((entry) => `${entry.groupName} (${entry.total})`)
+                        .join(" | ")
+                    : "No group data"}
+                </p>
+              </article>
+              <article className="retry-center__metric">
+                <p className="retry-center__metric-label">Top Failure Reasons</p>
+                <p className="retry-center__metric-meta retry-center__metric-meta--wrap">
+                  {retryCenterAnalytics.topFailureReasons.length > 0
+                    ? retryCenterAnalytics.topFailureReasons
+                        .map((entry) => `${entry.reason} (${entry.total})`)
+                        .join(" | ")
+                    : "No failed records"}
+                </p>
+                {retryCenterFailureSuggestionRows.length > 0 ? (
+                  <ul className="retry-center__reason-suggestions">
+                    {retryCenterFailureSuggestionRows.map((entry) => (
+                      <li className="retry-center__reason-suggestion" key={entry.reason}>
+                        <strong>{entry.reason}:</strong> {entry.suggestion}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {retryCenterTopFailureReasonRetryRows.length > 0 ? (
+                  <div className="retry-center__reason-actions">
+                    {retryCenterTopFailureReasonRetryRows.map((entry) => (
+                      <div className="retry-center__reason-row" key={entry.reason}>
+                        <button
+                          className={
+                            entry.isCurrentFilter
+                              ? "secondary-button secondary-button--small is-active"
+                              : "secondary-button secondary-button--small"
+                          }
+                          onClick={() => setRetryCenterFailureReasonFilter(entry.reason)}
+                          title={`Filter by failure reason "${entry.reason}"`}
+                          type="button"
+                        >
+                          {`${entry.reason} (${entry.totalVisible})`}
+                        </button>
+                        <button
+                          className="secondary-button secondary-button--small"
+                          disabled={!activeTabId || entry.activeSessionVisibleFailed <= 0}
+                          onClick={() => {
+                            void retryVisibleRetryCenterEntriesWithScopeChoice(entry.reason);
+                          }}
+                          title={`Retry "${entry.reason}" failed transfers in active session with scope strategy`}
+                          type="button"
+                        >
+                          {`Retry (${entry.activeSessionVisibleFailed})`}
+                        </button>
+                        <button
+                          className="secondary-button secondary-button--small"
+                          disabled={entry.totalVisible <= 0}
+                          onClick={() => {
+                            void clearVisibleRetryCenterEntriesByFailureReason(entry.reason);
+                          }}
+                          title={`Delete visible failed history records with reason "${entry.reason}"`}
+                          type="button"
+                        >
+                          {`Delete (${entry.totalVisible})`}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <p className="retry-center__metric-meta">
+                  Visible failed history only. Quick retry targets active-session entries and
+                  follows retry-scope strategy (chooser or auto last scope); delete removes visible
+                  failed history by reason.
+                </p>
+              </article>
+            </div>
+            {isRetryCenterGroupedView && retryCenterGroupedEntries.length > 0 ? (
+              <div className="retry-center__group-actions">
+                <button
+                  className="secondary-button secondary-button--small"
+                  disabled={!canExpandAllRetryCenterGroups}
+                  onClick={expandAllRetryCenterGroups}
+                  type="button"
+                >
+                  Expand All Groups
+                </button>
+                <button
+                  className="secondary-button secondary-button--small"
+                  disabled={!canCollapseAllRetryCenterGroups}
+                  onClick={collapseAllRetryCenterGroups}
+                  type="button"
+                >
+                  Collapse All Groups
+                </button>
+              </div>
+            ) : null}
             <div className="retry-center__list-shell">
               {retryCenterEntries.length > 0 ? (
-                <ul className="retry-center__list">
-                  {retryCenterEntries.map((entry) => {
-                    const selected = retryCenterSelectionSet.has(entry.key);
-                    return (
-                      <li
-                        className={selected ? "retry-center__item is-selected" : "retry-center__item"}
-                        key={entry.key}
-                      >
-                        <label className="retry-center__checkbox">
-                          <input
-                            checked={selected}
-                            onChange={() => toggleRetryCenterEntrySelection(entry.key)}
-                            type="checkbox"
-                          />
-                        </label>
-                        <span className={`retry-center__status retry-center__status--${entry.status}`}>
-                          {entry.status}
-                        </span>
-                        <div className="retry-center__body">
-                          <p className="retry-center__name">{entry.name}</p>
-                          <p
-                            className="retry-center__path"
-                            title={`${entry.localPath} -> ${entry.remotePath}`}
-                          >
-                            {`${entry.localPath} -> ${entry.remotePath}`}
-                          </p>
-                          <p className="retry-center__meta">
-                            {formatHistoryTimestamp(entry.updatedAt)} | {entry.direction} | attempts{" "}
-                            {entry.attemptCount}
-                            {entry.message ? ` | ${entry.message}` : ""}
-                          </p>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                isRetryCenterGroupedView ? (
+                  <ul className="retry-center__group-list">
+                    {retryCenterGroupedEntries.map((group) => {
+                      const collapsed = retryCenterCollapsedGroupKeySet.has(group.key);
+                      return (
+                        <li className="retry-center__group-item" key={group.key}>
+                          <div className="retry-center__group-header">
+                            <button
+                              aria-label={collapsed ? "Expand group" : "Collapse group"}
+                              className="secondary-button secondary-button--small"
+                              onClick={() => toggleRetryCenterGroupCollapsed(group.key)}
+                              type="button"
+                            >
+                              {collapsed ? "Expand" : "Collapse"}
+                            </button>
+                            <div className="retry-center__group-info">
+                              <p className="retry-center__group-title" title={group.label}>
+                                {group.label}
+                              </p>
+                              <p className="retry-center__group-meta">
+                                {group.total} item(s), failed {group.failedCount}, retryable{" "}
+                                {group.activeSessionFailedCount}
+                              </p>
+                            </div>
+                            <div className="retry-center__group-header-actions">
+                              <button
+                                className="secondary-button secondary-button--small"
+                                onClick={() => selectRetryCenterGroupEntries(group.key)}
+                                type="button"
+                              >
+                                {`Select (${group.total})`}
+                              </button>
+                              <button
+                                className="secondary-button secondary-button--small"
+                                disabled={!activeTabId || group.activeSessionFailedCount <= 0}
+                                onClick={() => {
+                                  void retryRetryCenterGroupFailedEntries(group.key);
+                                }}
+                                title="Retry failed active-session records in this group (scope selectable)"
+                                type="button"
+                              >
+                                {`Retry Failed (${group.activeSessionFailedCount})`}
+                              </button>
+                              <button
+                                className="secondary-button secondary-button--small"
+                                onClick={() => {
+                                  void clearRetryCenterGroupEntries(group.key);
+                                }}
+                                type="button"
+                              >
+                                {`Delete (${group.total})`}
+                              </button>
+                              <button
+                                className="secondary-button secondary-button--small"
+                                onClick={() => {
+                                  void exportRetryCenterGroupHistoryJsonWithScopeChoice(group.key);
+                                }}
+                                type="button"
+                              >
+                                Export JSON
+                              </button>
+                              <button
+                                className="secondary-button secondary-button--small"
+                                onClick={() => {
+                                  void exportRetryCenterGroupHistoryCsvWithScopeChoice(group.key);
+                                }}
+                                type="button"
+                              >
+                                Export CSV
+                              </button>
+                            </div>
+                          </div>
+                          {collapsed ? null : (
+                            <ul className="retry-center__list">
+                              {group.entries.map((entry) => {
+                                const selected = retryCenterSelectionSet.has(entry.key);
+                                return (
+                                  <li
+                                    className={
+                                      selected
+                                        ? "retry-center__item is-selected"
+                                        : "retry-center__item"
+                                    }
+                                    key={entry.key}
+                                  >
+                                    <label className="retry-center__checkbox">
+                                      <input
+                                        checked={selected}
+                                        onChange={() => toggleRetryCenterEntrySelection(entry.key)}
+                                        type="checkbox"
+                                      />
+                                    </label>
+                                    <span
+                                      className={`retry-center__status retry-center__status--${entry.status}`}
+                                    >
+                                      {entry.status}
+                                    </span>
+                                    <div className="retry-center__body">
+                                      <p className="retry-center__name">{entry.name}</p>
+                                      <p
+                                        className="retry-center__path"
+                                        title={`${entry.localPath} -> ${entry.remotePath}`}
+                                      >
+                                        {`${entry.localPath} -> ${entry.remotePath}`}
+                                      </p>
+                                      <p className="retry-center__meta">
+                                        {formatHistoryTimestamp(entry.updatedAt)} | {entry.direction} |
+                                        attempts {entry.attemptCount}
+                                        {entry.message ? ` | ${entry.message}` : ""}
+                                      </p>
+                                    </div>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <ul className="retry-center__list">
+                    {retryCenterEntries.map((entry) => {
+                      const selected = retryCenterSelectionSet.has(entry.key);
+                      return (
+                        <li
+                          className={selected ? "retry-center__item is-selected" : "retry-center__item"}
+                          key={entry.key}
+                        >
+                          <label className="retry-center__checkbox">
+                            <input
+                              checked={selected}
+                              onChange={() => toggleRetryCenterEntrySelection(entry.key)}
+                              type="checkbox"
+                            />
+                          </label>
+                          <span className={`retry-center__status retry-center__status--${entry.status}`}>
+                            {entry.status}
+                          </span>
+                          <div className="retry-center__body">
+                            <p className="retry-center__name">{entry.name}</p>
+                            <p
+                              className="retry-center__path"
+                              title={`${entry.localPath} -> ${entry.remotePath}`}
+                            >
+                              {`${entry.localPath} -> ${entry.remotePath}`}
+                            </p>
+                            <p className="retry-center__meta">
+                              {formatHistoryTimestamp(entry.updatedAt)} | {entry.direction} | attempts{" "}
+                              {entry.attemptCount}
+                              {entry.message ? ` | ${entry.message}` : ""}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )
               ) : (
                 <p className="hint">No transfer history records match the current filters.</p>
               )}
@@ -9113,10 +18100,95 @@ export function App() {
               </button>
               <button
                 className="secondary-button"
+                disabled={retryCenterEntries.length === 0}
+                onClick={() => {
+                  void exportRetryCenterVisibleHistoryJson();
+                }}
+                type="button"
+              >
+                Export Visible JSON
+              </button>
+              <button
+                className="secondary-button"
+                disabled={retryCenterEntries.length === 0}
+                onClick={() => {
+                  void exportRetryCenterVisibleHistoryCsv();
+                }}
+                type="button"
+              >
+                Export Visible CSV
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canExportRetryCenterAnalytics}
+                onClick={() => {
+                  void exportRetryCenterAnalyticsJson();
+                }}
+                type="button"
+              >
+                Export Analytics JSON
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canExportRetryCenterAnalytics}
+                onClick={() => {
+                  void exportRetryCenterAnalyticsCsv();
+                }}
+                type="button"
+              >
+                Export Analytics CSV
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canRetryFailedUploads}
+                onClick={() => {
+                  void retryFailedUploads();
+                }}
+                title="Retry failed upload candidates for the active tab/session"
+                type="button"
+              >
+                Retry Failed Uploads ({failedUploadRetryCandidates.length})
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canRetryFailedDownloads}
+                onClick={() => {
+                  void retryFailedDownloads();
+                }}
+                title="Retry failed download candidates for the active tab/session"
+                type="button"
+              >
+                Retry Failed Downloads ({failedDownloadRetryCandidates.length})
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canRetryAllFailedTransfers}
+                onClick={() => {
+                  void retryAllFailedTransfersWithScopeChoice();
+                }}
+                title="Retry all failed upload/download candidates with retry-scope strategy"
+                type="button"
+              >
+                Retry All Failed ({failedRetryCandidateTotal})
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canRetryVisibleRetryCenterEntries}
+                onClick={() => {
+                  void retryVisibleRetryCenterEntriesWithScopeChoice();
+                }}
+                title="Retry visible failed records with scope selection"
+                type="button"
+              >
+                Retry Visible Failed
+              </button>
+              <button
+                className="secondary-button"
                 disabled={!canRetrySelectedRetryCenterEntries}
                 onClick={() => {
-                  void retrySelectedRetryCenterEntries();
+                  void retrySelectedRetryCenterEntriesWithScopeChoice();
                 }}
+                title="Retry selected failed records with scope selection"
                 type="button"
               >
                 Retry Selected Failed
@@ -9156,6 +18228,554 @@ export function App() {
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {isCommandHistoryManagerOpen ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+        >
+          <div
+            className="modal modal--command-history-manager"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command History Manager"
+          >
+            <div className="modal__header">
+              <h3>Command History Manager</h3>
+              <button className="icon-button" onClick={closeCommandHistoryManager} type="button">
+                <UiIcon name="close" />
+              </button>
+            </div>
+            <p className="hint">
+              Batch manage command records from current filter result.
+            </p>
+            <p className="hint command-history-manager__summary">
+              Visible {visibleTerminalCommandHistoryEntries.length} | Selected{" "}
+              {commandHistorySelection.length} | Total {terminalCommandHistoryEntries.length}
+            </p>
+            <div className="command-history-manager__toolbar">
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={() => {
+                  void addTerminalCommandHistoryEntry();
+                }}
+                type="button"
+              >
+                Add
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={() => {
+                  void importTerminalCommandHistory();
+                }}
+                type="button"
+              >
+                Import
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={terminalCommandHistoryEntries.length === 0}
+                onClick={() => {
+                  void exportTerminalCommandHistory();
+                }}
+                type="button"
+              >
+                Export
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={visibleCommandHistoryIds.length === 0}
+                onClick={toggleSelectAllVisibleCommandHistory}
+                type="button"
+              >
+                {allVisibleCommandHistorySelected ? "Unselect Visible" : "Select Visible"}
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={commandHistorySelection.length === 0}
+                onClick={clearCommandHistorySelection}
+                type="button"
+              >
+                Clear Selection
+              </button>
+            </div>
+            <div className="command-history-manager__list-shell">
+              {visibleTerminalCommandHistoryEntries.length === 0 ? (
+                <p className="hint command-history-manager__empty">No command history entries.</p>
+              ) : (
+                <ul className="command-history-manager__list">
+                  {visibleTerminalCommandHistoryEntries.map((entry) => (
+                    <li className="command-history-manager__item" key={entry.id}>
+                      <div
+                        className="command-history-manager__row"
+                        onDoubleClick={(event) => {
+                          const target = event.target as HTMLElement;
+                          if (target.closest("button, input")) {
+                            return;
+                          }
+                          void pasteTerminalCommandHistoryEntry(entry);
+                        }}
+                        title="Double-click command text area to paste into active terminal."
+                      >
+                        <label className="command-history-manager__checkbox">
+                          <input
+                            checked={selectedCommandHistoryIdSet.has(entry.id)}
+                            onChange={() => toggleCommandHistorySelection(entry.id)}
+                            type="checkbox"
+                          />
+                          <span className="command-history-manager__command">
+                            <code>{entry.command}</code>
+                          </span>
+                        </label>
+                        <button
+                          className="secondary-button secondary-button--small command-history-manager__edit"
+                          onClick={() => {
+                            void editTerminalCommandHistoryEntry(entry);
+                          }}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                      <p className="hint command-history-manager__meta">
+                        {entry.tabTitle} | {formatHistoryTimestamp(entry.executedAt)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="modal__actions">
+              <button
+                className="secondary-button"
+                disabled={commandHistorySelection.length === 0}
+                onClick={deleteSelectedCommandHistoryEntries}
+                type="button"
+              >
+                Delete Selected ({commandHistorySelection.length})
+              </button>
+              <button
+                className="secondary-button"
+                disabled={visibleTerminalCommandHistoryEntries.length === 0}
+                onClick={deleteVisibleCommandHistoryEntries}
+                type="button"
+              >
+                Delete Visible ({visibleTerminalCommandHistoryEntries.length})
+              </button>
+              <button
+                className="secondary-button"
+                disabled={terminalCommandHistoryEntries.length === 0}
+                onClick={deleteAllCommandHistoryEntries}
+                type="button"
+              >
+                Delete All ({terminalCommandHistoryEntries.length})
+              </button>
+              <button className="primary-button" onClick={closeCommandHistoryManager} type="button">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCommandSnippetManagerOpen ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+        >
+          <div
+            className="modal modal--snippet-manager"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command Snippet Manager"
+          >
+            <div className="modal__header">
+              <h3>Command Snippet Manager</h3>
+              <button className="icon-button" onClick={closeCommandSnippetManager} type="button">
+                <UiIcon name="close" />
+              </button>
+            </div>
+            <p className="hint snippet-manager__summary">
+              Groups {commandSnippetGroups.length}/{MAX_COMMAND_SNIPPET_GROUPS} | Snippets{" "}
+              {totalCommandSnippetCount}
+            </p>
+            <div className="snippet-manager__toolbar">
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={addCommandSnippetManagerGroup}
+                type="button"
+              >
+                New Group
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={!selectedCommandSnippetManagerGroup}
+                onClick={() => {
+                  void deleteCommandSnippetManagerGroup();
+                }}
+                type="button"
+              >
+                Delete Group
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={addCommandSnippetManagerSnippet}
+                type="button"
+              >
+                New Snippet
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={!selectedCommandSnippetManagerSnippet}
+                onClick={() => {
+                  void runSelectedCommandSnippetManagerSnippet();
+                }}
+                type="button"
+              >
+                Run Selected
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={!selectedCommandSnippetManagerSnippet}
+                onClick={() => {
+                  void deleteCommandSnippetManagerSnippet();
+                }}
+                type="button"
+              >
+                Delete Snippet
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={() => {
+                  void importCommandSnippetGroups().catch((caughtError) => {
+                    setError(toLogMessage(caughtError));
+                  });
+                }}
+                type="button"
+              >
+                Import JSON
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={commandSnippetGroups.length === 0}
+                onClick={() => {
+                  void exportCommandSnippetGroups();
+                }}
+                type="button"
+              >
+                Export JSON
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={commandSnippetGroups.length === 0}
+                onClick={() => {
+                  void clearAllCommandSnippetGroups();
+                }}
+                type="button"
+              >
+                Clear All
+              </button>
+            </div>
+            <div className="snippet-manager__layout">
+              <section className="snippet-manager__column">
+                <h4 className="snippet-manager__title">Groups</h4>
+                <label className="snippet-manager__field">
+                  Group Name
+                  <input
+                    disabled={!selectedCommandSnippetManagerGroup}
+                    onChange={(event) => {
+                      if (!selectedCommandSnippetManagerGroup) {
+                        return;
+                      }
+                      updateCommandSnippetManagerGroupName(
+                        selectedCommandSnippetManagerGroup.id,
+                        event.target.value
+                      );
+                    }}
+                    onBlur={() => {
+                      if (!selectedCommandSnippetManagerGroup) {
+                        return;
+                      }
+                      if (selectedCommandSnippetManagerGroup.name.trim()) {
+                        return;
+                      }
+                      updateCommandSnippetManagerGroupName(
+                        selectedCommandSnippetManagerGroup.id,
+                        "Unnamed Group"
+                      );
+                    }}
+                    type="text"
+                    value={selectedCommandSnippetManagerGroup?.name ?? ""}
+                  />
+                </label>
+                <div className="snippet-manager__list-shell">
+                  {commandSnippetGroups.length === 0 ? (
+                    <p className="hint snippet-manager__empty">No snippet groups.</p>
+                  ) : (
+                    <ul className="snippet-manager__list">
+                      {commandSnippetGroups.map((group) => (
+                        <li key={group.id}>
+                          <button
+                            className={
+                              group.id === selectedCommandSnippetManagerGroup?.id
+                                ? "snippet-manager__list-button is-active"
+                                : "snippet-manager__list-button"
+                            }
+                            onClick={() => {
+                              setCommandSnippetManagerGroupId(group.id);
+                              setCommandSnippetManagerSnippetId(group.snippets[0]?.id ?? "");
+                            }}
+                            type="button"
+                          >
+                            <span>{group.name.trim() || "Unnamed Group"}</span>
+                            <span className="snippet-manager__count">{group.snippets.length}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+              <section className="snippet-manager__column">
+                <h4 className="snippet-manager__title">
+                  Snippets ({selectedCommandSnippetManagerGroup?.snippets.length ?? 0}/
+                  {MAX_COMMAND_SNIPPETS_PER_GROUP})
+                </h4>
+                <p className="hint snippet-manager__meta">
+                  Double-click to run snippet directly.
+                </p>
+                <div className="snippet-manager__list-shell">
+                  {!selectedCommandSnippetManagerGroup ? (
+                    <p className="hint snippet-manager__empty">Select a group first.</p>
+                  ) : selectedCommandSnippetManagerGroup.snippets.length === 0 ? (
+                    <p className="hint snippet-manager__empty">No snippets in selected group.</p>
+                  ) : (
+                    <ul className="snippet-manager__list">
+                      {selectedCommandSnippetManagerGroup.snippets.map((snippet) => (
+                        <li key={snippet.id}>
+                          <button
+                            className={
+                              snippet.id === selectedCommandSnippetManagerSnippet?.id
+                                ? "snippet-manager__list-button is-active"
+                                : "snippet-manager__list-button"
+                            }
+                            onClick={() => {
+                              setCommandSnippetManagerSnippetId(snippet.id);
+                            }}
+                            onDoubleClick={() => {
+                              setCommandSnippetManagerSnippetId(snippet.id);
+                              void runCommandSnippet(snippet);
+                            }}
+                            type="button"
+                          >
+                            <span>{snippet.name.trim() || "Unnamed Snippet"}</span>
+                            <span className="snippet-manager__count">
+                              {snippet.confirmBeforeRun ? "C" : ""}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </section>
+              <section className="snippet-manager__editor">
+                <h4 className="snippet-manager__title">Editor</h4>
+                {selectedCommandSnippetManagerSnippet ? (
+                  <>
+                    <label className="snippet-manager__field">
+                      Snippet Name
+                      <input
+                        onChange={(event) => {
+                          updateCommandSnippetManagerSnippetName(
+                            selectedCommandSnippetManagerSnippet.id,
+                            event.target.value
+                          );
+                        }}
+                        onBlur={() => {
+                          if (selectedCommandSnippetManagerSnippet.name.trim()) {
+                            return;
+                          }
+                          updateCommandSnippetManagerSnippetName(
+                            selectedCommandSnippetManagerSnippet.id,
+                            "Unnamed Snippet"
+                          );
+                        }}
+                        type="text"
+                        value={selectedCommandSnippetManagerSnippet.name}
+                      />
+                    </label>
+                    <label className="snippet-manager__field">
+                      Command Template
+                      <textarea
+                        className="snippet-manager__textarea"
+                        onChange={(event) => {
+                          updateCommandSnippetManagerSnippetTemplate(
+                            selectedCommandSnippetManagerSnippet.id,
+                            event.target.value
+                          );
+                        }}
+                        value={selectedCommandSnippetManagerSnippet.template}
+                      />
+                    </label>
+                    <label className="settings-checkbox">
+                      <input
+                        checked={selectedCommandSnippetManagerSnippet.confirmBeforeRun}
+                        onChange={(event) => {
+                          updateCommandSnippetManagerSnippetConfirm(
+                            selectedCommandSnippetManagerSnippet.id,
+                            event.target.checked
+                          );
+                        }}
+                        type="checkbox"
+                      />
+                      <span>Require confirmation before run</span>
+                    </label>
+                    <p className="hint snippet-manager__meta">
+                      Placeholders: {"${clipboard}"} {"${date}"} {"${time}"} {"${datetime}"}{" "}
+                      {"${sessionName}"} {"${host}"} {"${username}"} {"${tabTitle}"}
+                    </p>
+                  </>
+                ) : (
+                  <p className="hint snippet-manager__empty">Select or create a snippet to edit.</p>
+                )}
+              </section>
+            </div>
+            <div className="modal__actions">
+              <button className="primary-button" onClick={closeCommandSnippetManager} type="button">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {commandHistoryContextMenu ? (
+        <div
+          className="sftp-context-menu"
+          onContextMenu={(event) => event.preventDefault()}
+          ref={commandHistoryContextMenuRef}
+          style={{
+            left: `${Math.max(8, Math.min(commandHistoryContextMenu.x, window.innerWidth - 196))}px`,
+            top: `${Math.max(
+              8,
+              Math.min(
+                commandHistoryContextMenu.y,
+                window.innerHeight - (selectedCommandHistoryContextEntry ? 152 : 192)
+              )
+            )}px`
+          }}
+        >
+          {selectedCommandHistoryContextEntry ? (
+            <>
+              <button
+                className="sftp-context-menu__item"
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  void runTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
+                }}
+                type="button"
+              >
+                Run
+              </button>
+              <button
+                className="sftp-context-menu__item"
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  void copyTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
+                }}
+                type="button"
+              >
+                Copy
+              </button>
+              <button
+                className="sftp-context-menu__item is-danger"
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  deleteTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry.id);
+                }}
+                type="button"
+              >
+                Delete
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="sftp-context-menu__item"
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  void addTerminalCommandHistoryEntry();
+                }}
+                type="button"
+              >
+                Add
+              </button>
+              <button
+                className="sftp-context-menu__item"
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  void importTerminalCommandHistory();
+                }}
+                type="button"
+              >
+                Import
+              </button>
+              <button
+                className="sftp-context-menu__item"
+                disabled={terminalCommandHistoryEntries.length === 0}
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  void exportTerminalCommandHistory();
+                }}
+                type="button"
+              >
+                Export
+              </button>
+              <button
+                className="sftp-context-menu__item"
+                disabled={totalCommandSnippetCount === 0}
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  openCommandSnippetManager();
+                }}
+                type="button"
+              >
+                Run Snippet
+              </button>
+              <button
+                className="sftp-context-menu__item"
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  void openCommandSnippetManager();
+                }}
+                type="button"
+              >
+                Snippet Manager
+              </button>
+              <button
+                className="sftp-context-menu__item"
+                onClick={() => {
+                  closeCommandHistoryContextMenu();
+                  openCommandHistoryManager();
+                }}
+                type="button"
+              >
+                Manage
+              </button>
+            </>
+          )}
+          <button
+            className="sftp-context-menu__item"
+            onClick={closeCommandHistoryContextMenu}
+            type="button"
+          >
+            Close
+          </button>
         </div>
       ) : null}
 
@@ -9320,8 +18940,25 @@ export function App() {
                     <div className="settings-hotkey-list">
                       {HOTKEY_ACTION_ORDER.map((action) => {
                         const binding = hotkeyPreferences[action];
+                        const isConflicting = hotkeyConflictActionSet.has(action);
+                        const isFocused = hotkeyFocusedAction === action;
+                        const conflictBindingLabel =
+                          hotkeyConflictBindingByAction.get(action) ?? "";
+                        const rowClassName = [
+                          "settings-hotkey-row",
+                          isConflicting ? "is-conflict" : "",
+                          isFocused ? "is-focused-conflict" : ""
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
                         return (
-                          <div className="settings-hotkey-row" key={action}>
+                          <div
+                            className={rowClassName}
+                            key={action}
+                            ref={(element) => {
+                              registerHotkeyRowRef(action, element);
+                            }}
+                          >
                             <label className="settings-checkbox settings-hotkey-row__toggle">
                               <input
                                 checked={binding.enabled}
@@ -9337,6 +18974,11 @@ export function App() {
                                     ? formatHotkeyBindingLabel(binding, isMacPlatform)
                                     : "Disabled"}
                                 </span>
+                                {isConflicting ? (
+                                  <span className="settings-hotkey-row__conflict-badge">
+                                    Conflict
+                                  </span>
+                                ) : null}
                               </span>
                             </label>
                             <div className="settings-hotkey-row__controls">
@@ -9373,10 +19015,102 @@ export function App() {
                                 />
                               </label>
                             </div>
+                            {isConflicting ? (
+                              <p className="settings-hotkey-row__conflict-hint hint">
+                                Conflicts on <code>{conflictBindingLabel}</code>.
+                              </p>
+                            ) : null}
                           </div>
                         );
                       })}
                     </div>
+                    {hotkeyConflicts.length > 0 ? (
+                      <div className="settings-hotkey-conflicts" role="alert">
+                        <p className="settings-hotkey-conflicts__title">
+                          Hotkey conflicts detected ({hotkeyConflicts.length})
+                        </p>
+                        <div className="settings-hotkey-conflicts__toolbar">
+                          <button
+                            className="secondary-button secondary-button--small"
+                            onClick={focusPreviousHotkeyConflict}
+                            type="button"
+                          >
+                            Prev
+                          </button>
+                          <span className="hint settings-hotkey-conflicts__cursor">
+                            {hotkeyConflictCursorIndex + 1} / {hotkeyConflicts.length}
+                          </span>
+                          <button
+                            className="secondary-button secondary-button--small"
+                            onClick={focusNextHotkeyConflict}
+                            type="button"
+                          >
+                            Next
+                          </button>
+                        </div>
+                        <ul className="settings-hotkey-conflicts__list">
+                          {hotkeyConflicts.map((conflict, index) => (
+                            <li
+                              className={
+                                index === hotkeyConflictCursorIndex
+                                  ? "settings-hotkey-conflicts__item is-active"
+                                  : "settings-hotkey-conflicts__item"
+                              }
+                              key={conflict.signature}
+                            >
+                              <span className="settings-hotkey-conflicts__summary">
+                                <code>
+                                  {formatHotkeyBindingLabel(
+                                    {
+                                      enabled: true,
+                                      modifier: conflict.modifier,
+                                      key: conflict.key
+                                    },
+                                    isMacPlatform
+                                  )}
+                                </code>
+                                <span>
+                                  {conflict.actions
+                                    .map((action) => getHotkeyActionDescription(action))
+                                    .join(" / ")}
+                                </span>
+                              </span>
+                              <button
+                                className="secondary-button secondary-button--small settings-hotkey-conflicts__locate"
+                                onClick={() => focusHotkeyConflictAtIndex(index)}
+                                type="button"
+                              >
+                                Locate
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="hint">
+                          Conflicts may trigger only the first matching action. Auto resolve
+                          keeps the first action and disables the rest.
+                        </p>
+                        <p className="hint">
+                          Keyboard navigation: <code>Alt + [</code> previous, <code>Alt + ]</code>{" "}
+                          next.
+                        </p>
+                        <div className="modal__actions">
+                          <button
+                            className="secondary-button"
+                            onClick={() => focusHotkeyConflictAtIndex(0)}
+                            type="button"
+                          >
+                            Focus First Conflict
+                          </button>
+                          <button
+                            className="secondary-button"
+                            onClick={resolveHotkeyConflicts}
+                            type="button"
+                          >
+                            Auto Resolve Conflicts
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                     <p className="hint">
                       Windows defaults use <code>Ctrl + Shift + C</code> /{" "}
                       <code>Ctrl + Shift + V</code> for terminal copy/paste, and keeps
@@ -9384,6 +19118,24 @@ export function App() {
                       Cmd-based behavior.
                     </p>
                     <div className="modal__actions">
+                      <button
+                        className="secondary-button"
+                        onClick={() => {
+                          void importHotkeyPreferences();
+                        }}
+                        type="button"
+                      >
+                        Import Hotkeys...
+                      </button>
+                      <button
+                        className="secondary-button"
+                        onClick={() => {
+                          void exportHotkeyPreferences();
+                        }}
+                        type="button"
+                      >
+                        Export Hotkeys...
+                      </button>
                       <button
                         className="secondary-button"
                         onClick={() => setHotkeyPreferences(createDefaultHotkeyPreferences())}
@@ -9506,9 +19258,93 @@ export function App() {
                         value={sftpTransferPreferences.downloadConcurrency}
                       />
                     </label>
+                    <label>
+                      Retry Confirm Threshold
+                      <input
+                        max={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
+                        min={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
+                        onChange={(event) =>
+                          setRetryBatchConfirmThreshold((prev) =>
+                            parseRetryBatchConfirmThreshold(Number(event.target.value), prev)
+                          )
+                        }
+                        type="number"
+                        value={retryBatchConfirmThreshold}
+                      />
+                    </label>
                     <p className="hint">
                       Controls max parallel upload/download tasks. Range: 1-8.
                     </p>
+                    <p className="hint">
+                      Large retry batches at or above this threshold require confirmation. Set to{" "}
+                      <code>0</code> to disable confirmations. Range:{" "}
+                      {MIN_RETRY_BATCH_CONFIRM_THRESHOLD}-{MAX_RETRY_BATCH_CONFIRM_THRESHOLD}.
+                    </p>
+                    <p className="hint">
+                      Active-session conflict defaults:
+                      {activeSessionId
+                        ? ` Upload ${formatTransferConflictStrategyLabel(
+                            activeSessionTransferConflictStrategy?.upload
+                          )}, Download ${formatTransferConflictStrategyLabel(
+                            activeSessionTransferConflictStrategy?.download
+                          )}.`
+                        : " Open a terminal tab to configure remembered conflict behavior."}
+                    </p>
+                    {activeSessionId ? (
+                      <div className="field-row">
+                        <button
+                          className="field-row__action"
+                          disabled={!activeSessionTransferConflictStrategy?.upload}
+                          onClick={() => {
+                            clearSessionTransferConflictStrategy(activeSessionId, "upload");
+                            showTransferDockNotice(
+                              activeTabId ?? "",
+                              "info",
+                              "Cleared remembered upload conflict default for active session.",
+                              5000
+                            );
+                          }}
+                          type="button"
+                        >
+                          Clear Upload Default
+                        </button>
+                        <button
+                          className="field-row__action"
+                          disabled={!activeSessionTransferConflictStrategy?.download}
+                          onClick={() => {
+                            clearSessionTransferConflictStrategy(activeSessionId, "download");
+                            showTransferDockNotice(
+                              activeTabId ?? "",
+                              "info",
+                              "Cleared remembered download conflict default for active session.",
+                              5000
+                            );
+                          }}
+                          type="button"
+                        >
+                          Clear Download Default
+                        </button>
+                        <button
+                          className="field-row__action"
+                          disabled={
+                            !activeSessionTransferConflictStrategy?.upload &&
+                            !activeSessionTransferConflictStrategy?.download
+                          }
+                          onClick={() => {
+                            clearSessionTransferConflictStrategy(activeSessionId);
+                            showTransferDockNotice(
+                              activeTabId ?? "",
+                              "info",
+                              "Cleared all remembered conflict defaults for active session.",
+                              5000
+                            );
+                          }}
+                          type="button"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
 
@@ -9827,6 +19663,100 @@ export function App() {
                           <option value="status">Degraded/Recovered</option>
                         </select>
                       </label>
+                      <label>
+                        Time
+                        <select
+                          onChange={(event) =>
+                            setPortForwardEventTimeRange(
+                              event.target.value as PortForwardEventTimeRange
+                            )
+                          }
+                          value={portForwardEventTimeRange}
+                        >
+                          <option value="all">All</option>
+                          <option value="5m">Last 5m</option>
+                          <option value="30m">Last 30m</option>
+                          <option value="1h">Last 1h</option>
+                          <option value="24h">Last 24h</option>
+                        </select>
+                      </label>
+                      <label>
+                        Error Code
+                        <select
+                          onChange={(event) => setPortForwardEventErrorCode(event.target.value)}
+                          value={portForwardEventErrorCode}
+                        >
+                          {portForwardEventErrorCodeOptions.map((code) => (
+                            <option key={code} value={code}>
+                              {code === "all" ? "All" : code}
+                            </option>
+                          ))}
+                          {portForwardEventErrorCode !== "all" &&
+                          !portForwardEventErrorCodeOptions.includes(portForwardEventErrorCode) ? (
+                            <option value={portForwardEventErrorCode}>
+                              {portForwardEventErrorCode}
+                            </option>
+                          ) : null}
+                        </select>
+                      </label>
+                      <label>
+                        Correlation
+                        <input
+                          onChange={(event) =>
+                            setPortForwardEventCorrelationQuery(event.target.value)
+                          }
+                          placeholder="correlationKey / connectionId"
+                          value={portForwardEventCorrelationQuery}
+                        />
+                      </label>
+                      <button
+                        className="secondary-button"
+                        disabled={!hasCustomizedPortForwardEventView}
+                        onClick={resetPortForwardEventViewFilters}
+                        type="button"
+                      >
+                        Reset Filters
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={visiblePortForwardEventHistory.length === 0}
+                        onClick={() => {
+                          void exportVisiblePortForwardEventsJson();
+                        }}
+                        type="button"
+                      >
+                        Export Visible JSON
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={visiblePortForwardEventHistory.length === 0}
+                        onClick={() => {
+                          void exportVisiblePortForwardEventsCsv();
+                        }}
+                        type="button"
+                      >
+                        Export Visible CSV
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={!activeSessionId}
+                        onClick={() => {
+                          void exportPortForwardEventAnalyticsJson();
+                        }}
+                        type="button"
+                      >
+                        Export Analytics JSON
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={!activeSessionId}
+                        onClick={() => {
+                          void exportPortForwardEventAnalyticsCsv();
+                        }}
+                        type="button"
+                      >
+                        Export Analytics CSV
+                      </button>
                       <button
                         className="secondary-button"
                         disabled={visiblePortForwardEventHistory.length === 0}
@@ -9851,30 +19781,89 @@ export function App() {
                     <p className="hint settings-port-forward-events-summary">
                       Session history {activePortForwardEventHistory.length}, visible{" "}
                       {visiblePortForwardEventHistory.length}
+                      {portForwardEventTimeRange !== "all"
+                        ? `, range ${portForwardEventTimeRange}`
+                        : ""}
+                      {portForwardEventErrorCode !== "all"
+                        ? `, code ${portForwardEventErrorCode}`
+                        : ""}
                     </p>
+                    <div className="settings-port-forward-events-analytics">
+                      <article className="settings-port-forward-events-metric">
+                        <p className="settings-port-forward-events-metric__label">Error Ratio</p>
+                        <p className="settings-port-forward-events-metric__value">
+                          {formatPercent(portForwardVisibleEventAnalytics.errorRatioPercent)}
+                        </p>
+                        <p className="settings-port-forward-events-metric__meta">
+                          Errors {portForwardVisibleEventAnalytics.totalErrors}/
+                          {portForwardVisibleEventAnalytics.totalVisible}
+                        </p>
+                      </article>
+                      <article className="settings-port-forward-events-metric">
+                        <p className="settings-port-forward-events-metric__label">Type Breakdown</p>
+                        <p className="settings-port-forward-events-metric__meta">
+                          created {portForwardVisibleEventAnalytics.typeCounts.created} | removed{" "}
+                          {portForwardVisibleEventAnalytics.typeCounts.removed}
+                        </p>
+                        <p className="settings-port-forward-events-metric__meta">
+                          degraded {portForwardVisibleEventAnalytics.typeCounts.statusDegraded} |
+                          recovered {portForwardVisibleEventAnalytics.typeCounts.statusRecovered}
+                        </p>
+                      </article>
+                      <article className="settings-port-forward-events-metric">
+                        <p className="settings-port-forward-events-metric__label">Top Error Codes</p>
+                        <p className="settings-port-forward-events-metric__meta settings-port-forward-events-metric__meta--wrap">
+                          {portForwardVisibleEventAnalytics.topErrorCodes.length > 0
+                            ? portForwardVisibleEventAnalytics.topErrorCodes
+                                .map((entry) => `${entry.code} (${entry.count})`)
+                                .join(" | ")
+                            : "No error code data"}
+                        </p>
+                      </article>
+                      <article className="settings-port-forward-events-metric">
+                        <p className="settings-port-forward-events-metric__label">Top Correlation</p>
+                        <p className="settings-port-forward-events-metric__meta settings-port-forward-events-metric__meta--wrap">
+                          {portForwardVisibleEventAnalytics.topCorrelations.length > 0
+                            ? portForwardVisibleEventAnalytics.topCorrelations
+                                .map((entry) => `${entry.correlationKey} (${entry.count})`)
+                                .join(" | ")
+                            : "No correlation key data"}
+                        </p>
+                      </article>
+                    </div>
                     <div className="settings-port-forward-list-shell settings-port-forward-list-shell--events">
                       {visiblePortForwardEventHistory.length > 0 ? (
                         <ul className="settings-port-forward-events-list">
-                          {visiblePortForwardEventHistory.map((event) => (
-                            <li
-                              className={
-                                event.level === "error"
-                                  ? "settings-port-forward-event-item is-error"
-                                  : "settings-port-forward-event-item"
-                              }
-                              key={event.id}
-                            >
-                              <p className="settings-port-forward-event-item__title">
-                                {formatPortForwardEventType(event.type)} {formatPortForwardEventSummary(event)}
-                              </p>
-                              <p className="settings-port-forward-event-item__meta">
-                                {formatPortForwardTimestamp(event.createdAt)} | {event.level.toUpperCase()}
-                              </p>
-                              <p className="settings-port-forward-event-item__message">
-                                {event.message}
-                              </p>
-                            </li>
-                          ))}
+                          {visiblePortForwardEventHistory.map((event) => {
+                            const correlation = formatPortForwardEventCorrelation(event);
+                            return (
+                              <li
+                                className={
+                                  event.level === "error"
+                                    ? "settings-port-forward-event-item is-error"
+                                    : "settings-port-forward-event-item"
+                                }
+                                key={event.id}
+                              >
+                                <p className="settings-port-forward-event-item__title">
+                                  {formatPortForwardEventType(event.type)}{" "}
+                                  {formatPortForwardEventSummary(event)}
+                                </p>
+                                <p className="settings-port-forward-event-item__meta">
+                                  {formatPortForwardTimestamp(event.createdAt)} |{" "}
+                                  {event.level.toUpperCase()}
+                                </p>
+                                {correlation ? (
+                                  <p className="settings-port-forward-event-item__correlation">
+                                    {correlation}
+                                  </p>
+                                ) : null}
+                                <p className="settings-port-forward-event-item__message">
+                                  {event.message}
+                                </p>
+                              </li>
+                            );
+                          })}
                         </ul>
                       ) : (
                         <p className="hint">
@@ -9944,6 +19933,229 @@ export function App() {
                       >
                         {isExportingBugReport ? "Exporting..." : "Export Bug Report"}
                       </button>
+                    </div>
+
+                    <p className="settings-port-forward-section__title">
+                      Disconnect Reports ({visibleDisconnectReports.length}/{disconnectReports.length})
+                    </p>
+                    <label className="settings-checkbox settings-checkbox--inline">
+                      <input
+                        checked={disconnectReportCapturePreferences.enabled}
+                        onChange={(event) => {
+                          setDisconnectReportCapturePreferences({
+                            enabled: event.target.checked
+                          });
+                        }}
+                        type="checkbox"
+                      />
+                      <span>Auto capture unexpected disconnect reports</span>
+                    </label>
+                    <div className="settings-disconnect-reports-toolbar">
+                      <label>
+                        Scope
+                        <select
+                          onChange={(event) => {
+                            setDisconnectReportScope(event.target.value as DisconnectReportScope);
+                          }}
+                          value={disconnectReportScope}
+                        >
+                          <option value="allSessions">All Sessions</option>
+                          <option value="activeSession">Active Session</option>
+                        </select>
+                      </label>
+                      <label>
+                        Trigger
+                        <select
+                          onChange={(event) => {
+                            setDisconnectReportTriggerFilter(
+                              event.target.value as DisconnectReportTriggerFilter
+                            );
+                          }}
+                          value={disconnectReportTriggerFilter}
+                        >
+                          <option value="all">All</option>
+                          <option value="status">Status</option>
+                          <option value="error">Error</option>
+                        </select>
+                      </label>
+                      <label>
+                        Time
+                        <select
+                          onChange={(event) => {
+                            setDisconnectReportTimeRange(
+                              event.target.value as DisconnectReportTimeRange
+                            );
+                          }}
+                          value={disconnectReportTimeRange}
+                        >
+                          <option value="all">All</option>
+                          <option value="5m">Last 5m</option>
+                          <option value="30m">Last 30m</option>
+                          <option value="1h">Last 1h</option>
+                          <option value="24h">Last 24h</option>
+                        </select>
+                      </label>
+                      <label className="settings-disconnect-reports-toolbar__query">
+                        Search
+                        <input
+                          onChange={(event) => {
+                            setDisconnectReportQuery(event.target.value.slice(0, 160));
+                          }}
+                          placeholder="session/target/message"
+                          value={disconnectReportQuery}
+                        />
+                      </label>
+                      <button
+                        className="secondary-button secondary-button--small"
+                        disabled={!hasCustomizedDisconnectReportView}
+                        onClick={resetDisconnectReportViewFilters}
+                        type="button"
+                      >
+                        Reset Filters
+                      </button>
+                    </div>
+                    <p className="hint">
+                      {disconnectReportCapturePreferences.enabled
+                        ? "Unexpected disconnects are auto-captured with connection and transfer context. Use export when reporting random disconnect issues."
+                        : "Auto capture is disabled. Re-enable it to collect future disconnect reports automatically."}
+                    </p>
+                    <div className="modal__actions settings-disconnect-reports__actions">
+                      <button
+                        className="secondary-button"
+                        disabled={visibleDisconnectReports.length === 0}
+                        onClick={() => {
+                          void exportDisconnectReportsJson();
+                        }}
+                        type="button"
+                      >
+                        Export Visible JSON
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={visibleDisconnectReports.length === 0}
+                        onClick={() => {
+                          void exportDisconnectReportsCsv();
+                        }}
+                        type="button"
+                      >
+                        Export Visible CSV
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={visibleDisconnectReports.length === 0}
+                        onClick={() => {
+                          void copyLatestVisibleDisconnectReport();
+                        }}
+                        type="button"
+                      >
+                        Copy Latest Visible
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={visibleDisconnectReports.length === 0}
+                        onClick={() => {
+                          void clearVisibleDisconnectReportsHistory();
+                        }}
+                        type="button"
+                      >
+                        Clear Visible
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={disconnectReports.length === 0}
+                        onClick={() => {
+                          void clearDisconnectReportsHistory();
+                        }}
+                        type="button"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                    <div className="settings-disconnect-reports-shell">
+                      {visibleDisconnectReports.length > 0 ? (
+                        <ul className="settings-disconnect-reports-list">
+                          {visibleDisconnectReports.slice(0, 50).map((report) => {
+                            const transferActive =
+                              report.uploadRunning +
+                              report.uploadQueued +
+                              report.downloadRunning +
+                              report.downloadQueued;
+                            const isTabOpen = terminalTabs.some((tab) => tab.id === report.tabId);
+                            return (
+                              <li className="settings-disconnect-report-item" key={report.id}>
+                                <div className="settings-disconnect-report-item__header">
+                                  <p className="settings-disconnect-report-item__title">
+                                    {formatPortForwardTimestamp(report.createdAt)} |{" "}
+                                    {report.sessionName}
+                                  </p>
+                                  <p className="settings-disconnect-report-item__meta">
+                                    {report.tabTitle} | {report.target}
+                                  </p>
+                                  <p className="settings-disconnect-report-item__meta">
+                                    Trigger:{" "}
+                                    {report.trigger === "error"
+                                      ? `error (${report.message})`
+                                      : `${report.status ?? "closed"} (${report.message})`}
+                                  </p>
+                                  <p className="settings-disconnect-report-item__meta">
+                                    Transfers active: {transferActive} (up {report.uploadRunning}
+                                    /{report.uploadQueued}, down {report.downloadRunning}/
+                                    {report.downloadQueued}) | Port forwards:{" "}
+                                    {report.portForwardTotal} ({report.portForwardDegraded} degraded)
+                                  </p>
+                                  <p className="settings-disconnect-report-item__meta">
+                                    Tabs: {report.connectedTabCount}/{report.openTabCount} connected
+                                    | Auto reconnect:{" "}
+                                    {report.autoReconnect
+                                      ? `on (${report.reconnectDelaySeconds}s)`
+                                      : "off"}
+                                  </p>
+                                  {report.recentFailures.length > 0 ? (
+                                    <p className="settings-disconnect-report-item__message">
+                                      Recent failures:{" "}
+                                      {report.recentFailures
+                                        .slice(0, 3)
+                                        .map(
+                                          (failure) =>
+                                            `${failure.direction}:${failure.name} (${classifyTransferFailureReason(failure.message)})`
+                                        )
+                                        .join(" | ")}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div className="modal__actions settings-disconnect-report-item__actions">
+                                  <button
+                                    className="secondary-button"
+                                    onClick={() => {
+                                      void copyDisconnectReportJson(report);
+                                    }}
+                                    type="button"
+                                  >
+                                    Copy JSON
+                                  </button>
+                                  {isTabOpen ? (
+                                    <button
+                                      className="secondary-button"
+                                      onClick={() => {
+                                        setActiveTabId(report.tabId);
+                                      }}
+                                      type="button"
+                                    >
+                                      Focus Tab
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="hint">
+                          {disconnectReports.length === 0
+                            ? "No disconnect reports captured yet."
+                            : "No disconnect reports match the current filter."}
+                        </p>
+                      )}
                     </div>
                   </>
                 ) : null}
@@ -10153,11 +20365,6 @@ export function App() {
       {moveGroupDialog ? (
         <div
           className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeMoveGroupDialog();
-            }
-          }}
           role="presentation"
         >
           <div
@@ -10173,6 +20380,9 @@ export function App() {
                   ? `Move ${moveGroupDialog.sessionIds.length} Sessions`
                   : "Move Session"}
               </h3>
+              <button className="icon-button" onClick={closeMoveGroupDialog} type="button">
+                <UiIcon name="close" />
+              </button>
             </div>
             <p className="app-dialog__message">Select target group from the list.</p>
             <form
@@ -10219,18 +20429,14 @@ export function App() {
         </div>
       ) : null}
 
-      {appDialog ? (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              closeAppDialog();
-            }
-          }}
-          role="presentation"
-        >
+      {appDialog && appDialog.mode !== "alert" ? (
+        <div className="modal-backdrop" role="presentation">
           <div
-            className="modal modal--compact app-dialog"
+            className={
+              appDialog.mode === "choice"
+                ? "modal modal--compact app-dialog app-dialog--choice"
+                : "modal modal--compact app-dialog"
+            }
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -10238,6 +20444,9 @@ export function App() {
           >
             <div className="modal__header">
               <h3>{appDialog.title}</h3>
+              <button className="icon-button" onClick={closeAppDialog} type="button">
+                <UiIcon name="close" />
+              </button>
             </div>
             <p className="app-dialog__message">{appDialog.message}</p>
             {appDialog.mode === "prompt" ? (
@@ -10261,7 +20470,7 @@ export function App() {
                   value={appDialogInput}
                 />
               )
-            ) : appDialog.mode === "alert" && appDialog.detailText ? (
+            ) : (appDialog.mode === "confirm" || appDialog.mode === "choice") && appDialog.detailText ? (
               <textarea
                 className="app-dialog__textarea app-dialog__textarea--readonly"
                 readOnly
@@ -10271,12 +20480,24 @@ export function App() {
             {appDialog.mode === "prompt" && appDialog.multiline ? (
               <p className="hint app-dialog__hint">Use Ctrl+Enter to confirm.</p>
             ) : null}
-            <div className="modal__actions">
-              {appDialog.mode !== "alert" ? (
-                <button className="secondary-button" onClick={closeAppDialog} type="button">
-                  {appDialog.cancelLabel}
-                </button>
-              ) : null}
+            <div
+              className={
+                appDialog.mode === "choice"
+                  ? "modal__actions app-dialog__choice-actions"
+                  : "modal__actions"
+              }
+            >
+              <button
+                className={
+                  appDialog.mode === "choice"
+                    ? "secondary-button app-dialog__choice-cancel"
+                    : "secondary-button"
+                }
+                onClick={closeAppDialog}
+                type="button"
+              >
+                {appDialog.cancelLabel}
+              </button>
               {appDialog.mode === "choice"
                 ? appDialog.options.map((option) => (
                     <button
@@ -10310,7 +20531,76 @@ export function App() {
         </div>
       ) : null}
 
-      {error ? <div className="error-bar">{error}</div> : null}
+      {error ? (
+        <div className="error-bar" role="status">
+          <p className="error-bar__message">{error}</p>
+          {globalErrorRecovery.hint ? (
+            <p className="hint error-bar__hint">{globalErrorRecovery.hint}</p>
+          ) : null}
+          <div className="error-bar__actions">
+            {globalErrorRecovery.canReconnect ? (
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={() => {
+                  void reconnectActiveTabFromError();
+                }}
+                type="button"
+              >
+                Reconnect
+              </button>
+            ) : null}
+            {globalErrorRecovery.canOpenLogs ? (
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={() => {
+                  void openLogDirectory();
+                }}
+                type="button"
+              >
+                Open Logs
+              </button>
+            ) : null}
+            <button
+              className="secondary-button secondary-button--small"
+              onClick={() => {
+                openDiagnosticsFromError();
+              }}
+              type="button"
+            >
+              Diagnostics
+            </button>
+            <button
+              className="secondary-button secondary-button--small"
+              onClick={() => {
+                void copyGlobalErrorMessage();
+              }}
+              type="button"
+            >
+              Copy Error
+            </button>
+            {globalErrorRecovery.canCopyLatestDisconnectReport ? (
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={() => {
+                  void copyLatestDisconnectReport();
+                }}
+                type="button"
+              >
+                Copy Latest Disconnect
+              </button>
+            ) : null}
+            <button
+              aria-label="Dismiss error"
+              className="icon-button"
+              onClick={dismissGlobalError}
+              title="Dismiss"
+              type="button"
+            >
+              <UiIcon name="close" />
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

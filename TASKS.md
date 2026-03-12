@@ -1,10 +1,10 @@
-# TermDock Task Board
+﻿# TermDock Task Board
 
-Last updated: 2026-03-08
+Last updated: 2026-03-13
 
 ## Current Release State
 
-- Stable release: `v0.1.10`
+- Stable release: `v0.1.11`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 
@@ -28,7 +28,7 @@ Last updated: 2026-03-08
 | P0-C4 | DONE | Multi-tab terminal sessions |
 | P0-C5 | PARTIAL | KeepAlive + auto reconnect done; extra manual recovery UX pending |
 | P0-C6 | DONE | Platform-aware hotkeys |
-| P0-C7 | DONE | Same session multi-open |
+| P0-C7 | DONE | Same-session dedupe open policy (focus existing tab) |
 | P0-C8 | DONE | Terminal context menu |
 | P0-D1 | DONE | SFTP channel reuse via active tab |
 | P0-D2 | PARTIAL | SFTP panel is usable; final polish pending |
@@ -38,7 +38,7 @@ Last updated: 2026-03-08
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
 | P0-E1 | TODO | Startup performance benchmark/optimization |
 | P0-E2 | TODO | Large transfer memory optimization |
-| P0-E3 | PARTIAL | Diagnostics logging baseline landed; recoverable action UX still pending |
+| P0-E3 | PARTIAL | Recoverable global error action baseline landed; broader action coverage/guidance still pending |
 | P0-E4 | TODO | Persistence crash-recovery verification |
 | P0-F1 | TODO | Unit tests |
 | P0-F2 | TODO | Integration tests |
@@ -48,11 +48,19 @@ Last updated: 2026-03-08
 
 ## In Progress Track (v0.1.3+)
 
+0. UI compactness and list-shell stability governance:
+   - enforce compact density defaults across pages
+   - enforce fixed-height list shells with internal scrolling
+   - keep rulebook in `UI_COMPACT_RULES.md` and require it for UI review
+0.1 Session/command interaction hardening:
+   - same-session repeated open now focuses existing tab
+   - command-history blank-area right-click menu now available
+   - startup session text normalization for known mojibake patterns
 1. `P0-F3` Cross-platform smoke checklist and reproducible report
 2. `P0-F4` Signing/notarization strategy and installation verification
-3. `P0-E3` Global error recovery actions and user guidance
+3. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
 4. Transfer hardening for cancel races and large directory jobs
-5. `F5` Port forwarding hardening: diagnostics/event-history polish
+5. `F8` Operation center follow-up (baseline landed; broaden operation coverage)
 
 ## Post-v0.1.9 Hotfix Track (master)
 
@@ -72,6 +80,7 @@ Last updated: 2026-03-08
    - main process file logger with rotation
    - renderer global error/rejection auto-capture
    - `Settings > Diagnostics` log path actions
+   - bug-report export now bundles disconnect-report snapshot when available
 6. Transfer safety baseline:
    - conflict policy (`overwrite/skip/rename`) for upload/download
    - `Retry Failed` actions for upload/download docks
@@ -81,6 +90,21 @@ Last updated: 2026-03-08
 8. Retry center baseline:
    - added transfer retry center modal with filter/search/select
    - supports batch retry and batch delete for persisted history records
+   - added time-range filter and persisted retry-center filter view
+   - added failure-reason filter, quick retry by top failure reason (active session, scope strategy aware), and visible delete by reason
+   - added grouped-by-failure list mode with collapsible groups (`Flat` / `Grouped by Failure`)
+   - grouped view now includes group-level select/retry/delete/export actions
+   - grouped export now supports scope selection (`All` / `Failed` / `Retryable Active Session`)
+   - grouped retry now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+   - `Retry Visible Failed` now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+   - `Retry Selected Failed` now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+   - added one-click `Retry All Failed` (upload + download) in transfer dock, retry center, and operation center (scope strategy aware)
+   - Retry Center action bar now includes direction-specific quick actions (`Retry Failed Uploads` / `Retry Failed Downloads`)
+   - added large-batch retry confirmation guardrail with configurable threshold (`Retry Confirm Threshold`, default: `100`, set `0` to disable)
+   - `Settings > SFTP` now also exposes `Retry Confirm Threshold` for global adjustment
+   - retry-scope chooser now remembers and prioritizes last used scope (`Last Used`) across restart
+   - added `Default Retry Scope` selector (all/upload/download) for manual retry-strategy preselection
+   - added `Auto Retry Scope` toggle to skip scope chooser and apply last used scope directly when available
 9. SSH config import baseline:
    - `sessions:parseSshConfig` parser for common directives
    - sessions context-menu import flow with preview and duplicate strategy
@@ -93,13 +117,84 @@ Last updated: 2026-03-08
    - runtime status (`Active` / `Degraded`) and last-error metadata
    - recent events and diagnostics snapshot export for issue reporting
    - persisted event history (session scope) with filter and clear actions
+   - visible-event analytics cards (error ratio, type mix, top error code/correlation)
+   - analytics export (`JSON` / `CSV`) for filtered visible events
+11. Session export baseline:
+   - added `Export All Sessions...` in Sessions context menu
+   - added `Export All Groups...` in Sessions context menu
+   - exports JSON with group hierarchy and session metadata
+   - save dialog export path with clipboard fallback
+12. Transfer UX and diagnostics polish:
+   - conflict pre-check now uses limited-concurrency directory scans
+   - disconnected transfer queues now pause and auto-resume after reconnect
+   - transfer completion success path switched from modal popup to dock inline notice
+   - batch failure details logged for diagnostics handoff
+   - logger write path switched to async queue with expanded archive retention
+13. Retry-center analytics + export package:
+   - top failure reason aggregation for visible failed history
+   - analytics snapshot export (`JSON` / `CSV`)
+   - history export stats now include top sessions/groups/failure reasons
+14. Recoverable global error UX baseline (`P0-E3`):
+   - upgraded global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
+   - added `Copy Latest Disconnect` quick action when disconnect reports exist
+   - contextual recovery hints for connection/bridge related errors
+15. Operation center baseline (`F8`):
+   - added `Operation Center` modal with active long-running operation summary
+   - includes upload/download queue status, remote delete status, and port-forward busy status
+   - quick actions for transfer cancel-all and navigation to diagnostics/port-forward settings
+   - includes cross-tab transfer activity summary with tab focus action
+   - includes per-tab and cross-tab one-click transfer cancellation actions
+   - includes per-tab and bulk reconnect actions for disconnected transfer tabs
+16. Disconnect auto-diagnostic baseline (`F22`):
+   - unexpected terminal `closed/error` events now auto-capture runtime context snapshots
+   - `Settings > Diagnostics` now exposes disconnect report list with JSON/CSV export, copy-latest, and clear actions
+   - added diagnostics auto-capture toggle for disconnect reports
+   - added report filters (`scope` / `trigger` / `time range` / `search`) and visible-only export/clear
+17. Hotkey conflict checker baseline (`F30` partial):
+   - `Settings > Hotkeys` now detects conflicting enabled bindings
+   - conflicting actions are highlighted inline in each hotkey row
+   - one-click `Auto Resolve Conflicts` keeps first action by priority and disables duplicates
+   - supports hotkey JSON backup/restore (`Import Hotkeys...` / `Export Hotkeys...`)
+   - hotkey import now includes before/after diff preview before apply
+   - hotkey import now reports imported conflict count and supports `Import + Auto Resolve`
+   - import preview now lists auto-resolve disable-impact before confirmation
+   - hotkey conflict panel now includes `Locate` and `Focus First Conflict` row navigation
+   - hotkey conflict panel now includes `Prev` / `Next` conflict navigation with active index
+   - hotkey conflict navigation now includes keyboard shortcuts (`Alt + [` / `Alt + ]`)
+   - hotkey conflict cursor position now persists locally and restores by signature
+18. Session import + quick-profile baseline:
+   - added `Import Sessions JSON...` in Sessions context menu
+   - import wizard supports group strategy (`keepSource` / `forceCurrent` / `ungrouped`)
+   - import wizard supports duplicate strategy (`skip` / `overwrite` / `rename`)
+   - added quick profile actions (`Run` / `Save` / `Manage`) on session context menu
+19. Command snippet groups baseline:
+   - command history panel now exposes `Run Snippet` and `Snippet Manager`
+   - snippet manager supports add/import/export/clear grouped snippets
+   - snippet templates support clipboard/time/session/tab placeholders
+20. Transfer restart recovery baseline:
+   - pending transfer queue snapshots persist for restart recovery
+   - transfer dock provides one-click `Restore Pending` and `Discard Pending`
+21. Remote file save-back guard baseline:
+   - auto-sync save-back checks remote metadata baseline (`exists` / `size` / `mtime`)
+   - skips unsafe overwrite when remote file changed unexpectedly
+22. Retry-center guidance baseline:
+   - top failure reasons now show contextual suggestions for faster triage
 
 ## Immediate Next Target
 
-1. `F5+` Port forwarding diagnostics polish (file export + richer correlation metadata)
-2. `F2+` Retry-center analytics + history export package
-3. `P0-F3` Cross-platform smoke checklist and reproducible report
-4. `P0-F4` Signing/notarization strategy and installation verification
+1. `P0-F3` Cross-platform smoke checklist and reproducible report
+2. `P0-F4` Signing/notarization strategy and installation verification
+3. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
+4. `F8` Operation center follow-up (more operation types + cancellation coverage)
+
+## Not Done Yet (Top Blocking Items)
+
+1. `P0-F3`: packaged-app smoke matrix completion (Windows + macOS) and reproducible report format
+2. `P0-F4`: release signing/notarization pipeline finalization and installer verification
+3. `P0-E3`: recoverable global error action coverage expansion (beyond current baseline)
+4. `P0-F1`/`P0-F2`: unit and integration test baseline
+5. `P0-A3`: JSON-to-SQLite migration planning and execution
+6. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
 
 ## Backlog Candidates
 
@@ -117,7 +212,7 @@ Last updated: 2026-03-08
 ## Exploration Pool (Unprioritized)
 
 - Operation audit timeline (command/transfer actor+scope tracking)
-- Disconnect auto-diagnostic report
+- Disconnect auto-diagnostic v2 (deeper network/process evidence)
 - Diff-first sync mode (preview then apply)
 - Session health checks with proactive risk badges
 - Team session bundle (encrypted)
@@ -137,14 +232,14 @@ Last updated: 2026-03-08
 | F2 | P1 | DONE | Transfer retry center + persistent history | Fast recovery after network interruption or cancel race |
 | F3 | P1 | DONE | Bug report bundle export | Fast support loop with one-click diagnostic package |
 | F4 | P1 | DONE | SSH config import (`~/.ssh/config`) | Reduce manual session creation for existing users |
-| F5 | P1 | PARTIAL | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
+| F5 | P1 | DONE | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
 | F6 | P2 | TODO | Session templates + env variables | Faster provisioning for repeated host patterns |
-| F7 | P2 | TODO | Remote overwrite pre-check (mtime/size/checksum) | Safer file edit and sync workflows |
-| F8 | P2 | TODO | Unified operation center for long jobs | Better visibility for recursive delete/copy/move tasks |
-| F9 | P3 | TODO | Encrypted session export/import | Easier migration and backup across machines |
+| F7 | P2 | PARTIAL | Remote overwrite pre-check (mtime/size/checksum) | Metadata guard baseline shipped; conflict resolution UI/diff follow-up pending |
+| F8 | P2 | PARTIAL | Unified operation center for long jobs | Baseline shipped; broader operation types and controls still needed |
+| F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
 | F11 | P2 | TODO | Transfer bandwidth limiter + schedule window | Avoid saturating production links during peak hours |
-| F12 | P2 | TODO | Command snippets/playbooks with parameter prompts | Standardize repeat operations with safer execution |
+| F12 | P2 | PARTIAL | Command snippets/playbooks with parameter prompts | Grouped snippets baseline shipped; prompted variables and richer validation pending |
 | F13 | P2 | TODO | Multi-host command broadcast with dry-run preview | Speed up fleet operations while reducing blast radius |
 | F14 | P3 | TODO | Remote file snapshot + one-click rollback | Recover quickly from accidental edits during remote file open/save |
 | F15 | P2 | TODO | Session tags + smart views | Faster large-session navigation and operator context switching |
@@ -154,7 +249,7 @@ Last updated: 2026-03-08
 | F19 | P2 | TODO | Connection quality timeline | Make intermittent network/session issues measurable and diagnosable |
 | F20 | P3 | TODO | Workspace profile mode (`dev`/`staging`/`prod`) | Add persistent risk cues and reduce environment mix-ups |
 | F21 | P2 | TODO | Operation audit timeline | Improve traceability for command/transfer actions during incidents |
-| F22 | P1 | TODO | Disconnect auto-diagnostic report | Shorten root-cause analysis when random disconnects happen |
+| F22 | P1 | PARTIAL | Disconnect auto-diagnostic report | Baseline shipped (auto-capture + diagnostics export); deeper network/process evidence still pending |
 | F23 | P2 | TODO | Diff-first sync mode | Reduce accidental overwrite risk by previewing remote/local deltas |
 | F24 | P2 | TODO | Session health checks + risk badges | Surface unsafe session state before users run critical operations |
 | F25 | P3 | TODO | Team session bundle (encrypted) | Simplify secure onboarding and workspace migration for teams |
@@ -162,6 +257,13 @@ Last updated: 2026-03-08
 | F27 | P2 | TODO | Environment policy templates | Standardize timeout/concurrency/alerts across environments |
 | F28 | P1 | TODO | Crash dump + symbolized stack pipeline | Improve post-crash triage speed and release confidence |
 | F29 | P2 | TODO | Release channel manager | Make stable/beta/canary rollout and rollback guidance explicit |
-| F30 | P2 | TODO | Accessibility + hotkey conflict checker | Prevent unusable keybinding combinations and improve UX consistency |
+| F30 | P2 | PARTIAL | Accessibility + hotkey conflict checker | Conflict checker + auto-resolve shipped; broader accessibility coverage still pending |
 | F31 | P3 | TODO | Plugin extension hooks | Enable ecosystem integrations without forking core product |
 | F32 | P2 | TODO | Command allowlist/denylist policy packs | Provide environment-aware guardrails for dangerous command patterns |
+| F33 | P2 | DONE | Session-scoped default transfer conflict strategy | Reduce repeated overwrite/skip/rename prompts during repeated folder jobs |
+| F34 | P2 | DONE | Session quick profiles baseline | Reuse named startup command profiles without duplicating sessions |
+| F35 | P1 | DONE | Pending transfer queue restore/discard | Recover queued/running transfer intent after restart |
+| F36 | P2 | DONE | Session JSON import merge wizard baseline | Import external sessions with explicit merge/group policy |
+| F37 | P2 | PARTIAL | Transfer failure suggestion knowledge base | Retry-center top-failure suggestion rows shipped; rule depth can expand |
+
+

@@ -1,8 +1,8 @@
-# Transfer Soak Test
+﻿# Transfer Soak Test
 
 This document describes how to run long-duration transfer stress tests against a real SSH/SFTP server.
 
-Last updated: 2026-03-08
+Last updated: 2026-03-13
 
 ## Goal
 
@@ -76,8 +76,15 @@ When a soak run shows disconnects or failures, collect app diagnostics logs toge
 
 1. Open app `Settings > Diagnostics`.
 2. Click `Export Bug Report` and save the generated zip.
-3. (Optional) click `Open Folder` for raw logs.
-4. Attach the bug-report zip and soak summary JSON to bug reports.
+3. Click `Export Disconnect Reports` (JSON) or `Export CSV` for disconnect timeline evidence.
+4. (Optional) click `Copy Latest Report` for quick handoff in chat/tickets.
+5. (Optional) click `Open Folder` for raw logs.
+6. Attach the bug-report zip, disconnect export, and soak summary JSON to bug reports.
+
+Notes:
+
+- Logger now keeps rotating archives (`termdock.log` + `termdock.log.1` ... `.5`), so include all available files when investigating long runs.
+- Batch failure detail lines are written into diagnostics logs for faster failed-item triage.
 
 This shortens root-cause analysis for transfer/session issues.
 
@@ -85,7 +92,14 @@ If the issue involves SSH tunnels/port forwarding, also collect forwarding diagn
 
 1. Open app `Settings > Port Fwd` on the affected tab.
 2. Click `Export Snapshot`.
-3. Attach the snapshot text together with the bug-report zip and soak summary JSON.
+3. Click `Export Analytics JSON` (or `Export Analytics CSV`) under `Recent Events`.
+4. Attach exported files together with the bug-report zip and soak summary JSON.
+
+If the issue also involves session/group integrity, export session metadata for correlation:
+
+1. Open Sessions panel context menu.
+2. Run `Export All Sessions...` and `Export All Groups...`.
+3. Attach both JSON exports with the soak summary.
 
 ## Recommended Test Matrix
 
@@ -104,3 +118,21 @@ After each script run, validate packaged UI (`release` build):
 2. Scroll continuously for `2-3` minutes.
 3. Confirm no viewport corruption and no garbage wheel text.
 4. Repeat after maximizing/restoring the window.
+5. Run a large upload/download batch and confirm completion is shown via dock inline notice (no blocking modal on normal success).
+6. Trigger one recoverable error path (for example disconnect/retry) and confirm global error bar actions are available (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect` when reports exist).
+7. Open `Settings > Hotkeys` and verify conflict tooling behavior:
+   - conflict list supports `Locate`, `Prev`, `Next`, and `Focus First Conflict`
+   - keyboard traversal works with `Alt + [` / `Alt + ]`
+   - reopening settings restores the previous conflict cursor position when signature still exists
+8. In Sessions panel, repeatedly open the same session and verify:
+   - no duplicate tab is created for the same session
+   - existing tab is focused
+   - closing and reopening still works
+9. If a transfer run is interrupted by app restart, verify transfer dock shows:
+   - `Restore Pending`
+   - `Discard Pending`
+   - restoring re-queues valid pending items for existing sessions
+10. Open and edit one remote file from external editor and verify:
+   - save-back works on normal path
+   - when remote file changes externally, auto-sync guard skips unsafe overwrite and logs a diagnostics warning
+

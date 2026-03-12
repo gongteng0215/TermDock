@@ -11,6 +11,7 @@ import JSZip from "jszip";
 
 import { appLogger } from "../logging/app-logger.js";
 import { TerminalService } from "../terminal/terminal-service.js";
+import type { RemotePathMetadata } from "../terminal/terminal-service.js";
 
 interface LocalUploadPathEntry {
   localPath: string;
@@ -32,12 +33,15 @@ interface RemoteOpenFileSession {
   debounceTimer: NodeJS.Timeout | null;
   uploadInFlight: boolean;
   pendingUpload: boolean;
+  localHasPendingChanges: boolean;
+  baseRemoteMetadata: RemotePathMetadata | null;
   disposed: boolean;
 }
 
 interface BugReportExportInput {
   settingsSnapshot?: unknown;
   runtimeSnapshot?: unknown;
+  disconnectReports?: unknown;
 }
 
 interface BugReportExportResult {
@@ -45,6 +49,36 @@ interface BugReportExportResult {
   outputPath: string | null;
   generatedAtIso?: string;
   logFileCount?: number;
+}
+
+interface SaveTextFileInput {
+  title?: string;
+  defaultFileName?: string;
+  text: string;
+  filters?: Array<{
+    name: string;
+    extensions: string[];
+  }>;
+}
+
+interface SaveTextFileResult {
+  canceled: boolean;
+  outputPath: string | null;
+}
+
+interface PickAndReadTextFileInput {
+  title?: string;
+  buttonLabel?: string;
+  filters?: Array<{
+    name: string;
+    extensions: string[];
+  }>;
+}
+
+interface PickAndReadTextFileResult {
+  canceled: boolean;
+  filePath: string | null;
+  text: string;
 }
 
 interface BugReportLogFile {
@@ -223,6 +257,20 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
       const zip = new JSZip();
       const metadata = buildBugReportMetadata(generatedAtIso, logInfo, logFiles, payload);
       zip.file("metadata.json", `${JSON.stringify(metadata, null, 2)}\n`);
+      const disconnectReportsPayload = sanitizeForBugReport(payload?.disconnectReports);
+      if (disconnectReportsPayload !== undefined && disconnectReportsPayload !== null) {
+        zip.file(
+          "disconnect-reports.json",
+          `${JSON.stringify(
+            {
+              generatedAtIso,
+              disconnectReports: disconnectReportsPayload
+            },
+            null,
+            2
+          )}\n`
+        );
+      }
       for (const logFile of logFiles) {
         zip.file(`logs/${logFile.name}`, logFile.contents);
       }
@@ -235,13 +283,124 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
       appLogger.log("info", "main:diagnostics", "Exported bug report bundle.", {
         outputPath,
         generatedAtIso,
-        logFileCount: logFiles.length
+        logFileCount: logFiles.length,
+        hasDisconnectReportSnapshot:
+          disconnectReportsPayload !== undefined && disconnectReportsPayload !== null
       });
       return {
         canceled: false,
         outputPath,
         generatedAtIso,
         logFileCount: logFiles.length
+      };
+    }
+  );
+
+  ipcMain.handle(
+    "system:saveTextFile",
+    async (_event, payload: SaveTextFileInput): Promise<SaveTextFileResult> => {
+      const text = typeof payload?.text === "string" ? payload.text : "";
+      if (!text.trim()) {
+        throw new Error("Text content is empty.");
+      }
+      const title =
+        typeof payload?.title === "string" && payload.title.trim()
+          ? payload.title.trim()
+          : "Save Text File";
+      const defaultFileName =
+        typeof payload?.defaultFileName === "string" && payload.defaultFileName.trim()
+          ? payload.defaultFileName.trim()
+          : `termdock-export-${Date.now()}.txt`;
+      const filters =
+        Array.isArray(payload?.filters) && payload.filters.length > 0
+          ? payload.filters.filter(
+              (filter) =>
+                !!filter &&
+                typeof filter.name === "string" &&
+                filter.name.trim().length > 0 &&
+                Array.isArray(filter.extensions) &&
+                filter.extensions.length > 0
+            )
+          : [
+              {
+                name: "Text",
+                extensions: ["txt"]
+              }
+            ];
+      const saveResult = await dialog.showSaveDialog({
+        title,
+        buttonLabel: "Save",
+        defaultPath: defaultFileName,
+        filters
+      });
+      if (saveResult.canceled || !saveResult.filePath) {
+        return {
+          canceled: true,
+          outputPath: null
+        };
+      }
+      await writeFile(saveResult.filePath, text, "utf-8");
+      return {
+        canceled: false,
+        outputPath: saveResult.filePath
+      };
+    }
+  );
+
+  ipcMain.handle(
+    "system:pickAndReadTextFile",
+    async (_event, payload?: PickAndReadTextFileInput): Promise<PickAndReadTextFileResult> => {
+      const title =
+        typeof payload?.title === "string" && payload.title.trim()
+          ? payload.title.trim()
+          : "Select Text File";
+      const buttonLabel =
+        typeof payload?.buttonLabel === "string" && payload.buttonLabel.trim()
+          ? payload.buttonLabel.trim()
+          : "Open";
+      const filters =
+        Array.isArray(payload?.filters) && payload.filters.length > 0
+          ? payload.filters.filter(
+              (filter) =>
+                !!filter &&
+                typeof filter.name === "string" &&
+                filter.name.trim().length > 0 &&
+                Array.isArray(filter.extensions) &&
+                filter.extensions.length > 0
+            )
+          : [
+              {
+                name: "JSON",
+                extensions: ["json"]
+              },
+              {
+                name: "Text",
+                extensions: ["txt", "log", "md", "cfg", "conf"]
+              },
+              {
+                name: "All Files",
+                extensions: ["*"]
+              }
+            ];
+      const openResult = await dialog.showOpenDialog({
+        title,
+        buttonLabel,
+        properties: ["openFile"],
+        filters
+      });
+      if (openResult.canceled || openResult.filePaths.length === 0) {
+        return {
+          canceled: true,
+          filePath: null,
+          text: ""
+        };
+      }
+      const filePath = openResult.filePaths[0];
+      const text = await readFile(filePath, "utf-8");
+      return {
+        canceled: false,
+        filePath,
+        text
       };
     }
   );
@@ -298,8 +457,19 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
           existingSession.localPath = normalizedLocalPath;
           watchRemoteOpenFileSession(existingSession, terminalService);
         }
+        existingSession.localHasPendingChanges = false;
+        existingSession.baseRemoteMetadata = await readRemotePathMetadataSafely(
+          terminalService,
+          normalizedTabId,
+          normalizedRemotePath
+        );
         return;
       }
+      const baseRemoteMetadata = await readRemotePathMetadataSafely(
+        terminalService,
+        normalizedTabId,
+        normalizedRemotePath
+      );
       const session: RemoteOpenFileSession = {
         key,
         tabId: normalizedTabId,
@@ -308,6 +478,8 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
         debounceTimer: null,
         uploadInFlight: false,
         pendingUpload: false,
+        localHasPendingChanges: false,
+        baseRemoteMetadata,
         disposed: false
       };
       remoteOpenFileSessions.set(key, session);
@@ -587,7 +759,7 @@ function sanitizeForBugReport(value: unknown, depth = 0): unknown {
     if (value.length <= BUG_REPORT_MAX_STRING_LENGTH) {
       return value;
     }
-    return `${value.slice(0, BUG_REPORT_MAX_STRING_LENGTH)}…`;
+    return `${value.slice(0, BUG_REPORT_MAX_STRING_LENGTH)}...`;
   }
   if (typeof value === "number" || typeof value === "boolean") {
     return value;
@@ -654,6 +826,7 @@ function watchRemoteOpenFileSession(
     if (!isMeaningfulLocalFileChange(current, previous)) {
       return;
     }
+    session.localHasPendingChanges = true;
     scheduleRemoteOpenFileUpload(session, terminalService);
   });
 }
@@ -692,17 +865,58 @@ async function flushRemoteOpenFileUpload(
     session.pendingUpload = true;
     return;
   }
+  if (!session.localHasPendingChanges) {
+    return;
+  }
   session.uploadInFlight = true;
   try {
+    const currentRemoteMetadata = await readRemotePathMetadataSafely(
+      terminalService,
+      session.tabId,
+      session.remotePath
+    );
+    if (!isRemotePathMetadataCompatible(session.baseRemoteMetadata, currentRemoteMetadata)) {
+      appLogger.log(
+        "warn",
+        "main:remote-open-file",
+        "Skipped remote open file auto-sync because remote file changed.",
+        {
+          tabId: session.tabId,
+          remotePath: session.remotePath,
+          baseline: session.baseRemoteMetadata,
+          current: currentRemoteMetadata
+        }
+      );
+      return;
+    }
     await terminalService.uploadFileToPath(
       session.tabId,
       createRemoteOpenFileTransferId(),
       session.localPath,
       session.remotePath
     );
+    session.localHasPendingChanges = false;
+    session.baseRemoteMetadata = await readRemotePathMetadataSafely(
+      terminalService,
+      session.tabId,
+      session.remotePath
+    );
+    appLogger.log("info", "main:remote-open-file", "Auto-synced local edit to remote path.", {
+      tabId: session.tabId,
+      remotePath: session.remotePath,
+      localPath: session.localPath
+    });
   } catch (error) {
-    console.error(
-      `[TermDock] Auto-upload failed for ${session.remotePath}: ${(error as Error).message}`
+    appLogger.log(
+      "warn",
+      "main:remote-open-file",
+      "Remote open file auto-sync upload failed.",
+      {
+        tabId: session.tabId,
+        remotePath: session.remotePath,
+        localPath: session.localPath,
+        message: (error as Error).message
+      }
     );
   } finally {
     session.uploadInFlight = false;
@@ -718,6 +932,43 @@ async function flushRemoteOpenFileUpload(
 
 function createRemoteOpenFileTransferId(): string {
   return `open-save-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+async function readRemotePathMetadataSafely(
+  terminalService: TerminalService,
+  tabId: string,
+  remotePath: string
+): Promise<RemotePathMetadata | null> {
+  try {
+    return await terminalService.getRemotePathMetadata(tabId, remotePath);
+  } catch (error) {
+    appLogger.log(
+      "warn",
+      "main:remote-open-file",
+      "Failed to read remote file metadata for auto-sync guard.",
+      {
+        tabId,
+        remotePath,
+        message: (error as Error).message
+      }
+    );
+    return null;
+  }
+}
+
+function isRemotePathMetadataCompatible(
+  baseline: RemotePathMetadata | null,
+  current: RemotePathMetadata | null
+): boolean {
+  if (!baseline || !current) {
+    // Keep autosync best-effort when metadata probe is unavailable.
+    return true;
+  }
+  return (
+    baseline.exists === current.exists &&
+    baseline.size === current.size &&
+    baseline.modifiedTimeMs === current.modifiedTimeMs
+  );
 }
 
 function disposeRemoteOpenFileSession(session: RemoteOpenFileSession): void {
@@ -876,5 +1127,7 @@ function normalizeLogText(value: string, fallback: string): string {
   if (normalized.length <= 2000) {
     return normalized;
   }
-  return `${normalized.slice(0, 2000)}…`;
+  return `${normalized.slice(0, 2000)}...`;
 }
+
+

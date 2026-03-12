@@ -53,11 +53,36 @@ interface TermDockApi {
     exportBugReport: (payload?: {
       settingsSnapshot?: unknown;
       runtimeSnapshot?: unknown;
+      disconnectReports?: unknown;
     }) => Promise<{
       canceled: boolean;
       outputPath: string | null;
       generatedAtIso?: string;
       logFileCount?: number;
+    }>;
+    saveTextFile: (payload: {
+      title?: string;
+      defaultFileName?: string;
+      text: string;
+      filters?: Array<{
+        name: string;
+        extensions: string[];
+      }>;
+    }) => Promise<{
+      canceled: boolean;
+      outputPath: string | null;
+    }>;
+    pickAndReadTextFile: (payload?: {
+      title?: string;
+      buttonLabel?: string;
+      filters?: Array<{
+        name: string;
+        extensions: string[];
+      }>;
+    }) => Promise<{
+      canceled: boolean;
+      filePath: string | null;
+      text: string;
     }>;
     createTempOpenFilePath: (defaultName: string) => Promise<string>;
     prepareRemoteOpenFile: (

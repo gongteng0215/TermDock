@@ -129,6 +129,12 @@ interface ActiveDynamicPortForward extends ActivePortForwardBase {
   server: NetServer;
 }
 
+export interface RemotePathMetadata {
+  exists: boolean;
+  size: number | null;
+  modifiedTimeMs: number | null;
+}
+
 type ActivePortForward =
   | ActiveLocalPortForward
   | ActiveRemotePortForward
@@ -145,6 +151,7 @@ export class TerminalService {
   private readonly connections = new Map<string, TerminalConnection>();
   private readonly activePortForwardsByTab = new Map<string, Map<string, ActivePortForward>>();
   private readonly portForwardEventsByTab = new Map<string, PortForwardEventRecord[]>();
+  private readonly portForwardConnectionCounters = new Map<string, number>();
   private readonly activeUploadTransfers = new Map<string, ActiveUploadTransfer>();
   private readonly activeDownloadTransfers = new Map<string, ActiveDownloadTransfer>();
   private readonly pendingUploadCancelKeys = new Set<string>();
@@ -524,7 +531,9 @@ export class TerminalService {
 
     const tabForwards = this.ensurePortForwardMap(tabId);
     tabForwards.set(created.id, created);
-    this.appendPortForwardEvent(created, "created", "info", "Port forward created.");
+    this.appendPortForwardEvent(created, "created", "info", "Port forward created.", {
+      targetEndpoint: toPortForwardTargetEndpoint(created)
+    });
     return this.toPortForwardRecord(created);
   }
 
@@ -542,7 +551,10 @@ export class TerminalService {
     if (tabForwards.size === 0) {
       this.activePortForwardsByTab.delete(tabId);
     }
-    this.appendPortForwardEvent(activeForward, "removed", "info", "Port forward removed.");
+    this.appendPortForwardEvent(activeForward, "removed", "info", "Port forward removed.", {
+      targetEndpoint: toPortForwardTargetEndpoint(activeForward)
+    });
+    this.portForwardConnectionCounters.delete(activeForward.id);
     await this.stopPortForward(activeForward);
   }
 
@@ -827,6 +839,16 @@ export class TerminalService {
         );
         return;
       }
+      if (shouldResetCachedSftp(error)) {
+        if (connection.sftp === sftp) {
+          connection.sftp = undefined;
+        }
+        try {
+          sftp.end();
+        } catch {
+          // Ignore cleanup failure for an already-broken channel.
+        }
+      }
       this.emitTransfer(
         connection,
         this.createTransferEvent({
@@ -845,6 +867,37 @@ export class TerminalService {
       throw error;
     } finally {
       this.activeDownloadTransfers.delete(transferKey);
+    }
+  }
+
+  async getRemotePathMetadata(tabId: string, remotePath: string): Promise<RemotePathMetadata> {
+    const connection = this.getConnectedSsh2Connection(tabId);
+    const sftp = await this.ensureSftp(connection);
+    const normalizedRemotePath = normalizeRemotePath(remotePath);
+    try {
+      const remoteStats = await this.statRemote(sftp, normalizedRemotePath);
+      const size =
+        typeof remoteStats.size === "number" && Number.isFinite(remoteStats.size)
+          ? Math.max(0, remoteStats.size)
+          : null;
+      const modifiedTimeMs =
+        typeof remoteStats.mtime === "number" && Number.isFinite(remoteStats.mtime)
+          ? Math.max(0, Math.trunc(remoteStats.mtime * 1000))
+          : null;
+      return {
+        exists: true,
+        size,
+        modifiedTimeMs
+      };
+    } catch (error) {
+      if (isSftpNotFoundError(error)) {
+        return {
+          exists: false,
+          size: null,
+          modifiedTimeMs: null
+        };
+      }
+      throw error;
     }
   }
 
@@ -887,7 +940,13 @@ export class TerminalService {
     forward: Pick<ActivePortForwardBase, "id" | "tabId" | "type" | "bindHost" | "bindPort">,
     type: PortForwardEventRecord["type"],
     level: PortForwardEventRecord["level"],
-    message: string
+    message: string,
+    context?: {
+      connectionId?: string;
+      sourceEndpoint?: string;
+      targetEndpoint?: string;
+      errorCode?: string;
+    }
   ): void {
     const entry: PortForwardEventRecord = {
       id: createPortForwardEventId(),
@@ -899,7 +958,16 @@ export class TerminalService {
       level,
       type,
       message,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      correlationKey: createPortForwardCorrelationKey(
+        forward.type,
+        forward.bindHost,
+        forward.bindPort
+      ),
+      connectionId: context?.connectionId,
+      sourceEndpoint: context?.sourceEndpoint,
+      targetEndpoint: context?.targetEndpoint,
+      errorCode: context?.errorCode
     };
     const existing = this.portForwardEventsByTab.get(forward.tabId) ?? [];
     existing.unshift(entry);
@@ -909,7 +977,15 @@ export class TerminalService {
     this.portForwardEventsByTab.set(forward.tabId, existing);
   }
 
-  private markPortForwardConnectionSuccess(tabId: string, forwardId: string): void {
+  private markPortForwardConnectionSuccess(
+    tabId: string,
+    forwardId: string,
+    context?: {
+      connectionId?: string;
+      sourceEndpoint?: string;
+      targetEndpoint?: string;
+    }
+  ): void {
     const forward = this.activePortForwardsByTab.get(tabId)?.get(forwardId);
     if (!forward) {
       return;
@@ -923,12 +999,22 @@ export class TerminalService {
         forward,
         "statusRecovered",
         "info",
-        "Port forward recovered and is accepting connections."
+        "Port forward recovered and is accepting connections.",
+        context
       );
     }
   }
 
-  private markPortForwardConnectionFailure(tabId: string, forwardId: string, error?: unknown): void {
+  private markPortForwardConnectionFailure(
+    tabId: string,
+    forwardId: string,
+    error?: unknown,
+    context?: {
+      connectionId?: string;
+      sourceEndpoint?: string;
+      targetEndpoint?: string;
+    }
+  ): void {
     const forward = this.activePortForwardsByTab.get(tabId)?.get(forwardId);
     if (!forward) {
       return;
@@ -949,7 +1035,11 @@ export class TerminalService {
         forward,
         "statusDegraded",
         "error",
-        message || "Port forward failed to proxy a connection."
+        message || "Port forward failed to proxy a connection.",
+        {
+          ...context,
+          errorCode: toPortForwardErrorCode(error)
+        }
       );
     }
   }
@@ -962,6 +1052,12 @@ export class TerminalService {
     const created = new Map<string, ActivePortForward>();
     this.activePortForwardsByTab.set(tabId, created);
     return created;
+  }
+
+  private nextPortForwardConnectionId(forwardId: string): string {
+    const next = (this.portForwardConnectionCounters.get(forwardId) ?? 0) + 1;
+    this.portForwardConnectionCounters.set(forwardId, next);
+    return `${forwardId}#${next}`;
   }
 
   private assertPortForwardBindingAvailable(
@@ -1000,8 +1096,11 @@ export class TerminalService {
         localSocket.destroy();
         return;
       }
+      const connectionId = this.nextPortForwardConnectionId(forwardId);
       const sourceHost = localSocket.remoteAddress ?? input.bindHost;
       const sourcePort = localSocket.remotePort ?? 0;
+      const sourceEndpoint = toEndpointLabel(sourceHost, sourcePort);
+      const targetEndpoint = toEndpointLabel(input.targetHost, input.targetPort);
       connection.client.forwardOut(
         sourceHost,
         sourcePort,
@@ -1009,11 +1108,19 @@ export class TerminalService {
         input.targetPort,
         (error, sshStream) => {
           if (error || !sshStream) {
-            this.markPortForwardConnectionFailure(tabId, forwardId, error);
+            this.markPortForwardConnectionFailure(tabId, forwardId, error, {
+              connectionId,
+              sourceEndpoint,
+              targetEndpoint
+            });
             localSocket.destroy(error ?? new Error("Port forward channel rejected."));
             return;
           }
-          this.markPortForwardConnectionSuccess(tabId, forwardId);
+          this.markPortForwardConnectionSuccess(tabId, forwardId, {
+            connectionId,
+            sourceEndpoint,
+            targetEndpoint
+          });
           bridgeDuplexStreams(localSocket, sshStream);
         }
       );
@@ -1052,11 +1159,23 @@ export class TerminalService {
         reject();
         return;
       }
+      const connectionId = this.nextPortForwardConnectionId(forwardId);
+      const sourceEndpoint = toEndpointLabel(details.srcIP, details.srcPort);
+      const targetEndpoint = toEndpointLabel(input.targetHost, input.targetPort);
       let sshStream: ClientChannel;
       try {
         sshStream = accept();
       } catch {
-        this.markPortForwardConnectionFailure(tabId, forwardId, new Error("Remote forward channel rejected."));
+        this.markPortForwardConnectionFailure(
+          tabId,
+          forwardId,
+          new Error("Remote forward channel rejected."),
+          {
+            connectionId,
+            sourceEndpoint,
+            targetEndpoint
+          }
+        );
         reject();
         return;
       }
@@ -1065,11 +1184,19 @@ export class TerminalService {
         port: input.targetPort
       });
       localSocket.once("connect", () => {
-        this.markPortForwardConnectionSuccess(tabId, forwardId);
+        this.markPortForwardConnectionSuccess(tabId, forwardId, {
+          connectionId,
+          sourceEndpoint,
+          targetEndpoint
+        });
         bridgeDuplexStreams(localSocket, sshStream);
       });
       localSocket.once("error", (error) => {
-        this.markPortForwardConnectionFailure(tabId, forwardId, error);
+        this.markPortForwardConnectionFailure(tabId, forwardId, error, {
+          connectionId,
+          sourceEndpoint,
+          targetEndpoint
+        });
         safeEndSshChannel(sshStream);
       });
       sshStream.once("error", () => {
@@ -1161,8 +1288,12 @@ export class TerminalService {
         forward,
         "removed",
         "info",
-        "Port forward stopped because terminal tab disconnected or closed."
+        "Port forward stopped because terminal tab disconnected or closed.",
+        {
+          targetEndpoint: toPortForwardTargetEndpoint(forward)
+        }
       );
+      this.portForwardConnectionCounters.delete(forward.id);
       if (forward.type === "local" || forward.type === "dynamic") {
         closeTcpServerNoWait(forward.server);
         continue;
@@ -1298,6 +1429,12 @@ export class TerminalService {
           return;
         }
 
+        const connectionId = this.nextPortForwardConnectionId(forwardId);
+        const sourceEndpoint = toEndpointLabel(
+          socket.remoteAddress ?? socket.localAddress ?? "127.0.0.1",
+          socket.remotePort ?? socket.localPort ?? 0
+        );
+        const targetEndpoint = toEndpointLabel(destinationHost, destinationPort);
         const sourceHost = socket.localAddress ?? "127.0.0.1";
         const sourcePort = socket.localPort ?? 0;
         connection.client.forwardOut(
@@ -1307,12 +1444,20 @@ export class TerminalService {
           destinationPort,
           (error, stream) => {
             if (error || !stream) {
-              this.markPortForwardConnectionFailure(tabId, forwardId, error);
+              this.markPortForwardConnectionFailure(tabId, forwardId, error, {
+                connectionId,
+                sourceEndpoint,
+                targetEndpoint
+              });
               socket.write(buildSocksReply(0x05));
               destroySocket();
               return;
             }
-            this.markPortForwardConnectionSuccess(tabId, forwardId);
+            this.markPortForwardConnectionSuccess(tabId, forwardId, {
+              connectionId,
+              sourceEndpoint,
+              targetEndpoint
+            });
             remoteStream = stream;
             socket.write(buildSocksReply(0x00));
             if (pending.length > 0) {
@@ -1460,6 +1605,16 @@ export class TerminalService {
         );
         return;
       }
+      if (shouldResetCachedSftp(error)) {
+        if (connection.sftp === sftp) {
+          connection.sftp = undefined;
+        }
+        try {
+          sftp.end();
+        } catch {
+          // Ignore cleanup failure for an already-broken channel.
+        }
+      }
       this.emitTransfer(
         connection,
         this.createTransferEvent({
@@ -1530,6 +1685,14 @@ export class TerminalService {
     });
 
     connection.sftp = sftp;
+    const clearCachedSftp = () => {
+      if (connection.sftp === sftp) {
+        connection.sftp = undefined;
+      }
+    };
+    sftp.once("close", clearCachedSftp);
+    sftp.once("end", clearCachedSftp);
+    sftp.once("error", clearCachedSftp);
     return sftp;
   }
 
@@ -2097,6 +2260,29 @@ function createPortForwardEventId(): string {
   return `pfe-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function toEndpointLabel(host: string, port: number): string {
+  const safeHost = host.trim() || "-";
+  const safePort =
+    Number.isFinite(port) && port > 0 ? Math.max(1, Math.trunc(port)).toString() : "-";
+  return `${safeHost}:${safePort}`;
+}
+
+function toPortForwardTargetEndpoint(forward: ActivePortForward): string | undefined {
+  if (forward.type === "dynamic") {
+    return undefined;
+  }
+  return toEndpointLabel(forward.targetHost, forward.targetPort);
+}
+
+function createPortForwardCorrelationKey(
+  forwardType: PortForwardType,
+  bindHost: string,
+  bindPort: number
+): string {
+  const typeCode = forwardType === "local" ? "L" : forwardType === "remote" ? "R" : "D";
+  return `${typeCode}|${bindHost.trim()}:${Math.max(1, Math.trunc(bindPort))}`;
+}
+
 function resolveListeningPort(server: NetServer, fallbackPort: number): number {
   const address = server.address();
   if (address && typeof address !== "string" && Number.isFinite(address.port)) {
@@ -2653,6 +2839,24 @@ function toDeletePathErrorMessage(targetPath: string, kind: SftpEntryKind, error
   return `Failed to delete ${subject} "${targetPath}": ${message}`;
 }
 
+function toPortForwardErrorCode(error: unknown): string | undefined {
+  const nodeError = error as { code?: unknown };
+  if (typeof nodeError?.code === "string" && nodeError.code.trim()) {
+    return nodeError.code.trim().slice(0, 40);
+  }
+  const rawMessage =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : String(error ?? "");
+  const match = rawMessage.match(/\b(E[A-Z0-9_]{2,})\b/);
+  if (match && match[1]) {
+    return match[1].slice(0, 40);
+  }
+  return undefined;
+}
+
 function toPortForwardRuntimeErrorMessage(error: unknown): string {
   const rawMessage =
     error instanceof Error
@@ -2708,6 +2912,37 @@ function shouldFallbackToSftpDirectoryDelete(error: unknown): boolean {
     message.includes("not found") ||
     message.includes("unknown command") ||
     message.includes("not recognized")
+  );
+}
+
+function isSftpNotFoundError(error: unknown): boolean {
+  const codeValue = (error as { code?: unknown })?.code;
+  if (typeof codeValue === "number" && codeValue === 2) {
+    return true;
+  }
+  if (typeof codeValue === "string" && /ENOENT|NO_SUCH_FILE/i.test(codeValue)) {
+    return true;
+  }
+  const message = (error as Error)?.message?.toLowerCase?.() ?? String(error ?? "").toLowerCase();
+  return (
+    message.includes("no such file") ||
+    message.includes("not found") ||
+    message.includes("enoent")
+  );
+}
+
+function shouldResetCachedSftp(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : String(error ?? "");
+  if (!message) {
+    return false;
+  }
+  return /no response from server|channel (?:is )?closed|unexpected eof|socket.*closed|not connected|connection.*(?:closed|lost|reset)/i.test(
+    message
   );
 }
 

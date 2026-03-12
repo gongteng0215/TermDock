@@ -1,10 +1,10 @@
-# TermDock Progress
+﻿# TermDock Progress
 
-Last updated: 2026-03-08
+Last updated: 2026-03-13
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.10`
+- Stable release shipped: `v0.1.11`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Milestone status:
   - `M0` (technical validation): complete
@@ -21,9 +21,9 @@ Last updated: 2026-03-08
 - Minimum gates before broad rollout:
   - `P0-F3`: cross-platform smoke tests
   - `P0-F4`: installer signing/notarization and install validation
-  - `P0-E3`: recoverable global error UX
+  - `P0-E3`: recoverable global error UX follow-up
 
-## Completed in v0.1.10
+## Completed in v0.1.11
 
 - Port forwarding presets with optional auto-restore
 - Runtime status/failure visibility (`Active` / `Degraded`, counters, last error/activity)
@@ -37,8 +37,51 @@ Last updated: 2026-03-08
 - Added protection to block raw wheel mouse-report sequences while mouse tracking is active
 - Eliminated `%6`/`%9`-style garbage text artifacts caused by wheel input in full-screen editor modes
 
-## In Progress on master (next patch)
+## Completed on master for v0.1.11
 
+- Session tab dedupe hardening:
+  - opening an already-open session now focuses existing tab
+  - repeated double-open no longer creates duplicate tabs
+  - close-then-reopen path remains valid
+- Command history side-panel context-menu polish:
+  - blank-area right-click now exposes `Add` / `Import` / `Export` / `Manage`
+  - row-level right-click actions remain `Run` / `Copy` / `Delete`
+- Session persistence text normalization:
+  - startup read path now repairs known mojibake patterns in `name` / `groupId` / `remark`
+  - create/update persistence path now applies the same normalization
+- Expanded UI smoke automation:
+  - `scripts/smoke-capture-all.mjs` now covers sessions/menu/settings/command-history/retry/operation flows
+  - latest local run result: `PASS 21 / FAIL 0 / SKIP 0`
+- Added compact UI governance baseline and fixed-height list policy:
+  - created `UI_COMPACT_RULES.md` as mandatory UI rule reference
+  - applied compact density + fixed list-shell heights across main panels/modals
+  - list surfaces now use internal scrolling instead of content-driven expansion
+- Added session export actions in Sessions context menu:
+  - `Export All Sessions...` outputs JSON with full session rows plus group metadata
+  - `Export All Groups...` outputs JSON with each group and contained session list
+  - save dialog path export (clipboard fallback when save bridge is unavailable)
+- Added session JSON import wizard:
+  - import file picker + candidate parser preview
+  - group strategy (`keepSource` / `forceCurrent` / `ungrouped`)
+  - duplicate strategy (`skip` / `overwrite` / `rename`)
+- Added session quick profiles baseline:
+  - run/save/manage quick startup-command profiles from Sessions context menu
+  - open/focus session and execute selected startup command profile
+- Added command snippet groups baseline:
+  - grouped snippet manager with run/add/import/export/clear flows
+  - snippet template placeholders for clipboard/date/time/session/tab metadata
+- Added transfer conflict pre-check acceleration:
+  - local/remote directory conflict scans now run with limited concurrency
+  - improves queueing latency for larger folder batches
+- Added disconnect-aware transfer queue pause/resume UX:
+  - queue marks paused when tab disconnects
+  - queued jobs resume after reconnect instead of immediate mass-failure
+- Replaced intrusive transfer completion modal on success path:
+  - completion now shown as lightweight transfer-dock notice
+  - batch failure details remain in diagnostics logs for triage
+- Hardened diagnostics logging throughput:
+  - main-process logger now uses async write queue
+  - rotation retention expanded to multiple archive files
 - Added monitor polling in-flight guards per tab to reduce overload during high transfer activity
 - Skip silent server monitor polling while uploads/downloads are running on the same tab
 - Added deferred and font-ready terminal refit flow to stabilize small-window rendering in packaged builds
@@ -58,6 +101,63 @@ Last updated: 2026-03-08
 - Added transfer retry center view:
   - modal with scope/direction/status/search filters
   - batch select + retry selected failed + delete selected/visible/all
+  - added time-range filter and persisted retry-center filter view
+  - added failure-reason filter, quick retry by top failure reason (active session, scope strategy aware), and visible delete by reason
+  - added grouped-by-failure list mode with collapsible sections (`Flat` / `Grouped by Failure`)
+  - grouped view now supports group-level select/retry/delete/export actions
+  - group-level JSON/CSV export now supports scope selection (`All` / `Failed` / `Retryable Active Session`)
+  - grouped retry action now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+  - `Retry Visible Failed` now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+  - `Retry Selected Failed` now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+  - added one-click `Retry All Failed` (upload + download) in transfer dock, retry center, and operation center (scope strategy aware)
+  - Retry Center action bar now includes direction-specific quick actions (`Retry Failed Uploads` / `Retry Failed Downloads`)
+  - added large-batch retry confirmation guardrail with configurable threshold (`Retry Confirm Threshold`, default: `100`, set `0` to disable)
+  - `Settings > SFTP` now also exposes `Retry Confirm Threshold` for global adjustment
+  - retry-scope chooser now remembers and prioritizes last used scope (`Last Used`) across restart
+  - added `Default Retry Scope` selector (all/upload/download) for manual retry-strategy preselection
+  - added `Auto Retry Scope` toggle to skip scope chooser and use last scope directly when possible
+- Added pending transfer queue restore controls:
+  - queued/running transfer intent snapshot persists for restart recovery
+  - transfer dock now supports one-click `Restore Pending` and `Discard Pending`
+- Added retry-center analytics and export package:
+  - top failure reason aggregation for visible failed history
+  - top failure reason suggestion rows for faster operator action
+  - analytics snapshot export (`JSON` / `CSV`)
+  - history export stats now include top sessions/groups/failure reasons
+- Added remote file auto-sync guard baseline:
+  - save-back checks remote metadata baseline (`exists` / `size` / `mtime`) before upload
+  - skips unsafe auto-upload when remote changed unexpectedly and records guard log
+- Added recoverable global error UX baseline (`P0-E3`):
+  - global error bar now includes quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
+  - connection/bridge related errors now include contextual recovery hints
+- Added disconnect auto-diagnostic baseline (`F22` follow-up):
+  - unexpected terminal tab `closed/error` events now auto-capture runtime context snapshots
+  - `Settings > Diagnostics` now includes disconnect report list with JSON/CSV export, copy-latest, and clear actions
+  - added auto-capture toggle in diagnostics for quick enable/disable
+  - added report filters (`scope` / `trigger` / `time range` / `search`) and visible-only export/clear
+- Improved diagnostics handoff:
+  - `Export Bug Report` now includes disconnect report snapshot (`disconnect-reports.json`) when captured
+- Improved recoverable global error UX follow-up:
+  - global error bar now also supports `Copy Latest Disconnect` when report history exists
+- Added operation center baseline (`F8`):
+  - new modal to consolidate active long-running operations
+  - includes queue state for uploads/downloads, remote delete status, and port-forward busy state
+  - provides quick actions for cancel-all transfer queues and diagnostics navigation
+  - adds cross-tab transfer activity summary with one-click tab focus
+  - adds per-tab and cross-tab one-click transfer cancellation actions
+  - adds per-tab and bulk reconnect actions for disconnected transfer tabs
+- Added hotkey conflict checker baseline (`F30` partial):
+  - `Settings > Hotkeys` now highlights conflicting enabled shortcut bindings
+  - conflicting actions are marked inline in each hotkey row for faster correction
+  - one-click `Auto Resolve Conflicts` keeps first action by priority and disables duplicates
+  - added hotkey JSON backup/restore actions (`Import Hotkeys...` / `Export Hotkeys...`)
+  - hotkey import now shows action-level before/after diff preview in confirm dialog
+  - hotkey import now reports imported conflict count and provides `Import + Auto Resolve` option
+  - import preview now includes explicit auto-resolve disable-impact list
+  - hotkey conflict panel now supports one-click row navigation (`Locate`, `Focus First Conflict`)
+  - hotkey conflict panel now supports `Prev` / `Next` navigation with active conflict position indicator
+  - hotkey conflict navigation now also supports keyboard shortcuts (`Alt + [` / `Alt + ]`)
+  - hotkey conflict cursor now persists locally by conflict signature and restores on reopen
 - Added SSH config import baseline:
   - parser for common `Host` directives (`HostName`, `User`, `Port`, `IdentityFile`)
   - sessions context-menu import flow with preview and duplicate strategy (`skip`/`overwrite`/`rename`)
@@ -84,6 +184,10 @@ Last updated: 2026-03-08
   - event history now survives app restart
   - settings panel now supports event filtering and clear actions
   - event history merges live diagnostics with local persisted entries per session
+- Added port-forward event analytics polish (`F5+`):
+  - visible-event analytics cards (error ratio, type breakdown, top error codes/correlations)
+  - one-click analytics export (`JSON` / `CSV`)
+  - visible-event export metadata now includes aggregated analytics fields
 - Fixed settings panel footer overlap on shorter window heights
 
 ## Previously Completed (v0.1.8 / v0.1.7 / v0.1.6)
@@ -127,16 +231,24 @@ Last updated: 2026-03-08
 - No automated unit/integration test safety net yet
 - Packaging pipeline exists but final signing/notarization policy is incomplete
 - Some SFTP recursive/safety operations still need hardening
-- Port forwarding diagnostics are persisted locally, but richer correlation metadata/export workflow is still pending
+- Port-forward diagnostics are now richer, but there is still no cross-device/shared diagnostics sync workflow
 - Server health currently relies on Linux `/proc` and single-root disk sampling
 
 ## Next Focus
 
-1. Finish port forwarding diagnostics polish (`F5+`)
-2. Add retry-center analytics + export package (`F2+`)
-3. Execute and document full macOS/Windows smoke checklist (`P0-F3`)
-4. Finalize signing/notarization path and verify installer flows (`P0-F4`)
-5. Build recoverable global error actions and guidance (`P0-E3`)
+1. Execute and document full macOS/Windows smoke checklist (`P0-F3`)
+2. Finalize signing/notarization path and verify installer flows (`P0-F4`)
+3. Extend recoverable global error actions and guidance coverage (`P0-E3`)
+4. Expand operation center coverage and cancellation controls (`F8`)
+
+## Remaining Work Snapshot
+
+1. Finish cross-platform packaged smoke matrix and reproducible issue report template (`P0-F3`)
+2. Complete signing/notarization and installer lifecycle verification (`P0-F4`)
+3. Expand global error recovery actions beyond current baseline (`P0-E3`)
+4. Expand operation center baseline into richer long-job visibility and controls (`F8`)
+5. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`)
+6. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
 
 ## Feature Candidates After Hardening
 
@@ -144,24 +256,27 @@ Last updated: 2026-03-08
 2. Session templates for repeated infrastructure patterns
 3. SSH jump-host chain builder for bastion environments
 4. Transfer bandwidth limiter and schedule window
-5. Command snippets/playbooks with parameter prompts
-6. Multi-host command broadcast with dry-run preview
-7. Remote file snapshot and rollback workflow
-8. Session tags and smart saved views
-9. Terminal session recording/replay export
-10. Dangerous-command guardrails
-11. Recurring folder sync profiles
-12. Connection quality timeline dashboard
-13. Workspace profile mode with environment risk cues
-14. Operation audit timeline (command/transfer traceability)
-15. Disconnect auto-diagnostic report with runtime context capture
-16. Diff-first sync mode (preview changes before apply)
-17. Session health checks and proactive risk badges
-18. Team session bundle (encrypted import/export)
-19. Temporary authorization mode for risky operations
-20. Environment policy templates (`dev` / `staging` / `prod`)
+5. Command snippets/playbooks v2 with prompted variables and dry-run preview
+6. Session quick profiles v2 with multi-command chain support
+7. Multi-host command broadcast with dry-run preview
+8. Remote file snapshot and rollback workflow
+9. Session tags and smart saved views
+10. Terminal session recording/replay export
+11. Dangerous-command guardrails
+12. Recurring folder sync profiles
+13. Connection quality timeline dashboard
+14. Workspace profile mode with environment risk cues
+15. Operation audit timeline (command/transfer traceability)
+16. Disconnect auto-diagnostic v2 (deeper network/process evidence and guided triage hints)
+17. Diff-first sync mode (preview changes before apply)
+18. Session health checks and proactive risk badges
+19. Team session bundle (encrypted import/export)
+20. Temporary authorization mode for risky operations
+21. Environment policy templates (`dev` / `staging` / `prod`)
 21. Crash dump and symbolized stack pipeline
 22. Release channel management (`stable` / `beta` / `canary`)
 23. Accessibility and hotkey conflict checker
 24. Plugin extension hooks for external ops integrations
 25. Command allowlist/denylist policy packs by workspace
+
+

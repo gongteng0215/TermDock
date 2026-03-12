@@ -78,12 +78,39 @@ const api = {
     exportBugReport: (payload?: {
       settingsSnapshot?: unknown;
       runtimeSnapshot?: unknown;
+      disconnectReports?: unknown;
     }) =>
       ipcRenderer.invoke("system:exportBugReport", payload) as Promise<{
         canceled: boolean;
         outputPath: string | null;
         generatedAtIso?: string;
         logFileCount?: number;
+      }>,
+    saveTextFile: (payload: {
+      title?: string;
+      defaultFileName?: string;
+      text: string;
+      filters?: Array<{
+        name: string;
+        extensions: string[];
+      }>;
+    }) =>
+      ipcRenderer.invoke("system:saveTextFile", payload) as Promise<{
+        canceled: boolean;
+        outputPath: string | null;
+      }>,
+    pickAndReadTextFile: (payload?: {
+      title?: string;
+      buttonLabel?: string;
+      filters?: Array<{
+        name: string;
+        extensions: string[];
+      }>;
+    }) =>
+      ipcRenderer.invoke("system:pickAndReadTextFile", payload) as Promise<{
+        canceled: boolean;
+        filePath: string | null;
+        text: string;
       }>,
     createTempOpenFilePath: (defaultName: string) =>
       ipcRenderer.invoke("system:createTempOpenFilePath", defaultName) as Promise<string>,

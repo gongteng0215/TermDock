@@ -1,5 +1,6 @@
 import { app } from "electron";
-import { appendFileSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { appendFile, rename, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 export type AppLogLevel = "debug" | "info" | "warn" | "error";
@@ -19,13 +20,15 @@ interface AppLogInfo {
 
 const LOG_DIRECTORY_NAME = "logs";
 const LOG_FILE_NAME = "termdock.log";
-const LOG_ARCHIVE_NAME = "termdock.log.1";
+const LOG_ARCHIVE_PREFIX = "termdock.log.";
 const LOG_ROTATE_MAX_BYTES = 2 * 1024 * 1024;
+const LOG_ARCHIVE_KEEP_FILES = 5;
 
 export class AppLogger {
   private initialized = false;
   private logDirectoryPath = "";
   private logFilePath = "";
+  private writeQueue: Promise<void> = Promise.resolve();
 
   initialize(): void {
     if (this.initialized) {
@@ -60,8 +63,12 @@ export class AppLogger {
     if (details !== undefined) {
       record.details = sanitizeLogDetails(details);
     }
-    this.rotateLogIfNeeded();
-    appendFileSync(this.logFilePath, `${JSON.stringify(record)}\n`, { encoding: "utf-8" });
+    const line = `${JSON.stringify(record)}\n`;
+    this.writeQueue = this.writeQueue
+      .then(() => this.writeRecord(line))
+      .catch(() => {
+        // Keep logger best-effort; avoid surfacing write errors to callers.
+      });
   }
 
   private ensureInitialized(): void {
@@ -70,19 +77,46 @@ export class AppLogger {
     }
   }
 
-  private rotateLogIfNeeded(): void {
+  private async writeRecord(line: string): Promise<void> {
+    await this.rotateLogIfNeeded(line);
+    await appendFile(this.logFilePath, line, { encoding: "utf-8" });
+  }
+
+  private async rotateLogIfNeeded(nextLine: string): Promise<void> {
     if (!existsSync(this.logFilePath)) {
       return;
     }
-    const stats = statSync(this.logFilePath);
-    if (stats.size < LOG_ROTATE_MAX_BYTES) {
+    const stats = await stat(this.logFilePath).catch(() => null);
+    if (!stats) {
       return;
     }
-    const archivedLogPath = join(this.logDirectoryPath, LOG_ARCHIVE_NAME);
-    if (existsSync(archivedLogPath)) {
-      unlinkSync(archivedLogPath);
+    const nextLineBytes = Buffer.byteLength(nextLine, "utf-8");
+    if (stats.size + nextLineBytes < LOG_ROTATE_MAX_BYTES) {
+      return;
     }
-    renameSync(this.logFilePath, archivedLogPath);
+    for (let index = LOG_ARCHIVE_KEEP_FILES; index >= 1; index -= 1) {
+      const archivePath = join(this.logDirectoryPath, `${LOG_ARCHIVE_PREFIX}${index}`);
+      if (!existsSync(archivePath)) {
+        continue;
+      }
+      if (index >= LOG_ARCHIVE_KEEP_FILES) {
+        await unlink(archivePath).catch(() => {
+          // Best effort cleanup.
+        });
+        continue;
+      }
+      const nextArchivePath = join(this.logDirectoryPath, `${LOG_ARCHIVE_PREFIX}${index + 1}`);
+      await rename(archivePath, nextArchivePath).catch(() => {
+        // Ignore rotate races/errors.
+      });
+    }
+    if (!existsSync(this.logFilePath)) {
+      return;
+    }
+    const firstArchivePath = join(this.logDirectoryPath, `${LOG_ARCHIVE_PREFIX}1`);
+    await rename(this.logFilePath, firstArchivePath).catch(() => {
+      // Ignore rotate races/errors.
+    });
   }
 }
 

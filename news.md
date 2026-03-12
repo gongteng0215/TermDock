@@ -1,6 +1,6 @@
-# TermDock Product Notes
+﻿# TermDock Product Notes
 
-Last updated: 2026-03-08
+Last updated: 2026-03-13
 
 ## Confirmed Direction
 
@@ -11,14 +11,49 @@ Last updated: 2026-03-08
 
 ## Release Baseline
 
-- Current stable release: `v0.1.10` (2026-03-08)
+- Current stable release: `v0.1.11` (2026-03-13)
 
 ## Shipped in Recent Cycles
 
+- master (post-v0.1.9): session open is now deduplicated by session id (open existing tab instead of creating duplicates)
+- master (post-v0.1.9): command history panel now supports blank-area right-click menu (`Add` / `Import` / `Export` / `Manage`)
+- master (post-v0.1.9): session JSON load/create/update now normalizes known mojibake text patterns for better data hygiene
+- master (post-v0.1.9): expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`) with latest full pass `21/21`
 - master (post-v0.1.9): added transfer conflict policy (`overwrite/skip/rename`) for upload/download queueing
+- master (post-v0.1.9): accelerated upload/download conflict pre-check using limited-concurrency directory scans
+- master (post-v0.1.9): improved transfer disconnect behavior with queue pause + reconnect resume
+- master (post-v0.1.9): added pending transfer queue restart recovery with one-click `Restore Pending` / `Discard Pending`
+- master (post-v0.1.9): replaced intrusive transfer completion modal with dock-level inline completion notice
+- master (post-v0.1.9): added batch failure detail logging for easier post-run triage
+- master (post-v0.1.9): added session export actions in Sessions context menu:
+  - `Export All Sessions...` exports JSON with session rows and group metadata
+  - `Export All Groups...` exports JSON with group lists and nested sessions
+- master (post-v0.1.9): added session JSON import wizard (`Import Sessions JSON...`) with group strategy and duplicate strategy selectors
+- master (post-v0.1.9): added session quick profiles (`Run` / `Save` / `Manage`) for startup command reuse
+- master (post-v0.1.9): added command snippet groups baseline with grouped run/manage/import/export flows
 - master (post-v0.1.9): added `Retry Failed` actions in transfer dock (upload/download)
 - master (post-v0.1.9): added persistent failed-transfer history per session; `Retry Failed` now works after restart
 - master (post-v0.1.9): added Transfer Retry Center modal with filters, batch retry, and history cleanup
+- master (post-v0.1.9): added Retry Center analytics cards and snapshot export (`JSON` / `CSV`)
+- master (post-v0.1.9): Retry Center top failure reasons now include contextual suggestion rows for faster triage
+- master (post-v0.1.9): improved Retry Center with time-range filter, persisted filter view, and one-click `Retry Visible Failed`
+- master (post-v0.1.9): Retry Center now supports failure-reason quick filter and one-click retry by top failure reason for active session
+- master (post-v0.1.9): Retry Center top-failure card now supports visible delete-by-reason for faster failed-history cleanup
+- master (post-v0.1.9): Retry Center now supports grouped-by-failure list mode with collapsible sections
+- master (post-v0.1.9): grouped Retry Center view now supports group-level select/retry/delete actions
+- master (post-v0.1.9): grouped Retry Center view now supports group-level JSON/CSV export for targeted diagnostics handoff
+- master (post-v0.1.9): grouped Retry Center export now supports scope selection (`All` / `Failed` / `Retryable Active Session`)
+- master (post-v0.1.9): grouped Retry Center retry action now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+- master (post-v0.1.9): `Retry Visible Failed` now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+- master (post-v0.1.9): `Retry Selected Failed` now supports scope selection (`All Retryable` / `Upload Only` / `Download Only`)
+- master (post-v0.1.9): top-failure-reason quick retry now uses retry-scope strategy (chooser or auto last scope)
+- master (post-v0.1.9): added one-click `Retry All Failed` (upload + download) in transfer dock, retry center, and operation center with retry-scope strategy
+- master (post-v0.1.9): Retry Center action bar now includes direction-specific quick actions (`Retry Failed Uploads` / `Retry Failed Downloads`)
+- master (post-v0.1.9): added large-batch retry confirmation guardrail with configurable threshold (`Retry Confirm Threshold`, default: `100`, set `0` to disable)
+- master (post-v0.1.9): `Settings > SFTP` now also exposes `Retry Confirm Threshold` for global adjustment
+- master (post-v0.1.9): retry-scope chooser now remembers and prioritizes last used scope (`Last Used`) across restart
+- master (post-v0.1.9): added `Default Retry Scope` selector (all/upload/download) for manual retry-strategy preselection
+- master (post-v0.1.9): added `Auto Retry Scope` toggle in Retry Center to skip chooser and apply last used scope directly
 - master (post-v0.1.9): added SSH config import baseline with preview and duplicate strategy
 - master (post-v0.1.9): hardened SSH config parser with recursive `Include` and wildcard/negation host merge
 - master (post-v0.1.9): added port forwarding baseline in `Settings > Port Fwd` (Local / Remote / Dynamic SOCKS5)
@@ -26,11 +61,34 @@ Last updated: 2026-03-08
 - master (post-v0.1.9): added port forwarding runtime status view (`Active` / `Degraded`) with last-error and activity metadata
 - master (post-v0.1.9): added port forwarding recent event timeline and one-click diagnostics snapshot export
 - master (post-v0.1.9): added persisted port forwarding event history (session scope), with filter and clear actions
+- master (post-v0.1.9): added port forwarding visible-event analytics cards and analytics export (`JSON` / `CSV`)
+- master (post-v0.1.9): upgraded forwarding snapshot export to save `.txt` file with clipboard path copy
 - master (post-v0.1.9): added diagnostics logging baseline and `Settings > Diagnostics` log tools
+- master (post-v0.1.9): hardened diagnostics writer with async queued writes and multi-file rotation retention
+- master (post-v0.1.9): added automatic disconnect report capture with diagnostics-panel JSON export/copy/clear actions
+- master (post-v0.1.9): `Export Bug Report` now includes disconnect-report snapshot payload for one-file issue handoff
+- master (post-v0.1.9): disconnect reports now support CSV export, copy-latest action, and diagnostics auto-capture toggle
+- master (post-v0.1.9): global error bar now adds `Copy Latest Disconnect` when reports exist
+- master (post-v0.1.9): disconnect reports now support filters (scope/trigger/time/query) and visible-only export/clear
+- master (post-v0.1.9): added recoverable global error bar actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
+- master (post-v0.1.9): added operation center baseline modal for active long-running operation visibility
+- master (post-v0.1.9): added cross-tab transfer activity summary and focus action inside Operation Center
+- master (post-v0.1.9): added per-tab and all-tab transfer cancellation actions inside Operation Center
+- master (post-v0.1.9): added per-tab and bulk reconnect actions for disconnected transfer tabs inside Operation Center
 - master (post-v0.1.9): added one-click bug report export (`zip` bundle of logs + metadata + settings snapshot)
 - master (post-v0.1.9): added transfer soak-test tool (`scripts/soak-transfer.mjs`) and runbook (`SOAK_TEST.md`)
 - master (post-v0.1.9): reduced transfer-time disconnect risk by preventing overlapping server monitor polling per tab
 - master (post-v0.1.9): stabilized terminal rendering on small windows with deferred/font-ready xterm refit
+- master (post-v0.1.9): remote open-file auto-sync now guards against silent overwrite via remote metadata baseline check
+- master (post-v0.1.9): added hotkey conflict checker in `Settings > Hotkeys` with inline row highlights/badges and one-click auto resolve
+- master (post-v0.1.9): added hotkey JSON backup/restore actions (`Import Hotkeys...` / `Export Hotkeys...`)
+- master (post-v0.1.9): hotkey import now previews action-level before/after changes before apply
+- master (post-v0.1.9): hotkey import now reports conflict count and adds `Import + Auto Resolve` option
+- master (post-v0.1.9): hotkey import preview now lists which actions auto-resolve will disable
+- master (post-v0.1.9): hotkey conflict panel now supports `Locate` / `Focus First Conflict` row navigation
+- master (post-v0.1.9): hotkey conflict panel now supports `Prev` / `Next` traversal with active conflict index
+- master (post-v0.1.9): hotkey conflict traversal now supports keyboard shortcuts (`Alt + [` / `Alt + ]`)
+- master (post-v0.1.9): hotkey conflict cursor now persists locally and restores by signature
 - master (post-v0.1.9): fixed settings footer overlap on shorter window heights
 - v0.1.9: blocked raw wheel mouse-report text artifacts (`%6`, `%9`) in alternate-buffer editor scenarios
 - v0.1.8: refined terminal wheel mapping to reduce blank-line/jump effects in full-screen editors
@@ -49,17 +107,18 @@ Last updated: 2026-03-08
 
 1. Cross-platform smoke test coverage is still incomplete
 2. Installer signing/notarization workflow is not finalized
-3. Global recoverable error UX needs stronger action guidance
-4. Retry center still lacks analytics and export workflow
-5. Port forwarding still needs richer correlation/export workflows for complex failures
-6. Large transfer/folder edge cases still need hardening
+3. Global recoverable error UX still needs broader action coverage/guidance
+4. Operation center baseline exists, but operation coverage and controls are still limited
+5. Large transfer/folder edge cases still need hardening
+6. Automated unit/integration regression coverage is still weak
+7. SQLite migration and credential-safe encrypted backup/restore are not complete
 
 ## Next Candidate Features
 
-- Retry-center analytics and history export
+- Deeper retry-center longitudinal analytics and clustering
 - Session templates with variable substitution
 - Unified operation center for long-running remote tasks
-- Optional encrypted session export/import
+- Credential-safe encrypted session backup/restore
 - SSH jump-host chain builder (`ProxyJump`/bastion wizard)
 - Transfer bandwidth limiter + schedule window
 - Command snippets/playbooks with parameter prompts and guardrails
@@ -75,7 +134,7 @@ Last updated: 2026-03-08
 ## Long-Range Exploration (Unprioritized)
 
 - Operation audit timeline (command + transfer traceability)
-- Disconnect auto-diagnostic report with runtime context
+- Disconnect auto-diagnostic v2 with deeper network/process evidence
 - Diff-first sync mode (preview before apply)
 - Session health checks with proactive risk badges
 - Team session bundle (encrypted import/export)
@@ -86,3 +145,5 @@ Last updated: 2026-03-08
 - Accessibility and hotkey conflict checker
 - Plugin extension hooks for external ops integrations
 - Built-in command allowlist/denylist policy packs
+
+

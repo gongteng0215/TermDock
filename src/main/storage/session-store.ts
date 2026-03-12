@@ -13,6 +13,35 @@ interface SessionDbSchema {
 }
 
 const EMPTY_DB: SessionDbSchema = { sessions: [] };
+const COMMON_MOJIBAKE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/鏈嶅姟鍣\??/g, "服务器"],
+  [/璁剧疆/g, "设置"],
+  [/绠＄悊/g, "管理"],
+  [/杩炴帴/g, "连接"],
+  [/鐢ㄦ埛/g, "用户"],
+  [/鍒嗙粍/g, "分组"]
+];
+
+function repairMojibakeText(value: string): string {
+  let normalized = value;
+  for (const [pattern, replacement] of COMMON_MOJIBAKE_REPLACEMENTS) {
+    normalized = normalized.replace(pattern, replacement);
+  }
+  return normalized.replace(/\uFFFD/g, "").trim();
+}
+
+function normalizeOptionalSessionText(value: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = repairMojibakeText(value);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeSessionName(value: string, fallback: string): string {
+  const normalized = repairMojibakeText(value);
+  return normalized.length > 0 ? normalized : fallback;
+}
 
 function compareSessionRecency(left: SessionRecord, right: SessionRecord): number {
   const leftRecent = left.lastConnectedAt ?? "";
@@ -43,16 +72,17 @@ export class SessionStore {
   async create(input: SessionCreateInput): Promise<SessionRecord> {
     const db = await this.readDb();
     const now = new Date().toISOString();
+    const rawName = input.name.trim();
     const session: SessionRecord = {
       id: randomUUID(),
-      name: input.name.trim(),
+      name: normalizeSessionName(rawName, rawName),
       host: input.host.trim(),
       port: input.port ?? 22,
       username: input.username.trim(),
       authType: input.authType,
       privateKeyPath: input.privateKeyPath?.trim() || undefined,
-      groupId: input.groupId?.trim() || undefined,
-      remark: input.remark?.trim() || undefined,
+      groupId: normalizeOptionalSessionText(input.groupId?.trim()),
+      remark: normalizeOptionalSessionText(input.remark?.trim()),
       favorite: input.favorite ?? false,
       hasSecret: false,
       createdAt: now,
@@ -77,13 +107,21 @@ export class SessionStore {
         ? existing.privateKeyPath
         : patch.privateKeyPath.trim() || undefined;
     const normalizedGroupId =
-      patch.groupId === undefined ? existing.groupId : patch.groupId.trim() || undefined;
+      patch.groupId === undefined
+        ? existing.groupId
+        : normalizeOptionalSessionText(patch.groupId.trim());
     const normalizedRemark =
-      patch.remark === undefined ? existing.remark : patch.remark.trim() || undefined;
+      patch.remark === undefined
+        ? existing.remark
+        : normalizeOptionalSessionText(patch.remark.trim());
+    const normalizedName =
+      patch.name === undefined
+        ? existing.name
+        : normalizeSessionName(patch.name.trim(), existing.name);
 
     const updated: SessionRecord = {
       ...existing,
-      name: patch.name?.trim() ?? existing.name,
+      name: normalizedName,
       host: patch.host?.trim() ?? existing.host,
       port: patch.port ?? existing.port,
       username: patch.username?.trim() ?? existing.username,
@@ -132,8 +170,32 @@ export class SessionStore {
     try {
       const content = await readFile(this.dbPath, "utf-8");
       const parsed = JSON.parse(content) as SessionDbSchema;
+      const sessions = Array.isArray(parsed.sessions) ? parsed.sessions : [];
+      let changed = false;
+      const normalizedSessions = sessions.map((session) => {
+        const normalizedName = normalizeSessionName(session.name ?? "", session.name ?? "");
+        const normalizedGroupId = normalizeOptionalSessionText(session.groupId);
+        const normalizedRemark = normalizeOptionalSessionText(session.remark);
+        if (
+          normalizedName !== session.name ||
+          normalizedGroupId !== session.groupId ||
+          normalizedRemark !== session.remark
+        ) {
+          changed = true;
+          return {
+            ...session,
+            name: normalizedName,
+            groupId: normalizedGroupId,
+            remark: normalizedRemark
+          };
+        }
+        return session;
+      });
+      if (changed) {
+        await this.writeDb({ sessions: normalizedSessions });
+      }
       return {
-        sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
+        sessions: normalizedSessions
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {

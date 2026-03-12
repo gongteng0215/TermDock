@@ -37,6 +37,11 @@ export interface PortForwardEventRecord {
   type: PortForwardEventType;
   message: string;
   createdAt: string;
+  correlationKey?: string;
+  connectionId?: string;
+  sourceEndpoint?: string;
+  targetEndpoint?: string;
+  errorCode?: string;
 }
 
 export interface CreatePortForwardInput {
