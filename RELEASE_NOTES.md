@@ -6,6 +6,20 @@ Release type: In development
 
 - No entries yet.
 
+## v0.1.12 (2026-03-13)
+
+Release type: Stable
+
+### Highlights
+
+- Session list double-click now always opens a new terminal tab for the same session.
+- Default session-open dedupe behavior is preserved for other entry points, so existing-tab focus still applies outside the explicit double-click flow.
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+
 ## v0.1.11 (2026-03-13)
 
 Release type: Stable

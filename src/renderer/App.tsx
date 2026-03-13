@@ -10254,6 +10254,7 @@ export function App() {
       session: SessionRecord,
       options?: {
         startupCommands?: string[];
+        forceNewTab?: boolean;
       }
     ): string | null => {
       if (!terminalApi) {
@@ -10261,8 +10262,9 @@ export function App() {
         return null;
       }
       const startupCommands = options?.startupCommands ?? [];
+      const forceNewTab = options?.forceNewTab === true;
       const existingOpened = terminalTabsRef.current.find((tab) => tab.sessionId === session.id);
-      if (existingOpened) {
+      if (!forceNewTab && existingOpened) {
         setActiveTabId(existingOpened.id);
         queueStartupCommandsForTab(existingOpened.id, startupCommands);
         return existingOpened.id;
@@ -10271,7 +10273,7 @@ export function App() {
       const id = `${session.id}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
       setTerminalTabs((prev) => {
         const existingTab = prev.find((tab) => tab.sessionId === session.id);
-        if (existingTab) {
+        if (!forceNewTab && existingTab) {
           return prev;
         }
         const existingTabs = prev.filter((tab) => tab.sessionId === session.id);
@@ -16696,7 +16698,11 @@ export function App() {
                             event.preventDefault();
                             openTerminalTab(session);
                           }}
-                          onDoubleClick={() => openTerminalTab(session)}
+                          onDoubleClick={() =>
+                            openTerminalTab(session, {
+                              forceNewTab: true
+                            })
+                          }
                           title={`${session.username}@${session.host}:${session.port}`}
                           type="button"
                         >

@@ -4,7 +4,7 @@ Last updated: 2026-03-13
 
 ## Current Release State
 
-- Stable release: `v0.1.11`
+- Stable release: `v0.1.12`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 

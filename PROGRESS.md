@@ -4,7 +4,7 @@ Last updated: 2026-03-13
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.11`
+- Stable release shipped: `v0.1.12`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Milestone status:
   - `M0` (technical validation): complete
@@ -23,8 +23,11 @@ Last updated: 2026-03-13
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
 
-## Completed in v0.1.11
+## Completed in v0.1.12
 
+- Session list double-click now forces a new tab for the same session instead of focusing the existing tab
+
+## Completed in v0.1.11
 - Port forwarding presets with optional auto-restore
 - Runtime status/failure visibility (`Active` / `Degraded`, counters, last error/activity)
 - Recent forwarding events and snapshot export

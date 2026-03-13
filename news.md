@@ -11,10 +11,11 @@ Last updated: 2026-03-13
 
 ## Release Baseline
 
-- Current stable release: `v0.1.11` (2026-03-13)
+- Current stable release: `v0.1.12` (2026-03-13)
 
 ## Shipped in Recent Cycles
 
+- v0.1.12: session list double-click now explicitly opens a fresh terminal tab for the same session while other open flows still focus the existing tab
 - master (post-v0.1.9): session open is now deduplicated by session id (open existing tab instead of creating duplicates)
 - master (post-v0.1.9): command history panel now supports blank-area right-click menu (`Add` / `Import` / `Export` / `Manage`)
 - master (post-v0.1.9): session JSON load/create/update now normalizes known mojibake text patterns for better data hygiene

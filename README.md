@@ -5,14 +5,19 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.11` (2026-03-13)
-- Current branch focus: `v0.1.12` hardening cycle on `master`
+- Current stable release: `v0.1.12` (2026-03-13)
+- Current branch focus: `v0.1.13` hardening cycle on `master`
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
 
 ## UI Rules
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
+
+## Patch in `v0.1.12` (2026-03-13)
+
+- Double-clicking the same session in the session list now always opens a new terminal tab.
+- Other session open entry points still keep the single-tab-per-session focus behavior.
 
 ## Released in `v0.1.11` (2026-03-13)
 
@@ -216,21 +221,21 @@ Workflow: `.github/workflows/release.yml`
 Stable release:
 
 ```bash
-git tag v0.1.11
-git push origin v0.1.11
+git tag v0.1.12
+git push origin v0.1.12
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.12-test.1
-git push origin v0.1.12-test.1
+git tag v0.1.13-test.1
+git push origin v0.1.13-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.11`) => stable release
-- Tag with `-` (for example `v0.1.12-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.12`) => stable release
+- Tag with `-` (for example `v0.1.13-test.1`) => prerelease
 
 ## Known Limitations
 
