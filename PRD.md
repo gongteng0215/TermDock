@@ -1,7 +1,7 @@
 ﻿# TermDock PRD
 
 Version: v1.13  
-Last updated: 2026-03-13
+Last updated: 2026-03-16
 
 ## 1. Product Positioning
 
@@ -151,13 +151,15 @@ Target platforms:
 - Prevent monitor request overlap per tab under high transfer load
 - Reduce transfer-time disconnect risk when server resources are constrained
 - Keep terminal viewport sizing stable on small windows and packaged startup
-- Keep session-open behavior deterministic under repeated double-click/open actions (no duplicate tab)
+- Keep session-open behavior deterministic across keyboard-open dedupe and explicit double-click new-tab actions
 - Enforce compact UI + fixed-height list-shell rulebook (`UI_COMPACT_RULES.md`) to prevent layout jitter
 
 ### 5.9 Quality Automation
 
 - Electron smoke automation script for repeatable UI verification (`scripts/smoke-capture-all.mjs`)
 - Screenshot-based artifact output for regression triage (`artifacts/smoke/<timestamp>`)
+- Packaged smoke runbook and reproducible report baseline (`PACKAGED_SMOKE.md`, `summary.json`, `full-test-matrix.md`)
+- GitHub Actions packaged smoke workflow baseline for Windows/macOS artifact capture
 - Current baseline run includes sessions/menu/settings/command-history/retry-center/operation-center coverage
 
 ## 6. Security Requirements
@@ -193,8 +195,11 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.11` (current stable): session/transfer reliability hardening, command history/snippet/session workflows, diagnostics and operation-center expansion
+- `v0.1.12` (current stable): session double-click new-tab behavior fix and release polish
 - Next patch cycle (master in progress):
+  - packaged smoke automation/report baseline (`summary.json` + `full-test-matrix.md`)
+  - packaged executable smoke launch override for Windows/macOS validation
+  - packaged smoke workflow on GitHub Actions Windows/macOS runners
   - session tab dedupe on repeated open action (focus existing tab, no duplicate)
   - command history blank-area context menu actions
   - command snippet groups baseline with manager and grouped execution

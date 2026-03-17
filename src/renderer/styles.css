@@ -2552,6 +2552,13 @@ body::before {
   overflow-wrap: anywhere;
 }
 
+.command-history-panel__meta {
+  margin: 3px 0 0;
+  font-size: 9px;
+  line-height: 1.2;
+  color: #8eb0ce;
+}
+
 .command-history-panel__empty {
   padding: 8px 4px;
 }

@@ -125,8 +125,8 @@ After each script run, validate packaged UI (`release` build):
    - keyboard traversal works with `Alt + [` / `Alt + ]`
    - reopening settings restores the previous conflict cursor position when signature still exists
 8. In Sessions panel, repeatedly open the same session and verify:
-   - no duplicate tab is created for the same session
-   - existing tab is focused
+   - keyboard/open-selected flow still focuses the existing tab
+   - double-clicking the session opens a fresh tab
    - closing and reopening still works
 9. If a transfer run is interrupted by app restart, verify transfer dock shows:
    - `Restore Pending`

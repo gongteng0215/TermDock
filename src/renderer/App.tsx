@@ -57,6 +57,7 @@ import type {
   HotkeyModifier,
   HotkeyPreferences,
   TerminalCommandHistoryEntry,
+  TerminalCommandHistorySource,
   TerminalTab
 } from "./components/terminal-workspace";
 
@@ -1594,7 +1595,33 @@ function getPathBaseName(pathValue: string): string {
   return normalized.slice(marker + 1);
 }
 
-function parseImportedCommandHistoryCommands(payload: unknown): string[] {
+function isTerminalCommandHistorySourceValue(
+  value: unknown
+): value is TerminalCommandHistorySource {
+  return value === "screen" || value === "buffer" || value === "manual" || value === "imported";
+}
+
+function formatTerminalCommandHistorySourceLabel(source: TerminalCommandHistorySource): string {
+  switch (source) {
+    case "screen":
+      return "Screen";
+    case "buffer":
+      return "Buffer";
+    case "manual":
+      return "Manual";
+    case "imported":
+      return "Imported";
+    default:
+      return "Buffer";
+  }
+}
+
+interface ImportedCommandHistoryCandidate {
+  command: string;
+  source: TerminalCommandHistorySource;
+}
+
+function parseImportedCommandHistoryCommands(payload: unknown): ImportedCommandHistoryCandidate[] {
   let rows: unknown[] = [];
   if (Array.isArray(payload)) {
     rows = payload;
@@ -1609,21 +1636,28 @@ function parseImportedCommandHistoryCommands(payload: unknown): string[] {
   if (rows.length === 0) {
     return [];
   }
-  const parsed: string[] = [];
+  const parsed: ImportedCommandHistoryCandidate[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
     let command = "";
+    let source: TerminalCommandHistorySource = "imported";
     if (typeof row === "string") {
       command = row.trim();
     } else if (row && typeof row === "object") {
       const candidate = row as Record<string, unknown>;
       command = typeof candidate.command === "string" ? candidate.command.trim() : "";
+      if (isTerminalCommandHistorySourceValue(candidate.source)) {
+        source = candidate.source;
+      }
     }
     if (!command || seen.has(command)) {
       continue;
     }
     seen.add(command);
-    parsed.push(command.slice(0, 4000));
+    parsed.push({
+      command: command.slice(0, 4000),
+      source
+    });
     if (parsed.length >= MAX_TERMINAL_COMMAND_HISTORY) {
       break;
     }
@@ -3748,6 +3782,7 @@ export function App() {
         replaceEntryId?: string;
         preferredTabId?: string;
         preferredTabTitle?: string;
+        source?: TerminalCommandHistorySource;
       }
     ): boolean => {
       const normalizedCommand = command.trim();
@@ -3764,6 +3799,7 @@ export function App() {
         options?.preferredTabTitle?.trim() ||
         tabTitleFromOpenTab ||
         (tabId === "__manual__" ? "Manual" : `Tab ${tabId}`);
+      const source = options?.source ?? "manual";
 
       if (replaceEntryId) {
         window.dispatchEvent(
@@ -3778,7 +3814,8 @@ export function App() {
         new CustomEvent(TERMINAL_COMMAND_HISTORY_APPEND_EVENT, {
           detail: {
             tabId,
-            command: normalizedCommand
+            command: normalizedCommand,
+            source
           }
         })
       );
@@ -3794,7 +3831,8 @@ export function App() {
           tabId,
           tabTitle,
           command: normalizedCommand,
-          executedAt: Date.now()
+          executedAt: Date.now(),
+          source
         };
         return [nextEntry, ...filtered].slice(0, MAX_TERMINAL_COMMAND_HISTORY);
       });
@@ -4839,7 +4877,8 @@ export function App() {
       upsertTerminalCommandHistoryCommand(normalizedInput, {
         replaceEntryId: entry.id,
         preferredTabId: entry.tabId,
-        preferredTabTitle: entry.tabTitle
+        preferredTabTitle: entry.tabTitle,
+        source: "manual"
       });
     },
     [showAppAlert, showAppPrompt, upsertTerminalCommandHistoryCommand]
@@ -4859,6 +4898,8 @@ export function App() {
         count: terminalCommandHistoryEntries.length,
         entries: terminalCommandHistoryEntries.map((entry) => ({
           command: entry.command,
+          source: entry.source,
+          sourceLabel: formatTerminalCommandHistorySourceLabel(entry.source),
           tabTitle: entry.tabTitle,
           tabId: entry.tabId,
           executedAt: entry.executedAt,
@@ -4966,7 +5007,9 @@ export function App() {
         return;
       }
       for (let index = commands.length - 1; index >= 0; index -= 1) {
-        upsertTerminalCommandHistoryCommand(commands[index]);
+        upsertTerminalCommandHistoryCommand(commands[index].command, {
+          source: commands[index].source
+        });
       }
       await showAppAlert(
         `Imported ${commands.length} command(s) from:\n${selected.filePath}`,
@@ -10623,7 +10666,8 @@ export function App() {
         terminalTabsRef.current.find((entry) => entry.id === tabId)?.title ?? `Tab ${tabId}`;
       upsertTerminalCommandHistoryCommand(rendered, {
         preferredTabId: tabId,
-        preferredTabTitle: tabTitle
+        preferredTabTitle: tabTitle,
+        source: "manual"
       });
     },
     [
@@ -17015,10 +17059,13 @@ export function App() {
                         void pasteTerminalCommandHistoryEntry(entry);
                       }}
                       onContextMenu={(event) => openCommandHistoryContextMenu(event, entry.id)}
-                      title="Double-click to paste into active terminal. Right-click for actions."
+                      title={`${entry.command}\n\nSource: ${formatTerminalCommandHistorySourceLabel(entry.source)}\n\nDouble-click to paste into active terminal. Right-click for actions.`}
                     >
                       <p className="command-history-panel__command">
                         <code>{entry.command}</code>
+                      </p>
+                      <p className="hint command-history-panel__meta">
+                        {formatTerminalCommandHistorySourceLabel(entry.source)} | {entry.tabTitle}
                       </p>
                     </li>
                   ))}
@@ -18324,7 +18371,7 @@ export function App() {
                           }
                           void pasteTerminalCommandHistoryEntry(entry);
                         }}
-                        title="Double-click command text area to paste into active terminal."
+                        title={`${entry.command}\n\nSource: ${formatTerminalCommandHistorySourceLabel(entry.source)}\n\nDouble-click command text area to paste into active terminal.`}
                       >
                         <label className="command-history-manager__checkbox">
                           <input
@@ -18347,7 +18394,8 @@ export function App() {
                         </button>
                       </div>
                       <p className="hint command-history-manager__meta">
-                        {entry.tabTitle} | {formatHistoryTimestamp(entry.executedAt)}
+                        {entry.tabTitle} | {formatHistoryTimestamp(entry.executedAt)} |{" "}
+                        {formatTerminalCommandHistorySourceLabel(entry.source)}
                       </p>
                     </li>
                   ))}

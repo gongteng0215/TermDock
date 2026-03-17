@@ -100,14 +100,141 @@ export interface TerminalCommandHistoryEntry {
   tabTitle: string;
   command: string;
   executedAt: number;
+  source: TerminalCommandHistorySource;
 }
 
 type CommandHistoryScope = "activeTab" | "allTabs";
+export type TerminalCommandHistorySource = "screen" | "buffer" | "manual" | "imported";
 
 export const MAX_TERMINAL_COMMAND_HISTORY = 500;
 export const TERMINAL_COMMAND_HISTORY_STORAGE_KEY = "termdock.terminal-command-history.v1";
 export const TERMINAL_COMMAND_HISTORY_APPEND_EVENT = "termdock:terminal-command-history-append";
 export const TERMINAL_COMMAND_HISTORY_REMOVE_EVENT = "termdock:terminal-command-history-remove";
+const COMMAND_CAPTURE_PROMPT_MARKERS = ["$ ", "# ", "% ", "> "];
+
+function isTerminalCommandHistorySource(value: unknown): value is TerminalCommandHistorySource {
+  return value === "screen" || value === "buffer" || value === "manual" || value === "imported";
+}
+
+function normalizeTerminalCommandHistorySource(value: unknown): TerminalCommandHistorySource {
+  return isTerminalCommandHistorySource(value) ? value : "buffer";
+}
+
+function normalizeCapturedTerminalText(value: string): string {
+  return value.replace(/\u00a0/g, " ").replace(/\s+$/g, "").trim();
+}
+
+function readLogicalTerminalLine(
+  terminal: Terminal,
+  rowIndex: number
+): {
+  startRow: number;
+  text: string;
+} | null {
+  const activeBuffer = terminal.buffer.active;
+  let startRow = rowIndex;
+  while (startRow > 0) {
+    const line = activeBuffer.getLine(startRow);
+    if (!line || !line.isWrapped) {
+      break;
+    }
+    startRow -= 1;
+  }
+
+  let endRow = rowIndex;
+  while (true) {
+    const nextLine = activeBuffer.getLine(endRow + 1);
+    if (!nextLine || !nextLine.isWrapped) {
+      break;
+    }
+    endRow += 1;
+  }
+
+  const parts: string[] = [];
+  for (let row = startRow; row <= endRow; row += 1) {
+    const line = activeBuffer.getLine(row);
+    if (!line) {
+      continue;
+    }
+    parts.push(line.translateToString(true));
+  }
+
+  const text = normalizeCapturedTerminalText(parts.join(""));
+  if (!text) {
+    return null;
+  }
+  return {
+    startRow,
+    text
+  };
+}
+
+function stripPromptFromCapturedLine(line: string, fallbackCommand: string): string {
+  const normalizedLine = normalizeCapturedTerminalText(line);
+  if (!normalizedLine) {
+    return "";
+  }
+
+  const normalizedFallback = fallbackCommand.trim();
+  if (normalizedFallback.length >= 3) {
+    const fallbackIndex = normalizedLine.indexOf(normalizedFallback);
+    if (fallbackIndex >= 0) {
+      return normalizedLine.slice(fallbackIndex).trim();
+    }
+  }
+
+  for (const marker of COMMAND_CAPTURE_PROMPT_MARKERS) {
+    const markerIndex = normalizedLine.lastIndexOf(marker);
+    if (markerIndex < 0) {
+      continue;
+    }
+    const candidate = normalizedLine.slice(markerIndex + marker.length).trim();
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function readSubmittedCommandFromTerminal(terminal: Terminal, fallbackCommand: string): string {
+  const activeBuffer = terminal.buffer.active;
+  const cursorRow = activeBuffer.baseY + activeBuffer.cursorY;
+  const visitedStartRows = new Set<number>();
+
+  for (let row = cursorRow; row >= Math.max(0, cursorRow - 10); row -= 1) {
+    const logicalLine = readLogicalTerminalLine(terminal, row);
+    if (!logicalLine || visitedStartRows.has(logicalLine.startRow)) {
+      continue;
+    }
+    visitedStartRows.add(logicalLine.startRow);
+    const extracted = stripPromptFromCapturedLine(logicalLine.text, fallbackCommand);
+    if (extracted) {
+      return extracted;
+    }
+  }
+
+  return fallbackCommand.trim();
+}
+
+function shouldSkipTerminalCommandCapture(terminal: Terminal): boolean {
+  return terminal.buffer.active.type === "alternate";
+}
+
+function getTerminalCommandHistorySourceLabel(source: TerminalCommandHistorySource): string {
+  switch (source) {
+    case "screen":
+      return "Screen";
+    case "buffer":
+      return "Buffer";
+    case "manual":
+      return "Manual";
+    case "imported":
+      return "Imported";
+    default:
+      return "Buffer";
+  }
+}
 
 function dedupeTerminalCommandHistoryEntries(
   entries: TerminalCommandHistoryEntry[]
@@ -179,12 +306,14 @@ export function readTerminalCommandHistory(): TerminalCommandHistoryEntry[] {
           ? candidate.tabTitle.trim()
           : "Legacy tab";
       const id = rawId || `legacy-${executedAt}-${index}`;
+      const source = normalizeTerminalCommandHistorySource(candidate.source);
       entries.push({
         id,
         tabId,
         tabTitle: tabTitle.slice(0, 200),
         command: command.slice(0, 4000),
-        executedAt
+        executedAt,
+        source
       });
     });
     entries.sort((left, right) => right.executedAt - left.executedAt);
@@ -236,6 +365,7 @@ export function TerminalWorkspace({
     () => readTerminalCommandHistory()
   );
   const commandInputBufferRef = useRef(new Map<string, string>());
+  const pendingCommandCaptureTimersRef = useRef(new Map<string, number>());
 
   const tabsById = useMemo(() => {
     return new Map(tabs.map((tab) => [tab.id, tab]));
@@ -767,7 +897,20 @@ export function TerminalWorkspace({
     setCommandHistoryEntries([]);
   }, []);
 
-  const appendCommandHistory = useCallback((tabId: string, command: string) => {
+  const clearPendingCommandCapture = useCallback((tabId: string) => {
+    const timer = pendingCommandCaptureTimersRef.current.get(tabId);
+    if (timer === undefined) {
+      return;
+    }
+    window.clearTimeout(timer);
+    pendingCommandCaptureTimersRef.current.delete(tabId);
+  }, []);
+
+  const appendCommandHistory = useCallback((
+    tabId: string,
+    command: string,
+    source: TerminalCommandHistorySource
+  ) => {
     const normalizedCommand = command.trim();
     if (!normalizedCommand) {
       return;
@@ -780,12 +923,40 @@ export function TerminalWorkspace({
         tabId,
         tabTitle,
         command: normalizedCommand,
-        executedAt: Date.now()
+        executedAt: Date.now(),
+        source
       };
       const filtered = prev.filter((entry) => entry.command.trim() !== normalizedCommand);
       return [next, ...filtered].slice(0, MAX_TERMINAL_COMMAND_HISTORY);
     });
   }, []);
+
+  const queueCommandHistoryCapture = useCallback(
+    (tabId: string, fallbackCommand: string) => {
+      const normalizedFallback = fallbackCommand.trim();
+      if (!normalizedFallback) {
+        return;
+      }
+      clearPendingCommandCapture(tabId);
+      const timer = window.setTimeout(() => {
+        pendingCommandCaptureTimersRef.current.delete(tabId);
+        const instance = terminalRefs.current.get(tabId);
+        if (!instance) {
+          appendCommandHistory(tabId, normalizedFallback, "buffer");
+          return;
+        }
+        if (shouldSkipTerminalCommandCapture(instance.terminal)) {
+          return;
+        }
+        const capturedCommand = readSubmittedCommandFromTerminal(instance.terminal, normalizedFallback);
+        const source: TerminalCommandHistorySource =
+          capturedCommand.trim() === normalizedFallback ? "buffer" : "screen";
+        appendCommandHistory(tabId, capturedCommand, source);
+      }, 120);
+      pendingCommandCaptureTimersRef.current.set(tabId, timer);
+    },
+    [appendCommandHistory, clearPendingCommandCapture]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -794,13 +965,16 @@ export function TerminalWorkspace({
     const handleExternalAppend = (
       event: Event
     ) => {
-      const detail = (event as CustomEvent<{ tabId?: unknown; command?: unknown }>).detail;
+      const detail = (
+        event as CustomEvent<{ tabId?: unknown; command?: unknown; source?: unknown }>
+      ).detail;
       const tabId = typeof detail?.tabId === "string" ? detail.tabId.trim() : "";
       const command = typeof detail?.command === "string" ? detail.command : "";
+      const source = normalizeTerminalCommandHistorySource(detail?.source);
       if (!tabId || !command) {
         return;
       }
-      appendCommandHistory(tabId, command);
+      appendCommandHistory(tabId, command, source);
     };
     const handleExternalRemove = (
       event: Event
@@ -860,7 +1034,7 @@ export function TerminalWorkspace({
           continue;
         }
         if (char === "\r" || char === "\n") {
-          appendCommandHistory(tabId, buffer);
+          queueCommandHistoryCapture(tabId, buffer);
           buffer = "";
           if (char === "\r" && rawData[index + 1] === "\n") {
             index += 2;
@@ -899,7 +1073,7 @@ export function TerminalWorkspace({
       }
       commandInputBufferRef.current.set(tabId, buffer.slice(0, 4000));
     },
-    [appendCommandHistory]
+    [queueCommandHistoryCapture]
   );
 
   // Keep actions declarative so future right-click items can be appended here.
@@ -1363,6 +1537,7 @@ export function TerminalWorkspace({
       }
       clearReconnectState(tabId);
       clearDeferredFitTimers(tabId);
+      clearPendingCommandCapture(tabId);
       instance.removeWheelListener();
       instance.dataDisposable.dispose();
       instance.terminal.dispose();
@@ -1542,6 +1717,7 @@ export function TerminalWorkspace({
       for (const [tabId, instance] of terminalRefs.current.entries()) {
         clearReconnectState(tabId);
         clearDeferredFitTimers(tabId);
+        clearPendingCommandCapture(tabId);
         instance.removeWheelListener();
         instance.dataDisposable.dispose();
         instance.terminal.dispose();
@@ -1557,8 +1733,9 @@ export function TerminalWorkspace({
       reconnectAttemptsRef.current.clear();
       reconnectTimersRef.current.clear();
       deferredFitTimersRef.current.clear();
+      pendingCommandCaptureTimersRef.current.clear();
     };
-  }, [clearDeferredFitTimers, clearReconnectState, terminalApi]);
+  }, [clearDeferredFitTimers, clearPendingCommandCapture, clearReconnectState, terminalApi]);
 
   return (
     <>
@@ -1749,12 +1926,17 @@ export function TerminalWorkspace({
               ) : (
                 <ul className="terminal-history-dialog__list">
                   {visibleCommandHistoryEntries.map((entry) => (
-                    <li className="terminal-history-dialog__item" key={entry.id}>
+                    <li
+                      className="terminal-history-dialog__item"
+                      key={entry.id}
+                      title={`${entry.command}\n\nSource: ${getTerminalCommandHistorySourceLabel(entry.source)}`}
+                    >
                       <p className="terminal-history-dialog__command">
                         <code>{entry.command}</code>
                       </p>
                       <p className="hint terminal-history-dialog__meta">
-                        {entry.tabTitle} | {formatCommandHistoryTimestamp(entry.executedAt)}
+                        {entry.tabTitle} | {formatCommandHistoryTimestamp(entry.executedAt)} |{" "}
+                        {getTerminalCommandHistorySourceLabel(entry.source)}
                       </p>
                       <div className="terminal-history-dialog__actions">
                         <button

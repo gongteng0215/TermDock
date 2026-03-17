@@ -4,7 +4,14 @@
 
 Release type: In development
 
-- No entries yet.
+- Added packaged smoke automation/report baseline:
+  - `pnpm run smoke:ui` now writes `summary.json` and `full-test-matrix.md`
+  - supports packaged executable launch via `TERMDOCK_SMOKE_EXECUTABLE`
+  - session smoke assertions now cover keyboard-open dedupe and double-click fresh-tab behavior
+- Added packaged smoke CI workflow:
+  - `.github/workflows/packaged-smoke.yml` runs on Windows/macOS runners
+  - uploads smoke artifact directories for review
+- Added `PACKAGED_SMOKE.md` with Windows/macOS packaged validation workflow and evidence bundle guidance
 
 ## v0.1.12 (2026-03-13)
 

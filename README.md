@@ -214,6 +214,20 @@ pnpm run soak:transfer
 
 Set SSH/SFTP target environment variables first. See `SOAK_TEST.md` for full setup.
 
+## UI Smoke Test
+
+```bash
+pnpm run smoke:ui
+```
+
+Use `PACKAGED_SMOKE.md` for packaged executable runs, output artifacts, and the Windows/macOS validation matrix.
+
+Packaged wrapper:
+
+```bash
+pnpm run smoke:ui:packaged
+```
+
 ## Release
 
 Workflow: `.github/workflows/release.yml`
@@ -244,13 +258,13 @@ Tag rules:
 - Session/group exports currently exclude decrypted credentials/secrets
 - Active runtime port forwards remain tab-scoped; event history now persists locally per session, but there is no cross-device sync workflow yet
 - Dynamic forwarding currently supports SOCKS5 no-auth `CONNECT` baseline only
-- Broader cross-platform smoke tests are still pending
+- Full Windows/macOS packaged smoke execution is still pending, but the automation/report baseline is now available
 - Installer signing/notarization strategy is not fully complete
 - No in-app auto-update yet
 
 ## Near-Term Execution Focus
 
-1. Cross-platform smoke checklist and reproducible reports (Windows/macOS)
+1. Execute the packaged smoke matrix on Windows/macOS using `PACKAGED_SMOKE.md`
 2. Installer signing/notarization and installation verification
 3. Recoverable global error UX follow-up (broader action coverage and contextual guidance)
 4. Operation center follow-up for broader operation coverage and cancel controls
@@ -312,6 +326,7 @@ src/shared    # Shared contracts and types
 - `PROGRESS.md`: progress and readiness snapshot
 - `TASKS.md`: execution tasks and status
 - `PRD.md`: product requirements
+- `PACKAGED_SMOKE.md`: packaged smoke runbook and report matrix
 - `SOAK_TEST.md`: long-duration transfer stress test guide
 - `news.md`: product notes and directional summary
 - `UI_COMPACT_RULES.md`: compact-density and fixed-height list-shell rules

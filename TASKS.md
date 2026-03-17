@@ -42,7 +42,7 @@ Last updated: 2026-03-13
 | P0-E4 | TODO | Persistence crash-recovery verification |
 | P0-F1 | TODO | Unit tests |
 | P0-F2 | TODO | Integration tests |
-| P0-F3 | TODO | Cross-platform smoke tests |
+| P0-F3 | PARTIAL | Automation + report baseline landed; full Windows/macOS packaged execution matrix still pending |
 | P0-F4 | PARTIAL | Build/release pipeline works; signing/notarization pending |
 | P0-G1 | DONE | Server health panel baseline shipped |
 
@@ -57,6 +57,9 @@ Last updated: 2026-03-13
    - command-history blank-area right-click menu now available
    - startup session text normalization for known mojibake patterns
 1. `P0-F3` Cross-platform smoke checklist and reproducible report
+   - packaged smoke script now supports report generation (`summary.json` + `full-test-matrix.md`)
+   - packaged executable path override is available for Windows/macOS validation
+   - GitHub Actions packaged smoke workflow now runs on Windows/macOS runners and uploads smoke artifacts
 2. `P0-F4` Signing/notarization strategy and installation verification
 3. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
 4. Transfer hardening for cancel races and large directory jobs

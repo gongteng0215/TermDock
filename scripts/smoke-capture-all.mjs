@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 import { _electron as electron } from "playwright";
 import electronPath from "electron";
@@ -13,6 +13,147 @@ function asErrorMessage(error) {
     return error.message;
   }
   return String(error);
+}
+
+function readOptionalEnv(name) {
+  const value = process.env[name];
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function toReportPath(value) {
+  return value.replace(/\\/g, "/");
+}
+
+function extractEvidence(note) {
+  if (!note) {
+    return [];
+  }
+  return note.match(/[A-Za-z0-9][A-Za-z0-9_.-]*\.(?:png|json|md|txt|zip)/g) ?? [];
+}
+
+function readSmokeConfig() {
+  const executablePath = readOptionalEnv("TERMDOCK_SMOKE_EXECUTABLE");
+  const mode = executablePath ? "packaged" : "dev";
+  return {
+    executablePath,
+    mode,
+    label:
+      readOptionalEnv("TERMDOCK_SMOKE_LABEL") ??
+      (mode === "packaged" ? "Packaged App" : "Local Automation"),
+    platform: readOptionalEnv("TERMDOCK_SMOKE_PLATFORM") ?? process.platform,
+    realSshStatus: readOptionalEnv("TERMDOCK_SMOKE_REAL_SSH_STATUS"),
+    realSshScreenshot: readOptionalEnv("TERMDOCK_SMOKE_REAL_SSH_SCREENSHOT")
+  };
+}
+
+function createMarkdownReport({
+  generatedAt,
+  outputDir,
+  config,
+  counts,
+  screenshots,
+  steps
+}) {
+  const lines = [
+    `# TermDock Full Test Matrix (${config.label})`,
+    "",
+    `Run timestamp: ${generatedAt}`,
+    `Output dir: ${toReportPath(outputDir)}`,
+    "",
+    "## Summary",
+    `- PASS: ${counts.pass}`,
+    `- FAIL: ${counts.fail}`,
+    `- SKIP: ${counts.skip}`,
+    "",
+    "## Execution",
+    `- Launch mode: ${config.mode}`,
+    `- Platform: ${config.platform}`
+  ];
+
+  if (config.executablePath) {
+    lines.push(`- Executable: \`${toReportPath(config.executablePath)}\``);
+  } else {
+    lines.push("- Executable: `electron` against current workspace");
+  }
+
+  lines.push("", "## Covered areas");
+  lines.push("- Sessions explorer context menus (blank/group/session)");
+  lines.push("- Group open/back navigation");
+  lines.push("- Same-session keyboard-open dedupe");
+  lines.push("- Session list double-click fresh-tab behavior");
+  lines.push("- Close and reopen same session");
+  lines.push("- Settings sections (Connection/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics)");
+  lines.push("- Command history manager (add/edit/export/import/delete)");
+  lines.push("- Command history side panel context menu");
+  lines.push("- Operation Center modal");
+  lines.push("- Retry Center modal + grouped view");
+
+  const passedSteps = steps.filter((entry) => entry.status === "pass");
+  const failedSteps = steps.filter((entry) => entry.status === "fail");
+  const skippedSteps = steps.filter((entry) => entry.status === "skip");
+
+  lines.push("", "## Passed");
+  if (passedSteps.length === 0) {
+    lines.push("- None");
+  } else {
+    for (const step of passedSteps) {
+      lines.push(step.note ? `- ${step.name} -> ${step.note}` : `- ${step.name}`);
+    }
+  }
+
+  lines.push("", "## Failed");
+  if (failedSteps.length === 0) {
+    lines.push("- None");
+  } else {
+    for (const step of failedSteps) {
+      lines.push(`- ${step.name}`);
+      lines.push(`  - result: ${step.note || "step failed"}`);
+      const evidence = extractEvidence(step.note);
+      if (evidence.length > 0) {
+        lines.push(`  - evidence: ${evidence.join(", ")}`);
+      }
+    }
+  }
+
+  if (skippedSteps.length > 0) {
+    lines.push("", "## Skipped");
+    for (const step of skippedSteps) {
+      lines.push(step.note ? `- ${step.name} -> ${step.note}` : `- ${step.name}`);
+    }
+  }
+
+  lines.push("", "## Real SSH extension");
+  if (config.realSshStatus) {
+    lines.push(`- ${config.realSshStatus}`);
+    if (config.realSshScreenshot) {
+      const relativePath = toReportPath(relative(process.cwd(), config.realSshScreenshot));
+      lines.push(`- Screenshot: \`${relativePath}\``);
+    }
+  } else {
+    lines.push("- Not included in this run.");
+  }
+
+  lines.push("", "## Not fully covered in this run");
+  lines.push("- Terminal successful connect/auth lifecycle against a real SSH server");
+  lines.push("- SFTP list/upload/download/delete against a real remote filesystem");
+  lines.push("- Conflict strategy behaviors (`overwrite` / `skip` / `rename`) with real remote conflicts");
+  lines.push("- Upload/download cancel semantics under real file-transfer load");
+  lines.push("- Retry Center requeue with real failed transfer samples");
+  lines.push("- Remote file external editor save-back path against a live server");
+  lines.push("- Port forwarding creation/use/teardown with real remote sockets");
+  lines.push("- Server Health metrics/process/service snapshots from a live host");
+  lines.push("- Unexpected disconnect auto-capture report with real connection interruptions");
+
+  lines.push("", "## Artifacts");
+  lines.push("- `summary.json`");
+  lines.push("- `full-test-matrix.md`");
+  lines.push(`- screenshots \`01\`..\`${String(screenshots.length).padStart(2, "0")}\``);
+
+  return `${lines.join("\n")}\n`;
 }
 
 async function waitForAny(page, selectors, timeout = 5000) {
@@ -107,6 +248,7 @@ async function ensureSession(page, sessionName, groupId) {
 }
 
 async function main() {
+  const smokeConfig = readSmokeConfig();
   const stamp = toStamp(new Date());
   const outputDir = resolve("artifacts", "smoke", stamp);
   await mkdir(outputDir, { recursive: true });
@@ -122,8 +264,8 @@ async function main() {
   };
 
   const app = await electron.launch({
-    executablePath: electronPath,
-    args: ["."],
+    executablePath: smokeConfig.executablePath ?? electronPath,
+    args: smokeConfig.executablePath ? [] : ["."],
     env: {
       ...launchEnv,
       TERMDOCK_DISABLE_GPU: "1",
@@ -288,7 +430,7 @@ async function main() {
       return fileName;
     });
 
-    await runStep("open session tab and prevent duplicate tabs", async () => {
+    await runStep("open session tab via keyboard and keep dedupe", async () => {
       const sessionButton = page.locator(".session-list__main").first();
       if (!(await isVisible(sessionButton))) {
         throw new Error("session button missing");
@@ -296,24 +438,45 @@ async function main() {
       const tabLocator = page.locator(".terminal-tabs .tab");
       const before = await tabLocator.count();
 
-      await sessionButton.dblclick();
+      await sessionButton.click();
+      await page.waitForTimeout(180);
+      await page.keyboard.press("Enter");
       await page.waitForTimeout(900);
       const afterFirstOpen = await tabLocator.count();
 
-      await sessionButton.dblclick();
+      await sessionButton.click();
+      await page.waitForTimeout(180);
+      await page.keyboard.press("Enter");
       await page.waitForTimeout(700);
       const afterSecondOpen = await tabLocator.count();
 
-      const fileName = await recordShot(page, "session-open-duplicate-check");
+      const fileName = await recordShot(page, "session-open-dedupe-check");
       if (afterFirstOpen <= before) {
         throw new Error(`tab did not open: before=${before}, afterFirst=${afterFirstOpen}`);
       }
       if (afterSecondOpen !== afterFirstOpen) {
         throw new Error(
-          `duplicate tab created: afterFirst=${afterFirstOpen}, afterSecond=${afterSecondOpen}`
+          `dedupe failed: afterFirst=${afterFirstOpen}, afterSecond=${afterSecondOpen}`
         );
       }
       return `before=${before}, afterFirst=${afterFirstOpen}, afterSecond=${afterSecondOpen}, shot=${fileName}`;
+    });
+
+    await runStep("session list double-click opens fresh tab", async () => {
+      const sessionButton = page.locator(".session-list__main").first();
+      if (!(await isVisible(sessionButton))) {
+        throw new Error("session button missing");
+      }
+      const tabLocator = page.locator(".terminal-tabs .tab");
+      const before = await tabLocator.count();
+      await sessionButton.dblclick();
+      await page.waitForTimeout(900);
+      const afterOpen = await tabLocator.count();
+      const fileName = await recordShot(page, "session-open-double-click-new-tab");
+      if (afterOpen !== before + 1) {
+        throw new Error(`double-click did not open a fresh tab: before=${before}, after=${afterOpen}`);
+      }
+      return `before=${before}, after=${afterOpen}, shot=${fileName}`;
     });
 
     await runStep("close tab then reopen same session", async () => {
@@ -606,18 +769,25 @@ async function main() {
       return fileName;
     });
 
+    const generatedAt = new Date().toISOString();
     const counts = {
       pass: steps.filter((entry) => entry.status === "pass").length,
       fail: steps.filter((entry) => entry.status === "fail").length,
       skip: steps.filter((entry) => entry.status === "skip").length
     };
     const summaryPath = join(outputDir, "summary.json");
+    const reportPath = join(outputDir, "full-test-matrix.md");
     await writeFile(
       summaryPath,
       JSON.stringify(
         {
-          generatedAt: new Date().toISOString(),
+          generatedAt,
           outputDir,
+          mode: smokeConfig.mode,
+          label: smokeConfig.label,
+          platform: smokeConfig.platform,
+          executablePath: smokeConfig.executablePath,
+          reportPath,
           counts,
           screenshots: screenshotList,
           steps
@@ -627,10 +797,26 @@ async function main() {
       ),
       "utf8"
     );
+    await writeFile(
+      reportPath,
+      createMarkdownReport({
+        generatedAt,
+        outputDir,
+        config: smokeConfig,
+        counts,
+        screenshots: screenshotList,
+        steps
+      }),
+      "utf8"
+    );
 
     console.log(`Summary written: ${summaryPath}`);
+    console.log(`Report written: ${reportPath}`);
     console.log(`Screenshots dir: ${outputDir}`);
     console.log(`Counts: pass=${counts.pass}, fail=${counts.fail}, skip=${counts.skip}`);
+    if (counts.fail > 0) {
+      process.exitCode = 2;
+    }
   } finally {
     await app.close();
   }

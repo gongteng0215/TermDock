@@ -10,6 +10,8 @@
     "dev:renderer": "vite",
     "dev:main": "tsc -p tsconfig.node.json --watch",
     "dev:electron": "wait-on http://localhost:5273 file:dist-electron/main/main.js file:dist-electron/main/preload.cjs && node scripts/run-electron-dev.mjs",
+    "smoke:ui": "node scripts/smoke-capture-all.mjs",
+    "smoke:ui:packaged": "node scripts/run-packaged-smoke.mjs",
     "build": "pnpm run build:renderer && pnpm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.node.json",

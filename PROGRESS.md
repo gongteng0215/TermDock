@@ -1,18 +1,19 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-03-13
+Last updated: 2026-03-16
 
 ## Snapshot
 
 - Stable release shipped: `v0.1.12`
+- Packaged smoke automation/report baseline landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
 - P0 totals:
   - `DONE`: 13
-  - `PARTIAL`: 13
-  - `TODO`: 7
+  - `PARTIAL`: 14
+  - `TODO`: 6
 
 ## Release Readiness
 
@@ -26,6 +27,17 @@ Last updated: 2026-03-13
 ## Completed in v0.1.12
 
 - Session list double-click now forces a new tab for the same session instead of focusing the existing tab
+
+## Current master additions
+
+- `scripts/smoke-capture-all.mjs` now:
+  - supports packaged executable launch via `TERMDOCK_SMOKE_EXECUTABLE`
+  - writes `summary.json` and `full-test-matrix.md` automatically
+  - validates keyboard-open dedupe and explicit double-click new-tab behavior
+- Added `.github/workflows/packaged-smoke.yml`:
+  - runs packaged smoke on GitHub Actions Windows/macOS runners
+  - uploads smoke artifacts for release validation
+- Added `PACKAGED_SMOKE.md` for Windows/macOS packaged validation workflow and evidence collection
 
 ## Completed in v0.1.11
 - Port forwarding presets with optional auto-restore
