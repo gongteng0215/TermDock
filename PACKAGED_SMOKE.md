@@ -1,6 +1,6 @@
 # TermDock Packaged Smoke
 
-Last updated: 2026-03-16
+Last updated: 2026-03-19
 
 ## Goal
 
@@ -83,11 +83,23 @@ Notes:
 
 - For macOS, point to the actual executable inside the `.app` bundle, not the `.app` directory itself.
 - Keep `TERMDOCK_SMOKE_EXECUTABLE` unset when you want workspace/dev-mode launch.
-- On local Windows packaging, Electron may require Visual Studio Build Tools for native dependency rebuilds (`keytar`, `cpu-features`). GitHub Actions runners already provide this path.
+- On local Windows packaging, `pnpm run pack` uses a smoke-friendly Electron Builder override so the unpacked build can be produced without native rebuilds or `winCodeSign` resource-edit extraction. Use `dist:win` if you need the full release packaging path.
+
+## Embedded Fixture Baseline
+
+The smoke runner now starts a local embedded SSH/SFTP fixture (`scripts/smoke-ssh-fixture.mjs`) before launching Electron.
+
+This baseline covers:
+
+- SSH auth/connect and shell open
+- dangerous-command approval on a live session
+- SFTP list/upload/download/delete against a real temporary remote filesystem
+
+No external host is required for the default workspace or packaged smoke pass.
 
 ## Optional Real SSH Annotation
 
-If you also run a manual real-SSH packaged check, append that evidence into the generated report:
+If you also run a manual external-host SSH packaged check, append that evidence into the generated report:
 
 ```powershell
 $env:TERMDOCK_SMOKE_REAL_SSH_STATUS = "Separate packaged check reached connected state on target host."
@@ -99,11 +111,15 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 
 ## Current Automated Coverage
 
+- Embedded live SSH auth/connect lifecycle
+- Embedded live SFTP list/upload/download/delete
+- Dangerous-command approval bar on a live SSH session
 - Sessions explorer context menus (blank/group/session)
 - Group open/back navigation
 - Same-session keyboard-open dedupe
 - Session list double-click new-tab behavior
 - Close and reopen same session
+- `Settings > Safety` section, built-in rule reset, and approval-bar UI baseline
 - Settings sections
 - Command history manager flows
 - Command history side-panel context menu
@@ -112,14 +128,14 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 
 ## Still Manual / Live-Host Coverage
 
-- Real SSH auth/connect lifecycle
-- Live SFTP list/upload/download/delete
+- External-host auth differences (agent auth, key prompts, bastion/proxy rules, host-key policy)
 - Conflict strategy behavior on real remote files
 - Transfer cancellation under active network load
 - Remote external-editor save-back against a live host
 - Port forwarding against real sockets
 - Server Health values from a live Linux host
 - Unexpected disconnect evidence capture during real interruptions
+- Targeted external-host packaged sanity pass when transport/auth/SFTP internals change
 
 ## Release Matrix
 
@@ -128,14 +144,14 @@ Windows packaged checklist:
 1. Run `pnpm run pack`.
 2. Run packaged smoke against `release/win-unpacked/TermDock.exe`.
 3. Verify `full-test-matrix.md` is generated.
-4. Run one real-SSH packaged manual pass and attach screenshot evidence.
+4. If the release touches transport/auth/SFTP/server-health behavior, run one external-host packaged pass and attach screenshot evidence.
 
 macOS packaged checklist:
 
 1. Run `pnpm run pack` on macOS.
 2. Run packaged smoke against the executable inside `TermDock.app`.
 3. Verify `full-test-matrix.md` is generated.
-4. Run one real-SSH packaged manual pass and attach screenshot evidence.
+4. If the release touches transport/auth/SFTP/server-health behavior, run one external-host packaged pass and attach screenshot evidence.
 
 ## Release Evidence Bundle
 
@@ -145,7 +161,7 @@ For each platform attach:
 - packaged smoke `full-test-matrix.md`
 - relevant screenshots
 - bug-report zip if the run exposed errors
-- optional real-SSH packaged screenshot
+- optional external-host packaged screenshot evidence
 
 ## CI Workflow
 

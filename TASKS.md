@@ -1,10 +1,10 @@
 ﻿# TermDock Task Board
 
-Last updated: 2026-03-13
+Last updated: 2026-03-19
 
 ## Current Release State
 
-- Stable release: `v0.1.12`
+- Stable release: `v0.1.13`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 
@@ -42,8 +42,8 @@ Last updated: 2026-03-13
 | P0-E4 | TODO | Persistence crash-recovery verification |
 | P0-F1 | TODO | Unit tests |
 | P0-F2 | TODO | Integration tests |
-| P0-F3 | PARTIAL | Automation + report baseline landed; full Windows/macOS packaged execution matrix still pending |
-| P0-F4 | PARTIAL | Build/release pipeline works; signing/notarization pending |
+| P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP smoke landed; macOS evidence and targeted external-host validation still pending |
+| P0-F4 | PARTIAL | Release preflight/verify baseline and self-use Windows path landed; public-trust signing secret provisioning and first signed/notarized evidence still pending |
 | P0-G1 | DONE | Server health panel baseline shipped |
 
 ## In Progress Track (v0.1.3+)
@@ -56,14 +56,29 @@ Last updated: 2026-03-13
    - same-session repeated open now focuses existing tab
    - command-history blank-area right-click menu now available
    - startup session text normalization for known mojibake patterns
+   - dangerous-command guardrails now intercept risky terminal writes with a fixed bottom approval bar and `Settings > Safety` reset controls, covering keyboard, clipboard, history, snippets, quick profiles, and startup commands
 1. `P0-F3` Cross-platform smoke checklist and reproducible report
    - packaged smoke script now supports report generation (`summary.json` + `full-test-matrix.md`)
    - packaged executable path override is available for Windows/macOS validation
    - GitHub Actions packaged smoke workflow now runs on Windows/macOS runners and uploads smoke artifacts
+   - embedded SSH/SFTP fixture now verifies live auth/connect, approval-bar flow, and SFTP list/upload/download/delete without an external host
 2. `P0-F4` Signing/notarization strategy and installation verification
-3. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
-4. Transfer hardening for cancel races and large directory jobs
-5. `F8` Operation center follow-up (baseline landed; broaden operation coverage)
+   - `scripts/release-preflight.mjs` now validates Windows signing and macOS signing/notarization inputs before release build
+   - `scripts/prepare-release-secrets.mjs` now materializes `APPLE_API_KEY_B64` into a temporary `.p8` path for CI notarization
+   - `scripts/set-release-secrets.mjs` now supports seeding repo secrets from local cert/key files via `gh`
+   - `scripts/verify-release-artifacts.mjs` now validates artifact presence and platform-specific release expectations
+   - `scripts/create-self-use-windows-cert.ps1` now creates/reuses a local self-signed code-signing cert for private Windows release use
+   - `scripts/build-self-use-windows-release.mjs` now signs `win-unpacked` + installer and verifies signature presence plus install smoke
+   - Windows release verification now includes silent installer install/uninstall smoke
+   - `.github/workflows/release.yml` now runs preflight + verify and uploads `artifacts/release-verify/**`
+3. `F6` Session templates + env variables
+   - local session-template store now persists template definitions and template-scoped env vars
+   - create/edit session modal now supports `Apply Template...`, `Save as Template...`, and `Manage Templates...`
+   - sessions context menu now supports `New Session From Template...` and `Save as Session Template...`
+   - template application resolves `${ENV_NAME}` placeholders into concrete session form values before save/test
+4. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
+5. Transfer hardening for cancel races and large directory jobs
+6. `F8` Operation center follow-up (baseline landed; broaden operation coverage)
 
 ## Post-v0.1.9 Hotfix Track (master)
 
@@ -185,15 +200,15 @@ Last updated: 2026-03-13
 
 ## Immediate Next Target
 
-1. `P0-F3` Cross-platform smoke checklist and reproducible report
+1. `P0-F3` Remaining macOS/external-host smoke evidence and reproducible report
 2. `P0-F4` Signing/notarization strategy and installation verification
 3. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
 4. `F8` Operation center follow-up (more operation types + cancellation coverage)
 
 ## Not Done Yet (Top Blocking Items)
 
-1. `P0-F3`: packaged-app smoke matrix completion (Windows + macOS) and reproducible report format
-2. `P0-F4`: release signing/notarization pipeline finalization and installer verification
+1. `P0-F3`: finish macOS evidence and targeted external-host packaged validation on top of the current smoke matrix/report format
+2. `P0-F4`: complete public-trust secret provisioning and capture first signed/notarized installer evidence on top of the current preflight/verify/self-use baseline
 3. `P0-E3`: recoverable global error action coverage expansion (beyond current baseline)
 4. `P0-F1`/`P0-F2`: unit and integration test baseline
 5. `P0-A3`: JSON-to-SQLite migration planning and execution
@@ -201,13 +216,22 @@ Last updated: 2026-03-13
 
 ## Backlog Candidates
 
-- Snippets and command palette
+- Snippets and command palette / universal launcher
 - Remote file quick-edit advanced flow
 - Multi-host command broadcast
 - Advanced retry-center analytics and history export
 - Session tags and smart views
 - Terminal recording and replay export
-- Dangerous-command guardrails
+- Dangerous-command policy packs / environment-aware rule templates
+- Remote file diff-first preview before overwrite/save-back
+- Session health checks + proactive risk badges
+- Session notes / runbook annotations
+- Operation audit timeline (command/transfer traceability)
+- Split-pane terminal layouts
+- Detach/clone current tab into a new window or pane
+- Recent directories / quick `cd` launcher
+- Shell integration for command history, cwd tracking, and automatic profile switching
+- Shared encrypted team vault / workspace sync for shared hosts and snippets
 - Recurring folder sync profiles
 - Connection quality timeline dashboard
 - Workspace profile mode (`dev` / `staging` / `prod`)
@@ -236,7 +260,7 @@ Last updated: 2026-03-13
 | F3 | P1 | DONE | Bug report bundle export | Fast support loop with one-click diagnostic package |
 | F4 | P1 | DONE | SSH config import (`~/.ssh/config`) | Reduce manual session creation for existing users |
 | F5 | P1 | DONE | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
-| F6 | P2 | TODO | Session templates + env variables | Faster provisioning for repeated host patterns |
+| F6 | P2 | DONE | Session templates + env variables | Local template manager, env-var substitution, and create/apply flows now cover repeated host patterns |
 | F7 | P2 | PARTIAL | Remote overwrite pre-check (mtime/size/checksum) | Metadata guard baseline shipped; conflict resolution UI/diff follow-up pending |
 | F8 | P2 | PARTIAL | Unified operation center for long jobs | Baseline shipped; broader operation types and controls still needed |
 | F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
@@ -247,7 +271,7 @@ Last updated: 2026-03-13
 | F14 | P3 | TODO | Remote file snapshot + one-click rollback | Recover quickly from accidental edits during remote file open/save |
 | F15 | P2 | TODO | Session tags + smart views | Faster large-session navigation and operator context switching |
 | F16 | P2 | TODO | Terminal recording/replay export | Improve incident review and asynchronous debugging collaboration |
-| F17 | P1 | TODO | Dangerous-command guardrails | Reduce destructive operation risk in production environments |
+| F17 | P1 | PARTIAL | Dangerous-command guardrails | Rule-based preflight confirmation baseline landed; policy packs and environment-aware templates pending |
 | F18 | P2 | TODO | Recurring folder sync profiles | Simplify repeated deployment/content sync workflows |
 | F19 | P2 | TODO | Connection quality timeline | Make intermittent network/session issues measurable and diagnosable |
 | F20 | P3 | TODO | Workspace profile mode (`dev`/`staging`/`prod`) | Add persistent risk cues and reduce environment mix-ups |
@@ -268,5 +292,11 @@ Last updated: 2026-03-13
 | F35 | P1 | DONE | Pending transfer queue restore/discard | Recover queued/running transfer intent after restart |
 | F36 | P2 | DONE | Session JSON import merge wizard baseline | Import external sessions with explicit merge/group policy |
 | F37 | P2 | PARTIAL | Transfer failure suggestion knowledge base | Retry-center top-failure suggestion rows shipped; rule depth can expand |
-
-
+| F38 | P2 | TODO | Command palette / universal launcher | Speed up navigation and reduce menu hunting |
+| F39 | P2 | TODO | Remote file diff-first preview before overwrite/save-back | Reduce accidental overwrite risk during remote file edits |
+| F40 | P2 | TODO | Session notes / runbook annotations | Keep operator notes close to the session they describe |
+| F41 | P2 | TODO | Split-pane terminal layouts | Make side-by-side command work and comparisons faster |
+| F42 | P2 | TODO | Detach/clone current tab into a new window or pane | Reuse an active session layout without rebuilding context |
+| F43 | P2 | TODO | Recent directories / quick `cd` launcher | Speed up filesystem navigation on busy hosts |
+| F44 | P2 | TODO | Shell integration for command history and cwd tracking | Improve recent command/directory awareness and automatic profile switching |
+| F45 | P2 | TODO | Shared encrypted team vault / workspace sync | Keep hosts, snippets, and port-forward presets aligned across a team |

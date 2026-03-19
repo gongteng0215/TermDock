@@ -1,7 +1,7 @@
 ﻿# TermDock PRD
 
-Version: v1.13  
-Last updated: 2026-03-16
+Version: v1.15
+Last updated: 2026-03-19
 
 ## 1. Product Positioning
 
@@ -58,6 +58,9 @@ Target platforms:
   - group strategy (`keepSource` / `forceCurrent` / `ungrouped`)
   - duplicate strategy (`skip` / `overwrite` / `rename`)
 - SSH config import workflow with preview and duplicate handling
+- Session templates with local env-var presets
+  - create/apply/manage template flows from session form and session context menu
+  - substitute `${ENV_NAME}` placeholders into session name/host/port/user/group/remark/secret/private-key path before save/test
 
 ### 5.2 Terminal
 
@@ -81,6 +84,12 @@ Target platforms:
 - Command snippet groups:
   - grouped snippet management (`run` / `add` / `import` / `export` / `clear`)
   - template placeholders for clipboard/time/session/tab metadata
+- Dangerous-command guardrails:
+  - bottom approval bar for risky command execution sources
+  - source-aware preflight confirmation for keyboard Enter, clipboard paste, command history run/paste, snippets, quick profiles, and startup commands
+- Operation center modal:
+  - summarize long-running transfer/delete/port-forward activity across tabs
+  - provide cancel-all and bulk reconnect shortcuts for active/disconnected work
 - Port forwarding manager (`Local` / `Remote` / `Dynamic SOCKS5`) with saved presets and auto-restore
   - runtime status (`Active` / `Degraded`) and recent event timeline
   - event filtering (`type` / `time range` / `error code` / `correlation key`)
@@ -131,6 +140,7 @@ Target platforms:
 - File opening preferences
 - Upload/download concurrency
 - Port forwarding management section with preset save/apply controls
+- Safety section with built-in risky-command rules, custom pattern lines, and one-click reset
 - Diagnostics section with log path actions
 - Disconnect report controls (`auto-capture` toggle, JSON/CSV export, copy latest)
 
@@ -153,14 +163,19 @@ Target platforms:
 - Keep terminal viewport sizing stable on small windows and packaged startup
 - Keep session-open behavior deterministic across keyboard-open dedupe and explicit double-click new-tab actions
 - Enforce compact UI + fixed-height list-shell rulebook (`UI_COMPACT_RULES.md`) to prevent layout jitter
+- Require fixed-height bottom approval bars for high-risk command execution prompts so layout does not shift when approval is needed
 
 ### 5.9 Quality Automation
 
 - Electron smoke automation script for repeatable UI verification (`scripts/smoke-capture-all.mjs`)
+- Embedded local SSH/SFTP fixture for auth/connect and transfer-path verification without an external host (`scripts/smoke-ssh-fixture.mjs`)
 - Screenshot-based artifact output for regression triage (`artifacts/smoke/<timestamp>`)
 - Packaged smoke runbook and reproducible report baseline (`PACKAGED_SMOKE.md`, `summary.json`, `full-test-matrix.md`)
 - GitHub Actions packaged smoke workflow baseline for Windows/macOS artifact capture
-- Current baseline run includes sessions/menu/settings/command-history/retry-center/operation-center coverage
+- Current baseline run includes sessions/menu/settings/command-history/retry-center/operation-center coverage plus embedded live SSH/SFTP verification
+- Release signing/notarization preflight baseline (`scripts/release-preflight.mjs`)
+- Release artifact verification baseline with report output (`scripts/verify-release-artifacts.mjs`, `artifacts/release-verify/<timestamp>`)
+- Self-use Windows release helper path (`scripts/create-self-use-windows-cert.ps1`, `scripts/build-self-use-windows-release.mjs`)
 
 ## 6. Security Requirements
 
@@ -180,12 +195,14 @@ Target platforms:
 ## 8. Current Limitations
 
 - SQLite migration not complete
-- Automated test coverage is incomplete
-- Signing/notarization process is not fully finalized
+- Automated unit/integration coverage is incomplete, and external-host smoke evidence is still partial
+- Signing/notarization preflight and verification baseline exists, and self-use Windows release works locally, but public-trust secret provisioning and first signed/notarized evidence are still pending
 - Some recursive SFTP safety flows still need hardening
 - Port forwarding diagnostics and analytics now exist in-session, but cross-device/shared correlation workflows are still pending; dynamic baseline is SOCKS5 no-auth `CONNECT` only
 - Retry-center analytics/export baseline exists, but longitudinal trend analytics and richer clustering are still pending
 - Session/group JSON export is available, but secure full-fidelity backup/restore (including credentials) is not complete
+- Session templates baseline exists locally, but template import/export, runtime prompt overrides, and layered presets are still pending
+- Dangerous-command policy packs and environment-aware rule templates are still pending after the baseline guardrail
 
 ## 9. Release Gates Before Broader Rollout
 
@@ -195,11 +212,16 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.12` (current stable): session double-click new-tab behavior fix and release polish
+- `v0.1.13` (current stable): packaged smoke baseline, release tooling, and session templates baseline
+- `v0.1.12`: session double-click new-tab behavior fix and release polish
 - Next patch cycle (master in progress):
   - packaged smoke automation/report baseline (`summary.json` + `full-test-matrix.md`)
   - packaged executable smoke launch override for Windows/macOS validation
+  - embedded SSH/SFTP smoke fixture for auth/connect and transfer-path verification
   - packaged smoke workflow on GitHub Actions Windows/macOS runners
+  - release signing/notarization preflight and artifact verification baseline
+  - self-use Windows release helper path for local/private installer generation
+  - session templates baseline with template-scoped env vars and create/apply/manage flows
   - session tab dedupe on repeated open action (focus existing tab, no duplicate)
   - command history blank-area context menu actions
   - command snippet groups baseline with manager and grouped execution
@@ -236,12 +258,13 @@ Target platforms:
     - import-time conflict count and `Import + Auto Resolve`
     - conflict navigation (`Locate`, `Focus First Conflict`, `Prev`, `Next`)
     - keyboard traversal (`Alt + [` / `Alt + ]`) and cursor signature persistence
+  - dangerous-command guardrails baseline with `Settings > Safety`, bottom approval bar, and one-time approval flow
 - Next hardening cycle: testing, installer reliability, error recovery
 - Capability cycle candidate A:
   - Cross-session/shared diagnostics correlation workflows
   - Retry-center longitudinal analytics and trend package
 - Capability cycle candidate B:
-  - Session templates and environment variable substitution
+  - Session templates v2 (runtime prompts, import/export, layered presets)
   - Operation center follow-up for richer long-running remote task coverage
   - Credential-safe encrypted session backup/restore (beyond current metadata export)
 - Capability cycle candidate C:
@@ -278,12 +301,12 @@ Potential additions to discuss next (ordered by value-to-effort):
 1. Remote file conflict resolution v2
    - When save-back guard detects remote drift, show explicit action chooser (`overwrite` / `reload` / `save-as`)
    - Optional fast diff preview before overwrite decision
-2. Command snippet groups v2
+2. Command snippets/playbooks v2
    - Prompted variables (`${var}` form) with typed validation and defaults
    - Dry-run preview before execution on active tab
-3. Session quick profiles v2
-   - Multi-command profile chains and optional per-command delay
-   - Profile-scoped environment variable presets for repeat workflows
+3. Session templates v2
+   - Runtime prompt overrides on top of saved template env presets
+   - Template import/export and layered presets for repeat workflows
 4. Encrypted session backup/restore
    - Export/import full session bundle with secure payload (including credential references)
    - Integrity checks and import preview before apply
@@ -293,5 +316,38 @@ Potential additions to discuss next (ordered by value-to-effort):
 6. Transfer policy packs
    - Per-environment templates for concurrency/retry/conflict defaults
    - One-click apply for `dev` / `staging` / `prod` style workflows
+7. Dangerous-command policy packs
+   - Environment-aware rule templates layered on top of the baseline confirmation guardrail
+   - Optional session/workspace-specific exceptions and approval scopes
+8. Command palette / universal action launcher
+   - Fuzzy-search session, SFTP, settings, and diagnostics actions from one entry point
+   - Keyboard-first, no modal stacking
+9. Remote file diff-first preview before overwrite/save-back
+   - Show diff before auto-upload or overwrite when remote drift is detected
+   - Quick choices: reload, overwrite, save-as
+10. Session health checks with proactive risk badges
+    - Surface risky session state before critical actions
+    - Use connection/permission/space/failure badges
+11. Operation audit timeline
+    - Chronological trace for command, transfer, retry, and delete activity
+    - Exportable for incident review
+12. Session notes / runbook annotations
+    - Keep operator notes and per-host runbooks attached to the session
+    - Quick-view from session context menu
+13. Split-pane terminal layouts
+    - Allow two or more terminal panes in one window for parallel admin work
+    - Support even/uneven pane sizing and quick focus switching
+14. Detach/clone current tab into a new window or pane
+    - Reuse current session context without re-entering host/path state
+    - Support separate task views while preserving terminal context
+15. Recent directories / quick `cd` launcher
+    - Show frequently used directories per host/user
+    - One-click or hotkey insertion into the current terminal
+16. Shell integration for command history and cwd tracking
+    - Capture recent commands/current working directory per host for smarter UX
+    - Enable automatic profile switching from shell metadata
+17. Shared encrypted team vault / workspace sync
+    - Keep hosts, snippets, and port-forward presets synchronized across a team
+    - Support granular access control and encrypted storage for shared items
 
 

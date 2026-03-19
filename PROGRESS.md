@@ -1,12 +1,14 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-03-16
+Last updated: 2026-03-19
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.12`
-- Packaged smoke automation/report baseline landed on `master`
+- Stable release shipped: `v0.1.13`
+- Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
+- Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
+- Master branch now also includes session templates baseline with template-scoped env var substitution
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -24,6 +26,12 @@ Last updated: 2026-03-16
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
 
+## Completed in v0.1.13
+
+- Packaged smoke automation/report baseline with embedded SSH/SFTP fixture and packaged validation workflow
+- Release preflight/verify tooling plus self-use Windows release helper path
+- Session templates baseline with template-scoped env vars and create/apply/manage flows
+
 ## Completed in v0.1.12
 
 - Session list double-click now forces a new tab for the same session instead of focusing the existing tab
@@ -38,6 +46,40 @@ Last updated: 2026-03-16
   - runs packaged smoke on GitHub Actions Windows/macOS runners
   - uploads smoke artifacts for release validation
 - Added `PACKAGED_SMOKE.md` for Windows/macOS packaged validation workflow and evidence collection
+- Added embedded smoke SSH/SFTP fixture baseline:
+  - local auth/connect + shell flow is exercised without an external host
+  - SFTP list/upload/download/delete is exercised against a temporary remote filesystem
+- Added dangerous-command guardrails baseline:
+  - `Settings > Safety` exposes built-in risky-command rules and custom patterns
+  - a fixed bottom approval bar blocks risky writes until a one-time run is approved
+  - guardrails cover keyboard Enter, clipboard paste, command history run/paste, snippets, quick profiles, and startup commands
+- Packaged smoke now covers embedded live SSH connect, embedded live SFTP upload/download/delete, the `Settings > Safety` section, built-in rule reset flow, and approval-bar UI baseline
+- `pnpm run pack` is now smoke-friendly on local Windows shells by skipping native rebuilds and `winCodeSign` resource-edit extraction, so `pnpm run smoke:ui:packaged` runs on this machine
+- Latest local workspace and packaged smoke runs: `PASS 29 / FAIL 0 / SKIP 0`
+- Added release signing/notarization preflight baseline:
+  - `scripts/release-preflight.mjs` validates required Windows signing and macOS signing/notarization inputs before release build
+  - macOS hardened runtime entitlements are now checked in-repo via `build/entitlements.mac.plist` and `build/entitlements.mac.inherit.plist`
+- Added release artifact verification baseline:
+  - `scripts/verify-release-artifacts.mjs` verifies artifact presence plus signature/notarization expectations per platform
+  - Windows release verification now includes silent NSIS install/uninstall smoke
+  - release verification reports are written to `artifacts/release-verify/<timestamp>`
+- Added release secret bootstrap/materialization helpers:
+  - `scripts/prepare-release-secrets.mjs` materializes `APPLE_API_KEY_B64` into a temporary `.p8` path for CI
+  - `scripts/set-release-secrets.mjs` can seed GitHub repo secrets from local cert/key files via `gh`
+- Added self-use Windows release path:
+  - `scripts/create-self-use-windows-cert.ps1` creates/reuses a local self-signed code-signing certificate and exports `.pfx` / `.cer` / password files
+  - `scripts/build-self-use-windows-release.mjs` signs `win-unpacked` + top-level installer and verifies signature presence plus silent install/uninstall
+- Added session templates + env vars baseline:
+  - local session-template store persists template definitions and template-scoped env var values
+  - create/edit session modal now supports `Apply Template...`, `Save as Template...`, and `Manage Templates...`
+  - sessions context menu now supports `New Session From Template...` and `Save as Session Template...`
+  - template application resolves `${ENV_NAME}` placeholders into concrete session form values before save/test
+- Updated `.github/workflows/release.yml`:
+  - runs release preflight before each platform build
+  - runs signed/notarized artifact verification before publish
+  - uploads `artifacts/release-verify/**` for release evidence
+- Latest local Windows installer smoke run: `PASS artifact presence + silent install + silent uninstall`
+- Latest local self-use Windows release run: `PASS signature present on installer/unpacked exe + silent install + silent uninstall`
 
 ## Completed in v0.1.11
 - Port forwarding presets with optional auto-restore
@@ -65,8 +107,8 @@ Last updated: 2026-03-16
   - startup read path now repairs known mojibake patterns in `name` / `groupId` / `remark`
   - create/update persistence path now applies the same normalization
 - Expanded UI smoke automation:
-  - `scripts/smoke-capture-all.mjs` now covers sessions/menu/settings/command-history/retry/operation flows
-  - latest local run result: `PASS 21 / FAIL 0 / SKIP 0`
+  - `scripts/smoke-capture-all.mjs` now covers sessions/menu/settings/command-history/retry/operation flows plus embedded live SSH/SFTP verification
+  - latest local run result: `PASS 29 / FAIL 0 / SKIP 0`
 - Added compact UI governance baseline and fixed-height list policy:
   - created `UI_COMPACT_RULES.md` as mandatory UI rule reference
   - applied compact density + fixed list-shell heights across main panels/modals
@@ -244,31 +286,33 @@ Last updated: 2026-03-16
 ## Main Risks
 
 - No automated unit/integration test safety net yet
-- Packaging pipeline exists but final signing/notarization policy is incomplete
+- Packaging pipeline exists and self-use Windows signing works locally, but public-trust signing/notarization policy is still incomplete
 - Some SFTP recursive/safety operations still need hardening
 - Port-forward diagnostics are now richer, but there is still no cross-device/shared diagnostics sync workflow
 - Server health currently relies on Linux `/proc` and single-root disk sampling
 
 ## Next Focus
 
-1. Execute and document full macOS/Windows smoke checklist (`P0-F3`)
-2. Finalize signing/notarization path and verify installer flows (`P0-F4`)
+1. Finish macOS release evidence and targeted external-host validation for packaged smoke (`P0-F3`)
+2. Provision signing secrets and capture first public-trust signed/notarized release evidence (`P0-F4`)
 3. Extend recoverable global error actions and guidance coverage (`P0-E3`)
-4. Expand operation center coverage and cancellation controls (`F8`)
+4. Start command snippets/playbooks v2 with prompted variables and dry-run follow-up (`F12`)
 
 ## Remaining Work Snapshot
 
-1. Finish cross-platform packaged smoke matrix and reproducible issue report template (`P0-F3`)
-2. Complete signing/notarization and installer lifecycle verification (`P0-F4`)
+1. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`)
+2. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`)
 3. Expand global error recovery actions beyond current baseline (`P0-E3`)
 4. Expand operation center baseline into richer long-job visibility and controls (`F8`)
 5. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`)
 6. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
+7. Dangerous-command policy packs and environment-aware rule templates (`F17` follow-up)
+8. Session templates v2 (import/export, runtime prompt overrides, layered presets)
 
 ## Feature Candidates After Hardening
 
 1. Advanced retry-center analytics and history export
-2. Session templates for repeated infrastructure patterns
+2. Session templates v2 (runtime prompts, import/export, layered presets)
 3. SSH jump-host chain builder for bastion environments
 4. Transfer bandwidth limiter and schedule window
 5. Command snippets/playbooks v2 with prompted variables and dry-run preview
@@ -277,7 +321,7 @@ Last updated: 2026-03-16
 8. Remote file snapshot and rollback workflow
 9. Session tags and smart saved views
 10. Terminal session recording/replay export
-11. Dangerous-command guardrails
+11. Dangerous-command policy packs and environment-aware rule templates
 12. Recurring folder sync profiles
 13. Connection quality timeline dashboard
 14. Workspace profile mode with environment risk cues
@@ -293,5 +337,11 @@ Last updated: 2026-03-16
 23. Accessibility and hotkey conflict checker
 24. Plugin extension hooks for external ops integrations
 25. Command allowlist/denylist policy packs by workspace
-
-
+26. Command palette / universal action launcher
+27. Remote file diff-first preview before overwrite/save-back
+28. Session notes / runbook annotations
+29. Split-pane terminal layouts for side-by-side work
+30. Detach/clone current tab into a new window or pane
+31. Recent directories / quick `cd` launcher
+32. Shell integration for command history, cwd tracking, and automatic profile switching
+33. Shared encrypted team vault / workspace sync for shared hosts and snippets

@@ -52,12 +52,15 @@ jobs:
           - os: macos-14
             platform: mac-x64
             script: dist:mac:x64
+            verify_platform: mac
           - os: macos-14
             platform: mac-arm64
             script: dist:mac:arm64
+            verify_platform: mac
           - os: windows-2022
             platform: win
             script: dist:win
+            verify_platform: win
 
     steps:
       - name: Checkout
@@ -79,10 +82,84 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare release secrets
+        env:
+          APPLE_API_KEY_B64: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_KEY_B64 || '' }}
+          APPLE_API_KEY_ID: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_KEY_ID || '' }}
+        run: pnpm run release:prepare-secrets -- --platform=${{ matrix.verify_platform }}
+
+      - name: Resolve release verification mode
+        id: verify_mode
+        shell: bash
+        env:
+          VERIFY_PLATFORM: ${{ matrix.verify_platform }}
+          HAS_MAC_CERT: ${{ startsWith(matrix.platform, 'mac') && secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' || false }}
+          HAS_MAC_NOTARY: ${{ startsWith(matrix.platform, 'mac') && ((secrets.APPLE_API_KEY_B64 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '') || (secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '') || (secrets.APPLE_KEYCHAIN != '' && secrets.APPLE_KEYCHAIN_PROFILE != '')) || false }}
+          HAS_WIN_CERT: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK != '' && secrets.WIN_CSC_KEY_PASSWORD != '' || false }}
+        run: |
+          PREFLIGHT_ARGS="--platform=$VERIFY_PLATFORM"
+          VERIFY_ARGS="--platform=$VERIFY_PLATFORM"
+
+          if [ "$VERIFY_PLATFORM" = "mac" ]; then
+            VERIFY_ARGS="$VERIFY_ARGS --install-smoke"
+            if [ "$HAS_MAC_CERT" = "true" ] && [ "$HAS_MAC_NOTARY" = "true" ]; then
+              PREFLIGHT_ARGS="$PREFLIGHT_ARGS --require-signing --require-notarization"
+              VERIFY_ARGS="$VERIFY_ARGS --expect-signed --expect-notarized"
+            fi
+          else
+            VERIFY_ARGS="$VERIFY_ARGS --install-smoke"
+            if [ "$HAS_WIN_CERT" = "true" ]; then
+              PREFLIGHT_ARGS="$PREFLIGHT_ARGS --require-signing"
+              VERIFY_ARGS="$VERIFY_ARGS --expect-signed"
+            fi
+          fi
+
+          echo "preflight_args=$PREFLIGHT_ARGS" >> "$GITHUB_OUTPUT"
+          echo "verify_args=$VERIFY_ARGS" >> "$GITHUB_OUTPUT"
+
+      - name: Release signing preflight
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_LINK: ${{ startsWith(matrix.platform, 'mac') && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ startsWith(matrix.platform, 'mac') && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.platform == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_KEY_ID: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_ID: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_KEYCHAIN: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_KEYCHAIN || '' }}
+          APPLE_KEYCHAIN_PROFILE: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_KEYCHAIN_PROFILE || '' }}
+        run: pnpm run release:preflight -- ${{ steps.verify_mode.outputs.preflight_args }}
+
       - name: Build package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_LINK: ${{ startsWith(matrix.platform, 'mac') && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ startsWith(matrix.platform, 'mac') && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.platform == 'win' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_KEY_ID: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_ID: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_KEYCHAIN: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_KEYCHAIN || '' }}
+          APPLE_KEYCHAIN_PROFILE: ${{ startsWith(matrix.platform, 'mac') && secrets.APPLE_KEYCHAIN_PROFILE || '' }}
         run: pnpm run ${{ matrix.script }}
+
+      - name: Verify signed artifacts
+        run: pnpm run release:verify -- ${{ steps.verify_mode.outputs.verify_args }}
+
+      - name: Upload release verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verify-${{ matrix.platform }}
+          path: artifacts/release-verify/**
+          if-no-files-found: error
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

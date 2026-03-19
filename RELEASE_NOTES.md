@@ -4,14 +4,24 @@
 
 Release type: In development
 
-- Added packaged smoke automation/report baseline:
-  - `pnpm run smoke:ui` now writes `summary.json` and `full-test-matrix.md`
-  - supports packaged executable launch via `TERMDOCK_SMOKE_EXECUTABLE`
-  - session smoke assertions now cover keyboard-open dedupe and double-click fresh-tab behavior
-- Added packaged smoke CI workflow:
-  - `.github/workflows/packaged-smoke.yml` runs on Windows/macOS runners
-  - uploads smoke artifact directories for review
-- Added `PACKAGED_SMOKE.md` with Windows/macOS packaged validation workflow and evidence bundle guidance
+- No unreleased notes yet.
+
+## v0.1.13 (2026-03-19)
+
+Release type: Stable
+
+### Highlights
+
+- Added packaged smoke automation/report baseline with embedded live SSH/SFTP coverage and packaged validation workflow.
+- Added release preflight/verify tooling, self-use Windows release helper path, and release signing runbook.
+- Added session templates baseline with template-scoped env vars plus create/apply/manage flows.
+- Expanded dangerous-command smoke coverage and safety-panel validation.
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace and packaged smoke runs: `PASS 29 / FAIL 0 / SKIP 0`
 
 ## v0.1.12 (2026-03-13)
 
@@ -44,7 +54,7 @@ Release type: Stable
   - create/update paths now apply the same normalization before persistence
 - Expanded UI smoke automation coverage:
   - `scripts/smoke-capture-all.mjs` now validates sessions/menu/settings/command-history/retry/operation flows
-  - latest local smoke run: `PASS 21 / FAIL 0 / SKIP 0`
+  - baseline local smoke run at delivery: `PASS 21 / FAIL 0 / SKIP 0`
 - Added session-scoped transfer conflict strategy memory:
   - conflict dialogs now support `Remember for Session`
   - `Settings > SFTP` includes clear actions for remembered upload/download defaults

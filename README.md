@@ -5,14 +5,22 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.12` (2026-03-13)
-- Current branch focus: `v0.1.13` hardening cycle on `master`
+- Current stable release: `v0.1.13` (2026-03-19)
+- Current branch focus: post-`v0.1.13` hardening cycle on `master`
+- Current master addition: session templates baseline with local env-var substitution and template manager flows
+- Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
 
 ## UI Rules
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
+
+## Release in `v0.1.13` (2026-03-19)
+
+- Packaged smoke automation/report baseline now includes embedded live SSH/SFTP verification and packaged validation flow.
+- Release preflight/verify tooling and self-use Windows release helper path are now in-repo.
+- Session templates baseline landed with template-scoped env vars and create/apply/manage flows.
 
 ## Patch in `v0.1.12` (2026-03-13)
 
@@ -27,12 +35,17 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Command History panel interaction polish:
   - blank-area right click now opens context menu (`Add` / `Import` / `Export` / `Manage`)
   - row right click keeps item actions (`Run` / `Copy` / `Delete`)
+- Dangerous-command guardrails:
+  - `Settings > Safety` exposes built-in risky-command rules and custom patterns
+  - risky terminal writes now require bottom-bar approval before execution
+  - guardrails cover keyboard Enter, clipboard paste, command history run/paste, snippets, quick profiles, and startup commands
+  - built-in safety rules can be reset from the Safety panel
 - Session text normalization migration:
   - added startup normalization for known mojibake session/group/remark text patterns
   - create/update paths now normalize known corrupted text before persistence
 - Added/expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`):
   - covers sessions context menus, settings sections, command history workflows, retry/operation center
-  - latest local run: `PASS 21 / FAIL 0 / SKIP 0`
+  - baseline local run at delivery: `PASS 21 / FAIL 0 / SKIP 0`
 - Transfer conflict policy for upload/download (`Overwrite` / `Skip` / `Rename`)
 - Parallelized transfer conflict pre-checks (directory-level limited concurrency)
 - Failed transfer replay actions (`Retry Failed`) for upload/download docks
@@ -147,10 +160,14 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Session import from JSON (`Import Sessions JSON...`) with group and duplicate strategy selection
 - SSH config import with preview and duplicate-handling strategy
 - Session quick profiles (`Run Quick Profile...`, `Save Quick Profile...`, `Manage Quick Profiles...`)
+- Session templates (`New Session From Template...`, `Save as Template...`, `Manage Session Templates...`) with template-scoped env var substitution
 - Multi-tab xterm terminal with single-tab-per-session dedupe (opening an already-open session focuses existing tab)
 - Terminal context menu and reconnect flow
+- Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`)
+- Dangerous-command guardrails with `Settings > Safety` and a fixed bottom approval bar for risky execution sources
 - Command History side panel + manager, including blank-area context menu actions (`Add` / `Import` / `Export` / `Manage`)
 - Command snippets manager and grouped snippet execution (`Run Snippet`, `Snippet Manager`)
+- Operation Center modal with active transfer/delete/port-forward status, cross-tab activity summary, cancel-all actions, and bulk reconnect shortcuts
 - Port forwarding manager in Settings:
   - Local forward (`-L`)
   - Remote forward (`-R`)
@@ -220,6 +237,8 @@ Set SSH/SFTP target environment variables first. See `SOAK_TEST.md` for full set
 pnpm run smoke:ui
 ```
 
+The default smoke run boots an embedded local SSH/SFTP fixture, so auth/connect and baseline SFTP transfer coverage do not require an external host.
+
 Use `PACKAGED_SMOKE.md` for packaged executable runs, output artifacts, and the Windows/macOS validation matrix.
 
 Packaged wrapper:
@@ -228,9 +247,22 @@ Packaged wrapper:
 pnpm run smoke:ui:packaged
 ```
 
+Latest local workspace and packaged smoke runs: `PASS 29 / FAIL 0 / SKIP 0`
+
 ## Release
 
 Workflow: `.github/workflows/release.yml`
+
+Runbook: `RELEASE_SIGNING.md`
+
+Secret bootstrap helper: `pnpm run release:set-secrets -- --repo=<owner/name> --dry-run ...`
+
+Self-use Windows helper:
+
+```powershell
+pnpm run release:self-use:cert:win
+pnpm run release:self-use:win
+```
 
 Stable release:
 
@@ -258,21 +290,21 @@ Tag rules:
 - Session/group exports currently exclude decrypted credentials/secrets
 - Active runtime port forwards remain tab-scoped; event history now persists locally per session, but there is no cross-device sync workflow yet
 - Dynamic forwarding currently supports SOCKS5 no-auth `CONNECT` baseline only
-- Full Windows/macOS packaged smoke execution is still pending, but the automation/report baseline is now available
-- Installer signing/notarization strategy is not fully complete
+- Cross-platform packaged smoke baseline is in place, but macOS release evidence and targeted external-host validation are still pending
+- Release signing/notarization preflight and verification baseline now exists, and self-use Windows release is available locally, but CI secret provisioning and first public-trust signed/notarized evidence are still pending
 - No in-app auto-update yet
 
 ## Near-Term Execution Focus
 
-1. Execute the packaged smoke matrix on Windows/macOS using `PACKAGED_SMOKE.md`
-2. Installer signing/notarization and installation verification
+1. Finish macOS/external-host packaged smoke evidence using `PACKAGED_SMOKE.md`
+2. Provision release signing secrets and capture first signed/notarized evidence using `RELEASE_SIGNING.md`
 3. Recoverable global error UX follow-up (broader action coverage and contextual guidance)
 4. Operation center follow-up for broader operation coverage and cancel controls
 
 ## Remaining Work (Not Done Yet)
 
-1. `P0-F3`: complete and document cross-platform smoke test matrix on packaged builds
-2. `P0-F4`: finalize signing/notarization and verify installer upgrade/uninstall paths
+1. `P0-F3`: finish the remaining macOS/external-host packaged smoke evidence on top of the current automated matrix
+2. `P0-F4`: finish secret provisioning and capture first signed/notarized installer evidence on top of the current preflight/verify baseline
 3. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
 4. `F8`: expand operation center baseline to cover more operation types and cancellation paths
 5. `P0-F1` + `P0-F2`: establish unit/integration test baseline for regression safety
@@ -280,22 +312,34 @@ Tag rules:
 
 ## Candidate Features (Prioritized)
 
+Current next-wave emphasis: command snippets/playbooks v2, dangerous-command policy packs, and operation center follow-up. Additional ideas are listed below.
+
 1. Advanced retry-center analytics and history export
-2. Session templates and environment variable substitution
+2. Session templates v2 (runtime prompts, import/export, layered presets)
 3. Operation center v2 (broader operation types, richer progress timeline, and action controls)
 4. Encrypted session export/import with credential-safe payload
 5. SSH jump-host chain builder (`ProxyJump`/bastion wizard)
 6. Transfer bandwidth limiter and schedule window
-7. Command snippets/playbooks v2 (parameter prompts, validation, scoped variables)
+7. Command snippets/playbooks v2 (parameter prompts, validation, dry-run preview, scoped variables)
 8. Session quick profiles v2 (multi-command chains, environment overrides)
 9. Multi-host command broadcast with dry-run preview
 10. Remote file snapshot and quick rollback for accidental edits
 11. Session tags and smart saved views (by env/owner/risk)
 12. Terminal session recording/replay with sanitized export
-13. Dangerous-command guardrails (rule-based preflight confirmation)
+13. Dangerous-command policy packs and environment-aware rule templates
 14. One-way sync profiles for recurring upload/download folders
 15. Connection quality timeline (latency/reconnect/throughput history)
 16. Workspace profile mode (`dev` / `staging` / `prod`) with visual risk cues
+17. Command palette / universal action launcher
+18. Remote file diff-first preview before overwrite/save-back
+19. Session health checks with proactive risk badges
+20. Operation audit timeline (command and transfer traceability)
+21. Session notes / runbook annotations
+22. Split-pane terminal layouts for side-by-side command work
+23. Detach/clone current tab into a new window or pane
+24. Recent directories / quick `cd` launcher with per-host history
+25. Shell integration for command history, cwd tracking, and automatic profile switching
+26. Shared encrypted team vault / workspace sync for hosts, snippets, and port-forward presets
 
 ## Exploration Ideas (Unprioritized)
 
@@ -323,6 +367,7 @@ src/shared    # Shared contracts and types
 ## Documentation
 
 - `RELEASE_NOTES.md`: release notes
+- `RELEASE_SIGNING.md`: release signing/notarization and installer verification runbook
 - `PROGRESS.md`: progress and readiness snapshot
 - `TASKS.md`: execution tasks and status
 - `PRD.md`: product requirements

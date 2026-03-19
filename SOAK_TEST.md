@@ -2,7 +2,7 @@
 
 This document describes how to run long-duration transfer stress tests against a real SSH/SFTP server.
 
-Last updated: 2026-03-13
+Last updated: 2026-03-19
 
 ## Goal
 
@@ -135,4 +135,8 @@ After each script run, validate packaged UI (`release` build):
 10. Open and edit one remote file from external editor and verify:
    - save-back works on normal path
    - when remote file changes externally, auto-sync guard skips unsafe overwrite and logs a diagnostics warning
+11. Open `Settings > Safety` and verify:
+   - risky commands are blocked by the fixed bottom approval bar
+   - `Run Once` allows a one-time execution
+   - `Cancel` keeps the command blocked
 

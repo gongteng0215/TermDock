@@ -1,8 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { basename, join, relative, resolve } from "node:path";
 
 import { _electron as electron } from "playwright";
 import electronPath from "electron";
+
+import { startSmokeSshFixture } from "./smoke-ssh-fixture.mjs";
 
 function toStamp(inputDate) {
   return inputDate.toISOString().replace(/[:.]/g, "-");
@@ -86,6 +88,9 @@ function createMarkdownReport({
   lines.push("- Same-session keyboard-open dedupe");
   lines.push("- Session list double-click fresh-tab behavior");
   lines.push("- Close and reopen same session");
+  lines.push("- Embedded local SSH fixture connect/auth lifecycle");
+  lines.push("- Dangerous-command guardrails Settings > Safety UI and approval bar on a live SSH session");
+  lines.push("- Embedded local SFTP fixture list/upload/download/delete flow");
   lines.push("- Settings sections (Connection/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics)");
   lines.push("- Command history manager (add/edit/export/import/delete)");
   lines.push("- Command history side panel context menu");
@@ -138,15 +143,14 @@ function createMarkdownReport({
   }
 
   lines.push("", "## Not fully covered in this run");
-  lines.push("- Terminal successful connect/auth lifecycle against a real SSH server");
-  lines.push("- SFTP list/upload/download/delete against a real remote filesystem");
   lines.push("- Conflict strategy behaviors (`overwrite` / `skip` / `rename`) with real remote conflicts");
   lines.push("- Upload/download cancel semantics under real file-transfer load");
   lines.push("- Retry Center requeue with real failed transfer samples");
   lines.push("- Remote file external editor save-back path against a live server");
   lines.push("- Port forwarding creation/use/teardown with real remote sockets");
-  lines.push("- Server Health metrics/process/service snapshots from a live host");
+  lines.push("- Server Health metrics/process/service snapshots from a non-fixture live host");
   lines.push("- Unexpected disconnect auto-capture report with real connection interruptions");
+  lines.push("- Host-specific auth variants (key auth, jump host, agent, MFA) against real infrastructure");
 
   lines.push("", "## Artifacts");
   lines.push("- `summary.json`");
@@ -175,6 +179,9 @@ async function isVisible(locator) {
 }
 
 async function closeMenusAndDialogs(page) {
+  if (!page) {
+    return;
+  }
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const appDialog = page.locator(".modal.app-dialog");
     if ((await appDialog.count()) > 0) {
@@ -198,6 +205,18 @@ async function closeMenusAndDialogs(page) {
       }
     }
 
+    const approvalBar = page.locator(".app-inline-hint-panel");
+    if ((await approvalBar.count()) > 0) {
+      const cancelApproval = page
+        .locator(".app-inline-hint-panel__actions .secondary-button:has-text('Cancel')")
+        .first();
+      if (await isVisible(cancelApproval)) {
+        await cancelApproval.click();
+        await page.waitForTimeout(220);
+        continue;
+      }
+    }
+
     const contextMenu = page.locator(".sftp-context-menu");
     if ((await contextMenu.count()) > 0) {
       await page.keyboard.press("Escape");
@@ -208,15 +227,95 @@ async function closeMenusAndDialogs(page) {
   }
 }
 
-async function ensureSession(page, sessionName, groupId) {
+async function waitForCondition(check, { timeout = 10_000, interval = 120, description } = {}) {
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < timeout) {
+    try {
+      const result = await check();
+      if (result) {
+        return result;
+      }
+      lastError = null;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolvePromise) => {
+      setTimeout(resolvePromise, interval);
+    });
+  }
+  if (lastError) {
+    throw lastError;
+  }
+  throw new Error(`Timed out waiting for ${description ?? "condition"}.`);
+}
+
+async function waitForMissingPath(targetPath, timeout = 10_000) {
+  await waitForCondition(
+    async () => {
+      try {
+        await stat(targetPath);
+        return false;
+      } catch (error) {
+        if (error && typeof error === "object" && error.code === "ENOENT") {
+          return true;
+        }
+        throw error;
+      }
+    },
+    {
+      timeout,
+      description: `missing path ${targetPath}`
+    }
+  );
+}
+
+async function waitForFileContents(targetPath, expectedText, timeout = 10_000) {
+  await waitForCondition(
+    async () => {
+      try {
+        const actualText = await readFile(targetPath, "utf8");
+        return actualText === expectedText;
+      } catch (error) {
+        if (error && typeof error === "object" && error.code === "ENOENT") {
+          return false;
+        }
+        throw error;
+      }
+    },
+    {
+      timeout,
+      description: `file contents for ${targetPath}`
+    }
+  );
+}
+
+async function getActiveTabId(page) {
+  const tabId = await page.locator(".terminal-pane.is-active").first().getAttribute("data-tab-id");
+  if (!tabId || !tabId.trim()) {
+    throw new Error("Active terminal tab id not found in DOM.");
+  }
+  return tabId.trim();
+}
+
+async function ensureSession(page, sessionName, groupId, connection) {
   return page.evaluate(
-    async ({ sessionNameValue, groupIdValue }) => {
+    async ({ sessionNameValue, groupIdValue, connectionValue }) => {
       const sessions = await window.termdock.sessions.list();
       const existing = sessions.find((entry) => entry.name === sessionNameValue);
+      const payload = {
+        host: connectionValue.host,
+        port: connectionValue.port,
+        username: connectionValue.username,
+        authType: "password",
+        privateKeyPath: "",
+        groupId: groupIdValue,
+        remark: connectionValue.remark,
+        favorite: false,
+        secret: connectionValue.password
+      };
       if (existing) {
-        if ((existing.groupId ?? "") !== groupIdValue) {
-          await window.termdock.sessions.update(existing.id, { groupId: groupIdValue });
-        }
+        await window.termdock.sessions.update(existing.id, payload);
         return {
           created: false,
           id: existing.id
@@ -225,15 +324,7 @@ async function ensureSession(page, sessionName, groupId) {
 
       const created = await window.termdock.sessions.create({
         name: sessionNameValue,
-        host: "127.0.0.1",
-        port: 22,
-        username: "smoke",
-        authType: "password",
-        privateKeyPath: "",
-        groupId: groupIdValue,
-        remark: "auto-seeded by smoke script",
-        favorite: false,
-        secret: "smoke"
+        ...payload
       });
       return {
         created: true,
@@ -242,7 +333,8 @@ async function ensureSession(page, sessionName, groupId) {
     },
     {
       sessionNameValue: sessionName,
-      groupIdValue: groupId
+      groupIdValue: groupId,
+      connectionValue: connection
     }
   );
 }
@@ -263,15 +355,25 @@ async function main() {
     console.log(`[${status.toUpperCase()}] ${name}${suffix}`);
   };
 
-  const app = await electron.launch({
-    executablePath: smokeConfig.executablePath ?? electronPath,
-    args: smokeConfig.executablePath ? [] : ["."],
-    env: {
-      ...launchEnv,
-      TERMDOCK_DISABLE_GPU: "1",
-      TERMDOCK_OPEN_DEVTOOLS: "0"
-    }
+  const fixture = await startSmokeSshFixture({
+    rootDir: join(outputDir, "fixture-remote")
   });
+  const uploadSourcePath = join(outputDir, "fixture-upload.txt");
+  const uploadSourceContents = [
+    "TermDock smoke upload source",
+    `Generated at ${new Date().toISOString()}`
+  ].join("\n");
+  const uploadSourceFileName = basename(uploadSourcePath);
+  const uploadedRemoteLocalPath = join(fixture.rootDir, uploadSourceFileName);
+  const downloadTargetPath = join(outputDir, "fixture-download.txt");
+  await writeFile(uploadSourcePath, uploadSourceContents, "utf8");
+  pushStep(
+    "start local SSH/SFTP fixture",
+    "pass",
+    `host=${fixture.host}:${fixture.port}, root=${toReportPath(relative(process.cwd(), fixture.rootDir))}`
+  );
+
+  let app = null;
 
   let shotIndex = 1;
   const screenshotList = [];
@@ -302,6 +404,16 @@ async function main() {
   const pageRef = { current: null };
 
   try {
+    app = await electron.launch({
+      executablePath: smokeConfig.executablePath ?? electronPath,
+      args: smokeConfig.executablePath ? [] : ["."],
+      env: {
+        ...launchEnv,
+        TERMDOCK_DISABLE_GPU: "1",
+        TERMDOCK_OPEN_DEVTOOLS: "0"
+      }
+    });
+
     const page = await app.firstWindow();
     pageRef.current = page;
 
@@ -314,14 +426,31 @@ async function main() {
     });
 
     await runStep("seed smoke sessions", async () => {
-      const grouped = await ensureSession(page, "smoke-group-session", "smoke-group");
-      const ungrouped = await ensureSession(page, "smoke-ungrouped-session", "");
+      const sessionConnection = {
+        host: fixture.host,
+        port: fixture.port,
+        username: fixture.username,
+        password: fixture.password,
+        remark: `auto-seeded by smoke script (fixture ${fixture.host}:${fixture.port})`
+      };
+      const grouped = await ensureSession(
+        page,
+        "smoke-group-session",
+        "smoke-group",
+        sessionConnection
+      );
+      const ungrouped = await ensureSession(
+        page,
+        "smoke-ungrouped-session",
+        "",
+        sessionConnection
+      );
       const total = await page.evaluate(async () => (await window.termdock.sessions.list()).length);
       await page.reload();
       await page.waitForLoadState("domcontentloaded");
       await page.waitForTimeout(1300);
       const fileName = await recordShot(page, "home-after-seed");
-      return `total=${total}, groupedCreated=${grouped.created}, ungroupedCreated=${ungrouped.created}, shot=${fileName}`;
+      return `fixturePort=${fixture.port}, total=${total}, groupedCreated=${grouped.created}, ungroupedCreated=${ungrouped.created}, shot=${fileName}`;
     });
 
     await runStep("monkeypatch file dialogs for export/import actions", async () => {
@@ -441,8 +570,16 @@ async function main() {
       await sessionButton.click();
       await page.waitForTimeout(180);
       await page.keyboard.press("Enter");
-      await page.waitForTimeout(900);
-      const afterFirstOpen = await tabLocator.count();
+      const afterFirstOpen = await waitForCondition(
+        async () => {
+          const currentCount = await tabLocator.count();
+          return currentCount > before ? currentCount : false;
+        },
+        {
+          timeout: 8_000,
+          description: "first opened terminal tab"
+        }
+      );
 
       await sessionButton.click();
       await page.waitForTimeout(180);
@@ -460,6 +597,121 @@ async function main() {
         );
       }
       return `before=${before}, afterFirst=${afterFirstOpen}, afterSecond=${afterSecondOpen}, shot=${fileName}`;
+    });
+
+    await runStep("live SSH session connected", async () => {
+      const connectedStatus = page.locator(".terminal-pane__status.is-connected").first();
+      await connectedStatus.waitFor({ state: "visible", timeout: 15_000 });
+      const statusText = (await connectedStatus.textContent())?.trim() ?? "";
+      const fileName = await recordShot(page, "live-ssh-connected");
+      return `${statusText}, fixture=${fixture.host}:${fixture.port}, shot=${fileName}`;
+    });
+
+    await runStep("live SFTP directory loaded", async () => {
+      const seedEntry = page
+        .locator(".sftp-list__item", { hasText: fixture.remoteSeedFileName })
+        .first();
+      await seedEntry.waitFor({ state: "visible", timeout: 15_000 });
+      const currentPath = (await page.locator(".sftp-current-path").first().textContent())?.trim() ?? "";
+      const fileName = await recordShot(page, "live-sftp-directory");
+      return `${currentPath}, seed=${fixture.remoteSeedFileName}, shot=${fileName}`;
+    });
+
+    await runStep("dangerous command approval bar on live SSH session", async () => {
+      const terminalCanvas = page.locator(".terminal-pane.is-active .terminal-pane__canvas").first();
+      if (!(await isVisible(terminalCanvas))) {
+        throw new Error("active terminal pane not found");
+      }
+      await terminalCanvas.click();
+      await page.keyboard.type("rm -rf /tmp/termdock-smoke");
+      await page.keyboard.press("Enter");
+      const approvalBar = page.locator(".app-inline-hint-panel").first();
+      if (!(await isVisible(approvalBar))) {
+        throw new Error("dangerous command approval bar not visible");
+      }
+      const runOnce = approvalBar.locator(".primary-button:has-text('Run Once')").first();
+      const cancel = approvalBar.locator(".secondary-button:has-text('Cancel')").first();
+      if (!(await isVisible(runOnce)) || !(await isVisible(cancel))) {
+        throw new Error("approval actions not visible");
+      }
+      const beforeShot = await recordShot(page, "dangerous-command-approval-bar");
+      await runOnce.click();
+      await page.waitForTimeout(320);
+      const afterShot = await recordShot(page, "dangerous-command-approval-after");
+      return `${beforeShot}, ${afterShot}`;
+    });
+
+    await runStep("live SFTP upload file", async () => {
+      const activeTabId = await getActiveTabId(page);
+      await page.evaluate(
+        async ({ tabIdValue, localPathValue }) => {
+          const transferId = `smoke-up-${Date.now()}`;
+          await window.termdock.sftp.uploadFile(tabIdValue, transferId, localPathValue, "/");
+        },
+        {
+          tabIdValue: activeTabId,
+          localPathValue: uploadSourcePath
+        }
+      );
+      await waitForFileContents(uploadedRemoteLocalPath, uploadSourceContents, 15_000);
+      const uploadedEntry = page.locator(".sftp-list__item", { hasText: uploadSourceFileName }).first();
+      await uploadedEntry.waitFor({ state: "visible", timeout: 15_000 });
+      const fileName = await recordShot(page, "live-sftp-upload");
+      return `remote=${toReportPath(uploadedRemoteLocalPath)}, shot=${fileName}`;
+    });
+
+    await runStep("live SFTP download file", async () => {
+      const activeTabId = await getActiveTabId(page);
+      await page.evaluate(
+        async ({ tabIdValue, remotePathValue, localPathValue }) => {
+          const transferId = `smoke-down-${Date.now()}`;
+          await window.termdock.sftp.downloadFile(
+            tabIdValue,
+            transferId,
+            remotePathValue,
+            localPathValue
+          );
+        },
+        {
+          tabIdValue: activeTabId,
+          remotePathValue: fixture.remoteSeedPath,
+          localPathValue: downloadTargetPath
+        }
+      );
+      await waitForFileContents(downloadTargetPath, fixture.remoteSeedContents, 15_000);
+      const fileName = await recordShot(page, "live-sftp-download");
+      return `local=${toReportPath(downloadTargetPath)}, shot=${fileName}`;
+    });
+
+    await runStep("live SFTP delete uploaded file", async () => {
+      const activeTabId = await getActiveTabId(page);
+      await page.evaluate(
+        async ({ tabIdValue, remotePathValue }) => {
+          await window.termdock.sftp.deletePath(tabIdValue, remotePathValue, "file");
+        },
+        {
+          tabIdValue: activeTabId,
+          remotePathValue: `/${uploadSourceFileName}`
+        }
+      );
+      await waitForMissingPath(uploadedRemoteLocalPath, 15_000);
+      const refreshButton = page.locator("button[aria-label='Refresh directory']").first();
+      if (!(await isVisible(refreshButton))) {
+        throw new Error("SFTP refresh button not found after delete");
+      }
+      await refreshButton.click();
+      await waitForCondition(
+        async () => {
+          const count = await page.locator(".sftp-list__item", { hasText: uploadSourceFileName }).count();
+          return count === 0;
+        },
+        {
+          timeout: 15_000,
+          description: `deleted SFTP entry ${uploadSourceFileName}`
+        }
+      );
+      const fileName = await recordShot(page, "live-sftp-delete");
+      return `deleted=${uploadSourceFileName}, shot=${fileName}`;
     });
 
     await runStep("session list double-click opens fresh tab", async () => {
@@ -524,6 +776,7 @@ async function main() {
       shots.push(await recordShot(page, "settings-connection"));
 
       const sections = [
+        { label: "Safety", slug: "settings-safety" },
         { label: "Hotkeys", slug: "settings-hotkeys" },
         { label: "Monitor", slug: "settings-monitor" },
         { label: "File Open", slug: "settings-file-open" },
@@ -539,6 +792,35 @@ async function main() {
         }
         await navButton.click();
         await page.waitForTimeout(260);
+        if (section.label === "Safety") {
+          const safetyToggle = page.locator(".modal--settings label.settings-checkbox").first();
+          const safetyRule = page.locator(".settings-safety-rule input").first();
+          const customPatterns = page.locator(".settings-safety__textarea").first();
+          const resetSafetyRules = page
+            .locator(".modal--settings .modal__actions .secondary-button:has-text('Reset Safety Rules')")
+            .first();
+
+          if (
+            !(await isVisible(safetyToggle)) ||
+            !(await isVisible(safetyRule)) ||
+            !(await isVisible(customPatterns)) ||
+            !(await isVisible(resetSafetyRules))
+          ) {
+            throw new Error("safety controls not visible");
+          }
+
+          await safetyRule.uncheck();
+          await customPatterns.fill("rm -rf /tmp/termdock-smoke");
+          await resetSafetyRules.click();
+          await page.waitForTimeout(260);
+
+          if (!(await safetyRule.isChecked())) {
+            throw new Error("safety rule did not reset");
+          }
+          if ((await customPatterns.inputValue()).trim().length !== 0) {
+            throw new Error("safety patterns did not reset");
+          }
+        }
         shots.push(await recordShot(page, section.slug));
       }
 
@@ -818,7 +1100,10 @@ async function main() {
       process.exitCode = 2;
     }
   } finally {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
+    await fixture.close();
   }
 }
 

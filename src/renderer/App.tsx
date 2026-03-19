@@ -60,6 +60,20 @@ import type {
   TerminalCommandHistorySource,
   TerminalTab
 } from "./components/terminal-workspace";
+import {
+  createDefaultDangerousCommandGuardPreferences,
+  formatDangerousCommandSourceLabel,
+  inspectDangerousCommandText,
+  listDangerousCommandBuiltinRules,
+  normalizeDangerousCommandGuardPreferences,
+  shouldInspectDangerousCommandWrite,
+  summarizeDangerousCommandCustomPatterns,
+  type DangerousCommandApprovalRequest,
+  type DangerousCommandBuiltinRuleId,
+  type DangerousCommandExecutionSource,
+  type DangerousCommandGuardPreferences,
+  type DangerousCommandInspectionResult
+} from "./dangerous-command-guard";
 
 const EMPTY_FORM: SessionCreateInput = {
   name: "",
@@ -94,14 +108,19 @@ const DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY =
 const SESSION_GROUPS_STORAGE_KEY = "termdock.session-groups.v1";
 const SESSION_SORT_MODE_STORAGE_KEY = "termdock.session-sort-mode.v1";
 const SESSION_QUICK_PROFILES_STORAGE_KEY = "termdock.session-quick-profiles.v1";
+const SESSION_TEMPLATES_STORAGE_KEY = "termdock.session-templates.v1";
 const COMMAND_SNIPPET_GROUPS_STORAGE_KEY = "termdock.command-snippet-groups.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
+const DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY =
+  "termdock.dangerous-command-guard-preferences.v1";
 const MAX_SFTP_TRANSFER_HISTORY = 800;
 const MAX_PORT_FORWARD_EVENT_HISTORY = 1200;
 const MAX_PORT_FORWARD_EVENT_HISTORY_PER_SESSION = 320;
 const MAX_DISCONNECT_REPORT_HISTORY = 120;
 const MAX_PENDING_TRANSFER_RESTORE_ITEMS = 2000;
 const MAX_SESSION_QUICK_PROFILES = 80;
+const MAX_SESSION_TEMPLATES = 60;
+const MAX_SESSION_TEMPLATE_ENV_VARS = 16;
 const MAX_COMMAND_SNIPPET_GROUPS = 40;
 const MAX_COMMAND_SNIPPETS_PER_GROUP = 120;
 const DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD = 100;
@@ -114,6 +133,7 @@ const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
 const APP_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
 type SettingsSectionId =
   | "connection"
+  | "safety"
   | "hotkeys"
   | "serverHealth"
   | "fileOpening"
@@ -242,6 +262,9 @@ const DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES: ServerHealthAlertPreferences = {
   memoryWarnPercent: 85,
   diskWarnPercent: 90
 };
+const DEFAULT_DANGEROUS_COMMAND_GUARD_PREFERENCES =
+  createDefaultDangerousCommandGuardPreferences();
+const DANGEROUS_COMMAND_BUILTIN_RULES = listDangerousCommandBuiltinRules();
 const DEFAULT_DISCONNECT_REPORT_CAPTURE_PREFERENCES: DisconnectReportCapturePreferences = {
   enabled: true
 };
@@ -443,6 +466,33 @@ interface SessionQuickProfile {
   confirmBeforeRun: boolean;
 }
 
+interface SessionTemplateEnvVar {
+  id: string;
+  key: string;
+  value: string;
+}
+
+interface SessionTemplateDraft {
+  templateName: string;
+  sessionName: string;
+  host: string;
+  port: string;
+  username: string;
+  authType: SessionCreateInput["authType"];
+  privateKeyPath: string;
+  groupId: string;
+  remark: string;
+  favorite: boolean;
+  secret: string;
+  envVars: SessionTemplateEnvVar[];
+}
+
+interface SessionTemplateRecord extends SessionTemplateDraft {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 interface CommandSnippetItem {
   id: string;
   name: string;
@@ -549,6 +599,19 @@ interface TransferDockNotice {
   tabId: string;
   level: "info" | "warn";
   message: string;
+}
+
+interface DangerousCommandApprovalState {
+  id: string;
+  request: DangerousCommandApprovalRequest;
+  sourceLabel: string;
+  ruleSummary: string;
+}
+
+interface GuardedTerminalWriteOptions {
+  source: DangerousCommandExecutionSource;
+  commandText?: string;
+  skipDangerousCommandCheck?: boolean;
 }
 
 type AppDialogMode = "alert" | "confirm" | "prompt" | "choice";
@@ -1125,6 +1188,8 @@ function getSettingsSectionTitle(section: SettingsSectionId): string {
   switch (section) {
     case "connection":
       return "Connection";
+    case "safety":
+      return "Safety Guardrails";
     case "hotkeys":
       return "Hotkeys";
     case "serverHealth":
@@ -2301,6 +2366,21 @@ function readConnectionPreferences(): ConnectionPreferences {
   }
 }
 
+function readDangerousCommandGuardPreferences(): DangerousCommandGuardPreferences {
+  if (typeof window === "undefined") {
+    return DEFAULT_DANGEROUS_COMMAND_GUARD_PREFERENCES;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY);
+    if (!rawValue) {
+      return DEFAULT_DANGEROUS_COMMAND_GUARD_PREFERENCES;
+    }
+    return normalizeDangerousCommandGuardPreferences(JSON.parse(rawValue));
+  } catch {
+    return DEFAULT_DANGEROUS_COMMAND_GUARD_PREFERENCES;
+  }
+}
+
 function readHotkeyPreferences(): HotkeyPreferences {
   if (typeof window === "undefined") {
     return createDefaultHotkeyPreferences();
@@ -2632,6 +2712,167 @@ function readSessionQuickProfiles(): SessionQuickProfile[] {
       }
     }
     return normalized;
+  } catch {
+    return [];
+  }
+}
+
+function createClientSideId(prefix: string): string {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) {
+    return `${prefix}-${uuid}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function createEmptySessionTemplateDraft(): SessionTemplateDraft {
+  return {
+    templateName: "",
+    sessionName: "",
+    host: "",
+    port: "22",
+    username: "",
+    authType: "password",
+    privateKeyPath: "",
+    groupId: "",
+    remark: "",
+    favorite: false,
+    secret: "",
+    envVars: []
+  };
+}
+
+function createSessionTemplateDraftFromForm(form: SessionCreateInput): SessionTemplateDraft {
+  const normalizedName = form.name.trim();
+  return {
+    templateName: normalizedName ? `${normalizedName} Template` : "",
+    sessionName: form.name,
+    host: form.host,
+    port: `${form.port ?? 22}`,
+    username: form.username,
+    authType: form.authType,
+    privateKeyPath: form.privateKeyPath ?? "",
+    groupId: form.groupId ?? "",
+    remark: form.remark ?? "",
+    favorite: form.favorite ?? false,
+    secret: form.secret ?? "",
+    envVars: []
+  };
+}
+
+function normalizeSessionTemplateEnvVars(payload: unknown): SessionTemplateEnvVar[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  const normalized: SessionTemplateEnvVar[] = [];
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  for (const row of payload) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<SessionTemplateEnvVar>;
+    const key = typeof candidate.key === "string" ? candidate.key.trim() : "";
+    if (!key || seenKeys.has(key.toLowerCase())) {
+      continue;
+    }
+    const id =
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id.trim()
+        : createClientSideId("stv");
+    if (seenIds.has(id)) {
+      continue;
+    }
+    seenIds.add(id);
+    seenKeys.add(key.toLowerCase());
+    normalized.push({
+      id,
+      key: key.slice(0, 40),
+      value: typeof candidate.value === "string" ? candidate.value.slice(0, 400) : ""
+    });
+    if (normalized.length >= MAX_SESSION_TEMPLATE_ENV_VARS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function normalizeSessionTemplateDraft(payload: unknown): SessionTemplateDraft {
+  const candidate = payload && typeof payload === "object" ? (payload as Partial<SessionTemplateDraft>) : {};
+  return {
+    templateName:
+      typeof candidate.templateName === "string" ? candidate.templateName.trim().slice(0, 80) : "",
+    sessionName:
+      typeof candidate.sessionName === "string" ? candidate.sessionName.trim().slice(0, 120) : "",
+    host: typeof candidate.host === "string" ? candidate.host.trim().slice(0, 255) : "",
+    port: typeof candidate.port === "string" ? candidate.port.trim().slice(0, 16) : "22",
+    username:
+      typeof candidate.username === "string" ? candidate.username.trim().slice(0, 120) : "",
+    authType: candidate.authType === "privateKey" ? "privateKey" : "password",
+    privateKeyPath:
+      typeof candidate.privateKeyPath === "string" ? candidate.privateKeyPath.trim().slice(0, 512) : "",
+    groupId: typeof candidate.groupId === "string" ? candidate.groupId.trim().slice(0, 120) : "",
+    remark: typeof candidate.remark === "string" ? candidate.remark.trim().slice(0, 400) : "",
+    favorite: candidate.favorite === true,
+    secret: typeof candidate.secret === "string" ? candidate.secret.slice(0, 400) : "",
+    envVars: normalizeSessionTemplateEnvVars(candidate.envVars)
+  };
+}
+
+function normalizeSessionTemplates(payload: unknown): SessionTemplateRecord[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  const normalized: SessionTemplateRecord[] = [];
+  const seenIds = new Set<string>();
+  for (const row of payload) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<SessionTemplateRecord>;
+    const draft = normalizeSessionTemplateDraft(candidate);
+    if (!draft.templateName) {
+      continue;
+    }
+    const id =
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id.trim()
+        : createClientSideId("st");
+    if (seenIds.has(id)) {
+      continue;
+    }
+    const createdAt =
+      typeof candidate.createdAt === "number" && Number.isFinite(candidate.createdAt)
+        ? candidate.createdAt
+        : Date.now();
+    const updatedAt =
+      typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
+        ? candidate.updatedAt
+        : createdAt;
+    seenIds.add(id);
+    normalized.push({
+      id,
+      createdAt,
+      updatedAt,
+      ...draft
+    });
+    if (normalized.length >= MAX_SESSION_TEMPLATES) {
+      break;
+    }
+  }
+  return normalized.sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+function readSessionTemplates(): SessionTemplateRecord[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SESSION_TEMPLATES_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    return normalizeSessionTemplates(JSON.parse(rawValue));
   } catch {
     return [];
   }
@@ -3225,6 +3466,95 @@ function toFormFromSession(session: SessionRecord): SessionCreateInput {
   };
 }
 
+function toSessionTemplateDraftFromRecord(template: SessionTemplateRecord): SessionTemplateDraft {
+  return {
+    templateName: template.templateName,
+    sessionName: template.sessionName,
+    host: template.host,
+    port: template.port,
+    username: template.username,
+    authType: template.authType,
+    privateKeyPath: template.privateKeyPath,
+    groupId: template.groupId,
+    remark: template.remark,
+    favorite: template.favorite,
+    secret: template.secret,
+    envVars: template.envVars.map((envVar) => ({
+      id: envVar.id,
+      key: envVar.key,
+      value: envVar.value
+    }))
+  };
+}
+
+function buildSessionTemplateVariableMap(envVars: SessionTemplateEnvVar[]): Map<string, string> {
+  const next = new Map<string, string>();
+  for (const envVar of envVars) {
+    const key = envVar.key.trim();
+    if (!key) {
+      continue;
+    }
+    next.set(key, envVar.value);
+  }
+  return next;
+}
+
+function renderSessionTemplateText(
+  value: string,
+  variables: Map<string, string>,
+  missingKeys: Set<string>
+): string {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_match, key: string) => {
+    if (!variables.has(key)) {
+      missingKeys.add(key);
+      return "";
+    }
+    return variables.get(key) ?? "";
+  });
+}
+
+function resolveSessionTemplateToForm(
+  template: SessionTemplateDraft | SessionTemplateRecord
+): SessionCreateInput {
+  const variables = buildSessionTemplateVariableMap(template.envVars);
+  const missingKeys = new Set<string>();
+  const resolvedName = renderSessionTemplateText(template.sessionName, variables, missingKeys).trim();
+  const resolvedHost = renderSessionTemplateText(template.host, variables, missingKeys).trim();
+  const resolvedPortInput = renderSessionTemplateText(template.port, variables, missingKeys).trim();
+  const resolvedUsername = renderSessionTemplateText(template.username, variables, missingKeys).trim();
+  const resolvedPrivateKeyPath = renderSessionTemplateText(
+    template.privateKeyPath,
+    variables,
+    missingKeys
+  ).trim();
+  const resolvedGroupId = renderSessionTemplateText(template.groupId, variables, missingKeys).trim();
+  const resolvedRemark = renderSessionTemplateText(template.remark, variables, missingKeys).trim();
+  const resolvedSecret = renderSessionTemplateText(template.secret, variables, missingKeys);
+  if (missingKeys.size > 0) {
+    throw new Error(
+      `Missing template env vars: ${Array.from(missingKeys.values())
+        .sort((left, right) => left.localeCompare(right))
+        .join(", ")}.`
+    );
+  }
+  const resolvedPort = Number.parseInt(resolvedPortInput || "22", 10);
+  if (!Number.isFinite(resolvedPort) || resolvedPort < 1 || resolvedPort > 65535) {
+    throw new Error("Template port must resolve to a number between 1 and 65535.");
+  }
+  return {
+    name: resolvedName,
+    host: resolvedHost,
+    port: resolvedPort,
+    username: resolvedUsername,
+    authType: template.authType,
+    privateKeyPath: resolvedPrivateKeyPath,
+    groupId: resolvedGroupId,
+    remark: resolvedRemark,
+    favorite: template.favorite,
+    secret: resolvedSecret
+  };
+}
+
 function normalizeHostForRule(host: string): string {
   const trimmed = host.trim();
   if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
@@ -3356,6 +3686,7 @@ export function App() {
     () =>
       [
         { id: "connection", label: "Connection" },
+        { id: "safety", label: "Safety" },
         { id: "hotkeys", label: "Hotkeys" },
         { id: "serverHealth", label: "Monitor" },
         { id: "fileOpening", label: "File Open" },
@@ -3387,6 +3718,8 @@ export function App() {
   const [connectionPreferences, setConnectionPreferences] = useState<ConnectionPreferences>(
     () => readConnectionPreferences()
   );
+  const [dangerousCommandGuardPreferences, setDangerousCommandGuardPreferences] =
+    useState<DangerousCommandGuardPreferences>(() => readDangerousCommandGuardPreferences());
   const [hotkeyPreferences, setHotkeyPreferences] = useState<HotkeyPreferences>(
     () => readHotkeyPreferences()
   );
@@ -3464,6 +3797,15 @@ export function App() {
   const [sessionQuickProfiles, setSessionQuickProfiles] = useState<SessionQuickProfile[]>(
     () => readSessionQuickProfiles()
   );
+  const [sessionTemplates, setSessionTemplates] = useState<SessionTemplateRecord[]>(
+    () => readSessionTemplates()
+  );
+  const [isSessionTemplateManagerOpen, setIsSessionTemplateManagerOpen] = useState(false);
+  const [editingSessionTemplateId, setEditingSessionTemplateId] = useState<string | null>(null);
+  const [sessionTemplateDraft, setSessionTemplateDraft] = useState<SessionTemplateDraft>(
+    () => createEmptySessionTemplateDraft()
+  );
+  const [sessionTemplateError, setSessionTemplateError] = useState<string | null>(null);
   const [commandSnippetGroups, setCommandSnippetGroups] = useState<CommandSnippetGroup[]>(
     () => readCommandSnippetGroups()
   );
@@ -3624,6 +3966,7 @@ export function App() {
   const appDialogInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const appDialogResolverRef = useRef<((value: unknown) => void) | null>(null);
   const appDialogCancelValueRef = useRef<unknown>(undefined);
+  const dangerousCommandApprovalResolverRef = useRef<((value: boolean) => void) | null>(null);
   const appHintTimerRef = useRef<number | null>(null);
   const hotkeyRowRefs = useRef<Map<HotkeyActionId, HTMLDivElement | null>>(new Map());
   const hotkeyConflictHighlightTimerRef = useRef<number | null>(null);
@@ -3651,6 +3994,8 @@ export function App() {
   const [transferDockNotice, setTransferDockNotice] = useState<TransferDockNotice | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialogState | null>(null);
   const [appDialogInput, setAppDialogInput] = useState("");
+  const [dangerousCommandApproval, setDangerousCommandApproval] =
+    useState<DangerousCommandApprovalState | null>(null);
   const [appHintMessage, setAppHintMessage] = useState<{
     level: "info" | "warn";
     message: string;
@@ -3680,6 +4025,11 @@ export function App() {
   const totalCommandSnippetCount = useMemo(
     () => commandSnippetGroups.reduce((total, group) => total + group.snippets.length, 0),
     [commandSnippetGroups]
+  );
+  const dangerousCommandCustomPatternSummary = useMemo(
+    () =>
+      summarizeDangerousCommandCustomPatterns(dangerousCommandGuardPreferences.customPatternsText),
+    [dangerousCommandGuardPreferences.customPatternsText]
   );
   const visibleTerminalCommandHistoryEntries = useMemo(() => {
     const normalizedQuery = terminalCommandHistoryQuery.trim().toLowerCase();
@@ -3724,6 +4074,66 @@ export function App() {
     },
     []
   );
+  const guardedTerminalWrite = async (
+    tabId: string,
+    data: string,
+    options: GuardedTerminalWriteOptions
+  ): Promise<boolean> => {
+    if (!terminalApi) {
+      setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+      return false;
+    }
+    const normalizedCommandText =
+      typeof options.commandText === "string" && options.commandText.trim()
+        ? options.commandText.trim()
+        : data.replace(/[\r\n]+$/g, "").trim();
+    if (
+      !options.skipDangerousCommandCheck &&
+      shouldInspectDangerousCommandWrite(options.source, data) &&
+      normalizedCommandText
+    ) {
+      const inspection = inspectDangerousCommandText(
+        normalizedCommandText,
+        dangerousCommandGuardPreferences
+      );
+      if (inspection) {
+        const approved = await requestDangerousCommandApproval({
+          tabId,
+          source: options.source,
+          result: inspection
+        });
+        if (!approved) {
+          pushAppHintMessage(
+            `Blocked ${formatDangerousCommandSourceLabel(options.source)} command: ${inspection.preview}`,
+            {
+              level: inspection.severity === "critical" ? "warn" : "info",
+              durationMs: 5200
+            }
+          );
+          void systemApi?.writeLog("warn", "renderer:dangerous-command", "Dangerous command blocked.", {
+            tabId,
+            source: options.source,
+            command: inspection.commandText,
+            matches: inspection.matches
+          });
+          return false;
+        }
+        void systemApi?.writeLog(
+          "warn",
+          "renderer:dangerous-command",
+          "Dangerous command approved for one-time execution.",
+          {
+            tabId,
+            source: options.source,
+            command: inspection.commandText,
+            matches: inspection.matches
+          }
+        );
+      }
+    }
+    await terminalApi.write(tabId, data);
+    return true;
+  };
   const runTerminalCommandHistoryEntry = useCallback(
     async (entry: TerminalCommandHistoryEntry) => {
       if (!terminalApi) {
@@ -3741,12 +4151,19 @@ export function App() {
         setActiveTabId(existingTabId);
       }
       try {
-        await terminalApi.write(existingTabId, `${entry.command}\n`);
+        const wrote = await guardedTerminalWrite(existingTabId, `${entry.command}\n`, {
+          source: "commandHistoryRun",
+          commandText: entry.command
+        });
+        if (!wrote) {
+          return;
+        }
         window.dispatchEvent(
           new CustomEvent(TERMINAL_COMMAND_HISTORY_APPEND_EVENT, {
             detail: {
               tabId: existingTabId,
-              command: entry.command
+              command: entry.command,
+              source: "manual"
             }
           })
         );
@@ -3754,7 +4171,7 @@ export function App() {
         setError((caughtError as Error).message);
       }
     },
-    [terminalApi]
+    [guardedTerminalWrite, terminalApi]
   );
   const pasteTerminalCommandHistoryEntry = useCallback(
     async (entry: TerminalCommandHistoryEntry) => {
@@ -3768,12 +4185,15 @@ export function App() {
         return;
       }
       try {
-        await terminalApi.write(targetTabId, entry.command);
+        await guardedTerminalWrite(targetTabId, entry.command, {
+          source: "commandHistoryPaste",
+          commandText: entry.command
+        });
       } catch (caughtError) {
         setError((caughtError as Error).message);
       }
     },
-    [terminalApi]
+    [guardedTerminalWrite, terminalApi]
   );
   const upsertTerminalCommandHistoryCommand = useCallback(
     (
@@ -4793,6 +5213,40 @@ export function App() {
     },
     []
   );
+  const resolveDangerousCommandApproval = useCallback((approved: boolean) => {
+    const resolver = dangerousCommandApprovalResolverRef.current;
+    dangerousCommandApprovalResolverRef.current = null;
+    setDangerousCommandApproval(null);
+    if (resolver) {
+      resolver(approved);
+    }
+  }, []);
+  const requestDangerousCommandApproval = useCallback(
+    async (request: DangerousCommandApprovalRequest): Promise<boolean> => {
+      if (dangerousCommandApprovalResolverRef.current) {
+        dangerousCommandApprovalResolverRef.current(false);
+      }
+      const uniqueRuleLabels = Array.from(new Set(request.result.matches.map((match) => match.label)));
+      setDangerousCommandApproval({
+        id: `danger-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        request,
+        sourceLabel: formatDangerousCommandSourceLabel(request.source),
+        ruleSummary: uniqueRuleLabels.join(" | ")
+      });
+      return new Promise((resolve) => {
+        dangerousCommandApprovalResolverRef.current = resolve;
+      });
+    },
+    []
+  );
+  useEffect(() => {
+    return () => {
+      if (dangerousCommandApprovalResolverRef.current) {
+        dangerousCommandApprovalResolverRef.current(false);
+        dangerousCommandApprovalResolverRef.current = null;
+      }
+    };
+  }, []);
   const showAppAlert = useCallback(
     async (message: string, options?: AppAlertDialogOptions): Promise<void> => {
       const title = (options?.title ?? "").trim();
@@ -6051,6 +6505,10 @@ export function App() {
   const editingSession = useMemo(
     () => sessions.find((session) => session.id === editingSessionId) ?? null,
     [editingSessionId, sessions]
+  );
+  const editingSessionTemplate = useMemo(
+    () => sessionTemplates.find((template) => template.id === editingSessionTemplateId) ?? null,
+    [editingSessionTemplateId, sessionTemplates]
   );
   const selectedSftpEntry = useMemo<SftpEntry | null>(() => {
     if (!sftpDirectory || !selectedSftpPath) {
@@ -8010,6 +8468,17 @@ export function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
+        DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(dangerousCommandGuardPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [dangerousCommandGuardPreferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
         DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY,
         JSON.stringify(disconnectReportCapturePreferences)
       );
@@ -8098,6 +8567,21 @@ export function App() {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
   }, [sessionQuickProfiles]);
+
+  useEffect(() => {
+    try {
+      if (sessionTemplates.length === 0) {
+        window.localStorage.removeItem(SESSION_TEMPLATES_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          SESSION_TEMPLATES_STORAGE_KEY,
+          JSON.stringify(sessionTemplates.slice(0, MAX_SESSION_TEMPLATES))
+        );
+      }
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sessionTemplates]);
 
   useEffect(() => {
     try {
@@ -9182,6 +9666,277 @@ export function App() {
     };
   }, [systemApi]);
 
+  const resetSessionTemplateDraft = useCallback(() => {
+    setEditingSessionTemplateId(null);
+    setSessionTemplateDraft(createEmptySessionTemplateDraft());
+    setSessionTemplateError(null);
+  }, []);
+
+  const startSessionTemplateDraftFromForm = useCallback((sourceForm: SessionCreateInput) => {
+    setEditingSessionTemplateId(null);
+    setSessionTemplateDraft(createSessionTemplateDraftFromForm(sourceForm));
+    setSessionTemplateError(null);
+  }, []);
+
+  const loadSessionTemplateForEditing = useCallback((template: SessionTemplateRecord) => {
+    setEditingSessionTemplateId(template.id);
+    setSessionTemplateDraft(toSessionTemplateDraftFromRecord(template));
+    setSessionTemplateError(null);
+  }, []);
+
+  const openSessionTemplateManager = useCallback(
+    (options?: {
+      templateId?: string | null;
+      sourceForm?: SessionCreateInput;
+    }) => {
+      const nextTemplateId = options?.templateId?.trim() || null;
+      if (nextTemplateId) {
+        const existing = sessionTemplates.find((template) => template.id === nextTemplateId);
+        if (existing) {
+          loadSessionTemplateForEditing(existing);
+        } else if (options?.sourceForm) {
+          startSessionTemplateDraftFromForm(options.sourceForm);
+        } else {
+          resetSessionTemplateDraft();
+        }
+      } else if (options?.sourceForm) {
+        startSessionTemplateDraftFromForm(options.sourceForm);
+      } else if (sessionTemplates.length > 0) {
+        loadSessionTemplateForEditing(sessionTemplates[0]);
+      } else {
+        resetSessionTemplateDraft();
+      }
+      setIsSessionTemplateManagerOpen(true);
+    },
+    [
+      loadSessionTemplateForEditing,
+      resetSessionTemplateDraft,
+      sessionTemplates,
+      startSessionTemplateDraftFromForm
+    ]
+  );
+
+  const closeSessionTemplateManager = useCallback(() => {
+    setIsSessionTemplateManagerOpen(false);
+    setSessionTemplateError(null);
+  }, []);
+
+  const addSessionTemplateEnvVar = useCallback(() => {
+    setSessionTemplateDraft((prev) => {
+      if (prev.envVars.length >= MAX_SESSION_TEMPLATE_ENV_VARS) {
+        return prev;
+      }
+      return {
+        ...prev,
+        envVars: [
+          ...prev.envVars,
+          {
+            id: createClientSideId("stv"),
+            key: "",
+            value: ""
+          }
+        ]
+      };
+    });
+    setSessionTemplateError(null);
+  }, []);
+
+  const updateSessionTemplateEnvVar = useCallback(
+    (envVarId: string, patch: Partial<Pick<SessionTemplateEnvVar, "key" | "value">>) => {
+      setSessionTemplateDraft((prev) => ({
+        ...prev,
+        envVars: prev.envVars.map((envVar) =>
+          envVar.id === envVarId
+            ? {
+                ...envVar,
+                key: patch.key ?? envVar.key,
+                value: patch.value ?? envVar.value
+              }
+            : envVar
+        )
+      }));
+      setSessionTemplateError(null);
+    },
+    []
+  );
+
+  const removeSessionTemplateEnvVar = useCallback((envVarId: string) => {
+    setSessionTemplateDraft((prev) => ({
+      ...prev,
+      envVars: prev.envVars.filter((envVar) => envVar.id !== envVarId)
+    }));
+    setSessionTemplateError(null);
+  }, []);
+
+  const validateSessionTemplateDraft = useCallback(
+    (draft: SessionTemplateDraft): SessionTemplateDraft => {
+      const normalized = normalizeSessionTemplateDraft(draft);
+      if (!normalized.templateName) {
+        throw new Error("Template name is required.");
+      }
+      const envKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+      const seenKeys = new Set<string>();
+      for (const envVar of normalized.envVars) {
+        if (!envVar.key) {
+          throw new Error("Template env var name is required.");
+        }
+        if (!envKeyPattern.test(envVar.key)) {
+          throw new Error(
+            `Invalid env var "${envVar.key}". Use letters, numbers, and underscores, and do not start with a number.`
+          );
+        }
+        const normalizedKey = envVar.key.toLowerCase();
+        if (seenKeys.has(normalizedKey)) {
+          throw new Error(`Duplicate env var "${envVar.key}" in this template.`);
+        }
+        seenKeys.add(normalizedKey);
+      }
+      const conflictingTemplate = sessionTemplates.find(
+        (template) =>
+          template.id !== editingSessionTemplateId &&
+          template.templateName.trim().toLowerCase() === normalized.templateName.toLowerCase()
+      );
+      if (conflictingTemplate) {
+        throw new Error(`Template "${normalized.templateName}" already exists.`);
+      }
+      return normalized;
+    },
+    [editingSessionTemplateId, sessionTemplates]
+  );
+
+  const saveSessionTemplateDraft = useCallback(
+    (event?: FormEvent<HTMLFormElement>) => {
+      event?.preventDefault();
+      try {
+        const normalizedDraft = validateSessionTemplateDraft(sessionTemplateDraft);
+        const now = Date.now();
+        const nextRecord: SessionTemplateRecord = {
+          id: editingSessionTemplateId ?? createClientSideId("st"),
+          createdAt: editingSessionTemplate?.createdAt ?? now,
+          updatedAt: now,
+          ...normalizedDraft
+        };
+        setSessionTemplates((prev) => {
+          const next =
+            editingSessionTemplateId === null
+              ? [nextRecord, ...prev]
+              : prev.map((template) =>
+                  template.id === editingSessionTemplateId ? nextRecord : template
+                );
+          return normalizeSessionTemplates(next);
+        });
+        setEditingSessionTemplateId(nextRecord.id);
+        setSessionTemplateDraft(toSessionTemplateDraftFromRecord(nextRecord));
+        setSessionTemplateError(null);
+      } catch (caughtError) {
+        setSessionTemplateError((caughtError as Error).message);
+      }
+    },
+    [
+      editingSessionTemplate,
+      editingSessionTemplateId,
+      sessionTemplateDraft,
+      validateSessionTemplateDraft
+    ]
+  );
+
+  const deleteEditingSessionTemplate = useCallback(async () => {
+    if (!editingSessionTemplate) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete session template "${editingSessionTemplate.templateName}"?`,
+      {
+        title: "Delete Session Template",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setSessionTemplates((prev) => prev.filter((template) => template.id !== editingSessionTemplate.id));
+    const remaining = sessionTemplates.filter((template) => template.id !== editingSessionTemplate.id);
+    if (remaining.length > 0) {
+      loadSessionTemplateForEditing(remaining[0]);
+    } else {
+      resetSessionTemplateDraft();
+    }
+  }, [
+    editingSessionTemplate,
+    loadSessionTemplateForEditing,
+    resetSessionTemplateDraft,
+    sessionTemplates,
+    showAppConfirm
+  ]);
+
+  const applySessionTemplateToForm = useCallback(
+    async (
+      template: SessionTemplateRecord,
+      options?: {
+        openCreateModal?: boolean;
+        groupId?: string;
+        forceNewSession?: boolean;
+      }
+    ) => {
+      try {
+        const resolved = resolveSessionTemplateToForm(template);
+        const nextGroupId = options?.groupId?.trim();
+        setForm({
+          ...resolved,
+          groupId: nextGroupId && nextGroupId.length > 0 ? nextGroupId : resolved.groupId ?? ""
+        });
+        if (options?.forceNewSession) {
+          setEditingSessionId(null);
+        }
+        setTestConnectionResult(null);
+        setError(null);
+        if (options?.openCreateModal) {
+          setIsCreateModalOpen(true);
+        }
+        setIsSessionTemplateManagerOpen(false);
+      } catch (caughtError) {
+        await showAppAlert((caughtError as Error).message, {
+          title: "Session Template"
+        });
+      }
+    },
+    [showAppAlert]
+  );
+
+  const chooseSessionTemplateAndApply = useCallback(
+    async (options?: { openCreateModal?: boolean; groupId?: string; forceNewSession?: boolean }) => {
+      if (sessionTemplates.length === 0) {
+        await showAppAlert("No session templates available. Create one first.", {
+          title: "Session Templates"
+        });
+        return;
+      }
+      const selectedTemplateId = await showAppChoice(
+        "Choose session template.",
+        sessionTemplates.map((template) => ({
+          value: template.id,
+          label: `${template.templateName}  (${template.host || "host pending"})`
+        })),
+        {
+          title: "Session Templates",
+          cancelLabel: "Cancel"
+        }
+      );
+      if (!selectedTemplateId) {
+        return;
+      }
+      const selectedTemplate =
+        sessionTemplates.find((template) => template.id === selectedTemplateId) ?? null;
+      if (!selectedTemplate) {
+        return;
+      }
+      await applySessionTemplateToForm(selectedTemplate, options);
+    },
+    [applySessionTemplateToForm, sessionTemplates, showAppAlert, showAppChoice]
+  );
+
   const openCreateModal = (groupId = "") => {
     setForm({
       ...EMPTY_FORM,
@@ -10252,15 +11007,24 @@ export function App() {
       if (normalizedCommands.length === 0) {
         return;
       }
+      let executedCount = 0;
       for (const command of normalizedCommands) {
-        await terminalApi.write(tabId, `${command}\n`);
+        const wrote = await guardedTerminalWrite(tabId, `${command}\n`, {
+          source: "startupCommand",
+          commandText: command
+        });
+        if (!wrote) {
+          break;
+        }
+        executedCount += 1;
       }
       writeAppLog("info", "renderer:session-profile", "Executed startup commands on terminal tab.", {
         tabId,
-        commandCount: normalizedCommands.length
+        commandCount: executedCount,
+        queuedCommandCount: normalizedCommands.length
       });
     },
-    [terminalApi, writeAppLog]
+    [guardedTerminalWrite, terminalApi, writeAppLog]
   );
 
   useEffect(() => {
@@ -10661,7 +11425,13 @@ export function App() {
           return;
         }
       }
-      await terminalApi.write(tabId, `${rendered}\n`);
+      const wrote = await guardedTerminalWrite(tabId, `${rendered}\n`, {
+        source: "snippet",
+        commandText: rendered
+      });
+      if (!wrote) {
+        return;
+      }
       const tabTitle =
         terminalTabsRef.current.find((entry) => entry.id === tabId)?.title ?? `Tab ${tabId}`;
       upsertTerminalCommandHistoryCommand(rendered, {
@@ -10672,6 +11442,7 @@ export function App() {
     },
     [
       renderCommandSnippetTemplate,
+      guardedTerminalWrite,
       showAppAlert,
       showAppConfirm,
       terminalApi,
@@ -11309,6 +12080,37 @@ export function App() {
       ...prev,
       reconnectDelaySeconds: parseReconnectDelaySeconds(parsed)
     }));
+  };
+
+  const setDangerousCommandGuardEnabled = (value: boolean) => {
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      enabled: value
+    }));
+  };
+
+  const setDangerousCommandBuiltinRuleEnabled = (
+    ruleId: DangerousCommandBuiltinRuleId,
+    value: boolean
+  ) => {
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      builtinRuleStates: {
+        ...prev.builtinRuleStates,
+        [ruleId]: value
+      }
+    }));
+  };
+
+  const setDangerousCommandCustomPatternsText = (value: string) => {
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      customPatternsText: value.slice(0, 1600)
+    }));
+  };
+
+  const resetDangerousCommandGuardPreferences = () => {
+    setDangerousCommandGuardPreferences(createDefaultDangerousCommandGuardPreferences());
   };
 
   const setHotkeyBindingEnabled = (action: HotkeyActionId, value: boolean) => {
@@ -15834,6 +16636,15 @@ export function App() {
         }
       });
       sessionContextActions.push({
+        id: "save-session-template",
+        label: "Save as Session Template...",
+        run: () => {
+          openSessionTemplateManager({
+            sourceForm: toFormFromSession(sessionContextTarget)
+          });
+        }
+      });
+      sessionContextActions.push({
         id: "run-quick-profile",
         label:
           sessionQuickProfiles.length > 0
@@ -15908,6 +16719,28 @@ export function App() {
       label: "New Session",
       run: () => {
         openCreateModal(contextTarget.groupName);
+      }
+    });
+    sessionContextActions.push({
+      id: "new-session-from-template",
+      label:
+        sessionTemplates.length > 0
+          ? `New Session From Template... (${sessionTemplates.length})`
+          : "New Session From Template...",
+      disabled: sessionTemplates.length === 0,
+      run: () => {
+        void chooseSessionTemplateAndApply({
+          openCreateModal: true,
+          groupId: contextTarget.groupName,
+          forceNewSession: true
+        });
+      }
+    });
+    sessionContextActions.push({
+      id: "manage-session-templates",
+      label: "Manage Session Templates...",
+      run: () => {
+        openSessionTemplateManager();
       }
     });
     sessionContextActions.push({
@@ -16001,6 +16834,27 @@ export function App() {
       }
     });
     sessionContextActions.push({
+      id: "new-session-from-template",
+      label:
+        sessionTemplates.length > 0
+          ? `New Session From Template... (${sessionTemplates.length})`
+          : "New Session From Template...",
+      disabled: sessionTemplates.length === 0,
+      run: () => {
+        void chooseSessionTemplateAndApply({
+          openCreateModal: true,
+          forceNewSession: true
+        });
+      }
+    });
+    sessionContextActions.push({
+      id: "manage-session-templates",
+      label: "Manage Session Templates...",
+      run: () => {
+        openSessionTemplateManager();
+      }
+    });
+    sessionContextActions.push({
       id: "import-ssh-config",
       label: "Import SSH Config...",
       run: () => {
@@ -16080,6 +16934,28 @@ export function App() {
       label: "New Session",
       run: () => {
         openCreateModal(contextTarget.groupName);
+      }
+    });
+    sessionContextActions.push({
+      id: "new-session-from-template",
+      label:
+        sessionTemplates.length > 0
+          ? `New Session From Template... (${sessionTemplates.length})`
+          : "New Session From Template...",
+      disabled: sessionTemplates.length === 0,
+      run: () => {
+        void chooseSessionTemplateAndApply({
+          openCreateModal: true,
+          groupId: contextTarget.groupName,
+          forceNewSession: true
+        });
+      }
+    });
+    sessionContextActions.push({
+      id: "manage-session-templates",
+      label: "Manage Session Templates...",
+      run: () => {
+        openSessionTemplateManager();
       }
     });
     sessionContextActions.push({
@@ -16572,6 +17448,7 @@ export function App() {
           <TerminalWorkspace
             activeTabId={activeTabId}
             connectionPreferences={connectionPreferences}
+            dangerousCommandGuardPreferences={dangerousCommandGuardPreferences}
             hotkeyPreferences={hotkeyPreferences}
             onCloseAllTabs={closeAllTabs}
             onCloseTab={closeTerminalTab}
@@ -16581,6 +17458,7 @@ export function App() {
             onCommandHistoryChange={setTerminalCommandHistoryEntries}
             onError={setError}
             onSelectTab={setActiveTabId}
+            requestDangerousCommandApproval={requestDangerousCommandApproval}
             systemApi={systemApi}
             terminalApi={terminalApi}
             tabs={terminalTabs}
@@ -17331,20 +18209,55 @@ export function App() {
           </section>
         </div>
       </section>
-      <section className="app-inline-hint-panel" aria-live="polite" aria-atomic="true">
+      <section
+        className={
+          dangerousCommandApproval
+            ? "app-inline-hint-panel is-actionable"
+            : "app-inline-hint-panel"
+        }
+        aria-live={dangerousCommandApproval ? "assertive" : "polite"}
+        aria-atomic="true"
+      >
         <p
           className={
-            appHintMessage
-              ? appHintMessage.level === "warn"
+            dangerousCommandApproval
+              ? dangerousCommandApproval.request.result.severity === "critical"
                 ? "app-inline-hint-panel__text is-warn"
                 : "app-inline-hint-panel__text is-info"
-              : "app-inline-hint-panel__text is-placeholder"
+              : appHintMessage
+                ? appHintMessage.level === "warn"
+                  ? "app-inline-hint-panel__text is-warn"
+                  : "app-inline-hint-panel__text is-info"
+                : "app-inline-hint-panel__text is-placeholder"
           }
-          title={appHintMessage?.message ?? ""}
+          title={
+            dangerousCommandApproval
+              ? `${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.commandText}`
+              : appHintMessage?.message ?? ""
+          }
         >
-          {appHintMessage?.message ?? "\u00A0"}
+          {dangerousCommandApproval
+            ? `${dangerousCommandApproval.request.result.severity === "critical" ? "Critical" : "Risk"} command from ${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.preview} | ${dangerousCommandApproval.ruleSummary}`
+            : appHintMessage?.message ?? "\u00A0"}
         </p>
-        {appHintMessage ? (
+        {dangerousCommandApproval ? (
+          <div className="app-inline-hint-panel__actions">
+            <button
+              className="secondary-button secondary-button--small"
+              onClick={() => resolveDangerousCommandApproval(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="primary-button primary-button--small"
+              onClick={() => resolveDangerousCommandApproval(true)}
+              type="button"
+            >
+              Run Once
+            </button>
+          </div>
+        ) : appHintMessage ? (
           <button className="icon-button app-inline-hint-panel__close" onClick={clearAppHintMessage} type="button">
             <UiIcon name="close" />
           </button>
@@ -18989,6 +19902,83 @@ export function App() {
                   </>
                 ) : null}
 
+                {activeSettingsSection === "safety" ? (
+                  <>
+                    <label className="settings-checkbox">
+                      <input
+                        checked={dangerousCommandGuardPreferences.enabled}
+                        onChange={(event) =>
+                          setDangerousCommandGuardEnabled(event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>Enable dangerous command guardrails before terminal execution</span>
+                    </label>
+                    <p className="hint">
+                      Uses the fixed bottom approval bar. Covers keyboard Enter, multiline paste,
+                      command history run, snippets, quick profiles, and startup commands.
+                    </p>
+                    <div className="settings-safety-rules">
+                      {DANGEROUS_COMMAND_BUILTIN_RULES.map((rule) => (
+                        <label className="settings-checkbox settings-safety-rule" key={rule.id}>
+                          <input
+                            checked={dangerousCommandGuardPreferences.builtinRuleStates[rule.id]}
+                            disabled={!dangerousCommandGuardPreferences.enabled}
+                            onChange={(event) =>
+                              setDangerousCommandBuiltinRuleEnabled(rule.id, event.target.checked)
+                            }
+                            type="checkbox"
+                          />
+                          <span className="settings-safety-rule__content">
+                            <span className="settings-safety-rule__title">
+                              {rule.label}
+                              <span
+                                className={
+                                  rule.severity === "critical"
+                                    ? "settings-safety-rule__badge is-critical"
+                                    : "settings-safety-rule__badge"
+                                }
+                              >
+                                {rule.severity}
+                              </span>
+                            </span>
+                            <span className="hint settings-safety-rule__meta">
+                              {rule.description}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <label>
+                      Custom Patterns
+                      <textarea
+                        className="settings-safety__textarea"
+                        disabled={!dangerousCommandGuardPreferences.enabled}
+                        onChange={(event) =>
+                          setDangerousCommandCustomPatternsText(event.target.value)
+                        }
+                        placeholder={"One pattern per line\nPlain text or /regex/flags"}
+                        rows={5}
+                        value={dangerousCommandGuardPreferences.customPatternsText}
+                      />
+                    </label>
+                    <p className="hint">
+                      Active custom patterns {dangerousCommandCustomPatternSummary.activePatterns},
+                      invalid lines {dangerousCommandCustomPatternSummary.invalidLines}. Invalid
+                      lines are ignored.
+                    </p>
+                    <div className="modal__actions">
+                      <button
+                        className="secondary-button"
+                        onClick={resetDangerousCommandGuardPreferences}
+                        type="button"
+                      >
+                        Reset Safety Rules
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+
                 {activeSettingsSection === "hotkeys" ? (
                   <>
                     <div className="settings-hotkey-list">
@@ -20248,6 +21238,42 @@ export function App() {
               </button>
             </div>
             <form className="session-form" onSubmit={handleCreateSession}>
+              <div className="session-template-tools">
+                <div className="session-template-tools__summary">
+                  <strong>Template Tools</strong>
+                  <span className="hint">
+                    Saved templates {sessionTemplates.length}/{MAX_SESSION_TEMPLATES}
+                  </span>
+                </div>
+                <div className="session-template-tools__actions">
+                  <button
+                    className="field-row__action"
+                    disabled={sessionTemplates.length === 0}
+                    onClick={() => void chooseSessionTemplateAndApply()}
+                    type="button"
+                  >
+                    Apply Template...
+                  </button>
+                  <button
+                    className="field-row__action"
+                    onClick={() =>
+                      openSessionTemplateManager({
+                        sourceForm: form
+                      })
+                    }
+                    type="button"
+                  >
+                    Save as Template...
+                  </button>
+                  <button
+                    className="field-row__action"
+                    onClick={() => openSessionTemplateManager()}
+                    type="button"
+                  >
+                    Manage Templates...
+                  </button>
+                </div>
+              </div>
               <label>
                 Name
                 <input
@@ -20412,6 +21438,363 @@ export function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {isSessionTemplateManagerOpen ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+        >
+          <div
+            className="modal modal--wide"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Session Templates"
+          >
+            <div className="modal__header">
+              <h3>Session Templates</h3>
+              <button
+                className="icon-button"
+                onClick={closeSessionTemplateManager}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+            <div className="session-template-manager">
+              <aside className="session-template-manager__sidebar">
+                <div className="session-template-manager__sidebar-actions">
+                  <button
+                    className="field-row__action"
+                    onClick={resetSessionTemplateDraft}
+                    type="button"
+                  >
+                    New Blank
+                  </button>
+                  <button
+                    className="field-row__action"
+                    onClick={() => startSessionTemplateDraftFromForm(form)}
+                    type="button"
+                  >
+                    Use Current Form
+                  </button>
+                </div>
+                <p className="hint">
+                  Use {"${ENV_NAME}"} placeholders in host, name, user, group, remark, secret, and
+                  key path fields.
+                </p>
+                {sessionTemplates.length === 0 ? (
+                  <p className="hint">No saved templates yet.</p>
+                ) : (
+                  <ul className="session-template-list">
+                    {sessionTemplates.map((template) => (
+                      <li key={template.id}>
+                        <button
+                          className={
+                            editingSessionTemplateId === template.id
+                              ? "session-template-list__item is-selected"
+                              : "session-template-list__item"
+                          }
+                          onClick={() => loadSessionTemplateForEditing(template)}
+                          type="button"
+                        >
+                          <span className="session-template-list__name">
+                            {template.templateName}
+                          </span>
+                          <span className="session-template-list__meta">
+                            {(template.host || "host pending") +
+                              (template.username ? ` · ${template.username}` : "")}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </aside>
+              <form
+                className="session-form session-template-manager__editor"
+                onSubmit={(event) => saveSessionTemplateDraft(event)}
+              >
+                <label>
+                  Template Name
+                  <input
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setSessionTemplateDraft((prev) => ({
+                        ...prev,
+                        templateName: nextValue
+                      }));
+                      setSessionTemplateError(null);
+                    }}
+                    placeholder="Prod Web Template"
+                    value={sessionTemplateDraft.templateName}
+                  />
+                </label>
+                <div className="field-grid">
+                  <label>
+                    Session Name
+                    <input
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setSessionTemplateDraft((prev) => ({
+                          ...prev,
+                          sessionName: nextValue
+                        }));
+                        setSessionTemplateError(null);
+                      }}
+                      placeholder="web-${ENV}-${INDEX}"
+                      value={sessionTemplateDraft.sessionName}
+                    />
+                  </label>
+                  <label>
+                    Port
+                    <input
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setSessionTemplateDraft((prev) => ({
+                          ...prev,
+                          port: nextValue
+                        }));
+                        setSessionTemplateError(null);
+                      }}
+                      placeholder="22"
+                      value={sessionTemplateDraft.port}
+                    />
+                  </label>
+                </div>
+                <div className="field-grid">
+                  <label>
+                    Host
+                    <input
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setSessionTemplateDraft((prev) => ({
+                          ...prev,
+                          host: nextValue
+                        }));
+                        setSessionTemplateError(null);
+                      }}
+                      placeholder="${HOST}"
+                      value={sessionTemplateDraft.host}
+                    />
+                  </label>
+                  <label>
+                    Username
+                    <input
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setSessionTemplateDraft((prev) => ({
+                          ...prev,
+                          username: nextValue
+                        }));
+                        setSessionTemplateError(null);
+                      }}
+                      placeholder="deploy"
+                      value={sessionTemplateDraft.username}
+                    />
+                  </label>
+                </div>
+                <div className="field-grid">
+                  <label>
+                    Group
+                    <input
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setSessionTemplateDraft((prev) => ({
+                          ...prev,
+                          groupId: nextValue
+                        }));
+                        setSessionTemplateError(null);
+                      }}
+                      placeholder="${ENV}"
+                      value={sessionTemplateDraft.groupId}
+                    />
+                  </label>
+                  <label>
+                    Auth Type
+                    <select
+                      onChange={(event) => {
+                        const nextValue = event.target.value as SessionCreateInput["authType"];
+                        setSessionTemplateDraft((prev) => ({
+                          ...prev,
+                          authType: nextValue
+                        }));
+                        setSessionTemplateError(null);
+                      }}
+                      value={sessionTemplateDraft.authType}
+                    >
+                      <option value="password">Password</option>
+                      <option value="privateKey">Private Key</option>
+                    </select>
+                  </label>
+                </div>
+                {sessionTemplateDraft.authType === "privateKey" ? (
+                  <label>
+                    Private Key Path
+                    <input
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        setSessionTemplateDraft((prev) => ({
+                          ...prev,
+                          privateKeyPath: nextValue
+                        }));
+                        setSessionTemplateError(null);
+                      }}
+                      placeholder="~/.ssh/${KEY_NAME}"
+                      value={sessionTemplateDraft.privateKeyPath}
+                    />
+                  </label>
+                ) : null}
+                <label>
+                  {sessionTemplateDraft.authType === "password"
+                    ? "Password / Secret"
+                    : "Key Passphrase"}
+                  <input
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setSessionTemplateDraft((prev) => ({
+                        ...prev,
+                        secret: nextValue
+                      }));
+                      setSessionTemplateError(null);
+                    }}
+                    placeholder={
+                      sessionTemplateDraft.authType === "password"
+                        ? "${SSH_PASSWORD}"
+                        : "${KEY_PASSPHRASE}"
+                    }
+                    type="password"
+                    value={sessionTemplateDraft.secret}
+                  />
+                </label>
+                <label className="settings-checkbox">
+                  <input
+                    checked={sessionTemplateDraft.favorite}
+                    onChange={(event) => {
+                      const nextValue = event.target.checked;
+                      setSessionTemplateDraft((prev) => ({
+                        ...prev,
+                        favorite: nextValue
+                      }));
+                    }}
+                    type="checkbox"
+                  />
+                  Mark created sessions as favorite
+                </label>
+                <label>
+                  Remark
+                  <input
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setSessionTemplateDraft((prev) => ({
+                        ...prev,
+                        remark: nextValue
+                      }));
+                      setSessionTemplateError(null);
+                    }}
+                    placeholder="Managed by ${OWNER}"
+                    value={sessionTemplateDraft.remark}
+                  />
+                </label>
+                <section className="session-template-env-vars">
+                  <div className="session-template-env-vars__header">
+                    <div>
+                      <h4>Template Env Vars</h4>
+                      <p className="hint">
+                        {sessionTemplateDraft.envVars.length}/{MAX_SESSION_TEMPLATE_ENV_VARS} saved
+                        values
+                      </p>
+                    </div>
+                    <button
+                      className="field-row__action"
+                      disabled={
+                        sessionTemplateDraft.envVars.length >= MAX_SESSION_TEMPLATE_ENV_VARS
+                      }
+                      onClick={addSessionTemplateEnvVar}
+                      type="button"
+                    >
+                      Add Variable
+                    </button>
+                  </div>
+                  {sessionTemplateDraft.envVars.length === 0 ? (
+                    <p className="hint">No template env vars yet.</p>
+                  ) : (
+                    <div className="session-template-env-vars__list">
+                      {sessionTemplateDraft.envVars.map((envVar) => (
+                        <div className="session-template-env-vars__row" key={envVar.id}>
+                          <input
+                            onChange={(event) =>
+                              updateSessionTemplateEnvVar(envVar.id, {
+                                key: event.target.value
+                              })
+                            }
+                            placeholder="ENV_NAME"
+                            value={envVar.key}
+                          />
+                          <input
+                            onChange={(event) =>
+                              updateSessionTemplateEnvVar(envVar.id, {
+                                value: event.target.value
+                              })
+                            }
+                            placeholder="value"
+                            value={envVar.value}
+                          />
+                          <button
+                            className="icon-button"
+                            onClick={() => removeSessionTemplateEnvVar(envVar.id)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+                {sessionTemplateError ? (
+                  <p className="hint test-result test-result--error">{sessionTemplateError}</p>
+                ) : null}
+                <div className="modal__actions">
+                  <button
+                    className="icon-button"
+                    onClick={closeSessionTemplateManager}
+                    type="button"
+                  >
+                    Close
+                  </button>
+                  <button
+                    className="field-row__action"
+                    disabled={!editingSessionTemplate}
+                    onClick={() =>
+                      editingSessionTemplate
+                        ? void applySessionTemplateToForm(editingSessionTemplate, {
+                            openCreateModal: true,
+                            forceNewSession: !isCreateModalOpen
+                          })
+                        : undefined
+                    }
+                    type="button"
+                  >
+                    Use Template
+                  </button>
+                  <button
+                    className="field-row__action"
+                    disabled={!editingSessionTemplate}
+                    onClick={() => void deleteEditingSessionTemplate()}
+                    type="button"
+                  >
+                    Delete Template
+                  </button>
+                  <button className="primary-button" type="submit">
+                    {editingSessionTemplate ? "Save Changes" : "Save Template"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       ) : null}

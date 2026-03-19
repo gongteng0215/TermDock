@@ -6,6 +6,13 @@ import { Terminal } from "xterm";
 import type { IDisposable } from "xterm";
 
 import type { TerminalConnectionStatus } from "../../shared/terminal";
+import {
+  inspectDangerousCommandText,
+  shouldInspectDangerousCommandWrite,
+  type DangerousCommandApprovalRequest,
+  type DangerousCommandExecutionSource,
+  type DangerousCommandGuardPreferences
+} from "../dangerous-command-guard";
 
 export interface TerminalTab {
   id: string;
@@ -49,6 +56,8 @@ interface TerminalWorkspaceProps {
   terminalApi: Window["termdock"]["terminal"] | null;
   connectionPreferences: ConnectionPreferences;
   hotkeyPreferences: HotkeyPreferences;
+  dangerousCommandGuardPreferences: DangerousCommandGuardPreferences;
+  requestDangerousCommandApproval?: (request: DangerousCommandApprovalRequest) => Promise<boolean>;
   onCommandHistoryChange?: (entries: TerminalCommandHistoryEntry[]) => void;
 }
 
@@ -337,6 +346,8 @@ export function TerminalWorkspace({
   terminalApi,
   connectionPreferences,
   hotkeyPreferences,
+  dangerousCommandGuardPreferences,
+  requestDangerousCommandApproval,
   onCommandHistoryChange
 }: TerminalWorkspaceProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -366,6 +377,7 @@ export function TerminalWorkspace({
   );
   const commandInputBufferRef = useRef(new Map<string, string>());
   const pendingCommandCaptureTimersRef = useRef(new Map<string, number>());
+  const pendingTerminalWriteQueueRef = useRef(new Map<string, Promise<void>>());
 
   const tabsById = useMemo(() => {
     return new Map(tabs.map((tab) => [tab.id, tab]));
@@ -677,6 +689,50 @@ export function TerminalWorkspace({
     void terminalApi.write(tabId, "\u0003");
   }, [activeTabId, onError, systemApi, terminalApi]);
 
+  const requestDangerousCommandApprovalForWrite = useCallback(
+    async (
+      tabId: string,
+      source: DangerousCommandExecutionSource,
+      commandText: string
+    ): Promise<boolean> => {
+      if (!requestDangerousCommandApproval) {
+        return true;
+      }
+      if (!shouldInspectDangerousCommandWrite(source, commandText)) {
+        return true;
+      }
+      const inspection = inspectDangerousCommandText(commandText, dangerousCommandGuardPreferences);
+      if (!inspection) {
+        return true;
+      }
+      return requestDangerousCommandApproval({
+        tabId,
+        source,
+        result: inspection
+      });
+    },
+    [dangerousCommandGuardPreferences, requestDangerousCommandApproval]
+  );
+
+  const enqueueTerminalWriteTask = useCallback(
+    (tabId: string, task: () => Promise<void>) => {
+      const previous = pendingTerminalWriteQueueRef.current.get(tabId) ?? Promise.resolve();
+      const next = previous
+        .catch(() => undefined)
+        .then(task)
+        .catch((caughtError) => {
+          onError(caughtError instanceof Error ? caughtError.message : "Terminal write failed.");
+        })
+        .finally(() => {
+          if (pendingTerminalWriteQueueRef.current.get(tabId) === next) {
+            pendingTerminalWriteQueueRef.current.delete(tabId);
+          }
+        });
+      pendingTerminalWriteQueueRef.current.set(tabId, next);
+    },
+    [onError]
+  );
+
   const pasteClipboardToTerminal = useCallback(async (targetTabId?: string) => {
     const tabId = targetTabId ?? activeTabId;
     if (!tabId || !terminalApi) {
@@ -699,12 +755,25 @@ export function TerminalWorkspace({
       if (!text) {
         return;
       }
-      void terminalApi.write(tabId, text);
+      enqueueTerminalWriteTask(tabId, async () => {
+        const approved = await requestDangerousCommandApprovalForWrite(tabId, "clipboard", text);
+        if (!approved) {
+          return;
+        }
+        await terminalApi.write(tabId, text);
+      });
       instance.terminal.focus();
     } catch {
       onError("Paste failed. Clipboard permission may be blocked.");
     }
-  }, [activeTabId, onError, systemApi, terminalApi]);
+  }, [
+    activeTabId,
+    enqueueTerminalWriteTask,
+    onError,
+    requestDangerousCommandApprovalForWrite,
+    systemApi,
+    terminalApi
+  ]);
 
   const runSearchInTerminal = useCallback(
     (tabId: string, rawQuery: string) => {
@@ -871,10 +940,27 @@ export function TerminalWorkspace({
       if (targetTabId !== activeTabId) {
         onSelectTab(targetTabId);
       }
-      void terminalApi.write(targetTabId, `${entry.command}\r`);
+      enqueueTerminalWriteTask(targetTabId, async () => {
+        const approved = await requestDangerousCommandApprovalForWrite(
+          targetTabId,
+          "commandHistoryRun",
+          entry.command
+        );
+        if (!approved) {
+          return;
+        }
+        await terminalApi.write(targetTabId, `${entry.command}\r`);
+      });
       terminalRefs.current.get(targetTabId)?.terminal.focus();
     },
-    [activeTabId, onError, onSelectTab, terminalApi]
+    [
+      activeTabId,
+      enqueueTerminalWriteTask,
+      onError,
+      onSelectTab,
+      requestDangerousCommandApprovalForWrite,
+      terminalApi
+    ]
   );
 
   const clearVisibleCommandHistory = useCallback(() => {
@@ -1006,12 +1092,13 @@ export function TerminalWorkspace({
     };
   }, [appendCommandHistory]);
 
-  const captureTerminalCommandInput = useCallback(
-    (tabId: string, rawData: string) => {
-      if (!rawData) {
+  const sendTerminalInput = useCallback(
+    async (tabId: string, rawData: string): Promise<void> => {
+      if (!rawData || !terminalApi) {
         return;
       }
       let buffer = commandInputBufferRef.current.get(tabId) ?? "";
+      let forwarded = "";
       let index = 0;
       while (index < rawData.length) {
         const char = rawData[index];
@@ -1027,41 +1114,46 @@ export function TerminalWorkspace({
               }
               cursor += 1;
             }
-            index = cursor;
-            continue;
+          } else {
+            cursor = Math.min(rawData.length, index + 2);
           }
-          index = Math.min(rawData.length, index + 2);
+          forwarded += rawData.slice(index, cursor);
+          index = cursor;
           continue;
         }
         if (char === "\r" || char === "\n") {
-          queueCommandHistoryCapture(tabId, buffer);
-          buffer = "";
-          if (char === "\r" && rawData[index + 1] === "\n") {
-            index += 2;
-            continue;
+          const newlineToken =
+            char === "\r" && rawData[index + 1] === "\n" ? "\r\n" : char;
+          const approved = await requestDangerousCommandApprovalForWrite(tabId, "keyboard", buffer);
+          if (approved) {
+            forwarded += newlineToken;
+            queueCommandHistoryCapture(tabId, buffer);
+            buffer = "";
           }
-          index += 1;
+          index += newlineToken === "\r\n" ? 2 : 1;
           continue;
         }
         if (char === "\u007f" || char === "\b") {
           buffer = buffer.slice(0, -1);
+          forwarded += char;
           index += 1;
           continue;
         }
         if (char === "\u0003" || char === "\u0015") {
-          // Ctrl+C / Ctrl+U: clear current command input buffer.
           buffer = "";
+          forwarded += char;
           index += 1;
           continue;
         }
         if (char === "\u0017") {
-          // Ctrl+W: remove previous word.
           buffer = buffer.replace(/\s*\S+\s*$/, "");
+          forwarded += char;
           index += 1;
           continue;
         }
         if (char === "\t") {
           buffer += " ";
+          forwarded += char;
           index += 1;
           continue;
         }
@@ -1069,11 +1161,15 @@ export function TerminalWorkspace({
         if (code >= 0x20 && code !== 0x7f) {
           buffer += char;
         }
+        forwarded += char;
         index += 1;
       }
       commandInputBufferRef.current.set(tabId, buffer.slice(0, 4000));
+      if (forwarded) {
+        await terminalApi.write(tabId, forwarded);
+      }
     },
-    [queueCommandHistoryCapture]
+    [queueCommandHistoryCapture, requestDangerousCommandApprovalForWrite, terminalApi]
   );
 
   // Keep actions declarative so future right-click items can be appended here.
@@ -1586,8 +1682,9 @@ export function TerminalWorkspace({
       fitAddon.fit();
 
       const dataDisposable = terminal.onData((data) => {
-        captureTerminalCommandInput(tab.id, data);
-        void terminalApi.write(tab.id, data);
+        enqueueTerminalWriteTask(tab.id, async () => {
+          await sendTerminalInput(tab.id, data);
+        });
       });
       let wheelLineRemainder = 0;
       const onWheel = (event: WheelEvent) => {
@@ -1671,11 +1768,12 @@ export function TerminalWorkspace({
     }
   }, [
     activeTabId,
-    captureTerminalCommandInput,
     clearDeferredFitTimers,
     clearReconnectState,
     connectTab,
+    enqueueTerminalWriteTask,
     scheduleDeferredFit,
+    sendTerminalInput,
     setTabStatus,
     tabs,
     terminalApi
@@ -1734,6 +1832,7 @@ export function TerminalWorkspace({
       reconnectTimersRef.current.clear();
       deferredFitTimersRef.current.clear();
       pendingCommandCaptureTimersRef.current.clear();
+      pendingTerminalWriteQueueRef.current.clear();
     };
   }, [clearDeferredFitTimers, clearPendingCommandCapture, clearReconnectState, terminalApi]);
 
@@ -1747,6 +1846,7 @@ export function TerminalWorkspace({
           <button
             key={tab.id}
             className={activeTabId === tab.id ? "tab is-active" : "tab"}
+            data-tab-id={tab.id}
             onClick={() => onSelectTab(tab.id)}
             onContextMenu={(event) => openTabContextMenu(event, tab.id)}
             onMouseDown={(event) => {
@@ -1821,6 +1921,7 @@ export function TerminalWorkspace({
             <div
               key={tab.id}
               className={activeTabId === tab.id ? "terminal-pane is-active" : "terminal-pane"}
+              data-tab-id={tab.id}
             >
               <div
                 className="terminal-pane__canvas"

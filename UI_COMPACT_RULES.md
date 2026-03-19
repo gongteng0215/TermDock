@@ -1,6 +1,6 @@
 ﻿# TermDock UI Compact Rules
 
-Last updated: 2026-03-13
+Last updated: 2026-03-19
 
 ## Objective
 
@@ -22,6 +22,7 @@ No page should expand/collapse based on list item count during runtime.
 4. Use placeholder rows when optional status lines appear/disappear, so header/footer height stays constant.
 5. Use tabular numbers for counters/metrics (`font-variant-numeric: tabular-nums`) to avoid digit-width jitter.
 6. Context-menu entry points for list panels should remain available even when list data is empty (blank-area trigger).
+7. Fixed bottom approval bars and inline safety notices must reserve their own height and never expand the workspace when actions appear.
 
 ## Fixed-Height List Rules
 
@@ -38,6 +39,7 @@ No page should expand/collapse based on list item count during runtime.
 - Settings lists:
   - Hotkeys list
   - Hotkey conflict list
+  - Safety guardrails settings and approval bar
   - Port-forward presets/active/events list shells
   - Disconnect report shell/list
 - Retry Center list shell and grouped/flat lists

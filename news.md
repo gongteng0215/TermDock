@@ -1,6 +1,6 @@
 ﻿# TermDock Product Notes
 
-Last updated: 2026-03-13
+Last updated: 2026-03-19
 
 ## Confirmed Direction
 
@@ -8,18 +8,23 @@ Last updated: 2026-03-13
 - Prioritize operator efficiency over decorative UI
 - Use context-menu-first interactions for session/group/file operations
 - Keep core terminal and transfer actions deterministic and recoverable
+- Require explicit safety approval for risky terminal execution sources
 
 ## Release Baseline
 
-- Current stable release: `v0.1.12` (2026-03-13)
+- Current stable release: `v0.1.13` (2026-03-19)
 
 ## Shipped in Recent Cycles
 
+- v0.1.13: packaged smoke baseline, release preflight/verify tooling, and session templates baseline
 - v0.1.12: session list double-click now explicitly opens a fresh terminal tab for the same session while other open flows still focus the existing tab
+- master (post-v0.1.9): dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
 - master (post-v0.1.9): session open is now deduplicated by session id (open existing tab instead of creating duplicates)
 - master (post-v0.1.9): command history panel now supports blank-area right-click menu (`Add` / `Import` / `Export` / `Manage`)
 - master (post-v0.1.9): session JSON load/create/update now normalizes known mojibake text patterns for better data hygiene
-- master (post-v0.1.9): expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`) with latest full pass `21/21`
+- master (post-v0.1.9): expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`) with latest full pass `29/29`
+- master (post-v0.1.9): added self-use Windows release path with local self-signed certificate bootstrap, installer signing, and install smoke validation
+- master (post-v0.1.9): added session templates baseline with template-scoped env vars and create/apply/manage flows
 - master (post-v0.1.9): added transfer conflict policy (`overwrite/skip/rename`) for upload/download queueing
 - master (post-v0.1.9): accelerated upload/download conflict pre-check using limited-concurrency directory scans
 - master (post-v0.1.9): improved transfer disconnect behavior with queue pause + reconnect resume
@@ -107,7 +112,7 @@ Last updated: 2026-03-13
 ## Current Top Problems to Solve
 
 1. Cross-platform smoke test coverage is still incomplete
-2. Installer signing/notarization workflow is not finalized
+2. Public-trust installer signing/notarization workflow is not finalized, although self-use Windows release is now available locally
 3. Global recoverable error UX still needs broader action coverage/guidance
 4. Operation center baseline exists, but operation coverage and controls are still limited
 5. Large transfer/folder edge cases still need hardening
@@ -116,21 +121,20 @@ Last updated: 2026-03-13
 
 ## Next Candidate Features
 
+- Session templates v2 (runtime prompts, import/export, layered presets)
+- Command snippets/playbooks v2 with parameter prompts and dry-run preview
+- Dangerous-command policy packs with environment-aware rule templates
+- Command palette / universal action launcher
+- Remote file diff-first preview before overwrite/save-back
+- Session health checks with proactive risk badges
+- Session notes / runbook annotations
+- Operation audit timeline (command + transfer traceability)
 - Deeper retry-center longitudinal analytics and clustering
-- Session templates with variable substitution
-- Unified operation center for long-running remote tasks
-- Credential-safe encrypted session backup/restore
-- SSH jump-host chain builder (`ProxyJump`/bastion wizard)
-- Transfer bandwidth limiter + schedule window
-- Command snippets/playbooks with parameter prompts and guardrails
-- Multi-host command broadcast with dry-run preview
-- Remote file snapshot and one-click rollback
-- Session tags and smart saved views
-- Terminal recording/replay with sanitized share export
-- Dangerous-command guardrails with confirmation policy
-- Recurring folder sync profiles
-- Connection quality timeline dashboard
-- Workspace profile mode (`dev`/`staging`/`prod`) with persistent visual cues
+- Split-pane terminal layouts for parallel command work
+- Detach/clone tab into a new window or pane
+- Recent directories / quick `cd` launcher
+- Shell integration for command history, cwd tracking, and automatic profile switching
+- Shared encrypted team vault / workspace sync for shared hosts and snippets
 
 ## Long-Range Exploration (Unprioritized)
 
