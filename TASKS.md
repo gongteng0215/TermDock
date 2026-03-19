@@ -1,10 +1,10 @@
 ﻿# TermDock Task Board
 
-Last updated: 2026-03-19
+Last updated: 2026-03-20
 
 ## Current Release State
 
-- Stable release: `v0.1.13`
+- Stable release: `v0.1.14`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 
@@ -56,7 +56,10 @@ Last updated: 2026-03-19
    - same-session repeated open now focuses existing tab
    - command-history blank-area right-click menu now available
    - startup session text normalization for known mojibake patterns
-   - dangerous-command guardrails now intercept risky terminal writes with a fixed bottom approval bar and `Settings > Safety` reset controls, covering keyboard, clipboard, history, snippets, quick profiles, and startup commands
+   - dangerous-command guardrails now intercept risky terminal writes with a fixed bottom approval bar and `Settings > Safety` controls, covering keyboard, clipboard, history, snippets, quick profiles, and startup commands
+   - `Settings > Safety` now supports per-source toggles plus session-group pack/template overrides
+   - approval bar now supports exact-command temporary scopes for the current tab or current session group
+   - local shared safety-bundle catalog now supports save/import/export/apply flows
 1. `P0-F3` Cross-platform smoke checklist and reproducible report
    - packaged smoke script now supports report generation (`summary.json` + `full-test-matrix.md`)
    - packaged executable path override is available for Windows/macOS validation
@@ -163,6 +166,7 @@ Last updated: 2026-03-19
    - includes cross-tab transfer activity summary with tab focus action
    - includes per-tab and cross-tab one-click transfer cancellation actions
    - includes per-tab and bulk reconnect actions for disconnected transfer tabs
+   - now also tracks session import/export, snippet import/export, and bug-report export jobs
 16. Disconnect auto-diagnostic baseline (`F22`):
    - unexpected terminal `closed/error` events now auto-capture runtime context snapshots
    - `Settings > Diagnostics` now exposes disconnect report list with JSON/CSV export, copy-latest, and clear actions
@@ -189,7 +193,13 @@ Last updated: 2026-03-19
    - command history panel now exposes `Run Snippet` and `Snippet Manager`
    - snippet manager supports add/import/export/clear grouped snippets
    - snippet templates support clipboard/time/session/tab placeholders
-20. Transfer restart recovery baseline:
+20. Command snippets/playbooks v2 baseline:
+   - snippet editor now supports named parameters with required/default/regex validation
+   - parameterized snippets now prompt for values and preview resolved commands before execution
+   - snippet editor now highlights missing/unused parameter tokens
+   - scoped remembered values now support snippet/group/session/global reuse
+   - reusable prompt sets can now be shared across snippets inside a group
+21. Transfer restart recovery baseline:
    - pending transfer queue snapshots persist for restart recovery
    - transfer dock provides one-click `Restore Pending` and `Discard Pending`
 21. Remote file save-back guard baseline:
@@ -203,7 +213,7 @@ Last updated: 2026-03-19
 1. `P0-F3` Remaining macOS/external-host smoke evidence and reproducible report
 2. `P0-F4` Signing/notarization strategy and installation verification
 3. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
-4. `F8` Operation center follow-up (more operation types + cancellation coverage)
+4. `F8` Operation center follow-up (richer timeline + grouped controls)
 
 ## Not Done Yet (Top Blocking Items)
 
@@ -222,7 +232,7 @@ Last updated: 2026-03-19
 - Advanced retry-center analytics and history export
 - Session tags and smart views
 - Terminal recording and replay export
-- Dangerous-command policy packs / environment-aware rule templates
+- Dangerous-command workspace-aware policy follow-up
 - Remote file diff-first preview before overwrite/save-back
 - Session health checks + proactive risk badges
 - Session notes / runbook annotations
@@ -234,7 +244,7 @@ Last updated: 2026-03-19
 - Shared encrypted team vault / workspace sync for shared hosts and snippets
 - Recurring folder sync profiles
 - Connection quality timeline dashboard
-- Workspace profile mode (`dev` / `staging` / `prod`)
+- Workspace profile follow-up (broader automation and shared defaults)
 
 ## Exploration Pool (Unprioritized)
 
@@ -262,19 +272,19 @@ Last updated: 2026-03-19
 | F5 | P1 | DONE | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
 | F6 | P2 | DONE | Session templates + env variables | Local template manager, env-var substitution, and create/apply flows now cover repeated host patterns |
 | F7 | P2 | PARTIAL | Remote overwrite pre-check (mtime/size/checksum) | Metadata guard baseline shipped; conflict resolution UI/diff follow-up pending |
-| F8 | P2 | PARTIAL | Unified operation center for long jobs | Baseline shipped; broader operation types and controls still needed |
+| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline plus tracked session/snippet/diagnostics jobs landed; richer timeline and grouped controls are still pending |
 | F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
 | F11 | P2 | TODO | Transfer bandwidth limiter + schedule window | Avoid saturating production links during peak hours |
-| F12 | P2 | PARTIAL | Command snippets/playbooks with parameter prompts | Grouped snippets baseline shipped; prompted variables and richer validation pending |
+| F12 | P2 | PARTIAL | Command snippets/playbooks with parameter prompts | Prompted variables, scoped remembered values, reusable prompt sets, regex validation, and preview-before-run landed; richer playbook workflows and validation packs are still pending |
 | F13 | P2 | TODO | Multi-host command broadcast with dry-run preview | Speed up fleet operations while reducing blast radius |
 | F14 | P3 | TODO | Remote file snapshot + one-click rollback | Recover quickly from accidental edits during remote file open/save |
 | F15 | P2 | TODO | Session tags + smart views | Faster large-session navigation and operator context switching |
 | F16 | P2 | TODO | Terminal recording/replay export | Improve incident review and asynchronous debugging collaboration |
-| F17 | P1 | PARTIAL | Dangerous-command guardrails | Rule-based preflight confirmation baseline landed; policy packs and environment-aware templates pending |
+| F17 | P1 | PARTIAL | Dangerous-command guardrails | Policy packs, environment templates, per-source toggles, session-group overrides, temporary exact-command approval scopes, persistent exact-command approval policies, shared-bundle import/export/apply plus manual shared sync-file pull/push, and workspace-profile sync landed; richer workspace-scoped defaults and distribution follow-up are still pending |
 | F18 | P2 | TODO | Recurring folder sync profiles | Simplify repeated deployment/content sync workflows |
 | F19 | P2 | TODO | Connection quality timeline | Make intermittent network/session issues measurable and diagnosable |
-| F20 | P3 | TODO | Workspace profile mode (`dev`/`staging`/`prod`) | Add persistent risk cues and reduce environment mix-ups |
+| F20 | P3 | DONE | Workspace profile mode (`dev`/`staging`/`prod`) | Persistent risk cues plus optional global Safety sync now reduce environment mix-ups |
 | F21 | P2 | TODO | Operation audit timeline | Improve traceability for command/transfer actions during incidents |
 | F22 | P1 | PARTIAL | Disconnect auto-diagnostic report | Baseline shipped (auto-capture + diagnostics export); deeper network/process evidence still pending |
 | F23 | P2 | TODO | Diff-first sync mode | Reduce accidental overwrite risk by previewing remote/local deltas |

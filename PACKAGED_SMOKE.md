@@ -46,20 +46,20 @@ Default mode:
 
 ## Packaged Run
 
-First produce a packaged directory build:
+You can still produce a packaged directory build manually:
 
 ```powershell
 pnpm run build
 pnpm run pack
 ```
 
-Then point the smoke script at the packaged executable.
-
 Fast local packaged wrapper:
 
 ```powershell
 pnpm run smoke:ui:packaged
 ```
+
+This wrapper now runs `pnpm run pack` first and then launches the packaged executable from `release/*`, so it does not silently reuse stale packaged output.
 
 Windows PowerShell example:
 
@@ -121,9 +121,10 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 - Close and reopen same session
 - `Settings > Safety` section, built-in rule reset, and approval-bar UI baseline
 - Settings sections
+- Snippet manager group/snippet/prompt-set baseline
 - Command history manager flows
 - Command history side-panel context menu
-- Operation Center
+- Operation Center tracked app-job card baseline
 - Retry Center grouped view
 
 ## Still Manual / Live-Host Coverage

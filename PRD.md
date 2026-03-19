@@ -84,12 +84,18 @@ Target platforms:
 - Command snippet groups:
   - grouped snippet management (`run` / `add` / `import` / `export` / `clear`)
   - template placeholders for clipboard/time/session/tab metadata
+  - prompted parameters with required/default/regex validation
+  - scoped remembered values (`per snippet` / `per group` / `per session` / `global`)
+  - reusable prompt sets shared within a snippet group
+  - preview-before-run flow for parameterized or explicitly previewed snippets
 - Dangerous-command guardrails:
   - bottom approval bar for risky command execution sources
   - source-aware preflight confirmation for keyboard Enter, clipboard paste, command history run/paste, snippets, quick profiles, and startup commands
+- policy packs, environment templates, per-source toggles, session-group overrides, temporary approval scopes, persistent approval policies, and shared policy bundles with manual sync-file pull/push in `Settings > Safety`
 - Operation center modal:
   - summarize long-running transfer/delete/port-forward activity across tabs
   - provide cancel-all and bulk reconnect shortcuts for active/disconnected work
+  - track recent session import/export, snippet import/export, and bug-report export jobs
 - Port forwarding manager (`Local` / `Remote` / `Dynamic SOCKS5`) with saved presets and auto-restore
   - runtime status (`Active` / `Degraded`) and recent event timeline
   - event filtering (`type` / `time range` / `error code` / `correlation key`)
@@ -202,7 +208,7 @@ Target platforms:
 - Retry-center analytics/export baseline exists, but longitudinal trend analytics and richer clustering are still pending
 - Session/group JSON export is available, but secure full-fidelity backup/restore (including credentials) is not complete
 - Session templates baseline exists locally, but template import/export, runtime prompt overrides, and layered presets are still pending
-- Dangerous-command policy packs and environment-aware rule templates are still pending after the baseline guardrail
+- Dangerous-command policy packs, environment templates, per-source toggles, session-group overrides, temporary exact-command approval scopes, persistent exact-command approval policies, shared-bundle import/export/apply plus manual shared sync-file pull/push, and workspace-profile sync now exist; richer workspace-scoped defaults and shared distribution follow-up are still pending
 
 ## 9. Release Gates Before Broader Rollout
 
@@ -212,7 +218,8 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.13` (current stable): packaged smoke baseline, release tooling, and session templates baseline
+- `v0.1.14` (current stable): command snippets/playbooks v2 baseline, dangerous-command/workspace follow-up, and Operation Center tracked app jobs
+- `v0.1.13`: packaged smoke baseline, release tooling, and session templates baseline
 - `v0.1.12`: session double-click new-tab behavior fix and release polish
 - Next patch cycle (master in progress):
   - packaged smoke automation/report baseline (`summary.json` + `full-test-matrix.md`)
@@ -224,7 +231,7 @@ Target platforms:
   - session templates baseline with template-scoped env vars and create/apply/manage flows
   - session tab dedupe on repeated open action (focus existing tab, no duplicate)
   - command history blank-area context menu actions
-  - command snippet groups baseline with manager and grouped execution
+  - command snippets/playbooks v2 baseline with manager, grouped execution, prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run
   - known session text mojibake normalization on read/create/update
   - session/group JSON export actions from sessions context menu
   - session JSON import wizard with explicit group/duplicate strategy choices
@@ -258,28 +265,28 @@ Target platforms:
     - import-time conflict count and `Import + Auto Resolve`
     - conflict navigation (`Locate`, `Focus First Conflict`, `Prev`, `Next`)
     - keyboard traversal (`Alt + [` / `Alt + ]`) and cursor signature persistence
-  - dangerous-command guardrails baseline with `Settings > Safety`, bottom approval bar, and one-time approval flow
+  - dangerous-command guardrails baseline with `Settings > Safety`, bottom approval bar, one-time approval flow, policy packs, and environment templates
 - Next hardening cycle: testing, installer reliability, error recovery
 - Capability cycle candidate A:
   - Cross-session/shared diagnostics correlation workflows
   - Retry-center longitudinal analytics and trend package
 - Capability cycle candidate B:
   - Session templates v2 (runtime prompts, import/export, layered presets)
-  - Operation center follow-up for richer long-running remote task coverage
+  - Operation center follow-up for richer progress timeline and grouped controls
   - Credential-safe encrypted session backup/restore (beyond current metadata export)
 - Capability cycle candidate C:
   - SSH jump-host chain builder (ProxyJump/bastion visual flow)
   - Transfer bandwidth limiter and schedule window
-  - Command snippets/playbooks with parameter prompts and safety checks
+  - Command snippets/playbooks follow-up with richer playbook workflows and validation packs
   - Multi-host command broadcast with dry-run preview
   - Remote file snapshot and quick rollback
 - Capability cycle candidate D:
   - Session tags and smart saved views
   - Terminal session recording/replay with sanitized export
-  - Dangerous-command guardrails with policy-based confirmation
+  - Dangerous-command guardrails follow-up with workspace-scoped defaults and richer shared distribution
   - Recurring folder sync profiles (one-way sync presets)
   - Connection quality timeline dashboard
-  - Workspace profile mode (`dev` / `staging` / `prod`) with visual risk cues
+  - Workspace profile follow-up with broader auto-switching and shared-profile workflows
 - Capability cycle candidate E:
   - Operation audit timeline (command + transfer traceability)
   - Disconnect auto-diagnostic report with runtime context snapshot
@@ -302,8 +309,8 @@ Potential additions to discuss next (ordered by value-to-effort):
    - When save-back guard detects remote drift, show explicit action chooser (`overwrite` / `reload` / `save-as`)
    - Optional fast diff preview before overwrite decision
 2. Command snippets/playbooks v2
-   - Prompted variables (`${var}` form) with typed validation and defaults
-   - Dry-run preview before execution on active tab
+   - Prompted variables (`${param:name}` form), scoped remembered values, reusable prompt sets, and preview-before-run landed
+   - Richer validation packs and broader playbook orchestration are still pending
 3. Session templates v2
    - Runtime prompt overrides on top of saved template env presets
    - Template import/export and layered presets for repeat workflows
@@ -311,14 +318,14 @@ Potential additions to discuss next (ordered by value-to-effort):
    - Export/import full session bundle with secure payload (including credential references)
    - Integrity checks and import preview before apply
 5. Operation center v2
-   - Broader operation coverage (session import/export, snippet import/export, long diagnostics export)
-   - Rich progress timeline and grouped cancel/retry controls
+   - Session import/export, snippet import/export, and bug-report export tracking are now in the baseline
+   - Remaining follow-up is rich progress timeline and grouped cancel/retry controls
 6. Transfer policy packs
    - Per-environment templates for concurrency/retry/conflict defaults
    - One-click apply for `dev` / `staging` / `prod` style workflows
 7. Dangerous-command policy packs
-   - Environment-aware rule templates layered on top of the baseline confirmation guardrail
-   - Optional session/workspace-specific exceptions and approval scopes
+   - Environment templates, per-source toggles, session-group overrides, temporary exact-command approval scopes, persistent exact-command approval policies, and shared-bundle import/export/apply plus manual shared sync-file pull/push now layer on top of the baseline confirmation guardrail
+   - Remaining follow-up is broader workspace-scoped defaults and richer shared distribution automation
 8. Command palette / universal action launcher
    - Fuzzy-search session, SFTP, settings, and diagnostics actions from one entry point
    - Keyboard-first, no modal stacking

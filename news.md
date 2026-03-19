@@ -1,6 +1,6 @@
 ﻿# TermDock Product Notes
 
-Last updated: 2026-03-19
+Last updated: 2026-03-20
 
 ## Confirmed Direction
 
@@ -12,17 +12,26 @@ Last updated: 2026-03-19
 
 ## Release Baseline
 
-- Current stable release: `v0.1.13` (2026-03-19)
+- Current stable release: `v0.1.14` (2026-03-20)
 
 ## Shipped in Recent Cycles
 
+- v0.1.14: command snippets/playbooks v2 baseline, dangerous-command/workspace follow-up, and Operation Center tracked app jobs
 - v0.1.13: packaged smoke baseline, release preflight/verify tooling, and session templates baseline
+- master (post-v0.1.13): added command snippets/playbooks v2 baseline with prompted parameters, regex validation, and preview-before-run
+- master (post-v0.1.13): added command snippet scoped remembered values (`snippet/group/session/global`) plus reusable prompt sets
+- master (post-v0.1.13): Operation Center now tracks session/snippet import-export jobs plus bug-report export with recent-job visibility
+- master (post-v0.1.13): added dangerous-command shared safety bundles with local save/import/export/apply flows
+- master (post-v0.1.13): added dangerous-command shared safety bundle sync-file pull/push for manual team distribution
+- master (post-v0.1.13): added dangerous-command temporary approval scopes for exact-command tab/group approvals
+- master (post-v0.1.13): added dangerous-command persistent exact-command approval policies from the bottom approval bar
+- master (post-v0.1.13): added workspace profile mode (`dev` / `staging` / `prod`) with persistent risk cues and optional global Safety sync
 - v0.1.12: session list double-click now explicitly opens a fresh terminal tab for the same session while other open flows still focus the existing tab
 - master (post-v0.1.9): dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
 - master (post-v0.1.9): session open is now deduplicated by session id (open existing tab instead of creating duplicates)
 - master (post-v0.1.9): command history panel now supports blank-area right-click menu (`Add` / `Import` / `Export` / `Manage`)
 - master (post-v0.1.9): session JSON load/create/update now normalizes known mojibake text patterns for better data hygiene
-- master (post-v0.1.9): expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`) with latest full pass `29/29`
+- master (post-v0.1.9): expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`) with latest full pass `30/30`
 - master (post-v0.1.9): added self-use Windows release path with local self-signed certificate bootstrap, installer signing, and install smoke validation
 - master (post-v0.1.9): added session templates baseline with template-scoped env vars and create/apply/manage flows
 - master (post-v0.1.9): added transfer conflict policy (`overwrite/skip/rename`) for upload/download queueing
@@ -114,7 +123,7 @@ Last updated: 2026-03-19
 1. Cross-platform smoke test coverage is still incomplete
 2. Public-trust installer signing/notarization workflow is not finalized, although self-use Windows release is now available locally
 3. Global recoverable error UX still needs broader action coverage/guidance
-4. Operation center baseline exists, but operation coverage and controls are still limited
+4. Operation center now tracks more app jobs, but richer timeline and grouped controls are still limited
 5. Large transfer/folder edge cases still need hardening
 6. Automated unit/integration regression coverage is still weak
 7. SQLite migration and credential-safe encrypted backup/restore are not complete
@@ -122,8 +131,8 @@ Last updated: 2026-03-19
 ## Next Candidate Features
 
 - Session templates v2 (runtime prompts, import/export, layered presets)
-- Command snippets/playbooks v2 with parameter prompts and dry-run preview
-- Dangerous-command policy packs with environment-aware rule templates
+- Command snippets/playbooks v2 follow-up with richer playbook workflows and validation packs
+- Dangerous-command follow-up with workspace-scoped defaults and richer shared distribution
 - Command palette / universal action launcher
 - Remote file diff-first preview before overwrite/save-back
 - Session health checks with proactive risk badges

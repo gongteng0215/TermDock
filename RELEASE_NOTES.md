@@ -4,7 +4,45 @@
 
 Release type: In development
 
-- No unreleased notes yet.
+No unreleased changes recorded yet after the `v0.1.14` release cut.
+
+## v0.1.14 (2026-03-20)
+
+Release type: Stable
+
+### Highlights
+
+- Expanded dangerous-command guardrails:
+  - `Settings > Safety` now exposes `Balanced`, `Operations`, and `Strict` policy packs
+  - environment templates now layer `Development`, `Staging`, and `Production` presets on top of the policy-pack baseline
+  - source-specific toggles now control keyboard, clipboard, history, snippet, startup-command, and quick-profile inspection paths
+  - session-group overrides can pin pack/template combinations for grouped tabs
+  - bottom approval bar now supports exact-command temporary scopes for the current tab or current session group
+  - bottom approval bar can now also save persistent exact-command approval policies for future matches
+  - shared safety bundles can now save/import/export/apply complete guard configurations locally
+  - shared safety bundles now also support manual shared sync-file pull/push for team distribution baseline
+  - workspace profile mode now adds `dev` / `staging` / `prod` risk cues with optional global Safety pack/template sync
+- Added command snippets/playbooks v2 baseline:
+  - snippet editor now supports named parameters with required/default/regex validation
+  - parameterized snippets now prompt for values, preview resolved commands, and surface missing/unused parameter-token hints
+  - variables can now remember last used values by snippet/group/session/global scope
+  - reusable prompt sets can now be shared across snippets inside the same group
+- Expanded Operation Center follow-up:
+  - Operation Center now tracks recent session import/export jobs
+  - Operation Center now tracks recent snippet import/export jobs
+  - Operation Center now tracks recent bug-report export jobs with copy-path support
+- Expanded smoke coverage:
+  - settings capture now includes `Settings > Workspace` alongside the existing Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics coverage
+  - `pnpm run smoke:ui:packaged` now rebuilds the packaged directory before launch so stale release artifacts do not hide new settings/UI changes
+  - snippet manager baseline now exercises group/snippet/prompt-set creation in both workspace and packaged runs
+  - operation-center baseline now asserts the tracked app-jobs card in both workspace and packaged runs
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 30 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 30 / FAIL 0 / SKIP 0`
 
 ## v0.1.13 (2026-03-19)
 
@@ -21,7 +59,7 @@ Release type: Stable
 
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
-- Latest local workspace and packaged smoke runs: `PASS 29 / FAIL 0 / SKIP 0`
+- Latest local workspace and packaged smoke runs: `PASS 30 / FAIL 0 / SKIP 0`
 
 ## v0.1.12 (2026-03-13)
 
@@ -168,7 +206,7 @@ Release type: Stable
 1. `P0-F3`: cross-platform packaged smoke checklist and reproducible report set
 2. `P0-F4`: signing/notarization finalization and installer verification
 3. `P0-E3`: broader global error recovery action/guidance coverage
-4. `F8`: operation center follow-up for broader operation coverage and controls
+4. `F8`: operation center follow-up for richer timeline and grouped controls
 5. `P0-F1`/`P0-F2`: unit + integration test baseline
 
 ### Validation

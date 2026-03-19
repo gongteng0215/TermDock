@@ -62,17 +62,27 @@ import type {
 } from "./components/terminal-workspace";
 import {
   createDefaultDangerousCommandGuardPreferences,
+  findDangerousCommandGroupAssignment,
   formatDangerousCommandSourceLabel,
   inspectDangerousCommandText,
   listDangerousCommandBuiltinRules,
+  listDangerousCommandEnvironmentTemplates,
+  listDangerousCommandExecutionSources,
+  listDangerousCommandPolicyPacks,
+  MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS,
+  MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS,
   normalizeDangerousCommandGuardPreferences,
   shouldInspectDangerousCommandWrite,
   summarizeDangerousCommandCustomPatterns,
   type DangerousCommandApprovalRequest,
   type DangerousCommandBuiltinRuleId,
+  type DangerousCommandEnvironmentTemplateId,
   type DangerousCommandExecutionSource,
   type DangerousCommandGuardPreferences,
-  type DangerousCommandInspectionResult
+  type DangerousCommandInspectionResult,
+  type DangerousCommandPersistentApproval,
+  type DangerousCommandPersistentApprovalScopeId,
+  type DangerousCommandPolicyPackId
 } from "./dangerous-command-guard";
 
 const EMPTY_FORM: SessionCreateInput = {
@@ -107,12 +117,18 @@ const DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY =
   "termdock.disconnect-report-capture-preferences.v1";
 const SESSION_GROUPS_STORAGE_KEY = "termdock.session-groups.v1";
 const SESSION_SORT_MODE_STORAGE_KEY = "termdock.session-sort-mode.v1";
+const WORKSPACE_PROFILE_STORAGE_KEY = "termdock.workspace-profile.v1";
 const SESSION_QUICK_PROFILES_STORAGE_KEY = "termdock.session-quick-profiles.v1";
 const SESSION_TEMPLATES_STORAGE_KEY = "termdock.session-templates.v1";
 const COMMAND_SNIPPET_GROUPS_STORAGE_KEY = "termdock.command-snippet-groups.v1";
+const COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY = "termdock.command-snippet-scoped-values.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY =
   "termdock.dangerous-command-guard-preferences.v1";
+const DANGEROUS_COMMAND_POLICY_BUNDLES_STORAGE_KEY =
+  "termdock.dangerous-command-policy-bundles.v1";
+const DANGEROUS_COMMAND_POLICY_BUNDLE_SYNC_STORAGE_KEY =
+  "termdock.dangerous-command-policy-bundle-sync.v1";
 const MAX_SFTP_TRANSFER_HISTORY = 800;
 const MAX_PORT_FORWARD_EVENT_HISTORY = 1200;
 const MAX_PORT_FORWARD_EVENT_HISTORY_PER_SESSION = 320;
@@ -123,16 +139,73 @@ const MAX_SESSION_TEMPLATES = 60;
 const MAX_SESSION_TEMPLATE_ENV_VARS = 16;
 const MAX_COMMAND_SNIPPET_GROUPS = 40;
 const MAX_COMMAND_SNIPPETS_PER_GROUP = 120;
+const MAX_COMMAND_SNIPPET_PROMPT_SETS = 24;
+const MAX_DANGEROUS_COMMAND_POLICY_BUNDLES = 40;
+const MAX_DANGEROUS_COMMAND_TEMP_APPROVALS = 80;
+const MAX_COMMAND_SNIPPET_PARAMETERS = 12;
+const MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH = 80;
+const MAX_COMMAND_SNIPPET_PARAMETER_KEY_LENGTH = 32;
+const MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH = 80;
+const MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH = 240;
+const MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH = 240;
+const MAX_COMMAND_SNIPPET_SCOPED_VALUES = 400;
+const MAX_OPERATION_CENTER_APP_JOBS = 24;
 const DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD = 100;
 const MIN_RETRY_BATCH_CONFIRM_THRESHOLD = 0;
 const MAX_RETRY_BATCH_CONFIRM_THRESHOLD = 2000;
+const COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN = /\$\{param:([a-zA-Z0-9_-]+)\}/g;
+const COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN = /[^a-zA-Z0-9_-]+/g;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
 };
 const APP_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
+const DEFAULT_WORKSPACE_PROFILE_PREFERENCES: WorkspaceProfilePreferences = {
+  profileId: "none",
+  syncDangerousCommandSafety: false
+};
+const WORKSPACE_PROFILE_OPTIONS: Array<{
+  id: WorkspaceProfileId;
+  label: string;
+  shortLabel: string;
+  description: string;
+}> = [
+  {
+    id: "none",
+    label: "No Profile",
+    shortLabel: "No Profile",
+    description: "Do not apply a shared workspace environment profile."
+  },
+  {
+    id: "dev",
+    label: "Development",
+    shortLabel: "Dev",
+    description: "Use lower-friction defaults for local or sandbox workflows."
+  },
+  {
+    id: "staging",
+    label: "Staging",
+    shortLabel: "Staging",
+    description: "Use shared-validation defaults and medium risk cues."
+  },
+  {
+    id: "prod",
+    label: "Production",
+    shortLabel: "Prod",
+    description: "Use highest-risk cues and stricter safety defaults."
+  }
+];
+
+function getWorkspaceProfileOption(profileId: WorkspaceProfileId) {
+  return (
+    WORKSPACE_PROFILE_OPTIONS.find((profile) => profile.id === profileId) ??
+    WORKSPACE_PROFILE_OPTIONS[0]
+  );
+}
+
 type SettingsSectionId =
   | "connection"
+  | "workspace"
   | "safety"
   | "hotkeys"
   | "serverHealth"
@@ -149,6 +222,37 @@ type RetryCenterListMode = "flat" | "groupedByReason";
 type RetryCenterGroupExportScope = "all" | "failed" | "retryable";
 type RetryCenterRetryScope = "all" | "upload" | "download";
 type TerminalCommandHistoryScope = "activeTab" | "allTabs";
+type WorkspaceProfileId = DangerousCommandEnvironmentTemplateId;
+type CommandSnippetVariableScopeId = "snippet" | "group" | "session" | "global";
+type OperationCenterAppJobCategory = "sessions" | "snippets" | "diagnostics";
+type OperationCenterAppJobStatus = "running" | "succeeded" | "failed";
+
+const COMMAND_SNIPPET_VARIABLE_SCOPES: Array<{
+  id: CommandSnippetVariableScopeId;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "snippet",
+    label: "Per Snippet",
+    description: "Remember the last value only for this snippet."
+  },
+  {
+    id: "group",
+    label: "Per Group",
+    description: "Reuse the last value across snippets in the same group."
+  },
+  {
+    id: "session",
+    label: "Per Session",
+    description: "Reuse the last value for the active SSH session."
+  },
+  {
+    id: "global",
+    label: "Global",
+    description: "Reuse the last value everywhere in this app."
+  }
+];
 
 type HotkeyActionId = keyof HotkeyPreferences;
 
@@ -193,6 +297,23 @@ interface SessionTransferConflictStrategyState {
 
 interface SessionGroupsState {
   groups: string[];
+}
+
+interface WorkspaceProfilePreferences {
+  profileId: WorkspaceProfileId;
+  syncDangerousCommandSafety: boolean;
+}
+
+interface OperationCenterAppJob {
+  id: string;
+  category: OperationCenterAppJobCategory;
+  title: string;
+  description: string;
+  status: OperationCenterAppJobStatus;
+  startedAt: number;
+  finishedAt?: number;
+  detail?: string;
+  outputPath?: string;
 }
 
 interface ServerHealthAlertPreferences {
@@ -265,6 +386,9 @@ const DEFAULT_SERVER_HEALTH_ALERT_PREFERENCES: ServerHealthAlertPreferences = {
 const DEFAULT_DANGEROUS_COMMAND_GUARD_PREFERENCES =
   createDefaultDangerousCommandGuardPreferences();
 const DANGEROUS_COMMAND_BUILTIN_RULES = listDangerousCommandBuiltinRules();
+const DANGEROUS_COMMAND_POLICY_PACKS = listDangerousCommandPolicyPacks();
+const DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES = listDangerousCommandEnvironmentTemplates();
+const DANGEROUS_COMMAND_EXECUTION_SOURCES = listDangerousCommandExecutionSources();
 const DEFAULT_DISCONNECT_REPORT_CAPTURE_PREFERENCES: DisconnectReportCapturePreferences = {
   enabled: true
 };
@@ -498,12 +622,37 @@ interface CommandSnippetItem {
   name: string;
   template: string;
   confirmBeforeRun: boolean;
+  previewBeforeRun: boolean;
+  promptSetId: string;
+  parameters: CommandSnippetParameter[];
+}
+
+interface CommandSnippetParameter {
+  id: string;
+  key: string;
+  label: string;
+  defaultValue: string;
+  required: boolean;
+  pattern: string;
+  scope: CommandSnippetVariableScopeId;
+}
+
+interface CommandSnippetPromptSet {
+  id: string;
+  name: string;
+  parameters: CommandSnippetParameter[];
 }
 
 interface CommandSnippetGroup {
   id: string;
   name: string;
+  promptSets: CommandSnippetPromptSet[];
   snippets: CommandSnippetItem[];
+}
+
+interface CommandSnippetScopedValueRecord {
+  value: string;
+  updatedAt: number;
 }
 
 interface SessionJsonImportCandidate {
@@ -605,7 +754,40 @@ interface DangerousCommandApprovalState {
   id: string;
   request: DangerousCommandApprovalRequest;
   sourceLabel: string;
+  contextSummary: string;
   ruleSummary: string;
+}
+
+type DangerousCommandApprovalScopeId = "tab" | "sessionGroup";
+
+interface DangerousCommandTemporaryApproval {
+  id: string;
+  scope: DangerousCommandApprovalScopeId;
+  tabId: string | null;
+  tabTitle: string;
+  sessionGroupName: string | null;
+  source: DangerousCommandExecutionSource;
+  sourceLabel: string;
+  commandText: string;
+  preview: string;
+  severity: DangerousCommandInspectionResult["severity"];
+  appliedPolicyPackId: DangerousCommandInspectionResult["appliedPolicyPackId"];
+  appliedEnvironmentTemplateId: DangerousCommandInspectionResult["appliedEnvironmentTemplateId"];
+  createdAt: number;
+}
+
+interface DangerousCommandPolicyBundleRecord {
+  id: string;
+  name: string;
+  description: string;
+  updatedAtIso: string;
+  preferences: DangerousCommandGuardPreferences;
+}
+
+interface DangerousCommandPolicyBundleSyncState {
+  filePath: string;
+  lastPulledAtIso: string | null;
+  lastPushedAtIso: string | null;
 }
 
 interface GuardedTerminalWriteOptions {
@@ -1188,6 +1370,8 @@ function getSettingsSectionTitle(section: SettingsSectionId): string {
   switch (section) {
     case "connection":
       return "Connection";
+    case "workspace":
+      return "Workspace Profile";
     case "safety":
       return "Safety Guardrails";
     case "hotkeys":
@@ -2366,6 +2550,33 @@ function readConnectionPreferences(): ConnectionPreferences {
   }
 }
 
+function readWorkspaceProfilePreferences(): WorkspaceProfilePreferences {
+  if (typeof window === "undefined") {
+    return DEFAULT_WORKSPACE_PROFILE_PREFERENCES;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(WORKSPACE_PROFILE_STORAGE_KEY);
+    if (!rawValue) {
+      return DEFAULT_WORKSPACE_PROFILE_PREFERENCES;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<WorkspaceProfilePreferences>;
+    const profileId =
+      typeof parsed.profileId === "string" &&
+      WORKSPACE_PROFILE_OPTIONS.some((option) => option.id === parsed.profileId)
+        ? parsed.profileId
+        : DEFAULT_WORKSPACE_PROFILE_PREFERENCES.profileId;
+    return {
+      profileId,
+      syncDangerousCommandSafety:
+        typeof parsed.syncDangerousCommandSafety === "boolean"
+          ? parsed.syncDangerousCommandSafety
+          : DEFAULT_WORKSPACE_PROFILE_PREFERENCES.syncDangerousCommandSafety
+    };
+  } catch {
+    return DEFAULT_WORKSPACE_PROFILE_PREFERENCES;
+  }
+}
+
 function readDangerousCommandGuardPreferences(): DangerousCommandGuardPreferences {
   if (typeof window === "undefined") {
     return DEFAULT_DANGEROUS_COMMAND_GUARD_PREFERENCES;
@@ -2379,6 +2590,324 @@ function readDangerousCommandGuardPreferences(): DangerousCommandGuardPreference
   } catch {
     return DEFAULT_DANGEROUS_COMMAND_GUARD_PREFERENCES;
   }
+}
+
+function cloneDangerousCommandGuardPreferences(
+  preferences: DangerousCommandGuardPreferences
+): DangerousCommandGuardPreferences {
+  return normalizeDangerousCommandGuardPreferences({
+    enabled: preferences.enabled,
+    sourceStates: { ...preferences.sourceStates },
+    builtinRuleStates: { ...preferences.builtinRuleStates },
+    policyPackId: preferences.policyPackId,
+    environmentTemplateId: preferences.environmentTemplateId,
+    groupAssignments: preferences.groupAssignments.map((assignment) => ({
+      ...assignment
+    })),
+    persistentApprovals: preferences.persistentApprovals.map((approval) => ({
+      ...approval
+    })),
+    customPatternsText: preferences.customPatternsText
+  });
+}
+
+function normalizeDangerousCommandPolicyBundleName(value: unknown): string {
+  return typeof value === "string" ? value.trim().slice(0, 80) : "";
+}
+
+function normalizeDangerousCommandPolicyBundleDescription(value: unknown): string {
+  return typeof value === "string" ? value.trim().slice(0, 320) : "";
+}
+
+function normalizeDangerousCommandPolicyBundleRecord(
+  value: unknown
+): DangerousCommandPolicyBundleRecord | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Partial<DangerousCommandPolicyBundleRecord> & {
+    guardPreferences?: unknown;
+    dangerousCommandGuardPreferences?: unknown;
+    safetyPreferences?: unknown;
+  };
+  const name = normalizeDangerousCommandPolicyBundleName(candidate.name);
+  if (!name) {
+    return null;
+  }
+  const rawPreferences =
+    candidate.preferences ??
+    candidate.guardPreferences ??
+    candidate.dangerousCommandGuardPreferences ??
+    candidate.safetyPreferences;
+  if (!rawPreferences || typeof rawPreferences !== "object") {
+    return null;
+  }
+  const bundleId =
+    typeof candidate.id === "string" && candidate.id.trim()
+      ? candidate.id.trim().slice(0, 120)
+      : `dcpb-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  return {
+    id: bundleId,
+    name,
+    description: normalizeDangerousCommandPolicyBundleDescription(candidate.description),
+    updatedAtIso:
+      typeof candidate.updatedAtIso === "string" && candidate.updatedAtIso.trim()
+        ? candidate.updatedAtIso.trim().slice(0, 64)
+        : new Date().toISOString(),
+    preferences: normalizeDangerousCommandGuardPreferences(rawPreferences)
+  };
+}
+
+function normalizeDangerousCommandPolicyBundles(payload: unknown): DangerousCommandPolicyBundleRecord[] {
+  const rows = Array.isArray(payload) ? payload : [];
+  const normalized: DangerousCommandPolicyBundleRecord[] = [];
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  for (const row of rows) {
+    const bundle = normalizeDangerousCommandPolicyBundleRecord(row);
+    if (!bundle) {
+      continue;
+    }
+    const idKey = bundle.id.toLowerCase();
+    const nameKey = bundle.name.toLowerCase();
+    if (seenIds.has(idKey) || seenNames.has(nameKey)) {
+      continue;
+    }
+    seenIds.add(idKey);
+    seenNames.add(nameKey);
+    normalized.push(bundle);
+    if (normalized.length >= MAX_DANGEROUS_COMMAND_POLICY_BUNDLES) {
+      break;
+    }
+  }
+  normalized.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+  return normalized;
+}
+
+function parseDangerousCommandPolicyBundlesText(rawText: string): DangerousCommandPolicyBundleRecord[] {
+  const parsed = JSON.parse(rawText) as { bundle?: unknown; bundles?: unknown } | unknown;
+  if (Array.isArray(parsed)) {
+    return normalizeDangerousCommandPolicyBundles(parsed);
+  }
+  if (parsed && typeof parsed === "object" && "bundles" in parsed) {
+    return normalizeDangerousCommandPolicyBundles(parsed.bundles);
+  }
+  if (parsed && typeof parsed === "object" && "bundle" in parsed) {
+    return normalizeDangerousCommandPolicyBundles([parsed.bundle]);
+  }
+  return normalizeDangerousCommandPolicyBundles([parsed]);
+}
+
+function mergeDangerousCommandPolicyBundles(
+  existing: DangerousCommandPolicyBundleRecord[],
+  incoming: DangerousCommandPolicyBundleRecord[]
+): DangerousCommandPolicyBundleRecord[] {
+  const merged = [...existing];
+  for (const bundle of incoming) {
+    const existingIndex = merged.findIndex(
+      (entry) => entry.id === bundle.id || entry.name.toLowerCase() === bundle.name.toLowerCase()
+    );
+    if (existingIndex >= 0) {
+      merged[existingIndex] = bundle;
+    } else {
+      merged.push(bundle);
+    }
+  }
+  return normalizeDangerousCommandPolicyBundles(merged);
+}
+
+function createDangerousCommandPolicyBundlesPayload(
+  bundles: DangerousCommandPolicyBundleRecord[],
+  kind = "dangerousCommandPolicyBundles"
+): {
+  exportedAtIso: string;
+  appVersion: string;
+  kind: string;
+  bundleCount: number;
+  bundles: DangerousCommandPolicyBundleRecord[];
+} {
+  return {
+    exportedAtIso: new Date().toISOString(),
+    appVersion: APP_VERSION,
+    kind,
+    bundleCount: bundles.length,
+    bundles
+  };
+}
+
+function readDangerousCommandPolicyBundles(): DangerousCommandPolicyBundleRecord[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(DANGEROUS_COMMAND_POLICY_BUNDLES_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    const parsed = JSON.parse(rawValue) as { bundles?: unknown } | unknown;
+    if (Array.isArray(parsed)) {
+      return normalizeDangerousCommandPolicyBundles(parsed);
+    }
+    if (parsed && typeof parsed === "object" && "bundles" in parsed) {
+      return normalizeDangerousCommandPolicyBundles(parsed.bundles);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeDangerousCommandPolicyBundleSyncState(
+  payload: unknown
+): DangerousCommandPolicyBundleSyncState {
+  if (!payload || typeof payload !== "object") {
+    return {
+      filePath: "",
+      lastPulledAtIso: null,
+      lastPushedAtIso: null
+    };
+  }
+  const candidate = payload as Partial<DangerousCommandPolicyBundleSyncState>;
+  const normalizeTimestamp = (value: unknown): string | null =>
+    typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 64) : null;
+  return {
+    filePath:
+      typeof candidate.filePath === "string" ? candidate.filePath.trim().slice(0, 4096) : "",
+    lastPulledAtIso: normalizeTimestamp(candidate.lastPulledAtIso),
+    lastPushedAtIso: normalizeTimestamp(candidate.lastPushedAtIso)
+  };
+}
+
+function readDangerousCommandPolicyBundleSyncState(): DangerousCommandPolicyBundleSyncState {
+  if (typeof window === "undefined") {
+    return normalizeDangerousCommandPolicyBundleSyncState(null);
+  }
+  try {
+    const rawValue = window.localStorage.getItem(DANGEROUS_COMMAND_POLICY_BUNDLE_SYNC_STORAGE_KEY);
+    if (!rawValue) {
+      return normalizeDangerousCommandPolicyBundleSyncState(null);
+    }
+    return normalizeDangerousCommandPolicyBundleSyncState(JSON.parse(rawValue));
+  } catch {
+    return normalizeDangerousCommandPolicyBundleSyncState(null);
+  }
+}
+
+function createDangerousCommandTemporaryApprovalFromRequest(
+  request: DangerousCommandApprovalRequest,
+  sourceLabel: string,
+  tabTitle: string,
+  scope: DangerousCommandApprovalScopeId
+): DangerousCommandTemporaryApproval | null {
+  if (scope === "sessionGroup" && !request.result.sessionGroupName) {
+    return null;
+  }
+  return {
+    id: `danger-approval-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    scope,
+    tabId: scope === "tab" ? request.tabId : null,
+    tabTitle: tabTitle.trim() || `Tab ${request.tabId}`,
+    sessionGroupName: scope === "sessionGroup" ? request.result.sessionGroupName : null,
+    source: request.source,
+    sourceLabel,
+    commandText: request.result.commandText,
+    preview: request.result.preview,
+    severity: request.result.severity,
+    appliedPolicyPackId: request.result.appliedPolicyPackId,
+    appliedEnvironmentTemplateId: request.result.appliedEnvironmentTemplateId,
+    createdAt: Date.now()
+  };
+}
+
+function matchesDangerousCommandTemporaryApproval(
+  approval: DangerousCommandTemporaryApproval,
+  request: DangerousCommandApprovalRequest
+): boolean {
+  if (approval.source !== request.source) {
+    return false;
+  }
+  if (approval.commandText !== request.result.commandText) {
+    return false;
+  }
+  if (approval.appliedPolicyPackId !== request.result.appliedPolicyPackId) {
+    return false;
+  }
+  if (approval.appliedEnvironmentTemplateId !== request.result.appliedEnvironmentTemplateId) {
+    return false;
+  }
+  if (approval.scope === "tab") {
+    return approval.tabId === request.tabId;
+  }
+  return (
+    approval.scope === "sessionGroup" &&
+    approval.sessionGroupName !== null &&
+    approval.sessionGroupName === request.result.sessionGroupName
+  );
+}
+
+function formatDangerousCommandTemporaryApprovalScopeLabel(
+  approval: DangerousCommandTemporaryApproval
+): string {
+  if (approval.scope === "sessionGroup") {
+    return approval.sessionGroupName ? `Group ${approval.sessionGroupName}` : "Group";
+  }
+  return approval.tabTitle.trim() ? `Tab ${approval.tabTitle.trim()}` : "This Tab";
+}
+
+function createDangerousCommandPersistentApprovalFromRequest(
+  request: DangerousCommandApprovalRequest,
+  scope: DangerousCommandPersistentApprovalScopeId
+): DangerousCommandPersistentApproval | null {
+  if (scope === "sessionGroup" && !request.result.sessionGroupName) {
+    return null;
+  }
+  return {
+    id: `danger-policy-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    scope,
+    sessionGroupName: scope === "sessionGroup" ? request.result.sessionGroupName : null,
+    source: request.source,
+    commandText: request.result.commandText,
+    preview: request.result.preview,
+    severity: request.result.severity,
+    appliedPolicyPackId: request.result.appliedPolicyPackId,
+    appliedEnvironmentTemplateId: request.result.appliedEnvironmentTemplateId,
+    createdAtIso: new Date().toISOString()
+  };
+}
+
+function matchesDangerousCommandPersistentApproval(
+  approval: DangerousCommandPersistentApproval,
+  request: DangerousCommandApprovalRequest
+): boolean {
+  if (approval.source !== request.source) {
+    return false;
+  }
+  if (approval.commandText !== request.result.commandText) {
+    return false;
+  }
+  if (approval.appliedPolicyPackId !== request.result.appliedPolicyPackId) {
+    return false;
+  }
+  if (approval.appliedEnvironmentTemplateId !== request.result.appliedEnvironmentTemplateId) {
+    return false;
+  }
+  if (approval.scope === "global") {
+    return true;
+  }
+  return (
+    approval.scope === "sessionGroup" &&
+    approval.sessionGroupName !== null &&
+    approval.sessionGroupName === request.result.sessionGroupName
+  );
+}
+
+function formatDangerousCommandPersistentApprovalScopeLabel(
+  approval: DangerousCommandPersistentApproval
+): string {
+  if (approval.scope === "sessionGroup") {
+    return approval.sessionGroupName ? `Group ${approval.sessionGroupName}` : "Group";
+  }
+  return "All Matching Contexts";
 }
 
 function readHotkeyPreferences(): HotkeyPreferences {
@@ -2725,6 +3254,65 @@ function createClientSideId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function formatOperationCenterAppJobCategoryLabel(category: OperationCenterAppJobCategory): string {
+  switch (category) {
+    case "sessions":
+      return "Sessions";
+    case "snippets":
+      return "Snippets";
+    case "diagnostics":
+      return "Diagnostics";
+    default:
+      return "App";
+  }
+}
+
+function formatOperationCenterAppJobStatusLabel(status: OperationCenterAppJobStatus): string {
+  switch (status) {
+    case "running":
+      return "Running";
+    case "succeeded":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    default:
+      return "Unknown";
+  }
+}
+
+function getOperationCenterAppJobStateClass(status: OperationCenterAppJobStatus): string {
+  switch (status) {
+    case "running":
+      return "operation-center__state is-active";
+    case "succeeded":
+      return "operation-center__state is-success";
+    case "failed":
+      return "operation-center__state is-failed";
+    default:
+      return "operation-center__state is-idle";
+  }
+}
+
+function formatOperationCenterAppJobDuration(startedAt: number, finishedAt?: number): string {
+  const end = typeof finishedAt === "number" && Number.isFinite(finishedAt) ? finishedAt : Date.now();
+  const durationMs = Math.max(0, end - startedAt);
+  if (durationMs < 1000) {
+    return "<1s";
+  }
+  const totalSeconds = Math.round(durationMs / 1000);
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (totalMinutes < 60) {
+    return remainingSeconds > 0 ? `${totalMinutes}m ${remainingSeconds}s` : `${totalMinutes}m`;
+  }
+  const totalHours = Math.floor(totalMinutes / 60);
+  const remainingMinutes = totalMinutes % 60;
+  return remainingMinutes > 0 ? `${totalHours}h ${remainingMinutes}m` : `${totalHours}h`;
+}
+
 function createEmptySessionTemplateDraft(): SessionTemplateDraft {
   return {
     templateName: "",
@@ -2878,6 +3466,208 @@ function readSessionTemplates(): SessionTemplateRecord[] {
   }
 }
 
+function normalizeCommandSnippetParameterKey(value: string): string {
+  return value
+    .trim()
+    .replace(COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, MAX_COMMAND_SNIPPET_PARAMETER_KEY_LENGTH);
+}
+
+function buildCommandSnippetParameterToken(key: string): string {
+  return `\${param:${key}}`;
+}
+
+function normalizeCommandSnippetVariableScope(value: unknown): CommandSnippetVariableScopeId {
+  return value === "group" || value === "session" || value === "global" ? value : "snippet";
+}
+
+function formatCommandSnippetVariableScopeLabel(scope: CommandSnippetVariableScopeId): string {
+  return COMMAND_SNIPPET_VARIABLE_SCOPES.find((entry) => entry.id === scope)?.label ?? "Per Snippet";
+}
+
+function buildCommandSnippetScopedValueCacheKey(options: {
+  scope: CommandSnippetVariableScopeId;
+  key: string;
+  snippetId: string;
+  groupId: string;
+  sessionId: string;
+}): string {
+  const normalizedKey = normalizeCommandSnippetParameterKey(options.key);
+  if (!normalizedKey) {
+    return "";
+  }
+  if (options.scope === "global") {
+    return `global:${normalizedKey}`;
+  }
+  if (options.scope === "session") {
+    return options.sessionId.trim() ? `session:${options.sessionId.trim()}:${normalizedKey}` : "";
+  }
+  if (options.scope === "group") {
+    return options.groupId.trim() ? `group:${options.groupId.trim()}:${normalizedKey}` : "";
+  }
+  return options.snippetId.trim() ? `snippet:${options.snippetId.trim()}:${normalizedKey}` : "";
+}
+
+function createCommandSnippetParameter(
+  ordinal: number,
+  existingKeys: ReadonlySet<string> = new Set<string>(),
+  scope: CommandSnippetVariableScopeId = "snippet"
+): CommandSnippetParameter {
+  let nextOrdinal = Math.max(1, Math.trunc(ordinal));
+  let nextKey = normalizeCommandSnippetParameterKey(`value_${nextOrdinal}`);
+  while (!nextKey || existingKeys.has(nextKey)) {
+    nextOrdinal += 1;
+    nextKey = normalizeCommandSnippetParameterKey(`value_${nextOrdinal}`);
+  }
+  return {
+    id: `sp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    key: nextKey,
+    label: `Value ${nextOrdinal}`,
+    defaultValue: "",
+    required: true,
+    pattern: "",
+    scope
+  };
+}
+
+function mergeCommandSnippetParameters(
+  snippet: CommandSnippetItem | null,
+  promptSet: CommandSnippetPromptSet | null
+): CommandSnippetParameter[] {
+  if (!snippet && !promptSet) {
+    return [];
+  }
+  const snippetParameters = snippet?.parameters ?? [];
+  const snippetKeys = new Set(snippetParameters.map((parameter) => parameter.key));
+  return [
+    ...(promptSet?.parameters.filter((parameter) => !snippetKeys.has(parameter.key)) ?? []),
+    ...snippetParameters
+  ];
+}
+
+function listCommandSnippetTemplateParameterKeys(template: string): string[] {
+  if (!template) {
+    return [];
+  }
+  const keys: string[] = [];
+  const seenKeys = new Set<string>();
+  for (const match of template.matchAll(COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN)) {
+    const key = typeof match[1] === "string" ? match[1].trim() : "";
+    if (!key || seenKeys.has(key)) {
+      continue;
+    }
+    seenKeys.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
+function getCommandSnippetParameterPatternError(pattern: string): string | null {
+  const trimmedPattern = pattern.trim();
+  if (!trimmedPattern) {
+    return null;
+  }
+  try {
+    new RegExp(trimmedPattern);
+    return null;
+  } catch (caughtError) {
+    return caughtError instanceof Error && caughtError.message
+      ? caughtError.message
+      : "Invalid regular expression.";
+  }
+}
+
+function normalizeCommandSnippetParameters(payload: unknown): CommandSnippetParameter[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  const normalized: CommandSnippetParameter[] = [];
+  const seenParameterIds = new Set<string>();
+  const seenParameterKeys = new Set<string>();
+  for (const row of payload) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<CommandSnippetParameter>;
+    const parameterId =
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id.trim()
+        : `sp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    if (seenParameterIds.has(parameterId)) {
+      continue;
+    }
+    const parameterKey = normalizeCommandSnippetParameterKey(
+      typeof candidate.key === "string" ? candidate.key : ""
+    );
+    if (!parameterKey || seenParameterKeys.has(parameterKey)) {
+      continue;
+    }
+    seenParameterIds.add(parameterId);
+    seenParameterKeys.add(parameterKey);
+    const parameterLabel =
+      typeof candidate.label === "string" && candidate.label.trim()
+        ? candidate.label.trim().slice(0, MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH)
+        : parameterKey;
+    normalized.push({
+      id: parameterId,
+      key: parameterKey,
+      label: parameterLabel,
+      defaultValue:
+        typeof candidate.defaultValue === "string"
+          ? candidate.defaultValue.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH)
+          : "",
+      required: candidate.required !== false,
+      pattern:
+        typeof candidate.pattern === "string"
+          ? candidate.pattern.trim().slice(0, MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH)
+          : "",
+      scope: normalizeCommandSnippetVariableScope(candidate.scope)
+    });
+    if (normalized.length >= MAX_COMMAND_SNIPPET_PARAMETERS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+function normalizeCommandSnippetPromptSets(payload: unknown): CommandSnippetPromptSet[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  const normalized: CommandSnippetPromptSet[] = [];
+  const seenPromptSetIds = new Set<string>();
+  for (const row of payload) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<CommandSnippetPromptSet>;
+    const promptSetId =
+      typeof candidate.id === "string" && candidate.id.trim()
+        ? candidate.id.trim()
+        : `sps-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    if (seenPromptSetIds.has(promptSetId)) {
+      continue;
+    }
+    const promptSetName = typeof candidate.name === "string" ? candidate.name.trim() : "";
+    if (!promptSetName) {
+      continue;
+    }
+    seenPromptSetIds.add(promptSetId);
+    normalized.push({
+      id: promptSetId,
+      name: promptSetName.slice(0, MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH),
+      parameters: normalizeCommandSnippetParameters(
+        (candidate as Partial<CommandSnippetPromptSet> & { parameters?: unknown }).parameters
+      )
+    });
+    if (normalized.length >= MAX_COMMAND_SNIPPET_PROMPT_SETS) {
+      break;
+    }
+  }
+  return normalized;
+}
+
 function normalizeCommandSnippetGroups(payload: unknown): CommandSnippetGroup[] {
   const rows = Array.isArray(payload)
     ? payload
@@ -2902,6 +3692,10 @@ function normalizeCommandSnippetGroups(payload: unknown): CommandSnippetGroup[] 
     if (!groupName) {
       continue;
     }
+    const promptSets = normalizeCommandSnippetPromptSets(
+      (candidate as Partial<CommandSnippetGroup> & { promptSets?: unknown }).promptSets
+    );
+    const validPromptSetIds = new Set(promptSets.map((promptSet) => promptSet.id));
     const snippets = Array.isArray(candidate.snippets) ? candidate.snippets : [];
     const normalizedSnippets: CommandSnippetItem[] = [];
     const seenSnippetIds = new Set<string>();
@@ -2927,7 +3721,15 @@ function normalizeCommandSnippetGroups(payload: unknown): CommandSnippetGroup[] 
         id: snippetId,
         name: snippetName.slice(0, 80),
         template: template.slice(0, 4000),
-        confirmBeforeRun: snippet.confirmBeforeRun === true
+        confirmBeforeRun: snippet.confirmBeforeRun === true,
+        previewBeforeRun: snippet.previewBeforeRun === true,
+        promptSetId:
+          typeof snippet.promptSetId === "string" && validPromptSetIds.has(snippet.promptSetId.trim())
+            ? snippet.promptSetId.trim()
+            : "",
+        parameters: normalizeCommandSnippetParameters(
+          (snippet as Partial<CommandSnippetItem> & { parameters?: unknown }).parameters
+        )
       });
       if (normalizedSnippets.length >= MAX_COMMAND_SNIPPETS_PER_GROUP) {
         break;
@@ -2937,6 +3739,7 @@ function normalizeCommandSnippetGroups(payload: unknown): CommandSnippetGroup[] 
     normalized.push({
       id: groupId,
       name: groupName.slice(0, 80),
+      promptSets,
       snippets: normalizedSnippets
     });
     if (normalized.length >= MAX_COMMAND_SNIPPET_GROUPS) {
@@ -2958,6 +3761,50 @@ function readCommandSnippetGroups(): CommandSnippetGroup[] {
     return normalizeCommandSnippetGroups(JSON.parse(rawValue));
   } catch {
     return [];
+  }
+}
+
+function normalizeCommandSnippetScopedValues(
+  payload: unknown
+): Record<string, CommandSnippetScopedValueRecord> {
+  if (!payload || typeof payload !== "object") {
+    return {};
+  }
+  const normalizedEntries: Array<[string, CommandSnippetScopedValueRecord]> = [];
+  for (const [rawKey, rawValue] of Object.entries(payload)) {
+    if (typeof rawKey !== "string" || !rawKey.trim() || !rawValue || typeof rawValue !== "object") {
+      continue;
+    }
+    const candidate = rawValue as Partial<CommandSnippetScopedValueRecord>;
+    const value = typeof candidate.value === "string" ? candidate.value.slice(0, 4000) : "";
+    const updatedAt =
+      typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
+        ? candidate.updatedAt
+        : Date.now();
+    normalizedEntries.push([
+      rawKey.trim(),
+      {
+        value,
+        updatedAt
+      }
+    ]);
+  }
+  normalizedEntries.sort((left, right) => right[1].updatedAt - left[1].updatedAt);
+  return Object.fromEntries(normalizedEntries.slice(0, MAX_COMMAND_SNIPPET_SCOPED_VALUES));
+}
+
+function readCommandSnippetScopedValues(): Record<string, CommandSnippetScopedValueRecord> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const rawValue = window.localStorage.getItem(COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY);
+    if (!rawValue) {
+      return {};
+    }
+    return normalizeCommandSnippetScopedValues(JSON.parse(rawValue));
+  } catch {
+    return {};
   }
 }
 
@@ -3686,6 +4533,7 @@ export function App() {
     () =>
       [
         { id: "connection", label: "Connection" },
+        { id: "workspace", label: "Workspace" },
         { id: "safety", label: "Safety" },
         { id: "hotkeys", label: "Hotkeys" },
         { id: "serverHealth", label: "Monitor" },
@@ -3718,8 +4566,16 @@ export function App() {
   const [connectionPreferences, setConnectionPreferences] = useState<ConnectionPreferences>(
     () => readConnectionPreferences()
   );
+  const [workspaceProfilePreferences, setWorkspaceProfilePreferences] =
+    useState<WorkspaceProfilePreferences>(() => readWorkspaceProfilePreferences());
   const [dangerousCommandGuardPreferences, setDangerousCommandGuardPreferences] =
     useState<DangerousCommandGuardPreferences>(() => readDangerousCommandGuardPreferences());
+  const [dangerousCommandPolicyBundles, setDangerousCommandPolicyBundles] =
+    useState<DangerousCommandPolicyBundleRecord[]>(() => readDangerousCommandPolicyBundles());
+  const [dangerousCommandPolicyBundleSyncState, setDangerousCommandPolicyBundleSyncState] =
+    useState<DangerousCommandPolicyBundleSyncState>(() => readDangerousCommandPolicyBundleSyncState());
+  const [dangerousCommandPolicyBundleSyncBusyAction, setDangerousCommandPolicyBundleSyncBusyAction] =
+    useState<"pull" | "push" | "change" | null>(null);
   const [hotkeyPreferences, setHotkeyPreferences] = useState<HotkeyPreferences>(
     () => readHotkeyPreferences()
   );
@@ -3809,6 +4665,9 @@ export function App() {
   const [commandSnippetGroups, setCommandSnippetGroups] = useState<CommandSnippetGroup[]>(
     () => readCommandSnippetGroups()
   );
+  const [commandSnippetScopedValues, setCommandSnippetScopedValues] = useState<
+    Record<string, CommandSnippetScopedValueRecord>
+  >(() => readCommandSnippetScopedValues());
   const [disconnectReportCapturePreferences, setDisconnectReportCapturePreferences] =
     useState<DisconnectReportCapturePreferences>(() =>
       readDisconnectReportCapturePreferences()
@@ -3835,6 +4694,7 @@ export function App() {
   const [isOperationCenterOpen, setIsOperationCenterOpen] = useState(false);
   const [isOperationCenterBulkCanceling, setIsOperationCenterBulkCanceling] = useState(false);
   const [isOperationCenterReconnecting, setIsOperationCenterReconnecting] = useState(false);
+  const [operationCenterAppJobs, setOperationCenterAppJobs] = useState<OperationCenterAppJob[]>([]);
   const [retryCenterScope, setRetryCenterScope] = useState<TransferHistoryScope>(
     initialRetryCenterViewPreferences.scope
   );
@@ -3933,6 +4793,12 @@ export function App() {
   const transferHistoryRef = useRef<SftpTransferHistoryItem[]>([]);
   const portForwardsRef = useRef<PortForwardRecord[]>([]);
   const connectionPreferencesRef = useRef<ConnectionPreferences>(connectionPreferences);
+  const workspaceProfilePreferencesRef = useRef<WorkspaceProfilePreferences>(
+    workspaceProfilePreferences
+  );
+  const dangerousCommandGuardPreferencesRef = useRef<DangerousCommandGuardPreferences>(
+    dangerousCommandGuardPreferences
+  );
   const disconnectReportCapturePreferencesRef = useRef<DisconnectReportCapturePreferences>(
     disconnectReportCapturePreferences
   );
@@ -3967,6 +4833,10 @@ export function App() {
   const appDialogResolverRef = useRef<((value: unknown) => void) | null>(null);
   const appDialogCancelValueRef = useRef<unknown>(undefined);
   const dangerousCommandApprovalResolverRef = useRef<((value: boolean) => void) | null>(null);
+  const dangerousCommandTemporaryApprovalsRef = useRef<DangerousCommandTemporaryApproval[]>([]);
+  const dangerousCommandPreferencesSignatureRef = useRef(
+    JSON.stringify(dangerousCommandGuardPreferences)
+  );
   const appHintTimerRef = useRef<number | null>(null);
   const hotkeyRowRefs = useRef<Map<HotkeyActionId, HTMLDivElement | null>>(new Map());
   const hotkeyConflictHighlightTimerRef = useRef<number | null>(null);
@@ -3996,6 +4866,9 @@ export function App() {
   const [appDialogInput, setAppDialogInput] = useState("");
   const [dangerousCommandApproval, setDangerousCommandApproval] =
     useState<DangerousCommandApprovalState | null>(null);
+  const [dangerousCommandTemporaryApprovals, setDangerousCommandTemporaryApprovals] = useState<
+    DangerousCommandTemporaryApproval[]
+  >([]);
   const [appHintMessage, setAppHintMessage] = useState<{
     level: "info" | "warn";
     message: string;
@@ -4026,11 +4899,76 @@ export function App() {
     () => commandSnippetGroups.reduce((total, group) => total + group.snippets.length, 0),
     [commandSnippetGroups]
   );
+  const totalCommandSnippetPromptSetCount = useMemo(
+    () => commandSnippetGroups.reduce((total, group) => total + group.promptSets.length, 0),
+    [commandSnippetGroups]
+  );
+  const commandSnippetScopedValueCount = useMemo(
+    () => Object.keys(commandSnippetScopedValues).length,
+    [commandSnippetScopedValues]
+  );
   const dangerousCommandCustomPatternSummary = useMemo(
     () =>
       summarizeDangerousCommandCustomPatterns(dangerousCommandGuardPreferences.customPatternsText),
     [dangerousCommandGuardPreferences.customPatternsText]
   );
+  const enabledDangerousCommandSourceCount = useMemo(
+    () =>
+      DANGEROUS_COMMAND_EXECUTION_SOURCES.filter(
+        (source) => dangerousCommandGuardPreferences.sourceStates[source.id]
+      ).length,
+    [dangerousCommandGuardPreferences.sourceStates]
+  );
+  const selectedDangerousCommandPolicyPack = useMemo(
+    () =>
+      DANGEROUS_COMMAND_POLICY_PACKS.find(
+        (pack) => pack.id === dangerousCommandGuardPreferences.policyPackId
+      ) ?? DANGEROUS_COMMAND_POLICY_PACKS[0],
+    [dangerousCommandGuardPreferences.policyPackId]
+  );
+  const selectedDangerousCommandEnvironmentTemplate = useMemo(
+    () =>
+      DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
+        (template) => template.id === dangerousCommandGuardPreferences.environmentTemplateId
+      ) ?? DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0],
+    [dangerousCommandGuardPreferences.environmentTemplateId]
+  );
+  const selectedWorkspaceProfile = useMemo(
+    () => getWorkspaceProfileOption(workspaceProfilePreferences.profileId),
+    [workspaceProfilePreferences.profileId]
+  );
+  const enabledDangerousCommandBuiltinRuleCount = useMemo(
+    () =>
+      DANGEROUS_COMMAND_BUILTIN_RULES.filter(
+        (rule) => dangerousCommandGuardPreferences.builtinRuleStates[rule.id]
+      ).length,
+    [dangerousCommandGuardPreferences.builtinRuleStates]
+  );
+  const activeDangerousCommandSupplementalRules = useMemo(
+    () => [
+      ...selectedDangerousCommandPolicyPack.extraRules.map((rule) => ({
+        ...rule,
+        sourceLabel: selectedDangerousCommandPolicyPack.label
+      })),
+      ...selectedDangerousCommandEnvironmentTemplate.extraRules.map((rule) => ({
+        ...rule,
+        sourceLabel: selectedDangerousCommandEnvironmentTemplate.label
+      }))
+    ],
+    [selectedDangerousCommandEnvironmentTemplate, selectedDangerousCommandPolicyPack]
+  );
+  const activeTabSessionGroupName = useMemo(() => {
+    if (!activeTabId) {
+      return null;
+    }
+    const tab = terminalTabs.find((entry) => entry.id === activeTabId) ?? null;
+    if (!tab) {
+      return null;
+    }
+    const session = sessions.find((entry) => entry.id === tab.sessionId) ?? null;
+    const groupName = session?.groupId?.trim() ?? "";
+    return groupName || null;
+  }, [activeTabId, sessions, terminalTabs]);
   const visibleTerminalCommandHistoryEntries = useMemo(() => {
     const normalizedQuery = terminalCommandHistoryQuery.trim().toLowerCase();
     const filtered = terminalCommandHistoryEntries.filter((entry) => {
@@ -4089,12 +5027,15 @@ export function App() {
         : data.replace(/[\r\n]+$/g, "").trim();
     if (
       !options.skipDangerousCommandCheck &&
-      shouldInspectDangerousCommandWrite(options.source, data) &&
+      shouldInspectDangerousCommandWrite(options.source, data, dangerousCommandGuardPreferences) &&
       normalizedCommandText
     ) {
       const inspection = inspectDangerousCommandText(
         normalizedCommandText,
-        dangerousCommandGuardPreferences
+        dangerousCommandGuardPreferences,
+        {
+          sessionGroupName: getSessionGroupNameForTab(tabId)
+        }
       );
       if (inspection) {
         const approved = await requestDangerousCommandApproval({
@@ -4114,7 +5055,10 @@ export function App() {
             tabId,
             source: options.source,
             command: inspection.commandText,
-            matches: inspection.matches
+            matches: inspection.matches,
+            sessionGroupName: inspection.sessionGroupName,
+            appliedPolicyPackId: inspection.appliedPolicyPackId,
+            appliedEnvironmentTemplateId: inspection.appliedEnvironmentTemplateId
           });
           return false;
         }
@@ -4126,7 +5070,10 @@ export function App() {
             tabId,
             source: options.source,
             command: inspection.commandText,
-            matches: inspection.matches
+            matches: inspection.matches,
+            sessionGroupName: inspection.sessionGroupName,
+            appliedPolicyPackId: inspection.appliedPolicyPackId,
+            appliedEnvironmentTemplateId: inspection.appliedEnvironmentTemplateId
           }
         );
       }
@@ -4335,6 +5282,60 @@ export function App() {
   }, []);
   const closeCommandSnippetManager = useCallback(() => {
     setIsCommandSnippetManagerOpen(false);
+  }, []);
+  const startOperationCenterAppJob = useCallback(
+    (input: Pick<OperationCenterAppJob, "category" | "title" | "description">) => {
+      const entry: OperationCenterAppJob = {
+        id: createClientSideId("ocj"),
+        category: input.category,
+        title: input.title,
+        description: input.description,
+        status: "running",
+        startedAt: Date.now()
+      };
+      setOperationCenterAppJobs((prev) => [entry, ...prev].slice(0, MAX_OPERATION_CENTER_APP_JOBS));
+      return entry.id;
+    },
+    []
+  );
+  const finishOperationCenterAppJob = useCallback(
+    (
+      jobId: string,
+      status: Extract<OperationCenterAppJobStatus, "succeeded" | "failed">,
+      options?: {
+        detail?: string;
+        outputPath?: string;
+      }
+    ) => {
+      const normalizedJobId = jobId.trim();
+      if (!normalizedJobId) {
+        return;
+      }
+      setOperationCenterAppJobs((prev) =>
+        prev.map((entry) =>
+          entry.id !== normalizedJobId
+            ? entry
+            : {
+                ...entry,
+                status,
+                finishedAt: Date.now(),
+                detail: options?.detail?.trim() || entry.detail,
+                outputPath: options?.outputPath?.trim() || entry.outputPath
+              }
+        )
+      );
+    },
+    []
+  );
+  const removeOperationCenterAppJob = useCallback((jobId: string) => {
+    const normalizedJobId = jobId.trim();
+    if (!normalizedJobId) {
+      return;
+    }
+    setOperationCenterAppJobs((prev) => prev.filter((entry) => entry.id !== normalizedJobId));
+  }, []);
+  const clearFinishedOperationCenterAppJobs = useCallback(() => {
+    setOperationCenterAppJobs((prev) => prev.filter((entry) => entry.status === "running"));
   }, []);
   const deleteSelectedCommandHistoryEntries = useCallback(() => {
     deleteTerminalCommandHistoryEntries(commandHistorySelection);
@@ -4735,6 +5736,25 @@ export function App() {
     }
     return groupedSessions.find((group) => group.key === activeSessionGroupKey) ?? null;
   }, [activeSessionGroupKey, groupedSessions]);
+  const dangerousCommandSettingsTargetGroupName = useMemo(() => {
+    if (activeTabSessionGroupName) {
+      return activeTabSessionGroupName;
+    }
+    const selectedGroupName = activeSessionGroup?.groupName?.trim() ?? "";
+    return selectedGroupName || null;
+  }, [activeSessionGroup, activeTabSessionGroupName]);
+  const activeDangerousCommandGroupAssignment = useMemo(
+    () =>
+      findDangerousCommandGroupAssignment(
+        dangerousCommandGuardPreferences,
+        dangerousCommandSettingsTargetGroupName
+      ),
+    [dangerousCommandGuardPreferences, dangerousCommandSettingsTargetGroupName]
+  );
+  const dangerousCommandGroupAssignmentLimitReached =
+    !activeDangerousCommandGroupAssignment &&
+    dangerousCommandGuardPreferences.groupAssignments.length >=
+      MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS;
   const activeGroupSessions = useMemo(
     () => activeSessionGroup?.sessions ?? [],
     [activeSessionGroup]
@@ -4949,6 +5969,19 @@ export function App() {
     }
     const tab = terminalTabsRef.current.find((item) => item.id === normalizedTabId);
     return tab?.sessionId ?? null;
+  }, []);
+  const getSessionGroupNameForTab = useCallback((tabId: string): string | null => {
+    const normalizedTabId = tabId.trim();
+    if (!normalizedTabId) {
+      return null;
+    }
+    const tab = terminalTabsRef.current.find((item) => item.id === normalizedTabId) ?? null;
+    if (!tab) {
+      return null;
+    }
+    const session = sessionsRef.current.find((item) => item.id === tab.sessionId) ?? null;
+    const groupName = session?.groupId?.trim() ?? "";
+    return groupName || null;
   }, []);
   const collectPendingTransferRestoreSnapshot = useCallback((): PendingTransferRestoreItem[] => {
     const tabSessionIdMap = new Map<string, string>();
@@ -5213,6 +6246,33 @@ export function App() {
     },
     []
   );
+  const removeDangerousCommandTemporaryApproval = useCallback((approvalId: string) => {
+    setDangerousCommandTemporaryApprovals((prev) =>
+      prev.filter((approval) => approval.id !== approvalId)
+    );
+  }, []);
+  const clearDangerousCommandTemporaryApprovals = useCallback(
+    (reason?: "settings-changed" | "manual") => {
+      const hadApprovals = dangerousCommandTemporaryApprovalsRef.current.length > 0;
+      if (!hadApprovals) {
+        return;
+      }
+      setDangerousCommandTemporaryApprovals([]);
+      if (reason === "settings-changed") {
+        pushAppHintMessage("Cleared temporary dangerous-command approvals after Safety settings changed.", {
+          level: "info",
+          durationMs: 4200
+        });
+      }
+    },
+    [pushAppHintMessage]
+  );
+  const removeDangerousCommandPersistentApproval = useCallback((approvalId: string) => {
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      persistentApprovals: prev.persistentApprovals.filter((approval) => approval.id !== approvalId)
+    }));
+  }, []);
   const resolveDangerousCommandApproval = useCallback((approved: boolean) => {
     const resolver = dangerousCommandApprovalResolverRef.current;
     dangerousCommandApprovalResolverRef.current = null;
@@ -5221,16 +6281,80 @@ export function App() {
       resolver(approved);
     }
   }, []);
+  const approveDangerousCommandWithScope = useCallback(
+    (scope: DangerousCommandApprovalScopeId) => {
+      const currentApproval = dangerousCommandApproval;
+      if (!currentApproval) {
+        resolveDangerousCommandApproval(true);
+        return;
+      }
+      const tabTitle =
+        terminalTabsRef.current.find((tab) => tab.id === currentApproval.request.tabId)?.title ?? "";
+      const nextApproval = createDangerousCommandTemporaryApprovalFromRequest(
+        currentApproval.request,
+        currentApproval.sourceLabel,
+        tabTitle,
+        scope
+      );
+      if (!nextApproval) {
+        resolveDangerousCommandApproval(true);
+        return;
+      }
+      setDangerousCommandTemporaryApprovals((prev) => {
+        const filtered = prev.filter(
+          (approval) => !matchesDangerousCommandTemporaryApproval(approval, currentApproval.request)
+        );
+        const next = [nextApproval, ...filtered];
+        return next.slice(0, MAX_DANGEROUS_COMMAND_TEMP_APPROVALS);
+      });
+      pushAppHintMessage(
+        `Approved exact command for ${formatDangerousCommandTemporaryApprovalScopeLabel(nextApproval)}.`,
+        {
+          level: currentApproval.request.result.severity === "critical" ? "warn" : "info",
+          durationMs: 4600
+        }
+      );
+      resolveDangerousCommandApproval(true);
+    },
+    [dangerousCommandApproval, pushAppHintMessage, resolveDangerousCommandApproval]
+  );
   const requestDangerousCommandApproval = useCallback(
     async (request: DangerousCommandApprovalRequest): Promise<boolean> => {
       if (dangerousCommandApprovalResolverRef.current) {
         dangerousCommandApprovalResolverRef.current(false);
       }
+      const matchingPersistentApproval =
+        dangerousCommandGuardPreferencesRef.current.persistentApprovals.find((approval) =>
+          matchesDangerousCommandPersistentApproval(approval, request)
+        ) ?? null;
+      if (matchingPersistentApproval) {
+        return true;
+      }
+      const matchingTemporaryApproval = dangerousCommandTemporaryApprovalsRef.current.find((approval) =>
+        matchesDangerousCommandTemporaryApproval(approval, request)
+      );
+      if (matchingTemporaryApproval) {
+        return true;
+      }
       const uniqueRuleLabels = Array.from(new Set(request.result.matches.map((match) => match.label)));
+      const activeWorkspaceProfile = getWorkspaceProfileOption(
+        workspaceProfilePreferencesRef.current.profileId
+      );
+      const contextSummary = [
+        workspaceProfilePreferencesRef.current.profileId !== "none"
+          ? `workspace ${activeWorkspaceProfile.shortLabel}`
+          : null,
+        request.result.sessionGroupName ? `group ${request.result.sessionGroupName}` : null,
+        `pack ${request.result.appliedPolicyPackLabel}`,
+        `env ${request.result.appliedEnvironmentTemplateLabel}`
+      ]
+        .filter(Boolean)
+        .join(" | ");
       setDangerousCommandApproval({
         id: `danger-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
         request,
         sourceLabel: formatDangerousCommandSourceLabel(request.source),
+        contextSummary,
         ruleSummary: uniqueRuleLabels.join(" | ")
       });
       return new Promise((resolve) => {
@@ -5239,6 +6363,13 @@ export function App() {
     },
     []
   );
+  useEffect(() => {
+    const nextSignature = JSON.stringify(dangerousCommandGuardPreferences);
+    if (dangerousCommandPreferencesSignatureRef.current !== nextSignature) {
+      dangerousCommandPreferencesSignatureRef.current = nextSignature;
+      clearDangerousCommandTemporaryApprovals("settings-changed");
+    }
+  }, [clearDangerousCommandTemporaryApprovals, dangerousCommandGuardPreferences]);
   useEffect(() => {
     return () => {
       if (dangerousCommandApprovalResolverRef.current) {
@@ -6474,6 +7605,117 @@ export function App() {
     },
     [openAppDialog]
   );
+  const clearDangerousCommandPersistentApprovals = useCallback(async () => {
+    const currentApprovals = dangerousCommandGuardPreferencesRef.current.persistentApprovals;
+    if (currentApprovals.length === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      "Clear all persistent dangerous-command approval policies?\nThis removes the saved exact-command allow rules from Safety settings.",
+      {
+        title: "Clear Persistent Approval Policies",
+        confirmLabel: "Clear",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      persistentApprovals: []
+    }));
+    pushAppHintMessage("Cleared persistent dangerous-command approval policies.", {
+      level: "info",
+      durationMs: 4200
+    });
+  }, [pushAppHintMessage, showAppConfirm]);
+  const saveDangerousCommandPersistentApproval = useCallback(async () => {
+    const currentApproval = dangerousCommandApproval;
+    if (!currentApproval) {
+      resolveDangerousCommandApproval(true);
+      return;
+    }
+    let scope: DangerousCommandPersistentApprovalScopeId = "global";
+    if (currentApproval.request.result.sessionGroupName) {
+      const choice = await showAppChoice(
+        "Save a persistent exact-command approval policy for future matching commands.",
+        [
+          {
+            value: "sessionGroup",
+            label: "This Group"
+          },
+          {
+            value: "global",
+            label: "All Matching Contexts"
+          }
+        ],
+        {
+          title: "Save Approval Policy",
+          cancelLabel: "Cancel",
+          detailText:
+            "The rule stays exact-match only: command text, execution source, policy pack, and environment template must still match."
+        }
+      );
+      if (!choice) {
+        return;
+      }
+      scope = choice as DangerousCommandPersistentApprovalScopeId;
+    }
+    const nextApproval = createDangerousCommandPersistentApprovalFromRequest(
+      currentApproval.request,
+      scope
+    );
+    if (!nextApproval) {
+      return;
+    }
+    const currentPolicies = dangerousCommandGuardPreferencesRef.current.persistentApprovals;
+    const existingPolicy =
+      currentPolicies.find((approval) =>
+        approval.scope === nextApproval.scope &&
+        matchesDangerousCommandPersistentApproval(approval, currentApproval.request)
+      ) ?? null;
+    if (!existingPolicy && currentPolicies.length >= MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS) {
+      await showAppAlert(
+        `Persistent approval limit reached (${MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS}). Delete an existing policy first.`,
+        {
+          title: "Save Approval Policy"
+        }
+      );
+      return;
+    }
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      persistentApprovals: [
+        nextApproval,
+        ...prev.persistentApprovals.filter(
+          (approval) =>
+            approval.id !== existingPolicy?.id &&
+            !(
+              approval.scope === nextApproval.scope &&
+              matchesDangerousCommandPersistentApproval(approval, currentApproval.request)
+            )
+        )
+      ].slice(0, MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS)
+    }));
+    pushAppHintMessage(
+      `${
+        existingPolicy ? "Updated" : "Saved"
+      } persistent approval policy for ${formatDangerousCommandPersistentApprovalScopeLabel(nextApproval)}.`,
+      {
+        level: currentApproval.request.result.severity === "critical" ? "warn" : "info",
+        durationMs: 5200
+      }
+    );
+    resolveDangerousCommandApproval(true);
+  }, [
+    dangerousCommandApproval,
+    pushAppHintMessage,
+    resolveDangerousCommandApproval,
+    showAppAlert,
+    showAppChoice
+  ]);
   const closeAppDialog = useCallback(() => {
     resolveAppDialog(appDialogCancelValueRef.current);
   }, [resolveAppDialog]);
@@ -6945,10 +8187,38 @@ export function App() {
       .slice(0, 12);
     return summaries;
   }, [sftpTransfers, terminalTabs]);
+  const operationCenterRecentAppJobs = useMemo(
+    () =>
+      [...operationCenterAppJobs]
+        .sort((left, right) => {
+          const rightTime = right.finishedAt ?? right.startedAt;
+          const leftTime = left.finishedAt ?? left.startedAt;
+          return rightTime - leftTime;
+        })
+        .slice(0, 8),
+    [operationCenterAppJobs]
+  );
+  const operationCenterRunningAppJobCount = useMemo(
+    () => operationCenterAppJobs.filter((entry) => entry.status === "running").length,
+    [operationCenterAppJobs]
+  );
+  const operationCenterFinishedAppJobCount = useMemo(
+    () => operationCenterAppJobs.filter((entry) => entry.status !== "running").length,
+    [operationCenterAppJobs]
+  );
+  const hasOperationCenterSnippetJobs = useMemo(
+    () => operationCenterAppJobs.some((entry) => entry.category === "snippets"),
+    [operationCenterAppJobs]
+  );
+  const hasOperationCenterDiagnosticsJobs = useMemo(
+    () => operationCenterAppJobs.some((entry) => entry.category === "diagnostics"),
+    [operationCenterAppJobs]
+  );
   const operationCenterActiveCount =
     operationCenterTransferTabSummaries.length +
     (sftpDeleteProgress ? 1 : 0) +
-    (portForwardBusy ? 1 : 0);
+    (portForwardBusy ? 1 : 0) +
+    operationCenterRunningAppJobCount;
   const hasOperationCenterActivity = operationCenterActiveCount > 0;
   const retryCenterSessionMetaById = useMemo(() => {
     const map = new Map<string, { sessionName: string; groupName: string }>();
@@ -8282,6 +9552,18 @@ export function App() {
   }, [activeTabId]);
 
   useEffect(() => {
+    dangerousCommandTemporaryApprovalsRef.current = dangerousCommandTemporaryApprovals;
+  }, [dangerousCommandTemporaryApprovals]);
+
+  useEffect(() => {
+    workspaceProfilePreferencesRef.current = workspaceProfilePreferences;
+  }, [workspaceProfilePreferences]);
+
+  useEffect(() => {
+    dangerousCommandGuardPreferencesRef.current = dangerousCommandGuardPreferences;
+  }, [dangerousCommandGuardPreferences]);
+
+  useEffect(() => {
     sftpTransfersRef.current = sftpTransfers;
   }, [sftpTransfers]);
 
@@ -8468,6 +9750,17 @@ export function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
+        WORKSPACE_PROFILE_STORAGE_KEY,
+        JSON.stringify(workspaceProfilePreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [workspaceProfilePreferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
         DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY,
         JSON.stringify(dangerousCommandGuardPreferences)
       );
@@ -8475,6 +9768,28 @@ export function App() {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
   }, [dangerousCommandGuardPreferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DANGEROUS_COMMAND_POLICY_BUNDLES_STORAGE_KEY,
+        JSON.stringify(dangerousCommandPolicyBundles)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [dangerousCommandPolicyBundles]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DANGEROUS_COMMAND_POLICY_BUNDLE_SYNC_STORAGE_KEY,
+        JSON.stringify(dangerousCommandPolicyBundleSyncState)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [dangerousCommandPolicyBundleSyncState]);
 
   useEffect(() => {
     try {
@@ -8597,6 +9912,22 @@ export function App() {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
   }, [commandSnippetGroups]);
+
+  useEffect(() => {
+    try {
+      const normalizedScopedValues = normalizeCommandSnippetScopedValues(commandSnippetScopedValues);
+      if (Object.keys(normalizedScopedValues).length === 0) {
+        window.localStorage.removeItem(COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(
+          COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY,
+          JSON.stringify(normalizedScopedValues)
+        );
+      }
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [commandSnippetScopedValues]);
 
   useEffect(() => {
     try {
@@ -10174,6 +11505,7 @@ export function App() {
   }, [hotkeyPreferences, isMacPlatform, showAppAlert, showAppChoice, systemApi, writeAppLog]);
 
   const importSessionsFromSshConfig = useCallback(async () => {
+    let operationJobId: string | null = null;
     try {
       if (!sessionsApi) {
         throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
@@ -10256,6 +11588,14 @@ export function App() {
         }
         duplicateStrategy = selectedStrategy as "skip" | "overwrite" | "rename";
       }
+
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "SSH Config Import",
+        description: `Importing ${parsed.candidates.length} host entr${
+          parsed.candidates.length === 1 ? "y" : "ies"
+        } from SSH config.`
+      });
 
       const localSessions = [...sessions];
       const sessionByConnection = new Map<string, SessionRecord>();
@@ -10373,6 +11713,11 @@ export function App() {
           setSelectedSessionId(firstImportedSessionId);
         }
       }
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Created ${createdCount}, updated ${updatedCount}, skipped ${skippedCount}, failed ${failedCount}, warnings ${parsed.warnings.length}.`
+        });
+      }
       await showAppAlert(
         `Import completed.\nCreated: ${createdCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}\nFailed: ${failedCount}\nWarnings: ${parsed.warnings.length}`,
         {
@@ -10380,21 +11725,30 @@ export function App() {
         }
       );
     } catch (caughtError) {
-      setError(toLogMessage(caughtError));
+      const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
+      setError(message);
       writeAppLog("error", "renderer:sessions", "SSH config import failed.", caughtError);
     }
   }, [
     activeSessionGroup?.groupName,
+    finishOperationCenterAppJob,
     sessions,
     sessionsApi,
     showAppAlert,
     showAppChoice,
     showAppPrompt,
+    startOperationCenterAppJob,
     systemApi,
     writeAppLog
   ]);
 
   const importSessionsFromJson = useCallback(async () => {
+    let operationJobId: string | null = null;
     try {
       if (!sessionsApi) {
         throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
@@ -10507,6 +11861,14 @@ export function App() {
       if (!confirmed) {
         return;
       }
+
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "Sessions JSON Import",
+        description: `Importing ${parsedImport.candidates.length} session${
+          parsedImport.candidates.length === 1 ? "" : "s"
+        } from JSON.`
+      });
 
       const localSessions = [...sessions];
       const sessionByConnection = new Map<string, SessionRecord>();
@@ -10635,6 +11997,11 @@ export function App() {
           setSelectedSessionId(firstImportedSessionId);
         }
       }
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Created ${createdCount}, updated ${updatedCount}, skipped ${skippedCount}, failed ${failedCount}, warnings ${parsedImport.warnings.length}.`
+        });
+      }
       await showAppAlert(
         `Import completed.\nCreated: ${createdCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}\nFailed: ${failedCount}\nWarnings: ${parsedImport.warnings.length}`,
         {
@@ -10643,21 +12010,29 @@ export function App() {
       );
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
       setError(message);
       writeAppLog("error", "renderer:sessions", "Session JSON import failed.", caughtError);
     }
   }, [
     activeSessionGroup?.groupName,
+    finishOperationCenterAppJob,
     sessions,
     sessionsApi,
     showAppAlert,
     showAppChoice,
     showAppConfirm,
+    startOperationCenterAppJob,
     systemApi,
     writeAppLog
   ]);
 
   const exportAllSessionsWithGroups = useCallback(async () => {
+    let operationJobId: string | null = null;
     try {
       if (sessions.length === 0) {
         await showAppAlert("No sessions available to export.", {
@@ -10728,6 +12103,11 @@ export function App() {
         sessions: sessionRows
       };
       const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "Sessions Export",
+        description: `Exporting ${sessionRows.length} session${sessionRows.length === 1 ? "" : "s"} across ${groups.length} group entr${groups.length === 1 ? "y" : "ies"}.`
+      });
       if (systemApi?.saveTextFile) {
         const result = await systemApi.saveTextFile({
           title: "Export All Sessions",
@@ -10741,6 +12121,12 @@ export function App() {
           ]
         });
         if (!result.canceled && result.outputPath) {
+          if (operationJobId) {
+            finishOperationCenterAppJob(operationJobId, "succeeded", {
+              detail: `Exported ${sessionRows.length} session${sessionRows.length === 1 ? "" : "s"} across ${groups.length} group entr${groups.length === 1 ? "y" : "ies"}.`,
+              outputPath: result.outputPath
+            });
+          }
           const copiedPath = await copyTextToClipboard(result.outputPath);
           await showAppAlert(
             copiedPath
@@ -10750,10 +12136,19 @@ export function App() {
               title: "Session Export"
             }
           );
+        } else if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
         }
         return;
       }
       const copied = await copyTextToClipboard(exportText);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: copied
+            ? `Exported ${sessionRows.length} session${sessionRows.length === 1 ? "" : "s"} to clipboard JSON.`
+            : `Prepared session export JSON for manual copy (${sessionRows.length} session${sessionRows.length === 1 ? "" : "s"}).`
+        });
+      }
       if (copied) {
         await showAppAlert("All session data copied to clipboard as JSON.", {
           title: "Session Export"
@@ -10766,12 +12161,27 @@ export function App() {
       });
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
       setError(message);
       writeAppLog("error", "renderer:sessions", "Failed to export all sessions.", caughtError);
     }
-  }, [sessionGroupOptions, sessions, showAppAlert, systemApi, writeAppLog]);
+  }, [
+    finishOperationCenterAppJob,
+    removeOperationCenterAppJob,
+    sessionGroupOptions,
+    sessions,
+    showAppAlert,
+    startOperationCenterAppJob,
+    systemApi,
+    writeAppLog
+  ]);
 
   const exportAllSessionGroups = useCallback(async () => {
+    let operationJobId: string | null = null;
     try {
       const generatedAtIso = new Date().toISOString();
       const groupNames = [...sessionGroupOptions];
@@ -10824,6 +12234,11 @@ export function App() {
         groups: groupRows
       };
       const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "Session Groups Export",
+        description: `Exporting ${groupRows.length} group entr${groupRows.length === 1 ? "y" : "ies"}.`
+      });
       if (systemApi?.saveTextFile) {
         const result = await systemApi.saveTextFile({
           title: "Export All Groups",
@@ -10837,6 +12252,12 @@ export function App() {
           ]
         });
         if (!result.canceled && result.outputPath) {
+          if (operationJobId) {
+            finishOperationCenterAppJob(operationJobId, "succeeded", {
+              detail: `Exported ${groupRows.length} group entr${groupRows.length === 1 ? "y" : "ies"}.`,
+              outputPath: result.outputPath
+            });
+          }
           const copiedPath = await copyTextToClipboard(result.outputPath);
           await showAppAlert(
             copiedPath
@@ -10846,10 +12267,19 @@ export function App() {
               title: "Group Export"
             }
           );
+        } else if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
         }
         return;
       }
       const copied = await copyTextToClipboard(exportText);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: copied
+            ? `Exported ${groupRows.length} group entr${groupRows.length === 1 ? "y" : "ies"} to clipboard JSON.`
+            : `Prepared group export JSON for manual copy (${groupRows.length} group entr${groupRows.length === 1 ? "y" : "ies"}).`
+        });
+      }
       if (copied) {
         await showAppAlert("All group data copied to clipboard as JSON.", {
           title: "Group Export"
@@ -10862,10 +12292,24 @@ export function App() {
       });
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
       setError(message);
       writeAppLog("error", "renderer:sessions", "Failed to export all groups.", caughtError);
     }
-  }, [sessionGroupOptions, sessions, showAppAlert, systemApi, writeAppLog]);
+  }, [
+    finishOperationCenterAppJob,
+    removeOperationCenterAppJob,
+    sessionGroupOptions,
+    sessions,
+    showAppAlert,
+    startOperationCenterAppJob,
+    systemApi,
+    writeAppLog
+  ]);
 
   const closeCreateModal = () => {
     if (saving || testingConnection) {
@@ -11360,7 +12804,13 @@ export function App() {
   );
 
   const renderCommandSnippetTemplate = useCallback(
-    async (template: string): Promise<string> => {
+    async (
+      template: string,
+      parameterValues?: Record<string, string>
+    ): Promise<{
+      rendered: string;
+      unresolvedParameterKeys: string[];
+    }> => {
       const tabId = activeTabIdRef.current;
       const tab = tabId ? terminalTabsRef.current.find((entry) => entry.id === tabId) ?? null : null;
       const session = tab
@@ -11389,13 +12839,154 @@ export function App() {
       for (const [token, value] of Object.entries(replacements)) {
         rendered = rendered.replaceAll(token, value);
       }
-      return rendered.trim();
+      const unresolvedParameterKeys = new Set<string>();
+      rendered = rendered.replaceAll(COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN, (_match, key) => {
+        const parameterKey = typeof key === "string" ? key.trim() : "";
+        if (
+          parameterValues &&
+          parameterKey &&
+          Object.prototype.hasOwnProperty.call(parameterValues, parameterKey)
+        ) {
+          return parameterValues[parameterKey] ?? "";
+        }
+        if (parameterKey) {
+          unresolvedParameterKeys.add(parameterKey);
+        }
+        return _match;
+      });
+      return {
+        rendered: rendered.trim(),
+        unresolvedParameterKeys: Array.from(unresolvedParameterKeys)
+      };
     },
     [systemApi]
   );
+  const applyCommandSnippetScopedValueUpdates = useCallback(
+    (updates: Array<{ cacheKey: string; value: string }>) => {
+      if (updates.length === 0) {
+        return;
+      }
+      setCommandSnippetScopedValues((prev) => {
+        const next: Record<string, CommandSnippetScopedValueRecord> = { ...prev };
+        let offset = 0;
+        for (const update of updates) {
+          if (!update.cacheKey) {
+            continue;
+          }
+          next[update.cacheKey] = {
+            value: update.value,
+            updatedAt: Date.now() + offset
+          };
+          offset += 1;
+        }
+        return normalizeCommandSnippetScopedValues(next);
+      });
+    },
+    []
+  );
+
+  const collectCommandSnippetParameterValues = useCallback(
+    async (
+      snippet: CommandSnippetItem,
+      parameters: CommandSnippetParameter[],
+      groupId: string
+    ): Promise<
+      | {
+          values: Record<string, string>;
+          scopedValueUpdates: Array<{ cacheKey: string; value: string }>;
+        }
+      | null
+    > => {
+      if (parameters.length === 0) {
+        return {
+          values: {},
+          scopedValueUpdates: []
+        };
+      }
+      const activeTabId = activeTabIdRef.current;
+      const activeTab = activeTabId
+        ? terminalTabsRef.current.find((entry) => entry.id === activeTabId) ?? null
+        : null;
+      const sessionId = activeTab?.sessionId ?? "";
+      const values: Record<string, string> = {};
+      const scopedValueUpdates: Array<{ cacheKey: string; value: string }> = [];
+      for (let index = 0; index < parameters.length; index += 1) {
+        const parameter = parameters[index];
+        const patternError = getCommandSnippetParameterPatternError(parameter.pattern);
+        if (patternError) {
+          await showAppAlert(
+            `Snippet parameter "${parameter.label || parameter.key}" has an invalid regex pattern.\n${patternError}`,
+            {
+              title: "Run Snippet"
+            }
+          );
+          return null;
+        }
+        const compiledPattern = parameter.pattern.trim() ? new RegExp(parameter.pattern.trim()) : null;
+        const scopedValueCacheKey = buildCommandSnippetScopedValueCacheKey({
+          scope: parameter.scope,
+          key: parameter.key,
+          snippetId: snippet.id,
+          groupId,
+          sessionId
+        });
+        const cachedValue = scopedValueCacheKey
+          ? commandSnippetScopedValues[scopedValueCacheKey]?.value ?? null
+          : null;
+        while (true) {
+          const input = await showAppPrompt(
+            [
+              `Provide a value for "${parameter.label || parameter.key}".`,
+              parameter.required ? "This parameter is required." : "Leave blank to skip this parameter.",
+              `Scope: ${formatCommandSnippetVariableScopeLabel(parameter.scope)}`,
+              compiledPattern ? `Pattern: ${parameter.pattern.trim()}` : null
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            cachedValue ?? parameter.defaultValue,
+            {
+              title: `Run Snippet: ${snippet.name}`,
+              confirmLabel: index === parameters.length - 1 ? "Preview" : "Next"
+            }
+          );
+          if (input === null) {
+            return null;
+          }
+          if (parameter.required && !input.trim()) {
+            await showAppAlert(`"${parameter.label || parameter.key}" cannot be empty.`, {
+              title: "Run Snippet"
+            });
+            continue;
+          }
+          if (compiledPattern && input.trim() && !compiledPattern.test(input)) {
+            await showAppAlert(
+              `Value for "${parameter.label || parameter.key}" does not match:\n${parameter.pattern.trim()}`,
+              {
+                title: "Run Snippet"
+              }
+            );
+            continue;
+          }
+          values[parameter.key] = input;
+          if (scopedValueCacheKey) {
+            scopedValueUpdates.push({
+              cacheKey: scopedValueCacheKey,
+              value: input
+            });
+          }
+          break;
+        }
+      }
+      return {
+        values,
+        scopedValueUpdates
+      };
+    },
+    [commandSnippetScopedValues, showAppAlert, showAppPrompt]
+  );
 
   const runCommandSnippet = useCallback(
-    async (snippet: CommandSnippetItem): Promise<void> => {
+    async (snippet: CommandSnippetItem, groupId = ""): Promise<void> => {
       if (!terminalApi) {
         setError("Terminal bridge unavailable. Restart `pnpm dev`.");
         return;
@@ -11405,20 +12996,48 @@ export function App() {
         setError("Open and focus a terminal tab before running snippets.");
         return;
       }
-      const rendered = await renderCommandSnippetTemplate(snippet.template);
+      const promptSet =
+        commandSnippetGroups.find((group) => group.id === groupId)?.promptSets.find(
+          (entry) => entry.id === snippet.promptSetId
+        ) ?? null;
+      const effectiveParameters = mergeCommandSnippetParameters(snippet, promptSet);
+      const parameterResult = await collectCommandSnippetParameterValues(
+        snippet,
+        effectiveParameters,
+        groupId
+      );
+      if (parameterResult === null) {
+        return;
+      }
+      const { rendered, unresolvedParameterKeys } = await renderCommandSnippetTemplate(
+        snippet.template,
+        parameterResult.values
+      );
+      if (unresolvedParameterKeys.length > 0) {
+        await showAppAlert(
+          `Snippet template references undefined parameter token(s): ${unresolvedParameterKeys.join(", ")}`,
+          {
+            title: "Run Snippet"
+          }
+        );
+        return;
+      }
       if (!rendered) {
         await showAppAlert("Snippet resolved to an empty command.", {
           title: "Run Snippet"
         });
         return;
       }
-      if (snippet.confirmBeforeRun) {
+      if (snippet.confirmBeforeRun || snippet.previewBeforeRun || effectiveParameters.length > 0) {
         const confirmed = await showAppConfirm(
-          `Run snippet "${snippet.name}" on current tab?\n\nCommand:\n${rendered}`,
+          snippet.confirmBeforeRun
+            ? `Run snippet "${snippet.name}" on current tab?`
+            : `Preview generated command for snippet "${snippet.name}".`,
           {
-            title: "Run Snippet",
+            title: snippet.confirmBeforeRun ? "Run Snippet" : "Snippet Preview",
             confirmLabel: "Run",
-            cancelLabel: "Cancel"
+            cancelLabel: "Cancel",
+            detailText: rendered
           }
         );
         if (!confirmed) {
@@ -11432,6 +13051,7 @@ export function App() {
       if (!wrote) {
         return;
       }
+      applyCommandSnippetScopedValueUpdates(parameterResult.scopedValueUpdates);
       const tabTitle =
         terminalTabsRef.current.find((entry) => entry.id === tabId)?.title ?? `Tab ${tabId}`;
       upsertTerminalCommandHistoryCommand(rendered, {
@@ -11441,6 +13061,9 @@ export function App() {
       });
     },
     [
+      applyCommandSnippetScopedValueUpdates,
+      commandSnippetGroups,
+      collectCommandSnippetParameterValues,
       renderCommandSnippetTemplate,
       guardedTerminalWrite,
       showAppAlert,
@@ -11451,75 +13074,137 @@ export function App() {
   );
 
   const importCommandSnippetGroups = useCallback(async () => {
-    if (!systemApi?.pickAndReadTextFile) {
-      throw new Error("System bridge unavailable. Restart `pnpm dev`.");
-    }
-    const selected = await systemApi.pickAndReadTextFile({
-      title: "Import Snippet Groups",
-      buttonLabel: "Import",
-      filters: [
-        { name: "JSON", extensions: ["json"] },
-        { name: "All Files", extensions: ["*"] }
-      ]
-    });
-    if (selected.canceled || !selected.filePath) {
-      return;
-    }
-    const parsed = JSON.parse(selected.text);
-    const imported = normalizeCommandSnippetGroups(parsed);
-    if (imported.length === 0) {
-      await showAppAlert("No valid snippet groups found in selected file.", {
-        title: "Import Snippet Groups"
-      });
-      return;
-    }
-    setCommandSnippetGroups(imported);
-    await showAppAlert(
-      `Imported ${imported.length} snippet group(s), ${imported.reduce(
-        (total, group) => total + group.snippets.length,
-        0
-      )} snippet(s).`,
-      {
-        title: "Import Snippet Groups"
+    let operationJobId: string | null = null;
+    try {
+      if (!systemApi?.pickAndReadTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
       }
-    );
-  }, [showAppAlert, systemApi]);
-
-  const exportCommandSnippetGroups = useCallback(async () => {
-    if (commandSnippetGroups.length === 0) {
-      await showAppAlert("No snippet groups available to export.", {
-        title: "Export Snippet Groups"
+      const selected = await systemApi.pickAndReadTextFile({
+        title: "Import Snippet Groups",
+        buttonLabel: "Import",
+        filters: [
+          { name: "JSON", extensions: ["json"] },
+          { name: "All Files", extensions: ["*"] }
+        ]
       });
-      return;
-    }
-    const payload = {
-      exportedAtIso: new Date().toISOString(),
-      appVersion: APP_VERSION,
-      groupCount: commandSnippetGroups.length,
-      snippetCount: commandSnippetGroups.reduce((total, group) => total + group.snippets.length, 0),
-      groups: commandSnippetGroups
-    };
-    const content = `${JSON.stringify(payload, null, 2)}\n`;
-    if (systemApi?.saveTextFile) {
-      const result = await systemApi.saveTextFile({
-        title: "Export Snippet Groups",
-        defaultFileName: `termdock-snippet-groups-${new Date().toISOString().replace(/[:]/g, "-")}.json`,
-        text: content,
-        filters: [{ name: "JSON", extensions: ["json"] }]
+      if (selected.canceled || !selected.filePath) {
+        return;
+      }
+      const parsed = JSON.parse(selected.text);
+      const imported = normalizeCommandSnippetGroups(parsed);
+      if (imported.length === 0) {
+        await showAppAlert("No valid snippet groups found in selected file.", {
+          title: "Import Snippet Groups"
+        });
+        return;
+      }
+      operationJobId = startOperationCenterAppJob({
+        category: "snippets",
+        title: "Snippet Groups Import",
+        description: `Importing ${imported.length} snippet group${imported.length === 1 ? "" : "s"}.`
       });
-      if (!result.canceled && result.outputPath) {
-        await showAppAlert(`Snippet groups exported:\n${result.outputPath}`, {
-          title: "Export Snippet Groups"
+      setCommandSnippetGroups(imported);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Imported ${imported.length} group${imported.length === 1 ? "" : "s"} and ${imported.reduce((total, group) => total + group.snippets.length, 0)} snippet${imported.reduce((total, group) => total + group.snippets.length, 0) === 1 ? "" : "s"}.`
         });
       }
-      return;
+      await showAppAlert(
+        `Imported ${imported.length} snippet group(s), ${imported.reduce(
+          (total, group) => total + group.snippets.length,
+          0
+        )} snippet(s).`,
+        {
+          title: "Import Snippet Groups"
+        }
+      );
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
+      setError(message);
     }
-    const copied = await copyTextToClipboard(content);
-    await showAppAlert(copied ? "Snippet groups JSON copied to clipboard." : content, {
-      title: "Export Snippet Groups",
-      detailText: copied ? undefined : content
-    });
-  }, [commandSnippetGroups, showAppAlert, systemApi]);
+  }, [finishOperationCenterAppJob, showAppAlert, startOperationCenterAppJob, systemApi]);
+
+  const exportCommandSnippetGroups = useCallback(async () => {
+    let operationJobId: string | null = null;
+    try {
+      if (commandSnippetGroups.length === 0) {
+        await showAppAlert("No snippet groups available to export.", {
+          title: "Export Snippet Groups"
+        });
+        return;
+      }
+      const payload = {
+        exportedAtIso: new Date().toISOString(),
+        appVersion: APP_VERSION,
+        groupCount: commandSnippetGroups.length,
+        snippetCount: commandSnippetGroups.reduce(
+          (total, group) => total + group.snippets.length,
+          0
+        ),
+        groups: commandSnippetGroups
+      };
+      const content = `${JSON.stringify(payload, null, 2)}\n`;
+      operationJobId = startOperationCenterAppJob({
+        category: "snippets",
+        title: "Snippet Groups Export",
+        description: `Exporting ${payload.groupCount} snippet group${payload.groupCount === 1 ? "" : "s"} and ${payload.snippetCount} snippet${payload.snippetCount === 1 ? "" : "s"}.`
+      });
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Snippet Groups",
+          defaultFileName: `termdock-snippet-groups-${new Date().toISOString().replace(/[:]/g, "-")}.json`,
+          text: content,
+          filters: [{ name: "JSON", extensions: ["json"] }]
+        });
+        if (!result.canceled && result.outputPath) {
+          if (operationJobId) {
+            finishOperationCenterAppJob(operationJobId, "succeeded", {
+              detail: `Exported ${payload.groupCount} group${payload.groupCount === 1 ? "" : "s"} and ${payload.snippetCount} snippet${payload.snippetCount === 1 ? "" : "s"}.`,
+              outputPath: result.outputPath
+            });
+          }
+          await showAppAlert(`Snippet groups exported:\n${result.outputPath}`, {
+            title: "Export Snippet Groups"
+          });
+        } else if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(content);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: copied
+            ? `Exported ${payload.groupCount} group${payload.groupCount === 1 ? "" : "s"} to clipboard JSON.`
+            : `Prepared snippet group export JSON for manual copy (${payload.groupCount} groups).`
+        });
+      }
+      await showAppAlert(copied ? "Snippet groups JSON copied to clipboard." : content, {
+        title: "Export Snippet Groups",
+        detailText: copied ? undefined : content
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
+      setError(message);
+    }
+  }, [
+    commandSnippetGroups,
+    finishOperationCenterAppJob,
+    removeOperationCenterAppJob,
+    showAppAlert,
+    startOperationCenterAppJob,
+    systemApi
+  ]);
 
   const selectedCommandSnippetManagerGroup = useMemo(
     () =>
@@ -11540,6 +13225,65 @@ export function App() {
       null
     );
   }, [commandSnippetManagerSnippetId, selectedCommandSnippetManagerGroup]);
+  const selectedCommandSnippetManagerPromptSet = useMemo(() => {
+    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerSnippet?.promptSetId) {
+      return null;
+    }
+    return (
+      selectedCommandSnippetManagerGroup.promptSets.find(
+        (promptSet) => promptSet.id === selectedCommandSnippetManagerSnippet.promptSetId
+      ) ?? null
+    );
+  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerSnippet]);
+  const selectedCommandSnippetEffectiveParameters = useMemo(
+    () =>
+      mergeCommandSnippetParameters(
+        selectedCommandSnippetManagerSnippet,
+        selectedCommandSnippetManagerPromptSet
+      ),
+    [selectedCommandSnippetManagerPromptSet, selectedCommandSnippetManagerSnippet]
+  );
+  const selectedCommandSnippetTemplateParameterKeys = useMemo(
+    () =>
+      selectedCommandSnippetManagerSnippet
+        ? listCommandSnippetTemplateParameterKeys(selectedCommandSnippetManagerSnippet.template)
+        : [],
+    [selectedCommandSnippetManagerSnippet]
+  );
+  const selectedCommandSnippetMissingParameterKeys = useMemo(() => {
+    if (!selectedCommandSnippetManagerSnippet) {
+      return [];
+    }
+    const definedKeys = new Set(
+      selectedCommandSnippetEffectiveParameters.map((entry) => entry.key)
+    );
+    return selectedCommandSnippetTemplateParameterKeys.filter((key) => !definedKeys.has(key));
+  }, [selectedCommandSnippetEffectiveParameters, selectedCommandSnippetManagerSnippet, selectedCommandSnippetTemplateParameterKeys]);
+  const selectedCommandSnippetUnusedParameterKeys = useMemo(() => {
+    if (!selectedCommandSnippetManagerSnippet) {
+      return [];
+    }
+    const usedKeys = new Set(selectedCommandSnippetTemplateParameterKeys);
+    return selectedCommandSnippetEffectiveParameters
+      .map((entry) => entry.key)
+      .filter((key) => !usedKeys.has(key));
+  }, [selectedCommandSnippetEffectiveParameters, selectedCommandSnippetManagerSnippet, selectedCommandSnippetTemplateParameterKeys]);
+  const selectedCommandSnippetShadowedPromptSetKeys = useMemo(() => {
+    if (!selectedCommandSnippetManagerPromptSet || !selectedCommandSnippetManagerSnippet) {
+      return [];
+    }
+    const snippetKeys = new Set(selectedCommandSnippetManagerSnippet.parameters.map((entry) => entry.key));
+    return selectedCommandSnippetManagerPromptSet.parameters
+      .map((entry) => entry.key)
+      .filter((key) => snippetKeys.has(key));
+  }, [selectedCommandSnippetManagerPromptSet, selectedCommandSnippetManagerSnippet]);
+  const selectedCommandSnippetHasInvalidPattern = useMemo(
+    () =>
+      !!selectedCommandSnippetEffectiveParameters.some((parameter) =>
+        Boolean(getCommandSnippetParameterPatternError(parameter.pattern))
+      ),
+    [selectedCommandSnippetEffectiveParameters]
+  );
   useEffect(() => {
     if (!isCommandSnippetManagerOpen) {
       return;
@@ -11577,6 +13321,46 @@ export function App() {
     commandSnippetManagerSnippetId,
     isCommandSnippetManagerOpen
   ]);
+  const updateSelectedCommandSnippet = useCallback(
+    (snippetId: string, updater: (snippet: CommandSnippetItem) => CommandSnippetItem) => {
+      if (!selectedCommandSnippetManagerGroup) {
+        return;
+      }
+      setCommandSnippetGroups((prev) =>
+        prev.map((group) =>
+          group.id === selectedCommandSnippetManagerGroup.id
+            ? {
+                ...group,
+                snippets: group.snippets.map((snippet) =>
+                  snippet.id === snippetId ? updater(snippet) : snippet
+                )
+              }
+            : group
+        )
+      );
+    },
+    [selectedCommandSnippetManagerGroup]
+  );
+  const updateSelectedCommandSnippetPromptSet = useCallback(
+    (promptSetId: string, updater: (promptSet: CommandSnippetPromptSet) => CommandSnippetPromptSet) => {
+      if (!selectedCommandSnippetManagerGroup) {
+        return;
+      }
+      setCommandSnippetGroups((prev) =>
+        prev.map((group) =>
+          group.id === selectedCommandSnippetManagerGroup.id
+            ? {
+                ...group,
+                promptSets: group.promptSets.map((promptSet) =>
+                  promptSet.id === promptSetId ? updater(promptSet) : promptSet
+                )
+              }
+            : group
+        )
+      );
+    },
+    [selectedCommandSnippetManagerGroup]
+  );
   const updateCommandSnippetManagerGroupName = useCallback((groupId: string, nextName: string) => {
     const normalizedName = nextName.slice(0, 80);
     setCommandSnippetGroups((prev) =>
@@ -11602,6 +13386,7 @@ export function App() {
       {
         id: nextGroupId,
         name: nextGroupName,
+        promptSets: [],
         snippets: []
       }
     ]);
@@ -11644,7 +13429,10 @@ export function App() {
       id: nextSnippetId,
       name: `Snippet ${selectedCommandSnippetManagerGroup.snippets.length + 1}`,
       template: "echo \"snippet\"",
-      confirmBeforeRun: false
+      confirmBeforeRun: false,
+      previewBeforeRun: false,
+      promptSetId: "",
+      parameters: []
     };
     setCommandSnippetGroups((prev) =>
       prev.map((group) =>
@@ -11660,87 +13448,455 @@ export function App() {
   }, [addCommandSnippetManagerGroup, selectedCommandSnippetManagerGroup]);
   const updateCommandSnippetManagerSnippetName = useCallback(
     (snippetId: string, nextName: string) => {
-      if (!selectedCommandSnippetManagerGroup) {
-        return;
-      }
       const normalizedName = nextName.slice(0, 80);
-      setCommandSnippetGroups((prev) =>
-        prev.map((group) =>
-          group.id === selectedCommandSnippetManagerGroup.id
-            ? {
-                ...group,
-                snippets: group.snippets.map((snippet) =>
-                  snippet.id === snippetId
-                    ? {
-                        ...snippet,
-                        name: normalizedName
-                      }
-                    : snippet
-                )
-              }
-            : group
-        )
-      );
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        name: normalizedName
+      }));
     },
-    [selectedCommandSnippetManagerGroup]
+    [updateSelectedCommandSnippet]
   );
   const updateCommandSnippetManagerSnippetTemplate = useCallback(
     (snippetId: string, nextTemplate: string) => {
-      if (!selectedCommandSnippetManagerGroup) {
-        return;
-      }
       const normalizedTemplate = nextTemplate.slice(0, 4000);
-      setCommandSnippetGroups((prev) =>
-        prev.map((group) =>
-          group.id === selectedCommandSnippetManagerGroup.id
-            ? {
-                ...group,
-                snippets: group.snippets.map((snippet) =>
-                  snippet.id === snippetId
-                    ? {
-                        ...snippet,
-                        template: normalizedTemplate
-                      }
-                    : snippet
-                )
-              }
-            : group
-        )
-      );
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        template: normalizedTemplate
+      }));
     },
-    [selectedCommandSnippetManagerGroup]
+    [updateSelectedCommandSnippet]
   );
   const updateCommandSnippetManagerSnippetConfirm = useCallback(
     (snippetId: string, nextConfirmBeforeRun: boolean) => {
-      if (!selectedCommandSnippetManagerGroup) {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        confirmBeforeRun: nextConfirmBeforeRun
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const updateCommandSnippetManagerSnippetPreview = useCallback(
+    (snippetId: string, nextPreviewBeforeRun: boolean) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        previewBeforeRun: nextPreviewBeforeRun
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const updateCommandSnippetManagerSnippetPromptSet = useCallback(
+    (snippetId: string, nextPromptSetId: string) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        promptSetId: nextPromptSetId
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const addCommandSnippetManagerPromptSet = useCallback(() => {
+    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerSnippet) {
+      return;
+    }
+    if (selectedCommandSnippetManagerGroup.promptSets.length >= MAX_COMMAND_SNIPPET_PROMPT_SETS) {
+      setError(`Prompt sets per group are limited to ${MAX_COMMAND_SNIPPET_PROMPT_SETS}.`);
+      return;
+    }
+    const nextPromptSetId = `sps-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    const nextPromptSet: CommandSnippetPromptSet = {
+      id: nextPromptSetId,
+      name: `Prompt Set ${selectedCommandSnippetManagerGroup.promptSets.length + 1}`,
+      parameters: []
+    };
+    setCommandSnippetGroups((prev) =>
+      prev.map((group) =>
+        group.id === selectedCommandSnippetManagerGroup.id
+          ? {
+              ...group,
+              promptSets: [...group.promptSets, nextPromptSet],
+              snippets: group.snippets.map((snippet) =>
+                snippet.id === selectedCommandSnippetManagerSnippet.id
+                  ? {
+                      ...snippet,
+                      promptSetId: nextPromptSetId
+                    }
+                  : snippet
+              )
+            }
+          : group
+      )
+    );
+  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerSnippet]);
+  const updateCommandSnippetManagerPromptSetName = useCallback(
+    (promptSetId: string, nextName: string) => {
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        name: nextName.slice(0, MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH)
+      }));
+    },
+    [updateSelectedCommandSnippetPromptSet]
+  );
+  const deleteSelectedCommandSnippetManagerPromptSet = useCallback(async () => {
+    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerPromptSet) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Delete prompt set "${selectedCommandSnippetManagerPromptSet.name}" from "${selectedCommandSnippetManagerGroup.name}"? Linked snippets will fall back to snippet-only variables.`,
+      {
+        title: "Delete Prompt Set",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setCommandSnippetGroups((prev) =>
+      prev.map((group) =>
+        group.id === selectedCommandSnippetManagerGroup.id
+          ? {
+              ...group,
+              promptSets: group.promptSets.filter(
+                (promptSet) => promptSet.id !== selectedCommandSnippetManagerPromptSet.id
+              ),
+              snippets: group.snippets.map((snippet) =>
+                snippet.promptSetId === selectedCommandSnippetManagerPromptSet.id
+                  ? {
+                      ...snippet,
+                      promptSetId: ""
+                    }
+                  : snippet
+              )
+            }
+          : group
+      )
+    );
+  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerPromptSet, showAppConfirm]);
+  const addCommandSnippetManagerSnippetParameter = useCallback(() => {
+    if (!selectedCommandSnippetManagerSnippet) {
+      return;
+    }
+    if (selectedCommandSnippetManagerSnippet.parameters.length >= MAX_COMMAND_SNIPPET_PARAMETERS) {
+      setError(`Snippet parameters are limited to ${MAX_COMMAND_SNIPPET_PARAMETERS}.`);
+      return;
+    }
+    const existingKeys = new Set(selectedCommandSnippetManagerSnippet.parameters.map((entry) => entry.key));
+    const nextParameter = createCommandSnippetParameter(
+      selectedCommandSnippetManagerSnippet.parameters.length + 1,
+      existingKeys,
+      "snippet"
+    );
+    updateSelectedCommandSnippet(selectedCommandSnippetManagerSnippet.id, (snippet) => ({
+      ...snippet,
+      parameters: [...snippet.parameters, nextParameter]
+    }));
+  }, [selectedCommandSnippetManagerSnippet, updateSelectedCommandSnippet]);
+  const updateCommandSnippetManagerSnippetParameterKey = useCallback(
+    (snippetId: string, parameterId: string, nextKeyInput: string) => {
+      if (!selectedCommandSnippetManagerSnippet) {
         return;
       }
-      setCommandSnippetGroups((prev) =>
-        prev.map((group) =>
-          group.id === selectedCommandSnippetManagerGroup.id
-            ? {
-                ...group,
-                snippets: group.snippets.map((snippet) =>
-                  snippet.id === snippetId
-                    ? {
-                        ...snippet,
-                        confirmBeforeRun: nextConfirmBeforeRun
-                      }
-                    : snippet
-                )
-              }
-            : group
+      const normalizedKey = normalizeCommandSnippetParameterKey(nextKeyInput);
+      if (!normalizedKey) {
+        setError("Snippet parameter keys must contain letters, numbers, '-' or '_'.");
+        return;
+      }
+      if (
+        selectedCommandSnippetManagerSnippet.parameters.some(
+          (parameter) => parameter.id !== parameterId && parameter.key === normalizedKey
         )
-      );
+      ) {
+        setError(`Snippet parameter key "${normalizedKey}" already exists.`);
+        return;
+      }
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        parameters: snippet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                key: normalizedKey,
+                label: parameter.label || normalizedKey
+              }
+            : parameter
+        )
+      }));
     },
-    [selectedCommandSnippetManagerGroup]
+    [selectedCommandSnippetManagerSnippet, updateSelectedCommandSnippet]
+  );
+  const updateCommandSnippetManagerSnippetParameterLabel = useCallback(
+    (snippetId: string, parameterId: string, nextLabel: string) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        parameters: snippet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                label: nextLabel.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH)
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const updateCommandSnippetManagerSnippetParameterDefault = useCallback(
+    (snippetId: string, parameterId: string, nextDefaultValue: string) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        parameters: snippet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                defaultValue: nextDefaultValue.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH)
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const updateCommandSnippetManagerSnippetParameterPattern = useCallback(
+    (snippetId: string, parameterId: string, nextPattern: string) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        parameters: snippet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                pattern: nextPattern.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH)
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const updateCommandSnippetManagerSnippetParameterScope = useCallback(
+    (snippetId: string, parameterId: string, nextScope: CommandSnippetVariableScopeId) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        parameters: snippet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                scope: nextScope
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const updateCommandSnippetManagerSnippetParameterRequired = useCallback(
+    (snippetId: string, parameterId: string, nextRequired: boolean) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        parameters: snippet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                required: nextRequired
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const deleteCommandSnippetManagerSnippetParameter = useCallback(
+    (snippetId: string, parameterId: string) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => ({
+        ...snippet,
+        parameters: snippet.parameters.filter((parameter) => parameter.id !== parameterId)
+      }));
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const insertCommandSnippetManagerSnippetParameterToken = useCallback(
+    (snippetId: string, parameterKey: string) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => {
+        const token = buildCommandSnippetParameterToken(parameterKey);
+        const nextTemplate = snippet.template.includes(token)
+          ? snippet.template
+          : snippet.template.trim()
+            ? `${snippet.template}\n${token}`
+            : token;
+        return {
+          ...snippet,
+          template: nextTemplate.slice(0, 4000)
+        };
+      });
+    },
+    [updateSelectedCommandSnippet]
+  );
+  const addCommandSnippetManagerPromptSetParameter = useCallback(() => {
+    if (!selectedCommandSnippetManagerPromptSet) {
+      return;
+    }
+    if (selectedCommandSnippetManagerPromptSet.parameters.length >= MAX_COMMAND_SNIPPET_PARAMETERS) {
+      setError(`Prompt-set parameters are limited to ${MAX_COMMAND_SNIPPET_PARAMETERS}.`);
+      return;
+    }
+    const existingKeys = new Set(selectedCommandSnippetManagerPromptSet.parameters.map((entry) => entry.key));
+    const nextParameter = createCommandSnippetParameter(
+      selectedCommandSnippetManagerPromptSet.parameters.length + 1,
+      existingKeys,
+      "group"
+    );
+    updateSelectedCommandSnippetPromptSet(selectedCommandSnippetManagerPromptSet.id, (promptSet) => ({
+      ...promptSet,
+      parameters: [...promptSet.parameters, nextParameter]
+    }));
+  }, [selectedCommandSnippetManagerPromptSet, updateSelectedCommandSnippetPromptSet]);
+  const updateCommandSnippetManagerPromptSetParameterKey = useCallback(
+    (promptSetId: string, parameterId: string, nextKeyInput: string) => {
+      if (!selectedCommandSnippetManagerPromptSet) {
+        return;
+      }
+      const normalizedKey = normalizeCommandSnippetParameterKey(nextKeyInput);
+      if (!normalizedKey) {
+        setError("Prompt-set parameter keys must contain letters, numbers, '-' or '_'.");
+        return;
+      }
+      if (
+        selectedCommandSnippetManagerPromptSet.parameters.some(
+          (parameter) => parameter.id !== parameterId && parameter.key === normalizedKey
+        )
+      ) {
+        setError(`Prompt-set parameter key "${normalizedKey}" already exists.`);
+        return;
+      }
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        parameters: promptSet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                key: normalizedKey,
+                label: parameter.label || normalizedKey
+              }
+            : parameter
+        )
+      }));
+    },
+    [selectedCommandSnippetManagerPromptSet, updateSelectedCommandSnippetPromptSet]
+  );
+  const updateCommandSnippetManagerPromptSetParameterLabel = useCallback(
+    (promptSetId: string, parameterId: string, nextLabel: string) => {
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        parameters: promptSet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                label: nextLabel.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH)
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippetPromptSet]
+  );
+  const updateCommandSnippetManagerPromptSetParameterDefault = useCallback(
+    (promptSetId: string, parameterId: string, nextDefaultValue: string) => {
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        parameters: promptSet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                defaultValue: nextDefaultValue.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH)
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippetPromptSet]
+  );
+  const updateCommandSnippetManagerPromptSetParameterPattern = useCallback(
+    (promptSetId: string, parameterId: string, nextPattern: string) => {
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        parameters: promptSet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                pattern: nextPattern.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH)
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippetPromptSet]
+  );
+  const updateCommandSnippetManagerPromptSetParameterScope = useCallback(
+    (promptSetId: string, parameterId: string, nextScope: CommandSnippetVariableScopeId) => {
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        parameters: promptSet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                scope: nextScope
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippetPromptSet]
+  );
+  const updateCommandSnippetManagerPromptSetParameterRequired = useCallback(
+    (promptSetId: string, parameterId: string, nextRequired: boolean) => {
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        parameters: promptSet.parameters.map((parameter) =>
+          parameter.id === parameterId
+            ? {
+                ...parameter,
+                required: nextRequired
+              }
+            : parameter
+        )
+      }));
+    },
+    [updateSelectedCommandSnippetPromptSet]
+  );
+  const deleteCommandSnippetManagerPromptSetParameter = useCallback(
+    (promptSetId: string, parameterId: string) => {
+      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
+        ...promptSet,
+        parameters: promptSet.parameters.filter((parameter) => parameter.id !== parameterId)
+      }));
+    },
+    [updateSelectedCommandSnippetPromptSet]
+  );
+  const insertCommandSnippetManagerPromptSetParameterToken = useCallback(
+    (snippetId: string, parameterKey: string) => {
+      updateSelectedCommandSnippet(snippetId, (snippet) => {
+        const token = buildCommandSnippetParameterToken(parameterKey);
+        const nextTemplate = snippet.template.includes(token)
+          ? snippet.template
+          : snippet.template.trim()
+            ? `${snippet.template}\n${token}`
+            : token;
+        return {
+          ...snippet,
+          template: nextTemplate.slice(0, 4000)
+        };
+      });
+    },
+    [updateSelectedCommandSnippet]
   );
   const runSelectedCommandSnippetManagerSnippet = useCallback(async () => {
     if (!selectedCommandSnippetManagerSnippet) {
       return;
     }
-    await runCommandSnippet(selectedCommandSnippetManagerSnippet);
-  }, [runCommandSnippet, selectedCommandSnippetManagerSnippet]);
+    await runCommandSnippet(
+      selectedCommandSnippetManagerSnippet,
+      selectedCommandSnippetManagerGroup?.id ?? ""
+    );
+  }, [runCommandSnippet, selectedCommandSnippetManagerGroup?.id, selectedCommandSnippetManagerSnippet]);
   const deleteCommandSnippetManagerSnippet = useCallback(async () => {
     if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerSnippet) {
       return;
@@ -11786,7 +13942,27 @@ export function App() {
     setCommandSnippetGroups([]);
     setCommandSnippetManagerGroupId("");
     setCommandSnippetManagerSnippetId("");
+    setCommandSnippetScopedValues({});
   }, [commandSnippetGroups.length, showAppConfirm, totalCommandSnippetCount]);
+  const clearCommandSnippetScopedValues = useCallback(async () => {
+    const scopedValueCount = Object.keys(commandSnippetScopedValues).length;
+    if (scopedValueCount === 0) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Clear ${scopedValueCount} remembered scoped snippet value(s)?`,
+      {
+        title: "Clear Scoped Values",
+        confirmLabel: "Clear",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setCommandSnippetScopedValues({});
+  }, [commandSnippetScopedValues, showAppConfirm]);
 
   const closeTerminalTabs = useCallback((tabIds: string[]) => {
     const uniqueTabIds = Array.from(new Set(tabIds.filter(Boolean)));
@@ -11794,6 +13970,14 @@ export function App() {
       return;
     }
     const tabIdSet = new Set(uniqueTabIds);
+    setDangerousCommandTemporaryApprovals((prev) =>
+      prev.filter(
+        (approval) => approval.scope !== "tab" || !approval.tabId || !tabIdSet.has(approval.tabId)
+      )
+    );
+    if (dangerousCommandApproval && tabIdSet.has(dangerousCommandApproval.request.tabId)) {
+      resolveDangerousCommandApproval(false);
+    }
 
     for (const tabId of uniqueTabIds) {
       intentionalTabCloseIdsRef.current.add(tabId);
@@ -11909,7 +14093,15 @@ export function App() {
       }
       return nextTabs.length > 0 ? nextTabs[nextTabs.length - 1].id : null;
     });
-  }, [applySftpTransferEvent, drainDownloadQueue, drainUploadQueue, systemApi, terminalApi]);
+  }, [
+    applySftpTransferEvent,
+    dangerousCommandApproval,
+    drainDownloadQueue,
+    drainUploadQueue,
+    resolveDangerousCommandApproval,
+    systemApi,
+    terminalApi
+  ]);
 
   const closeTerminalTab = useCallback((tabId: string) => {
     closeTerminalTabs([tabId]);
@@ -12082,10 +14274,115 @@ export function App() {
     }));
   };
 
+  const applyWorkspaceProfileToDangerousCommandGuard = useCallback(
+    (profileId: WorkspaceProfileId) => {
+      const profileTemplate =
+        DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find((template) => template.id === profileId) ??
+        DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0];
+      setDangerousCommandGuardPreferences((prev) => {
+        if (
+          prev.environmentTemplateId === profileTemplate.id &&
+          prev.policyPackId === profileTemplate.recommendedPolicyPackId
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          environmentTemplateId: profileTemplate.id,
+          policyPackId: profileTemplate.recommendedPolicyPackId
+        };
+      });
+    },
+    []
+  );
+
+  const setWorkspaceProfileId = useCallback(
+    (profileId: WorkspaceProfileId) => {
+      setWorkspaceProfilePreferences((prev) => ({
+        ...prev,
+        profileId
+      }));
+      if (workspaceProfilePreferencesRef.current.syncDangerousCommandSafety) {
+        applyWorkspaceProfileToDangerousCommandGuard(profileId);
+      }
+      pushAppHintMessage(`Workspace profile switched to ${getWorkspaceProfileOption(profileId).label}.`, {
+        level: profileId === "prod" ? "warn" : "info",
+        durationMs: 4200
+      });
+    },
+    [applyWorkspaceProfileToDangerousCommandGuard, pushAppHintMessage]
+  );
+
+  const setWorkspaceProfileDangerousCommandSync = useCallback(
+    (value: boolean) => {
+      setWorkspaceProfilePreferences((prev) => ({
+        ...prev,
+        syncDangerousCommandSafety: value
+      }));
+      if (value) {
+        applyWorkspaceProfileToDangerousCommandGuard(workspaceProfilePreferencesRef.current.profileId);
+        pushAppHintMessage("Workspace profile now controls the global Safety pack/template defaults.", {
+          level: workspaceProfilePreferencesRef.current.profileId === "prod" ? "warn" : "info",
+          durationMs: 4600
+        });
+        return;
+      }
+      pushAppHintMessage("Workspace profile no longer auto-syncs global Safety pack/template defaults.", {
+        level: "info",
+        durationMs: 4200
+      });
+    },
+    [applyWorkspaceProfileToDangerousCommandGuard, pushAppHintMessage]
+  );
+  useEffect(() => {
+    if (!workspaceProfilePreferences.syncDangerousCommandSafety) {
+      return;
+    }
+    applyWorkspaceProfileToDangerousCommandGuard(workspaceProfilePreferences.profileId);
+  }, [
+    applyWorkspaceProfileToDangerousCommandGuard,
+    dangerousCommandGuardPreferences.environmentTemplateId,
+    dangerousCommandGuardPreferences.policyPackId,
+    workspaceProfilePreferences.profileId,
+    workspaceProfilePreferences.syncDangerousCommandSafety
+  ]);
+
   const setDangerousCommandGuardEnabled = (value: boolean) => {
     setDangerousCommandGuardPreferences((prev) => ({
       ...prev,
       enabled: value
+    }));
+  };
+
+  const setDangerousCommandSourceEnabled = (
+    source: DangerousCommandExecutionSource,
+    value: boolean
+  ) => {
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      sourceStates: {
+        ...prev.sourceStates,
+        [source]: value
+      }
+    }));
+  };
+
+  const setDangerousCommandPolicyPackId = (value: DangerousCommandPolicyPackId) => {
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      policyPackId: value
+    }));
+  };
+
+  const applyDangerousCommandEnvironmentTemplate = (
+    value: DangerousCommandEnvironmentTemplateId
+  ) => {
+    const template = DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find((entry) => entry.id === value);
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      environmentTemplateId: value,
+      policyPackId:
+        value === "none" || !template ? prev.policyPackId : template.recommendedPolicyPackId
     }));
   };
 
@@ -12108,6 +14405,525 @@ export function App() {
       customPatternsText: value.slice(0, 1600)
     }));
   };
+
+  const saveDangerousCommandGroupAssignment = (groupName: string | null | undefined) => {
+    const normalizedGroupName = normalizeSessionGroupName(groupName ?? "");
+    if (!normalizedGroupName) {
+      return;
+    }
+    setDangerousCommandGuardPreferences((prev) => {
+      const existingAssignments = prev.groupAssignments.filter(
+        (assignment) => assignment.groupName.toLowerCase() !== normalizedGroupName.toLowerCase()
+      );
+      if (
+        existingAssignments.length >= MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS &&
+        existingAssignments.length === prev.groupAssignments.length
+      ) {
+        return prev;
+      }
+      const nextAssignments = [
+        ...existingAssignments,
+        {
+          groupName: normalizedGroupName,
+          policyPackId: prev.policyPackId,
+          environmentTemplateId: prev.environmentTemplateId
+        }
+      ].sort((left, right) => left.groupName.localeCompare(right.groupName));
+      return {
+        ...prev,
+        groupAssignments: nextAssignments
+      };
+    });
+  };
+
+  const deleteDangerousCommandGroupAssignment = (groupName: string | null | undefined) => {
+    const normalizedGroupName = normalizeSessionGroupName(groupName ?? "");
+    if (!normalizedGroupName) {
+      return;
+    }
+    setDangerousCommandGuardPreferences((prev) => ({
+      ...prev,
+      groupAssignments: prev.groupAssignments.filter(
+        (assignment) => assignment.groupName.toLowerCase() !== normalizedGroupName.toLowerCase()
+      )
+    }));
+  };
+
+  const saveCurrentDangerousCommandPolicyBundle = useCallback(async () => {
+    const suggestedName = `${selectedDangerousCommandEnvironmentTemplate.label} ${selectedDangerousCommandPolicyPack.label}`
+      .replace(/\s+/g, " ")
+      .trim();
+    const bundleNameInput = await showAppPrompt(
+      "Enter a name for this shared safety bundle.",
+      suggestedName,
+      {
+        title: "Save Safety Bundle",
+        confirmLabel: "Next"
+      }
+    );
+    if (bundleNameInput === null) {
+      return;
+    }
+    const bundleName = normalizeDangerousCommandPolicyBundleName(bundleNameInput);
+    if (!bundleName) {
+      await showAppAlert("Bundle name cannot be empty.", {
+        title: "Save Safety Bundle"
+      });
+      return;
+    }
+    const existingBundle =
+      dangerousCommandPolicyBundles.find(
+        (bundle) => bundle.name.toLowerCase() === bundleName.toLowerCase()
+      ) ?? null;
+    if (!existingBundle && dangerousCommandPolicyBundles.length >= MAX_DANGEROUS_COMMAND_POLICY_BUNDLES) {
+      await showAppAlert(
+        `Bundle limit reached (${MAX_DANGEROUS_COMMAND_POLICY_BUNDLES}). Delete or export an existing bundle first.`,
+        {
+          title: "Save Safety Bundle"
+        }
+      );
+      return;
+    }
+    const descriptionInput = await showAppPrompt(
+      "Optional description for teammates.",
+      existingBundle?.description ?? "",
+      {
+        title: "Save Safety Bundle",
+        confirmLabel: existingBundle ? "Update" : "Save",
+        multiline: true
+      }
+    );
+    if (descriptionInput === null) {
+      return;
+    }
+    const nextBundle: DangerousCommandPolicyBundleRecord = {
+      id: existingBundle?.id ?? `dcpb-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      name: bundleName,
+      description: normalizeDangerousCommandPolicyBundleDescription(descriptionInput),
+      updatedAtIso: new Date().toISOString(),
+      preferences: cloneDangerousCommandGuardPreferences(dangerousCommandGuardPreferences)
+    };
+    setDangerousCommandPolicyBundles((prev) =>
+      normalizeDangerousCommandPolicyBundles([
+        ...prev.filter(
+          (bundle) =>
+            bundle.id !== nextBundle.id &&
+            bundle.name.toLowerCase() !== nextBundle.name.toLowerCase()
+        ),
+        nextBundle
+      ])
+    );
+    await showAppAlert(
+      existingBundle
+        ? `Updated shared safety bundle "${bundleName}".`
+        : `Saved shared safety bundle "${bundleName}".`,
+      {
+        title: "Save Safety Bundle"
+      }
+    );
+  }, [
+    dangerousCommandGuardPreferences,
+    dangerousCommandPolicyBundles,
+    selectedDangerousCommandEnvironmentTemplate.label,
+    selectedDangerousCommandPolicyPack.label,
+    showAppAlert,
+    showAppPrompt
+  ]);
+
+  const applyDangerousCommandPolicyBundle = useCallback(
+    async (bundleId: string) => {
+      const bundle = dangerousCommandPolicyBundles.find((entry) => entry.id === bundleId) ?? null;
+      if (!bundle) {
+        return;
+      }
+      const confirmed = await showAppConfirm(
+        `Apply shared safety bundle "${bundle.name}"?\nThis replaces the current Safety settings.`,
+        {
+          title: "Apply Safety Bundle",
+          confirmLabel: "Apply",
+          cancelLabel: "Cancel",
+          detailText: bundle.description || undefined
+        }
+      );
+      if (!confirmed) {
+        return;
+      }
+      setDangerousCommandGuardPreferences(cloneDangerousCommandGuardPreferences(bundle.preferences));
+      pushAppHintMessage(`Applied safety bundle: ${bundle.name}`, {
+        level: "info",
+        durationMs: 4200
+      });
+    },
+    [dangerousCommandPolicyBundles, pushAppHintMessage, showAppConfirm]
+  );
+
+  const deleteDangerousCommandPolicyBundle = useCallback(
+    async (bundleId: string) => {
+      const bundle = dangerousCommandPolicyBundles.find((entry) => entry.id === bundleId) ?? null;
+      if (!bundle) {
+        return;
+      }
+      const confirmed = await showAppConfirm(
+        `Delete shared safety bundle "${bundle.name}"?`,
+        {
+          title: "Delete Safety Bundle",
+          confirmLabel: "Delete",
+          cancelLabel: "Cancel",
+          danger: true,
+          detailText: bundle.description || undefined
+        }
+      );
+      if (!confirmed) {
+        return;
+      }
+      setDangerousCommandPolicyBundles((prev) => prev.filter((entry) => entry.id !== bundleId));
+    },
+    [dangerousCommandPolicyBundles, showAppConfirm]
+  );
+
+  const exportDangerousCommandPolicyBundle = useCallback(
+    async (bundleId: string) => {
+      const bundle = dangerousCommandPolicyBundles.find((entry) => entry.id === bundleId) ?? null;
+      if (!bundle) {
+        return;
+      }
+      const generatedAtIso = new Date().toISOString();
+      const fileSegment =
+        bundle.name
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "bundle";
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        kind: "dangerousCommandPolicyBundle",
+        bundle
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Safety Bundle",
+          defaultFileName: `termdock-safety-bundle-${fileSegment}-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [{ name: "JSON", extensions: ["json"] }]
+        });
+        if (!result.canceled && result.outputPath) {
+          await showAppAlert(`Safety bundle exported:\n${result.outputPath}`, {
+            title: "Export Safety Bundle"
+          });
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      await showAppAlert(copied ? "Safety bundle JSON copied to clipboard." : exportText, {
+        title: "Export Safety Bundle",
+        detailText: copied ? undefined : exportText
+      });
+    },
+    [dangerousCommandPolicyBundles, showAppAlert, systemApi]
+  );
+
+  const exportDangerousCommandPolicyBundles = useCallback(async () => {
+    if (dangerousCommandPolicyBundles.length === 0) {
+      await showAppAlert("No shared safety bundles available to export.", {
+        title: "Export Safety Bundles"
+      });
+      return;
+    }
+    const payload = createDangerousCommandPolicyBundlesPayload(dangerousCommandPolicyBundles);
+    const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+    if (systemApi?.saveTextFile) {
+      const result = await systemApi.saveTextFile({
+        title: "Export Safety Bundles",
+        defaultFileName: `termdock-safety-bundles-${payload.exportedAtIso.replace(/[:]/g, "-")}.json`,
+        text: exportText,
+        filters: [{ name: "JSON", extensions: ["json"] }]
+      });
+      if (!result.canceled && result.outputPath) {
+        await showAppAlert(`Safety bundles exported:\n${result.outputPath}`, {
+          title: "Export Safety Bundles"
+        });
+      }
+      return;
+    }
+    const copied = await copyTextToClipboard(exportText);
+    await showAppAlert(copied ? "Safety bundles JSON copied to clipboard." : exportText, {
+      title: "Export Safety Bundles",
+      detailText: copied ? undefined : exportText
+    });
+  }, [dangerousCommandPolicyBundles, showAppAlert, systemApi]);
+
+  const importDangerousCommandPolicyBundles = useCallback(async () => {
+    try {
+      if (!systemApi?.pickAndReadTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selected = await systemApi.pickAndReadTextFile({
+        title: "Import Safety Bundles",
+        buttonLabel: "Import",
+        filters: [
+          { name: "JSON", extensions: ["json"] },
+          { name: "All Files", extensions: ["*"] }
+        ]
+      });
+      if (selected.canceled || !selected.filePath) {
+        return;
+      }
+      const rawText = typeof selected.text === "string" ? selected.text : "";
+      if (!rawText.trim()) {
+        await showAppAlert("Selected file is empty.", {
+          title: "Import Safety Bundles"
+        });
+        return;
+      }
+      const importedBundles = parseDangerousCommandPolicyBundlesText(rawText);
+      if (importedBundles.length === 0) {
+        await showAppAlert("No valid safety bundles found in selected file.", {
+          title: "Import Safety Bundles"
+        });
+        return;
+      }
+      setDangerousCommandPolicyBundles((prev) =>
+        mergeDangerousCommandPolicyBundles(prev, importedBundles)
+      );
+      await showAppAlert(
+        `Imported ${importedBundles.length} safety bundle(s) from ${getPathBaseName(selected.filePath)}.`,
+        {
+          title: "Import Safety Bundles"
+        }
+      );
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:safety", "Failed to import safety bundles.", caughtError);
+    }
+  }, [showAppAlert, systemApi, writeAppLog]);
+
+  const pullDangerousCommandPolicyBundlesFromSync = useCallback(
+    async (forceSelectFile = false) => {
+      try {
+        setDangerousCommandPolicyBundleSyncBusyAction("pull");
+        let filePath = dangerousCommandPolicyBundleSyncState.filePath;
+        let rawText = "";
+        if (forceSelectFile || !filePath) {
+          if (!systemApi?.pickAndReadTextFile) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          const selected = await systemApi.pickAndReadTextFile({
+            title: "Pull Safety Bundles From Sync File",
+            buttonLabel: "Use File",
+            filters: [
+              { name: "JSON", extensions: ["json"] },
+              { name: "All Files", extensions: ["*"] }
+            ]
+          });
+          if (selected.canceled || !selected.filePath) {
+            return false;
+          }
+          filePath = selected.filePath;
+          rawText = typeof selected.text === "string" ? selected.text : "";
+        } else {
+          if (!systemApi?.readTextFileAtPath) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          rawText = await systemApi.readTextFileAtPath(filePath);
+        }
+        if (!rawText.trim()) {
+          await showAppAlert("Selected sync file is empty.", {
+            title: "Pull Safety Bundles"
+          });
+          return false;
+        }
+        const importedBundles = parseDangerousCommandPolicyBundlesText(rawText);
+        if (importedBundles.length === 0) {
+          await showAppAlert("No valid safety bundles found in sync file.", {
+            title: "Pull Safety Bundles"
+          });
+          return false;
+        }
+        const pulledAtIso = new Date().toISOString();
+        setDangerousCommandPolicyBundles((prev) =>
+          mergeDangerousCommandPolicyBundles(prev, importedBundles)
+        );
+        setDangerousCommandPolicyBundleSyncState((prev) => ({
+          ...prev,
+          filePath,
+          lastPulledAtIso: pulledAtIso
+        }));
+        pushAppHintMessage(`Pulled ${importedBundles.length} safety bundle(s) from sync file.`, {
+          level: "info",
+          durationMs: 4200
+        });
+        await showAppAlert(
+          `Pulled ${importedBundles.length} safety bundle(s) from:\n${filePath}`,
+          {
+            title: "Pull Safety Bundles"
+          }
+        );
+        return true;
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        writeAppLog(
+          "error",
+          "renderer:safety",
+          "Failed to pull safety bundles from sync file.",
+          caughtError
+        );
+        return false;
+      } finally {
+        setDangerousCommandPolicyBundleSyncBusyAction(null);
+      }
+    },
+    [
+      dangerousCommandPolicyBundleSyncState.filePath,
+      pushAppHintMessage,
+      showAppAlert,
+      systemApi,
+      writeAppLog
+    ]
+  );
+
+  const pushDangerousCommandPolicyBundlesToSync = useCallback(
+    async (forceSelectFile = false) => {
+      try {
+        setDangerousCommandPolicyBundleSyncBusyAction("push");
+        const payload = createDangerousCommandPolicyBundlesPayload(
+          dangerousCommandPolicyBundles,
+          "dangerousCommandPolicyBundlesSync"
+        );
+        const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+        let filePath = dangerousCommandPolicyBundleSyncState.filePath;
+        if (forceSelectFile || !filePath) {
+          if (!systemApi?.saveTextFile) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          const result = await systemApi.saveTextFile({
+            title: "Push Safety Bundles To Sync File",
+            defaultFileName: `termdock-safety-bundles-sync-${payload.exportedAtIso.replace(/[:]/g, "-")}.json`,
+            text: exportText,
+            filters: [{ name: "JSON", extensions: ["json"] }]
+          });
+          if (result.canceled || !result.outputPath) {
+            return false;
+          }
+          filePath = result.outputPath;
+        } else {
+          if (!systemApi?.writeTextFileAtPath) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          await systemApi.writeTextFileAtPath(filePath, exportText);
+        }
+        setDangerousCommandPolicyBundleSyncState((prev) => ({
+          ...prev,
+          filePath,
+          lastPushedAtIso: payload.exportedAtIso
+        }));
+        pushAppHintMessage(
+          `Pushed ${dangerousCommandPolicyBundles.length} safety bundle(s) to sync file.`,
+          {
+            level: "info",
+            durationMs: 4200
+          }
+        );
+        await showAppAlert(
+          `Pushed ${dangerousCommandPolicyBundles.length} safety bundle(s) to:\n${filePath}`,
+          {
+            title: "Push Safety Bundles"
+          }
+        );
+        return true;
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        writeAppLog(
+          "error",
+          "renderer:safety",
+          "Failed to push safety bundles to sync file.",
+          caughtError
+        );
+        return false;
+      } finally {
+        setDangerousCommandPolicyBundleSyncBusyAction(null);
+      }
+    },
+    [
+      dangerousCommandPolicyBundleSyncState.filePath,
+      dangerousCommandPolicyBundles,
+      pushAppHintMessage,
+      showAppAlert,
+      systemApi,
+      writeAppLog
+    ]
+  );
+
+  const changeDangerousCommandPolicyBundleSyncTarget = useCallback(async () => {
+    setDangerousCommandPolicyBundleSyncBusyAction("change");
+    try {
+      const choice = await showAppChoice(
+        "Choose a shared sync file for safety bundles.",
+        [
+          {
+            value: "existing",
+            label: "Use Existing File"
+          },
+          {
+            value: "new",
+            label: "Create New File"
+          }
+        ],
+        {
+          title: "Change Safety Bundle Sync File",
+          cancelLabel: "Cancel",
+          detailText:
+            "Using an existing file pulls and merges bundles into the local catalog. Creating a new file writes the current local bundle catalog to a shared JSON file."
+        }
+      );
+      if (choice === "existing") {
+        await pullDangerousCommandPolicyBundlesFromSync(true);
+      } else if (choice === "new") {
+        await pushDangerousCommandPolicyBundlesToSync(true);
+      }
+    } finally {
+      setDangerousCommandPolicyBundleSyncBusyAction((current) =>
+        current === "change" ? null : current
+      );
+    }
+  }, [
+    pullDangerousCommandPolicyBundlesFromSync,
+    pushDangerousCommandPolicyBundlesToSync,
+    showAppChoice
+  ]);
+
+  const clearDangerousCommandPolicyBundleSyncTarget = useCallback(async () => {
+    if (!dangerousCommandPolicyBundleSyncState.filePath) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      "Clear the current safety bundle sync file?\nThis only removes the local link. The shared JSON file will stay on disk.",
+      {
+        title: "Clear Safety Bundle Sync File",
+        confirmLabel: "Clear",
+        cancelLabel: "Cancel"
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDangerousCommandPolicyBundleSyncState({
+      filePath: "",
+      lastPulledAtIso: null,
+      lastPushedAtIso: null
+    });
+    pushAppHintMessage("Cleared safety bundle sync file.", {
+      level: "info",
+      durationMs: 4200
+    });
+  }, [
+    dangerousCommandPolicyBundleSyncState.filePath,
+    pushAppHintMessage,
+    showAppConfirm
+  ]);
 
   const resetDangerousCommandGuardPreferences = () => {
     setDangerousCommandGuardPreferences(createDefaultDangerousCommandGuardPreferences());
@@ -12654,11 +15470,17 @@ export function App() {
   }, [logInfo, showAppAlert, systemApi, writeAppLog]);
 
   const exportBugReportBundle = useCallback(async () => {
+    let operationJobId: string | null = null;
     try {
       if (!systemApi?.exportBugReport) {
         throw new Error("Bug report bridge unavailable. Restart `pnpm dev`.");
       }
       setIsExportingBugReport(true);
+      operationJobId = startOperationCenterAppJob({
+        category: "diagnostics",
+        title: "Bug Report Export",
+        description: "Bundling logs, runtime metadata, and disconnect-report context."
+      });
       const disconnectReportSnapshot = {
         capturedAtIso: new Date().toISOString(),
         totalReports: disconnectReports.length,
@@ -12688,7 +15510,16 @@ export function App() {
         disconnectReports: disconnectReportSnapshot
       });
       if (result.canceled || !result.outputPath) {
+        if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
+        }
         return;
+      }
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Exported bug report bundle with ${disconnectReports.length} disconnect report${disconnectReports.length === 1 ? "" : "s"}.`,
+          outputPath: result.outputPath
+        });
       }
       const copied = await copyTextToClipboard(result.outputPath);
       await showAppAlert(
@@ -12701,6 +15532,11 @@ export function App() {
       );
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
       setError(message);
       writeAppLog("error", "renderer:diagnostics", "Failed to export bug report.", caughtError);
     } finally {
@@ -12710,8 +15546,10 @@ export function App() {
     activeTabId,
     connectionPreferences,
     disconnectReports,
+    finishOperationCenterAppJob,
     fileOpenPreferences,
     hotkeyPreferences,
+    removeOperationCenterAppJob,
     selectedSessionId,
     serverHealthAlertPreferences,
     sessionGroupOptions.length,
@@ -12719,6 +15557,7 @@ export function App() {
     sessions.length,
     sftpTransferPreferences,
     showAppAlert,
+    startOperationCenterAppJob,
     systemApi,
     terminalTabs.length,
     writeAppLog
@@ -15001,6 +17840,44 @@ export function App() {
   const closeOperationCenter = useCallback(() => {
     setIsOperationCenterOpen(false);
   }, []);
+  const openDiagnosticsFromOperationCenter = useCallback(() => {
+    closeOperationCenter();
+    openSettingsPanel("diagnostics");
+  }, [closeOperationCenter, openSettingsPanel]);
+  const openCommandSnippetManagerFromOperationCenter = useCallback(() => {
+    closeOperationCenter();
+    openCommandSnippetManager();
+  }, [closeOperationCenter, openCommandSnippetManager]);
+  const copyOperationCenterAppJobOutputPath = useCallback(
+    async (jobId: string) => {
+      const job = operationCenterAppJobs.find((entry) => entry.id === jobId) ?? null;
+      const outputPath = job?.outputPath?.trim() ?? "";
+      if (!outputPath) {
+        return;
+      }
+      try {
+        const copied = await copyTextToClipboard(outputPath);
+        await showAppAlert(
+          copied
+            ? `Output path copied to clipboard.\n${outputPath}`
+            : `Clipboard unavailable.\n${outputPath}`,
+          {
+            title: "Operation Center"
+          }
+        );
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        writeAppLog(
+          "error",
+          "renderer:operation-center",
+          "Failed to copy tracked app-job output path.",
+          caughtError
+        );
+      }
+    },
+    [operationCenterAppJobs, showAppAlert, writeAppLog]
+  );
 
   const toggleRetryCenterEntrySelection = useCallback((key: string) => {
     const normalized = key.trim();
@@ -17274,6 +20151,13 @@ export function App() {
                 ? `Auto Reconnect ${connectionPreferences.reconnectDelaySeconds}s`
                 : "Auto Reconnect Off"}
             </span>
+            {workspaceProfilePreferences.profileId !== "none" ? (
+              <span
+                className={`workspace-profile-badge workspace-profile-badge--${workspaceProfilePreferences.profileId}`}
+              >
+                {selectedWorkspaceProfile.shortLabel}
+              </span>
+            ) : null}
           </div>
         </header>
       ) : null}
@@ -17449,6 +20333,7 @@ export function App() {
             activeTabId={activeTabId}
             connectionPreferences={connectionPreferences}
             dangerousCommandGuardPreferences={dangerousCommandGuardPreferences}
+            getDangerousCommandSessionGroupName={getSessionGroupNameForTab}
             hotkeyPreferences={hotkeyPreferences}
             onCloseAllTabs={closeAllTabs}
             onCloseTab={closeTerminalTab}
@@ -17471,6 +20356,13 @@ export function App() {
               <div className="panel__title-group">
                 <h2>Sessions</h2>
                 <span className="panel__badge">{sessionBadgeText}</span>
+                {workspaceProfilePreferences.profileId !== "none" ? (
+                  <span
+                    className={`panel__badge workspace-profile-badge workspace-profile-badge--${workspaceProfilePreferences.profileId}`}
+                  >
+                    {selectedWorkspaceProfile.shortLabel}
+                  </span>
+                ) : null}
               </div>
               <div className="session-panel__heading-actions">
                 <span className="hint session-explorer__location">
@@ -18232,12 +21124,16 @@ export function App() {
           }
           title={
             dangerousCommandApproval
-              ? `${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.commandText}`
+              ? `${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.commandText}${
+                  dangerousCommandApproval.contextSummary
+                    ? ` | ${dangerousCommandApproval.contextSummary}`
+                    : ""
+                }`
               : appHintMessage?.message ?? ""
           }
         >
           {dangerousCommandApproval
-            ? `${dangerousCommandApproval.request.result.severity === "critical" ? "Critical" : "Risk"} command from ${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.preview} | ${dangerousCommandApproval.ruleSummary}`
+            ? `${dangerousCommandApproval.request.result.severity === "critical" ? "Critical" : "Risk"} command from ${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.preview} | ${dangerousCommandApproval.contextSummary} | ${dangerousCommandApproval.ruleSummary}`
             : appHintMessage?.message ?? "\u00A0"}
         </p>
         {dangerousCommandApproval ? (
@@ -18248,6 +21144,31 @@ export function App() {
               type="button"
             >
               Cancel
+            </button>
+            <button
+              className="secondary-button secondary-button--small"
+              onClick={() => approveDangerousCommandWithScope("tab")}
+              type="button"
+            >
+              Allow In Tab
+            </button>
+            {dangerousCommandApproval.request.result.sessionGroupName ? (
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={() => approveDangerousCommandWithScope("sessionGroup")}
+                type="button"
+              >
+                Allow In Group
+              </button>
+            ) : null}
+            <button
+              className="secondary-button secondary-button--small"
+              onClick={() => {
+                void saveDangerousCommandPersistentApproval();
+              }}
+              type="button"
+            >
+              Save Policy...
             </button>
             <button
               className="primary-button primary-button--small"
@@ -18442,6 +21363,97 @@ export function App() {
                       closeOperationCenter();
                       openSettingsPanel("diagnostics");
                     }}
+                    type="button"
+                  >
+                    Open Diagnostics
+                  </button>
+                </div>
+              </article>
+
+              <article className="operation-center__card operation-center__card--wide">
+                <div className="operation-center__card-header">
+                  <p className="operation-center__title">Tracked App Jobs</p>
+                  <span
+                    className={
+                      operationCenterRunningAppJobCount > 0
+                        ? "operation-center__state is-active"
+                        : operationCenterRecentAppJobs.length > 0
+                          ? "operation-center__state is-success"
+                          : "operation-center__state is-idle"
+                    }
+                  >
+                    {operationCenterRunningAppJobCount > 0
+                      ? `${operationCenterRunningAppJobCount} running`
+                      : operationCenterRecentAppJobs.length > 0
+                        ? `${operationCenterRecentAppJobs.length} recent`
+                        : "Idle"}
+                  </span>
+                </div>
+                {operationCenterRecentAppJobs.length > 0 ? (
+                  <ul className="operation-center__tab-list">
+                    {operationCenterRecentAppJobs.map((job) => (
+                      <li className="operation-center__tab-item" key={job.id}>
+                        <div className="operation-center__tab-main">
+                          <p className="operation-center__tab-title">{job.title}</p>
+                          <p className="operation-center__meta">
+                            {formatOperationCenterAppJobCategoryLabel(job.category)} | started{" "}
+                            {formatHistoryTimestamp(job.startedAt)} | duration{" "}
+                            {formatOperationCenterAppJobDuration(job.startedAt, job.finishedAt)}
+                          </p>
+                          <p className="operation-center__meta operation-center__meta--wrap">
+                            {job.detail?.trim() || job.description}
+                          </p>
+                          {job.outputPath ? (
+                            <p className="operation-center__meta operation-center__meta--wrap">
+                              output: {job.outputPath}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="operation-center__tab-actions">
+                          <span className={getOperationCenterAppJobStateClass(job.status)}>
+                            {formatOperationCenterAppJobStatusLabel(job.status)}
+                          </span>
+                          {job.outputPath ? (
+                            <button
+                              className="secondary-button secondary-button--small"
+                              onClick={() => {
+                                void copyOperationCenterAppJobOutputPath(job.id);
+                              }}
+                              type="button"
+                            >
+                              Copy Path
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="operation-center__meta">
+                    No tracked session/snippet/diagnostics jobs yet.
+                  </p>
+                )}
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={operationCenterFinishedAppJobCount === 0}
+                    onClick={clearFinishedOperationCenterAppJobs}
+                    type="button"
+                  >
+                    Clear Finished
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!hasOperationCenterSnippetJobs}
+                    onClick={openCommandSnippetManagerFromOperationCenter}
+                    type="button"
+                  >
+                    Open Snippets
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!hasOperationCenterDiagnosticsJobs}
+                    onClick={openDiagnosticsFromOperationCenter}
                     type="button"
                   >
                     Open Diagnostics
@@ -19368,7 +22380,8 @@ export function App() {
             </div>
             <p className="hint snippet-manager__summary">
               Groups {commandSnippetGroups.length}/{MAX_COMMAND_SNIPPET_GROUPS} | Snippets{" "}
-              {totalCommandSnippetCount}
+              {totalCommandSnippetCount} | Prompt Sets {totalCommandSnippetPromptSetCount} |
+              Remembered Scoped Values {commandSnippetScopedValueCount}
             </p>
             <div className="snippet-manager__toolbar">
               <button
@@ -19397,7 +22410,7 @@ export function App() {
               </button>
               <button
                 className="secondary-button secondary-button--small"
-                disabled={!selectedCommandSnippetManagerSnippet}
+                disabled={!selectedCommandSnippetManagerSnippet || selectedCommandSnippetHasInvalidPattern}
                 onClick={() => {
                   void runSelectedCommandSnippetManagerSnippet();
                 }}
@@ -19435,6 +22448,16 @@ export function App() {
                 type="button"
               >
                 Export JSON
+              </button>
+              <button
+                className="secondary-button secondary-button--small"
+                disabled={commandSnippetScopedValueCount === 0}
+                onClick={() => {
+                  void clearCommandSnippetScopedValues();
+                }}
+                type="button"
+              >
+                Clear Scoped Values
               </button>
               <button
                 className="secondary-button secondary-button--small"
@@ -19535,13 +22558,23 @@ export function App() {
                             }}
                             onDoubleClick={() => {
                               setCommandSnippetManagerSnippetId(snippet.id);
-                              void runCommandSnippet(snippet);
+                              void runCommandSnippet(
+                                snippet,
+                                selectedCommandSnippetManagerGroup?.id ?? ""
+                              );
                             }}
                             type="button"
                           >
                             <span>{snippet.name.trim() || "Unnamed Snippet"}</span>
                             <span className="snippet-manager__count">
-                              {snippet.confirmBeforeRun ? "C" : ""}
+                              {[
+                                snippet.parameters.length > 0 ? `V${snippet.parameters.length}` : "",
+                                snippet.promptSetId ? "PS" : "",
+                                snippet.previewBeforeRun ? "P" : "",
+                                snippet.confirmBeforeRun ? "C" : ""
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
                             </span>
                           </button>
                         </li>
@@ -19602,10 +22635,436 @@ export function App() {
                       />
                       <span>Require confirmation before run</span>
                     </label>
+                    <label className="settings-checkbox">
+                      <input
+                        checked={selectedCommandSnippetManagerSnippet.previewBeforeRun}
+                        onChange={(event) => {
+                          updateCommandSnippetManagerSnippetPreview(
+                            selectedCommandSnippetManagerSnippet.id,
+                            event.target.checked
+                          );
+                        }}
+                        type="checkbox"
+                      />
+                      <span>Always preview resolved command before run</span>
+                    </label>
+                    <div className="snippet-manager__parameter-header">
+                      <h5 className="snippet-manager__subtitle">
+                        Prompt Set ({selectedCommandSnippetManagerGroup?.promptSets.length ?? 0}/
+                        {MAX_COMMAND_SNIPPET_PROMPT_SETS})
+                      </h5>
+                      <div className="snippet-manager__parameter-actions">
+                        <button
+                          className="secondary-button secondary-button--small"
+                          disabled={
+                            !selectedCommandSnippetManagerGroup ||
+                            selectedCommandSnippetManagerGroup.promptSets.length >=
+                              MAX_COMMAND_SNIPPET_PROMPT_SETS
+                          }
+                          onClick={addCommandSnippetManagerPromptSet}
+                          type="button"
+                        >
+                          New Prompt Set
+                        </button>
+                        <button
+                          className="secondary-button secondary-button--small"
+                          disabled={!selectedCommandSnippetManagerPromptSet}
+                          onClick={() => {
+                            void deleteSelectedCommandSnippetManagerPromptSet();
+                          }}
+                          type="button"
+                        >
+                          Delete Prompt Set
+                        </button>
+                      </div>
+                    </div>
+                    <label className="snippet-manager__field">
+                      Reusable Prompt Set
+                      <select
+                        onChange={(event) => {
+                          updateCommandSnippetManagerSnippetPromptSet(
+                            selectedCommandSnippetManagerSnippet.id,
+                            event.target.value
+                          );
+                        }}
+                        value={selectedCommandSnippetManagerSnippet.promptSetId}
+                      >
+                        <option value="">None</option>
+                        {(selectedCommandSnippetManagerGroup?.promptSets ?? []).map((promptSet) => (
+                          <option key={promptSet.id} value={promptSet.id}>
+                            {promptSet.name.trim() || "Unnamed Prompt Set"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="hint snippet-manager__meta">
+                      Prompt sets are shared within the selected group. Snippet variables can still
+                      override prompt-set keys for one-off cases.
+                    </p>
+                    {selectedCommandSnippetManagerPromptSet ? (
+                      <>
+                        <label className="snippet-manager__field">
+                          Prompt Set Name
+                          <input
+                            onChange={(event) => {
+                              updateCommandSnippetManagerPromptSetName(
+                                selectedCommandSnippetManagerPromptSet.id,
+                                event.target.value
+                              );
+                            }}
+                            onBlur={() => {
+                              if (selectedCommandSnippetManagerPromptSet.name.trim()) {
+                                return;
+                              }
+                              updateCommandSnippetManagerPromptSetName(
+                                selectedCommandSnippetManagerPromptSet.id,
+                                "Unnamed Prompt Set"
+                              );
+                            }}
+                            type="text"
+                            value={selectedCommandSnippetManagerPromptSet.name}
+                          />
+                        </label>
+                        <div className="snippet-manager__parameter-header">
+                          <h5 className="snippet-manager__subtitle">
+                            Prompt Set Variables (
+                            {selectedCommandSnippetManagerPromptSet.parameters.length}/
+                            {MAX_COMMAND_SNIPPET_PARAMETERS})
+                          </h5>
+                          <button
+                            className="secondary-button secondary-button--small"
+                            disabled={
+                              selectedCommandSnippetManagerPromptSet.parameters.length >=
+                              MAX_COMMAND_SNIPPET_PARAMETERS
+                            }
+                            onClick={addCommandSnippetManagerPromptSetParameter}
+                            type="button"
+                          >
+                            Add Variable
+                          </button>
+                        </div>
+                        {selectedCommandSnippetManagerPromptSet.parameters.length === 0 ? (
+                          <p className="hint snippet-manager__meta">
+                            Use prompt sets for values reused by multiple snippets in this group.
+                            Group scope is the default, but you can widen it to session/global.
+                          </p>
+                        ) : (
+                          <div className="snippet-manager__parameter-list">
+                            {selectedCommandSnippetManagerPromptSet.parameters.map((parameter) => {
+                              const patternError = getCommandSnippetParameterPatternError(
+                                parameter.pattern
+                              );
+                              return (
+                                <div className="snippet-manager__parameter-card" key={parameter.id}>
+                                  <div className="snippet-manager__parameter-grid">
+                                    <label className="snippet-manager__field">
+                                      Key
+                                      <input
+                                        onChange={(event) => {
+                                          updateCommandSnippetManagerPromptSetParameterKey(
+                                            selectedCommandSnippetManagerPromptSet.id,
+                                            parameter.id,
+                                            event.target.value
+                                          );
+                                        }}
+                                        type="text"
+                                        value={parameter.key}
+                                      />
+                                    </label>
+                                    <label className="snippet-manager__field">
+                                      Label
+                                      <input
+                                        onChange={(event) => {
+                                          updateCommandSnippetManagerPromptSetParameterLabel(
+                                            selectedCommandSnippetManagerPromptSet.id,
+                                            parameter.id,
+                                            event.target.value
+                                          );
+                                        }}
+                                        type="text"
+                                        value={parameter.label}
+                                      />
+                                    </label>
+                                    <label className="snippet-manager__field">
+                                      Default Value
+                                      <input
+                                        onChange={(event) => {
+                                          updateCommandSnippetManagerPromptSetParameterDefault(
+                                            selectedCommandSnippetManagerPromptSet.id,
+                                            parameter.id,
+                                            event.target.value
+                                          );
+                                        }}
+                                        type="text"
+                                        value={parameter.defaultValue}
+                                      />
+                                    </label>
+                                    <label className="snippet-manager__field">
+                                      Regex Pattern
+                                      <input
+                                        onChange={(event) => {
+                                          updateCommandSnippetManagerPromptSetParameterPattern(
+                                            selectedCommandSnippetManagerPromptSet.id,
+                                            parameter.id,
+                                            event.target.value
+                                          );
+                                        }}
+                                        placeholder="^[a-z0-9_-]+$"
+                                        type="text"
+                                        value={parameter.pattern}
+                                      />
+                                    </label>
+                                    <label className="snippet-manager__field">
+                                      Variable Scope
+                                      <select
+                                        onChange={(event) => {
+                                          updateCommandSnippetManagerPromptSetParameterScope(
+                                            selectedCommandSnippetManagerPromptSet.id,
+                                            parameter.id,
+                                            event.target.value as CommandSnippetVariableScopeId
+                                          );
+                                        }}
+                                        value={parameter.scope}
+                                      >
+                                        {COMMAND_SNIPPET_VARIABLE_SCOPES.map((scope) => (
+                                          <option key={scope.id} value={scope.id}>
+                                            {scope.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  </div>
+                                  <div className="snippet-manager__parameter-actions">
+                                    <label className="settings-checkbox">
+                                      <input
+                                        checked={parameter.required}
+                                        onChange={(event) => {
+                                          updateCommandSnippetManagerPromptSetParameterRequired(
+                                            selectedCommandSnippetManagerPromptSet.id,
+                                            parameter.id,
+                                            event.target.checked
+                                          );
+                                        }}
+                                        type="checkbox"
+                                      />
+                                      <span>Required</span>
+                                    </label>
+                                    <button
+                                      className="secondary-button secondary-button--small"
+                                      onClick={() => {
+                                        insertCommandSnippetManagerPromptSetParameterToken(
+                                          selectedCommandSnippetManagerSnippet.id,
+                                          parameter.key
+                                        );
+                                      }}
+                                      type="button"
+                                    >
+                                      Insert {buildCommandSnippetParameterToken(parameter.key)}
+                                    </button>
+                                    <button
+                                      className="secondary-button secondary-button--small"
+                                      onClick={() => {
+                                        deleteCommandSnippetManagerPromptSetParameter(
+                                          selectedCommandSnippetManagerPromptSet.id,
+                                          parameter.id
+                                        );
+                                      }}
+                                      type="button"
+                                    >
+                                      Delete Variable
+                                    </button>
+                                  </div>
+                                  <p className="hint snippet-manager__meta">
+                                    Token: {buildCommandSnippetParameterToken(parameter.key)} | Scope:{" "}
+                                    {formatCommandSnippetVariableScopeLabel(parameter.scope)}
+                                    {patternError ? ` | Invalid regex: ${patternError}` : ""}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    ) : null}
+                    <div className="snippet-manager__parameter-header">
+                      <h5 className="snippet-manager__subtitle">
+                        Snippet Variables ({selectedCommandSnippetManagerSnippet.parameters.length}/
+                        {MAX_COMMAND_SNIPPET_PARAMETERS})
+                      </h5>
+                      <button
+                        className="secondary-button secondary-button--small"
+                        disabled={
+                          selectedCommandSnippetManagerSnippet.parameters.length >=
+                          MAX_COMMAND_SNIPPET_PARAMETERS
+                        }
+                        onClick={addCommandSnippetManagerSnippetParameter}
+                        type="button"
+                      >
+                        Add Parameter
+                      </button>
+                    </div>
+                    {selectedCommandSnippetManagerSnippet.parameters.length === 0 ? (
+                      <p className="hint snippet-manager__meta">
+                        Add parameters and reference them in the template with tokens like{" "}
+                        {buildCommandSnippetParameterToken("target")}. Snippet-scoped variables are
+                        best for one-off overrides on top of any selected prompt set.
+                      </p>
+                    ) : (
+                      <div className="snippet-manager__parameter-list">
+                        {selectedCommandSnippetManagerSnippet.parameters.map((parameter) => {
+                          const patternError = getCommandSnippetParameterPatternError(parameter.pattern);
+                          return (
+                            <div className="snippet-manager__parameter-card" key={parameter.id}>
+                              <div className="snippet-manager__parameter-grid">
+                                <label className="snippet-manager__field">
+                                  Key
+                                  <input
+                                    onChange={(event) => {
+                                      updateCommandSnippetManagerSnippetParameterKey(
+                                        selectedCommandSnippetManagerSnippet.id,
+                                        parameter.id,
+                                        event.target.value
+                                      );
+                                    }}
+                                    type="text"
+                                    value={parameter.key}
+                                  />
+                                </label>
+                                <label className="snippet-manager__field">
+                                  Label
+                                  <input
+                                    onChange={(event) => {
+                                      updateCommandSnippetManagerSnippetParameterLabel(
+                                        selectedCommandSnippetManagerSnippet.id,
+                                        parameter.id,
+                                        event.target.value
+                                      );
+                                    }}
+                                    type="text"
+                                    value={parameter.label}
+                                  />
+                                </label>
+                                <label className="snippet-manager__field">
+                                  Default Value
+                                  <input
+                                    onChange={(event) => {
+                                      updateCommandSnippetManagerSnippetParameterDefault(
+                                        selectedCommandSnippetManagerSnippet.id,
+                                        parameter.id,
+                                        event.target.value
+                                      );
+                                    }}
+                                    type="text"
+                                    value={parameter.defaultValue}
+                                  />
+                                </label>
+                                <label className="snippet-manager__field">
+                                  Regex Pattern
+                                  <input
+                                    onChange={(event) => {
+                                      updateCommandSnippetManagerSnippetParameterPattern(
+                                        selectedCommandSnippetManagerSnippet.id,
+                                        parameter.id,
+                                        event.target.value
+                                      );
+                                    }}
+                                    placeholder="^[a-z0-9_-]+$"
+                                    type="text"
+                                    value={parameter.pattern}
+                                  />
+                                </label>
+                                <label className="snippet-manager__field">
+                                  Variable Scope
+                                  <select
+                                    onChange={(event) => {
+                                      updateCommandSnippetManagerSnippetParameterScope(
+                                        selectedCommandSnippetManagerSnippet.id,
+                                        parameter.id,
+                                        event.target.value as CommandSnippetVariableScopeId
+                                      );
+                                    }}
+                                    value={parameter.scope}
+                                  >
+                                    {COMMAND_SNIPPET_VARIABLE_SCOPES.map((scope) => (
+                                      <option key={scope.id} value={scope.id}>
+                                        {scope.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                              <div className="snippet-manager__parameter-actions">
+                                <label className="settings-checkbox">
+                                  <input
+                                    checked={parameter.required}
+                                    onChange={(event) => {
+                                      updateCommandSnippetManagerSnippetParameterRequired(
+                                        selectedCommandSnippetManagerSnippet.id,
+                                        parameter.id,
+                                        event.target.checked
+                                      );
+                                    }}
+                                    type="checkbox"
+                                  />
+                                  <span>Required</span>
+                                </label>
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  onClick={() => {
+                                    insertCommandSnippetManagerSnippetParameterToken(
+                                      selectedCommandSnippetManagerSnippet.id,
+                                      parameter.key
+                                    );
+                                  }}
+                                  type="button"
+                                >
+                                  Insert {buildCommandSnippetParameterToken(parameter.key)}
+                                </button>
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  onClick={() => {
+                                    deleteCommandSnippetManagerSnippetParameter(
+                                      selectedCommandSnippetManagerSnippet.id,
+                                      parameter.id
+                                    );
+                                  }}
+                                  type="button"
+                                >
+                                  Delete Parameter
+                                </button>
+                              </div>
+                              <p className="hint snippet-manager__meta">
+                                Token: {buildCommandSnippetParameterToken(parameter.key)} | Scope:{" "}
+                                {formatCommandSnippetVariableScopeLabel(parameter.scope)}
+                                {patternError ? ` | Invalid regex: ${patternError}` : ""}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     <p className="hint snippet-manager__meta">
                       Placeholders: {"${clipboard}"} {"${date}"} {"${time}"} {"${datetime}"}{" "}
-                      {"${sessionName}"} {"${host}"} {"${username}"} {"${tabTitle}"}
+                      {"${sessionName}"} {"${host}"} {"${username}"} {"${tabTitle}"}{" "}
+                      {buildCommandSnippetParameterToken("name")}
                     </p>
+                    {selectedCommandSnippetMissingParameterKeys.length > 0 ? (
+                      <p className="hint snippet-manager__meta">
+                        Missing parameter definitions: {selectedCommandSnippetMissingParameterKeys.join(", ")}
+                      </p>
+                    ) : null}
+                    {selectedCommandSnippetShadowedPromptSetKeys.length > 0 ? (
+                      <p className="hint snippet-manager__meta">
+                        Snippet variables override prompt-set keys:{" "}
+                        {selectedCommandSnippetShadowedPromptSetKeys.join(", ")}
+                      </p>
+                    ) : null}
+                    {selectedCommandSnippetUnusedParameterKeys.length > 0 ? (
+                      <p className="hint snippet-manager__meta">
+                        Unused effective variables for this snippet:{" "}
+                        {selectedCommandSnippetUnusedParameterKeys.join(", ")}
+                      </p>
+                    ) : null}
                   </>
                 ) : (
                   <p className="hint snippet-manager__empty">Select or create a snippet to edit.</p>
@@ -19902,6 +23361,76 @@ export function App() {
                   </>
                 ) : null}
 
+                {activeSettingsSection === "workspace" ? (
+                  <>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Workspace Profile</h4>
+                        <p className="hint">
+                          Set an environment-wide risk cue for this app instance. This profile is
+                          shown in the UI and can also drive the global Safety pack/template
+                          defaults.
+                        </p>
+                      </div>
+                      <div className="settings-safety-preset-grid">
+                        {WORKSPACE_PROFILE_OPTIONS.map((profile) => {
+                          const template =
+                            DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
+                              (entry) => entry.id === profile.id
+                            ) ?? DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0];
+                          const recommendedPackLabel =
+                            DANGEROUS_COMMAND_POLICY_PACKS.find(
+                              (pack) => pack.id === template.recommendedPolicyPackId
+                            )?.label ?? template.recommendedPolicyPackId;
+                          return (
+                            <button
+                              className={
+                                profile.id === workspaceProfilePreferences.profileId
+                                  ? "settings-safety-preset is-active"
+                                  : "settings-safety-preset"
+                              }
+                              key={profile.id}
+                              onClick={() => setWorkspaceProfileId(profile.id)}
+                              type="button"
+                            >
+                              <span className="settings-safety-preset__title">
+                                {profile.label}
+                              </span>
+                              <span className="hint settings-safety-preset__meta">
+                                {profile.description}
+                              </span>
+                              <span className="settings-safety-preset__count">
+                                Safety default: {template.label} / {recommendedPackLabel}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <label className="settings-checkbox">
+                      <input
+                        checked={workspaceProfilePreferences.syncDangerousCommandSafety}
+                        onChange={(event) =>
+                          setWorkspaceProfileDangerousCommandSync(event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>Sync global Safety pack/template to workspace profile</span>
+                    </label>
+                    <p className="hint">
+                      Current profile: {selectedWorkspaceProfile.label}
+                      {" | "}Safety sync{" "}
+                      {workspaceProfilePreferences.syncDangerousCommandSafety ? "on" : "off"}
+                      {" | "}group overrides still win for matching session groups
+                    </p>
+                    <p className="hint">
+                      When sync is enabled, the global Safety environment template and recommended
+                      policy pack follow the selected workspace profile. Custom patterns,
+                      persistent approvals, and session-group overrides stay untouched.
+                    </p>
+                  </>
+                ) : null}
+
                 {activeSettingsSection === "safety" ? (
                   <>
                     <label className="settings-checkbox">
@@ -19918,6 +23447,656 @@ export function App() {
                       Uses the fixed bottom approval bar. Covers keyboard Enter, multiline paste,
                       command history run, snippets, quick profiles, and startup commands.
                     </p>
+                    <p className="hint">
+                      Workspace profile: {selectedWorkspaceProfile.label}
+                      {" | "}Safety sync{" "}
+                      {workspaceProfilePreferences.syncDangerousCommandSafety ? "on" : "off"}
+                    </p>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Execution Sources</h4>
+                        <p className="hint">
+                          Enable or disable guard inspection per execution path. Paste-style sources
+                          still only inspect multiline writes, while keyboard inspection still
+                          triggers when Enter submits the buffered command.
+                        </p>
+                      </div>
+                      <p className="hint">
+                        Enabled sources {enabledDangerousCommandSourceCount}/
+                        {DANGEROUS_COMMAND_EXECUTION_SOURCES.length}
+                      </p>
+                      <div className="settings-safety-rules">
+                        {DANGEROUS_COMMAND_EXECUTION_SOURCES.map((source) => (
+                          <label className="settings-checkbox settings-safety-rule" key={source.id}>
+                            <input
+                              checked={dangerousCommandGuardPreferences.sourceStates[source.id]}
+                              disabled={!dangerousCommandGuardPreferences.enabled}
+                              onChange={(event) =>
+                                setDangerousCommandSourceEnabled(source.id, event.target.checked)
+                              }
+                              type="checkbox"
+                            />
+                            <span className="settings-safety-rule__content">
+                              <span className="settings-safety-rule__title">{source.label}</span>
+                              <span className="hint settings-safety-rule__meta">
+                                {source.description}
+                              </span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Policy Pack</h4>
+                        <p className="hint">
+                          Adds curated workflow-specific guardrails on top of the built-in system
+                          rules without replacing your custom patterns.
+                          {workspaceProfilePreferences.syncDangerousCommandSafety
+                            ? " Workspace-profile sync is on, so this global selection follows the current workspace profile."
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="settings-safety-preset-grid">
+                        {DANGEROUS_COMMAND_POLICY_PACKS.map((pack) => (
+                          <button
+                            className={
+                              pack.id === dangerousCommandGuardPreferences.policyPackId
+                                ? "settings-safety-preset is-active"
+                                : "settings-safety-preset"
+                            }
+                            disabled={
+                              !dangerousCommandGuardPreferences.enabled ||
+                              workspaceProfilePreferences.syncDangerousCommandSafety
+                            }
+                            key={pack.id}
+                            onClick={() => setDangerousCommandPolicyPackId(pack.id)}
+                            type="button"
+                          >
+                            <span className="settings-safety-preset__title">{pack.label}</span>
+                            <span className="hint settings-safety-preset__meta">
+                              {pack.description}
+                            </span>
+                            <span className="settings-safety-preset__count">
+                              {pack.extraRules.length} extra rule(s)
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Environment Template</h4>
+                        <p className="hint">
+                          Selecting a template also snaps the policy pack to the recommended
+                          baseline for that environment. Custom patterns stay untouched.
+                          {workspaceProfilePreferences.syncDangerousCommandSafety
+                            ? " Workspace-profile sync is on, so this global selection follows the current workspace profile."
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="settings-safety-preset-grid">
+                        {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.map((template) => (
+                          <button
+                            className={
+                              template.id === dangerousCommandGuardPreferences.environmentTemplateId
+                                ? "settings-safety-preset is-active"
+                                : "settings-safety-preset"
+                            }
+                            disabled={
+                              !dangerousCommandGuardPreferences.enabled ||
+                              workspaceProfilePreferences.syncDangerousCommandSafety
+                            }
+                            key={template.id}
+                            onClick={() => applyDangerousCommandEnvironmentTemplate(template.id)}
+                            type="button"
+                          >
+                            <span className="settings-safety-preset__title">{template.label}</span>
+                            <span className="hint settings-safety-preset__meta">
+                              {template.description}
+                            </span>
+                            <span className="settings-safety-preset__count">
+                              Recommended pack:{" "}
+                              {
+                                DANGEROUS_COMMAND_POLICY_PACKS.find(
+                                  (pack) => pack.id === template.recommendedPolicyPackId
+                                )?.label
+                              }
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="hint">
+                      Workspace {selectedWorkspaceProfile.label} |{" "}
+                      Active sources {enabledDangerousCommandSourceCount}/
+                      {DANGEROUS_COMMAND_EXECUTION_SOURCES.length} | built-in rules{" "}
+                      {enabledDangerousCommandBuiltinRuleCount}/{DANGEROUS_COMMAND_BUILTIN_RULES.length} |
+                      {" "}policy pack{" "}
+                      {selectedDangerousCommandPolicyPack.label} (
+                      {selectedDangerousCommandPolicyPack.extraRules.length} extra) | environment{" "}
+                      {selectedDangerousCommandEnvironmentTemplate.label} (
+                      {selectedDangerousCommandEnvironmentTemplate.extraRules.length} extra)
+                    </p>
+                    {activeDangerousCommandSupplementalRules.length > 0 ? (
+                      <div className="settings-safety-rules settings-safety-rules--supplemental">
+                        {activeDangerousCommandSupplementalRules.map((rule) => (
+                          <div className="settings-safety-rule settings-safety-rule--readonly" key={`${rule.sourceLabel}-${rule.id}`}>
+                            <span className="settings-safety-rule__content">
+                              <span className="settings-safety-rule__title">
+                                {rule.label}
+                                <span
+                                  className={
+                                    rule.severity === "critical"
+                                      ? "settings-safety-rule__badge is-critical"
+                                      : "settings-safety-rule__badge"
+                                  }
+                                >
+                                  {rule.severity}
+                                </span>
+                              </span>
+                              <span className="hint settings-safety-rule__meta">
+                                {rule.description}
+                              </span>
+                              <span className="hint settings-safety-rule__meta">
+                                Source: {rule.sourceLabel}
+                              </span>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="hint">
+                        No extra policy-pack or environment-template rules are active right now.
+                      </p>
+                    )}
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Session Group Overrides</h4>
+                        <p className="hint">
+                          Save pack/template combinations per session group. When a terminal tab
+                          belongs to a saved group, that override replaces the global pack/template
+                          for inspection on that tab only.
+                        </p>
+                      </div>
+                      <p className="hint">
+                        Target group: {dangerousCommandSettingsTargetGroupName ?? "None"}.
+                        {" "}
+                        {activeTabSessionGroupName
+                          ? "Using the active tab session group."
+                          : activeSessionGroup?.groupName
+                            ? "Using the group currently selected in Sessions."
+                            : "Focus a grouped tab or select a group in Sessions to save an override."}
+                      </p>
+                      <p className="hint">
+                        Saved overrides {dangerousCommandGuardPreferences.groupAssignments.length}/
+                        {MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS}
+                      </p>
+                      <div className="modal__actions">
+                        <button
+                          className="secondary-button"
+                          disabled={
+                            !dangerousCommandGuardPreferences.enabled ||
+                            !dangerousCommandSettingsTargetGroupName ||
+                            dangerousCommandGroupAssignmentLimitReached
+                          }
+                          onClick={() =>
+                            saveDangerousCommandGroupAssignment(dangerousCommandSettingsTargetGroupName)
+                          }
+                          type="button"
+                        >
+                          {activeDangerousCommandGroupAssignment
+                            ? "Update Target Group Override"
+                            : "Save Current Pack For Target Group"}
+                        </button>
+                        {activeDangerousCommandGroupAssignment ? (
+                          <button
+                            className="secondary-button"
+                            disabled={!dangerousCommandGuardPreferences.enabled}
+                            onClick={() =>
+                              deleteDangerousCommandGroupAssignment(
+                                activeDangerousCommandGroupAssignment.groupName
+                              )
+                            }
+                            type="button"
+                          >
+                            Remove Target Group Override
+                          </button>
+                        ) : null}
+                      </div>
+                      {dangerousCommandGroupAssignmentLimitReached ? (
+                        <p className="hint">
+                          Override limit reached. Remove an existing group override before adding a
+                          new one.
+                        </p>
+                      ) : null}
+                      {dangerousCommandGuardPreferences.groupAssignments.length > 0 ? (
+                        <div className="settings-safety-rules settings-safety-rules--supplemental">
+                          {dangerousCommandGuardPreferences.groupAssignments.map((assignment) => (
+                            <div
+                              className="settings-safety-rule settings-safety-rule--readonly"
+                              key={assignment.groupName}
+                            >
+                              <span className="settings-safety-rule__content">
+                                <span className="settings-safety-rule__title">
+                                  {assignment.groupName}
+                                </span>
+                                <span className="hint settings-safety-rule__meta">
+                                  Policy pack:{" "}
+                                  {DANGEROUS_COMMAND_POLICY_PACKS.find(
+                                    (pack) => pack.id === assignment.policyPackId
+                                  )?.label ?? assignment.policyPackId}
+                                  {" | "}environment:{" "}
+                                  {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
+                                    (template) => template.id === assignment.environmentTemplateId
+                                  )?.label ?? assignment.environmentTemplateId}
+                                </span>
+                                {dangerousCommandSettingsTargetGroupName &&
+                                assignment.groupName.toLowerCase() ===
+                                  dangerousCommandSettingsTargetGroupName.toLowerCase() ? (
+                                  <span className="hint settings-safety-rule__meta">
+                                    Current settings target group
+                                  </span>
+                                ) : null}
+                              </span>
+                              <div className="settings-safety-rule__actions">
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  disabled={!dangerousCommandGuardPreferences.enabled}
+                                  onClick={() =>
+                                    deleteDangerousCommandGroupAssignment(assignment.groupName)
+                                  }
+                                  type="button"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="hint">
+                          No session-group overrides saved yet. Ungrouped sessions keep using the
+                          global pack/template selection.
+                        </p>
+                      )}
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Temporary Approval Scopes</h4>
+                        <p className="hint">
+                          Runtime-only exact-command approvals created from the bottom approval bar.
+                          `Allow In Tab` is removed when that tab closes. `Allow In Group` stays
+                          active until Safety settings change, the app restarts, or you clear it
+                          here.
+                        </p>
+                      </div>
+                      <p className="hint">
+                        Active temporary approvals {dangerousCommandTemporaryApprovals.length}/
+                        {MAX_DANGEROUS_COMMAND_TEMP_APPROVALS}
+                      </p>
+                      <div className="modal__actions">
+                        <button
+                          className="secondary-button"
+                          disabled={dangerousCommandTemporaryApprovals.length === 0}
+                          onClick={() => clearDangerousCommandTemporaryApprovals("manual")}
+                          type="button"
+                        >
+                          Clear All Temporary Approvals
+                        </button>
+                      </div>
+                      {dangerousCommandTemporaryApprovals.length > 0 ? (
+                        <div className="settings-safety-rules settings-safety-rules--supplemental">
+                          {dangerousCommandTemporaryApprovals.map((approval) => (
+                            <div
+                              className="settings-safety-rule settings-safety-rule--readonly"
+                              key={approval.id}
+                            >
+                              <span className="settings-safety-rule__content">
+                                <span className="settings-safety-rule__title">
+                                  {approval.preview || approval.commandText}
+                                  <span
+                                    className={
+                                      approval.severity === "critical"
+                                        ? "settings-safety-rule__badge is-critical"
+                                        : "settings-safety-rule__badge"
+                                    }
+                                  >
+                                    {approval.severity}
+                                  </span>
+                                </span>
+                                <span className="hint settings-safety-rule__meta">
+                                  Scope: {formatDangerousCommandTemporaryApprovalScopeLabel(approval)}
+                                  {" | "}source: {approval.sourceLabel}
+                                </span>
+                                <span className="hint settings-safety-rule__meta">
+                                  Pack:{" "}
+                                  {DANGEROUS_COMMAND_POLICY_PACKS.find(
+                                    (pack) => pack.id === approval.appliedPolicyPackId
+                                  )?.label ?? approval.appliedPolicyPackId}
+                                  {" | "}environment:{" "}
+                                  {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
+                                    (template) => template.id === approval.appliedEnvironmentTemplateId
+                                  )?.label ?? approval.appliedEnvironmentTemplateId}
+                                </span>
+                                <span className="hint settings-safety-rule__meta">
+                                  Approved {new Date(approval.createdAt).toLocaleString()}
+                                </span>
+                              </span>
+                              <div className="settings-safety-rule__actions">
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  onClick={() => removeDangerousCommandTemporaryApproval(approval.id)}
+                                  type="button"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="hint">
+                          No temporary approval scopes are active right now.
+                        </p>
+                      )}
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Persistent Approval Policies</h4>
+                        <p className="hint">
+                          Saved exact-command allow rules from the bottom approval bar. These stay
+                          active across app restart and travel with Safety bundles. Matching still
+                          requires the same command text, execution source, policy pack, and
+                          environment template.
+                        </p>
+                      </div>
+                      <p className="hint">
+                        Saved persistent policies{" "}
+                        {dangerousCommandGuardPreferences.persistentApprovals.length}/
+                        {MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS}
+                      </p>
+                      <div className="modal__actions">
+                        <button
+                          className="secondary-button"
+                          disabled={dangerousCommandGuardPreferences.persistentApprovals.length === 0}
+                          onClick={() => {
+                            void clearDangerousCommandPersistentApprovals();
+                          }}
+                          type="button"
+                        >
+                          Clear All Persistent Policies
+                        </button>
+                      </div>
+                      {dangerousCommandGuardPreferences.persistentApprovals.length > 0 ? (
+                        <div className="settings-safety-rules settings-safety-rules--supplemental">
+                          {dangerousCommandGuardPreferences.persistentApprovals.map((approval) => (
+                            <div
+                              className="settings-safety-rule settings-safety-rule--readonly"
+                              key={approval.id}
+                            >
+                              <span className="settings-safety-rule__content">
+                                <span className="settings-safety-rule__title">
+                                  {approval.preview || approval.commandText}
+                                  <span
+                                    className={
+                                      approval.severity === "critical"
+                                        ? "settings-safety-rule__badge is-critical"
+                                        : "settings-safety-rule__badge"
+                                    }
+                                  >
+                                    {approval.severity}
+                                  </span>
+                                </span>
+                                <span className="hint settings-safety-rule__meta">
+                                  Scope: {formatDangerousCommandPersistentApprovalScopeLabel(approval)}
+                                  {" | "}source: {formatDangerousCommandSourceLabel(approval.source)}
+                                </span>
+                                <span className="hint settings-safety-rule__meta">
+                                  Pack:{" "}
+                                  {DANGEROUS_COMMAND_POLICY_PACKS.find(
+                                    (pack) => pack.id === approval.appliedPolicyPackId
+                                  )?.label ?? approval.appliedPolicyPackId}
+                                  {" | "}environment:{" "}
+                                  {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
+                                    (template) => template.id === approval.appliedEnvironmentTemplateId
+                                  )?.label ?? approval.appliedEnvironmentTemplateId}
+                                </span>
+                                <span className="hint settings-safety-rule__meta">
+                                  Saved {new Date(approval.createdAtIso).toLocaleString()}
+                                </span>
+                              </span>
+                              <div className="settings-safety-rule__actions">
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  onClick={() => removeDangerousCommandPersistentApproval(approval.id)}
+                                  type="button"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="hint">
+                          No persistent approval policies saved yet.
+                        </p>
+                      )}
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Shared Policy Bundles</h4>
+                        <p className="hint">
+                          Save the current Safety settings as reusable JSON bundles, then import,
+                          export, apply, or sync them across machines and teammates through a
+                          shared JSON file. This baseline is manual push/pull only; auto-watch and
+                          permission-aware distribution are still out of scope.
+                        </p>
+                      </div>
+                      <p className="hint">
+                        Stored bundles {dangerousCommandPolicyBundles.length}/
+                        {MAX_DANGEROUS_COMMAND_POLICY_BUNDLES}
+                      </p>
+                      <p className="hint">
+                        Sync file:{" "}
+                        {dangerousCommandPolicyBundleSyncState.filePath ? (
+                          <code>{dangerousCommandPolicyBundleSyncState.filePath}</code>
+                        ) : (
+                          "Not linked yet."
+                        )}
+                      </p>
+                      {(dangerousCommandPolicyBundleSyncState.lastPulledAtIso ||
+                        dangerousCommandPolicyBundleSyncState.lastPushedAtIso) && (
+                        <p className="hint">
+                          Last pull:{" "}
+                          {dangerousCommandPolicyBundleSyncState.lastPulledAtIso
+                            ? new Date(
+                                dangerousCommandPolicyBundleSyncState.lastPulledAtIso
+                              ).toLocaleString()
+                            : "never"}
+                          {" | "}last push:{" "}
+                          {dangerousCommandPolicyBundleSyncState.lastPushedAtIso
+                            ? new Date(
+                                dangerousCommandPolicyBundleSyncState.lastPushedAtIso
+                              ).toLocaleString()
+                            : "never"}
+                        </p>
+                      )}
+                      <div className="modal__actions">
+                        <button
+                          className="secondary-button"
+                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
+                          onClick={() => {
+                            void saveCurrentDangerousCommandPolicyBundle();
+                          }}
+                          type="button"
+                        >
+                          Save Current As Bundle
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
+                          onClick={() => {
+                            void importDangerousCommandPolicyBundles();
+                          }}
+                          type="button"
+                        >
+                          Import Bundles...
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={
+                            dangerousCommandPolicyBundles.length === 0 ||
+                            dangerousCommandPolicyBundleSyncBusyAction !== null
+                          }
+                          onClick={() => {
+                            void exportDangerousCommandPolicyBundles();
+                          }}
+                          type="button"
+                        >
+                          Export All Bundles...
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
+                          onClick={() => {
+                            void pullDangerousCommandPolicyBundlesFromSync();
+                          }}
+                          type="button"
+                        >
+                          {dangerousCommandPolicyBundleSyncBusyAction === "pull"
+                            ? "Pulling..."
+                            : dangerousCommandPolicyBundleSyncState.filePath
+                              ? "Pull Sync"
+                              : "Pull Sync..."}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
+                          onClick={() => {
+                            void pushDangerousCommandPolicyBundlesToSync();
+                          }}
+                          type="button"
+                        >
+                          {dangerousCommandPolicyBundleSyncBusyAction === "push"
+                            ? "Pushing..."
+                            : dangerousCommandPolicyBundleSyncState.filePath
+                              ? "Push Sync"
+                              : "Push Sync..."}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
+                          onClick={() => {
+                            void changeDangerousCommandPolicyBundleSyncTarget();
+                          }}
+                          type="button"
+                        >
+                          {dangerousCommandPolicyBundleSyncBusyAction === "change"
+                            ? "Choosing..."
+                            : dangerousCommandPolicyBundleSyncState.filePath
+                              ? "Change Sync File..."
+                              : "Choose Sync File..."}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={
+                            !dangerousCommandPolicyBundleSyncState.filePath ||
+                            dangerousCommandPolicyBundleSyncBusyAction !== null
+                          }
+                          onClick={() => {
+                            void clearDangerousCommandPolicyBundleSyncTarget();
+                          }}
+                          type="button"
+                        >
+                          Clear Sync File
+                        </button>
+                      </div>
+                      {dangerousCommandPolicyBundles.length > 0 ? (
+                        <div className="settings-safety-rules settings-safety-rules--supplemental">
+                          {dangerousCommandPolicyBundles.map((bundle) => {
+                            const bundlePatternSummary = summarizeDangerousCommandCustomPatterns(
+                              bundle.preferences.customPatternsText
+                            );
+                            const bundleEnabledSources = DANGEROUS_COMMAND_EXECUTION_SOURCES.filter(
+                              (source) => bundle.preferences.sourceStates[source.id]
+                            ).length;
+                            return (
+                              <div
+                                className="settings-safety-rule settings-safety-rule--readonly"
+                                key={bundle.id}
+                              >
+                                <span className="settings-safety-rule__content">
+                                  <span className="settings-safety-rule__title">{bundle.name}</span>
+                                  <span className="hint settings-safety-rule__meta">
+                                    {bundle.description || "No description."}
+                                  </span>
+                                  <span className="hint settings-safety-rule__meta">
+                                    Pack:{" "}
+                                    {DANGEROUS_COMMAND_POLICY_PACKS.find(
+                                      (pack) => pack.id === bundle.preferences.policyPackId
+                                    )?.label ?? bundle.preferences.policyPackId}
+                                    {" | "}environment:{" "}
+                                    {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
+                                      (template) =>
+                                        template.id === bundle.preferences.environmentTemplateId
+                                    )?.label ?? bundle.preferences.environmentTemplateId}
+                                  </span>
+                                  <span className="hint settings-safety-rule__meta">
+                                    Sources {bundleEnabledSources}/
+                                    {DANGEROUS_COMMAND_EXECUTION_SOURCES.length}
+                                    {" | "}group overrides{" "}
+                                    {bundle.preferences.groupAssignments.length}
+                                    {" | "}persistent policies{" "}
+                                    {bundle.preferences.persistentApprovals.length}
+                                    {" | "}custom patterns{" "}
+                                    {bundlePatternSummary.activePatterns}
+                                  </span>
+                                  <span className="hint settings-safety-rule__meta">
+                                    Updated {new Date(bundle.updatedAtIso).toLocaleString()}
+                                  </span>
+                                </span>
+                                <div className="settings-safety-rule__actions">
+                                  <button
+                                    className="secondary-button secondary-button--small"
+                                    onClick={() => {
+                                      void applyDangerousCommandPolicyBundle(bundle.id);
+                                    }}
+                                    type="button"
+                                  >
+                                    Apply
+                                  </button>
+                                  <button
+                                    className="secondary-button secondary-button--small"
+                                    onClick={() => {
+                                      void exportDangerousCommandPolicyBundle(bundle.id);
+                                    }}
+                                    type="button"
+                                  >
+                                    Export
+                                  </button>
+                                  <button
+                                    className="secondary-button secondary-button--small"
+                                    onClick={() => {
+                                      void deleteDangerousCommandPolicyBundle(bundle.id);
+                                    }}
+                                    type="button"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="hint">
+                          No shared safety bundles saved yet. Save the current Safety configuration
+                          to create your first reusable bundle.
+                        </p>
+                      )}
+                    </div>
                     <div className="settings-safety-rules">
                       {DANGEROUS_COMMAND_BUILTIN_RULES.map((rule) => (
                         <label className="settings-checkbox settings-safety-rule" key={rule.id}>

@@ -1,14 +1,17 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-03-19
+Last updated: 2026-03-20
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.13`
+- Stable release shipped: `v0.1.14`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
 - Master branch now also includes session templates baseline with template-scoped env var substitution
+- Master branch now also includes command snippets/playbooks v2 baseline with prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run
+- Master branch now also includes dangerous-command approval scopes, persistent approval policies, shared policy-bundle import/export/apply, manual sync-file pull/push, and workspace-profile mode with optional Safety sync
+- Master branch now also includes Operation Center tracked app jobs for session/snippet import-export plus bug-report export
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -26,6 +29,13 @@ Last updated: 2026-03-19
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
 
+## Completed in v0.1.14
+
+- Command snippets/playbooks v2 baseline with prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run
+- Dangerous-command guardrails follow-up with policy packs, environment templates, per-source toggles, session-group overrides, exact-command approval scopes, persistent approval policies, shared bundles, and workspace-profile sync
+- Workspace profile mode (`dev` / `staging` / `prod`) with persistent risk cues and optional global Safety pack/template sync
+- Operation Center tracked app jobs for session/snippet import-export plus bug-report export
+
 ## Completed in v0.1.13
 
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture and packaged validation workflow
@@ -38,6 +48,21 @@ Last updated: 2026-03-19
 
 ## Current master additions
 
+- Dangerous-command policy-pack baseline:
+  - `Settings > Safety` now exposes `Balanced`, `Operations`, and `Strict` policy packs
+  - environment templates now layer `Development`, `Staging`, and `Production` presets on top of the selected ruleset
+  - source-specific guard toggles let keyboard, clipboard, history, snippet, startup-command, and quick-profile flows be enabled independently
+  - session-group overrides can pin pack/template combinations per named session group
+  - bottom approval bar now supports exact-command temporary scopes for the current tab or current session group
+  - bottom approval bar can now also save persistent exact-command approval policies for future matches
+  - shared policy bundles can capture, import, export, apply, and manually sync complete safety configurations through a shared JSON file
+  - workspace profile mode now adds `dev` / `staging` / `prod` risk cues plus optional global Safety pack/template sync
+  - active supplemental rules are visible directly inside the safety settings panel
+- Command snippets/playbooks v2 baseline:
+  - snippet editor now supports named parameters with required/default/regex validation rules
+  - parameterized snippets prompt for values, preview the resolved command, and warn on missing/unused parameter tokens
+  - variables can now remember last used values by snippet/group/session/global scope
+  - reusable prompt sets can now be shared across snippets inside the same group
 - `scripts/smoke-capture-all.mjs` now:
   - supports packaged executable launch via `TERMDOCK_SMOKE_EXECUTABLE`
   - writes `summary.json` and `full-test-matrix.md` automatically
@@ -53,9 +78,10 @@ Last updated: 2026-03-19
   - `Settings > Safety` exposes built-in risky-command rules and custom patterns
   - a fixed bottom approval bar blocks risky writes until a one-time run is approved
   - guardrails cover keyboard Enter, clipboard paste, command history run/paste, snippets, quick profiles, and startup commands
-- Packaged smoke now covers embedded live SSH connect, embedded live SFTP upload/download/delete, the `Settings > Safety` section, built-in rule reset flow, and approval-bar UI baseline
+- Packaged smoke now covers embedded live SSH connect, embedded live SFTP upload/download/delete, the `Settings > Workspace` + `Settings > Safety` sections, built-in rule reset flow, and approval-bar UI baseline
 - `pnpm run pack` is now smoke-friendly on local Windows shells by skipping native rebuilds and `winCodeSign` resource-edit extraction, so `pnpm run smoke:ui:packaged` runs on this machine
-- Latest local workspace and packaged smoke runs: `PASS 29 / FAIL 0 / SKIP 0`
+- `pnpm run smoke:ui:packaged` now rebuilds the packaged directory first, so local packaged smoke does not accidentally reuse stale `release/*` output
+- Latest local workspace and packaged smoke runs: `PASS 30 / FAIL 0 / SKIP 0`
 - Added release signing/notarization preflight baseline:
   - `scripts/release-preflight.mjs` validates required Windows signing and macOS signing/notarization inputs before release build
   - macOS hardened runtime entitlements are now checked in-repo via `build/entitlements.mac.plist` and `build/entitlements.mac.inherit.plist`
@@ -107,8 +133,8 @@ Last updated: 2026-03-19
   - startup read path now repairs known mojibake patterns in `name` / `groupId` / `remark`
   - create/update persistence path now applies the same normalization
 - Expanded UI smoke automation:
-  - `scripts/smoke-capture-all.mjs` now covers sessions/menu/settings/command-history/retry/operation flows plus embedded live SSH/SFTP verification
-  - latest local run result: `PASS 29 / FAIL 0 / SKIP 0`
+  - `scripts/smoke-capture-all.mjs` now covers sessions/menu/settings/snippet-manager/command-history/retry/operation flows plus embedded live SSH/SFTP verification
+  - latest local run result: `PASS 30 / FAIL 0 / SKIP 0`
 - Added compact UI governance baseline and fixed-height list policy:
   - created `UI_COMPACT_RULES.md` as mandatory UI rule reference
   - applied compact density + fixed list-shell heights across main panels/modals
@@ -203,6 +229,7 @@ Last updated: 2026-03-19
   - adds cross-tab transfer activity summary with one-click tab focus
   - adds per-tab and cross-tab one-click transfer cancellation actions
   - adds per-tab and bulk reconnect actions for disconnected transfer tabs
+  - now also tracks recent session import/export, snippet import/export, and bug-report export jobs
 - Added hotkey conflict checker baseline (`F30` partial):
   - `Settings > Hotkeys` now highlights conflicting enabled shortcut bindings
   - conflicting actions are marked inline in each hotkey row for faster correction
@@ -296,17 +323,18 @@ Last updated: 2026-03-19
 1. Finish macOS release evidence and targeted external-host validation for packaged smoke (`P0-F3`)
 2. Provision signing secrets and capture first public-trust signed/notarized release evidence (`P0-F4`)
 3. Extend recoverable global error actions and guidance coverage (`P0-E3`)
-4. Start command snippets/playbooks v2 with prompted variables and dry-run follow-up (`F12`)
+4. Continue session templates v2 follow-up with import/export and runtime prompts (`F6` follow-up)
+5. Continue dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
 
 ## Remaining Work Snapshot
 
 1. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`)
 2. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`)
 3. Expand global error recovery actions beyond current baseline (`P0-E3`)
-4. Expand operation center baseline into richer long-job visibility and controls (`F8`)
+4. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
 5. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`)
 6. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
-7. Dangerous-command policy packs and environment-aware rule templates (`F17` follow-up)
+7. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
 8. Session templates v2 (import/export, runtime prompt overrides, layered presets)
 
 ## Feature Candidates After Hardening
@@ -315,16 +343,16 @@ Last updated: 2026-03-19
 2. Session templates v2 (runtime prompts, import/export, layered presets)
 3. SSH jump-host chain builder for bastion environments
 4. Transfer bandwidth limiter and schedule window
-5. Command snippets/playbooks v2 with prompted variables and dry-run preview
+5. Command snippets/playbooks v2 follow-up with richer playbook workflows and validation packs
 6. Session quick profiles v2 with multi-command chain support
 7. Multi-host command broadcast with dry-run preview
 8. Remote file snapshot and rollback workflow
 9. Session tags and smart saved views
 10. Terminal session recording/replay export
-11. Dangerous-command policy packs and environment-aware rule templates
+11. Dangerous-command follow-up with workspace-scoped defaults and richer shared distribution
 12. Recurring folder sync profiles
 13. Connection quality timeline dashboard
-14. Workspace profile mode with environment risk cues
+14. Workspace profile follow-up with broader automation and shared defaults
 15. Operation audit timeline (command/transfer traceability)
 16. Disconnect auto-diagnostic v2 (deeper network/process evidence and guided triage hints)
 17. Diff-first sync mode (preview changes before apply)

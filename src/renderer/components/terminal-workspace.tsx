@@ -57,6 +57,7 @@ interface TerminalWorkspaceProps {
   connectionPreferences: ConnectionPreferences;
   hotkeyPreferences: HotkeyPreferences;
   dangerousCommandGuardPreferences: DangerousCommandGuardPreferences;
+  getDangerousCommandSessionGroupName?: (tabId: string) => string | null;
   requestDangerousCommandApproval?: (request: DangerousCommandApprovalRequest) => Promise<boolean>;
   onCommandHistoryChange?: (entries: TerminalCommandHistoryEntry[]) => void;
 }
@@ -347,6 +348,7 @@ export function TerminalWorkspace({
   connectionPreferences,
   hotkeyPreferences,
   dangerousCommandGuardPreferences,
+  getDangerousCommandSessionGroupName,
   requestDangerousCommandApproval,
   onCommandHistoryChange
 }: TerminalWorkspaceProps) {
@@ -698,10 +700,12 @@ export function TerminalWorkspace({
       if (!requestDangerousCommandApproval) {
         return true;
       }
-      if (!shouldInspectDangerousCommandWrite(source, commandText)) {
+      if (!shouldInspectDangerousCommandWrite(source, commandText, dangerousCommandGuardPreferences)) {
         return true;
       }
-      const inspection = inspectDangerousCommandText(commandText, dangerousCommandGuardPreferences);
+      const inspection = inspectDangerousCommandText(commandText, dangerousCommandGuardPreferences, {
+        sessionGroupName: getDangerousCommandSessionGroupName?.(tabId) ?? null
+      });
       if (!inspection) {
         return true;
       }
@@ -711,7 +715,11 @@ export function TerminalWorkspace({
         result: inspection
       });
     },
-    [dangerousCommandGuardPreferences, requestDangerousCommandApproval]
+    [
+      dangerousCommandGuardPreferences,
+      getDangerousCommandSessionGroupName,
+      requestDangerousCommandApproval
+    ]
   );
 
   const enqueueTerminalWriteTask = useCallback(

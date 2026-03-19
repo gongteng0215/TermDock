@@ -5,9 +5,9 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.13` (2026-03-19)
-- Current branch focus: post-`v0.1.13` hardening cycle on `master`
-- Current master addition: session templates baseline with local env-var substitution and template manager flows
+- Current stable release: `v0.1.14` (2026-03-20)
+- Current branch focus: post-`v0.1.14` hardening cycle on `master`
+- Current master addition: no unreleased delta yet; `master` currently matches the `v0.1.14` release baseline
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -16,11 +16,13 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
 
-## Release in `v0.1.13` (2026-03-19)
+## Release in `v0.1.14` (2026-03-20)
 
-- Packaged smoke automation/report baseline now includes embedded live SSH/SFTP verification and packaged validation flow.
-- Release preflight/verify tooling and self-use Windows release helper path are now in-repo.
-- Session templates baseline landed with template-scoped env vars and create/apply/manage flows.
+- Command snippets/playbooks v2 baseline now includes prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run.
+- Dangerous-command guardrails now include policy packs, environment templates, per-source toggles, session-group overrides, exact-command approval scopes, persistent approval policies, shared bundles, and workspace-profile sync.
+- Workspace profile mode (`dev` / `staging` / `prod`) now ships with persistent risk cues and optional global Safety pack/template sync.
+- Operation Center now tracks session/snippet import-export jobs plus bug-report export jobs.
+- Latest local workspace and packaged smoke runs remain green at `PASS 30 / FAIL 0 / SKIP 0`.
 
 ## Patch in `v0.1.12` (2026-03-13)
 
@@ -36,9 +38,10 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - blank-area right click now opens context menu (`Add` / `Import` / `Export` / `Manage`)
   - row right click keeps item actions (`Run` / `Copy` / `Delete`)
 - Dangerous-command guardrails:
-  - `Settings > Safety` exposes built-in risky-command rules and custom patterns
+- `Settings > Safety` exposes built-in risky-command rules, per-source toggles, policy packs, environment templates, session-group overrides, temporary approval management, persistent approval policies, shared policy bundles with manual sync-file pull/push, and custom patterns
   - risky terminal writes now require bottom-bar approval before execution
   - guardrails cover keyboard Enter, clipboard paste, command history run/paste, snippets, quick profiles, and startup commands
+  - approval bar now supports `Run Once`, `Allow In Tab`, and `Allow In Group` for exact-command temporary scopes
   - built-in safety rules can be reset from the Safety panel
 - Session text normalization migration:
   - added startup normalization for known mojibake session/group/remark text patterns
@@ -88,6 +91,10 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Command snippet groups:
   - grouped snippet manager with run/add/import/export/reset actions
   - snippet template placeholders for clipboard/time/session/tab metadata
+  - prompted parameters with required/default/regex validation
+  - scoped remembered values (`per snippet` / `per group` / `per session` / `global`)
+  - reusable prompt sets shared within a snippet group
+  - preview-before-run flow and missing/unused parameter hints in the editor
 - Pending transfer queue restore:
   - app restart can detect saved pending transfer queue snapshot
   - transfer dock provides one-click `Restore Pending` and `Discard Pending`
@@ -142,6 +149,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - cross-tab transfer activity summary with one-click focus to target tab
   - per-tab and cross-tab one-click transfer cancellation actions
   - per-tab and bulk reconnect actions for disconnected tabs with active transfer queues
+  - tracked app-job list for session import/export, snippet import/export, and bug-report export
 - Added one-click bug report export (`zip`: logs + runtime metadata + settings snapshot)
 - Bug report export now includes disconnect report snapshot (`disconnect-reports.json`) when available
 - Reduced random disconnect risk during heavy transfer bursts by avoiding overlapping server-monitor polling requests per tab
@@ -164,10 +172,11 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Multi-tab xterm terminal with single-tab-per-session dedupe (opening an already-open session focuses existing tab)
 - Terminal context menu and reconnect flow
 - Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`)
-- Dangerous-command guardrails with `Settings > Safety` and a fixed bottom approval bar for risky execution sources
+- Dangerous-command guardrails with `Settings > Safety`, a fixed bottom approval bar, exact-command temporary approval scopes, persistent approval policies, per-source toggles, policy packs, environment templates, session-group overrides, optional workspace-profile sync, and shared bundle import/export/apply/sync-file pull/push for risky execution sources
+- Workspace profile mode (`dev` / `staging` / `prod`) with persistent risk badges and optional global Safety pack/template sync
 - Command History side panel + manager, including blank-area context menu actions (`Add` / `Import` / `Export` / `Manage`)
-- Command snippets manager and grouped snippet execution (`Run Snippet`, `Snippet Manager`)
-- Operation Center modal with active transfer/delete/port-forward status, cross-tab activity summary, cancel-all actions, and bulk reconnect shortcuts
+- Command snippets manager and grouped snippet execution (`Run Snippet`, `Snippet Manager`) with prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run
+- Operation Center modal with active transfer/delete/port-forward status, tracked session/snippet/diagnostics jobs, cross-tab activity summary, cancel-all actions, and bulk reconnect shortcuts
 - Port forwarding manager in Settings:
   - Local forward (`-L`)
   - Remote forward (`-R`)
@@ -247,7 +256,9 @@ Packaged wrapper:
 pnpm run smoke:ui:packaged
 ```
 
-Latest local workspace and packaged smoke runs: `PASS 29 / FAIL 0 / SKIP 0`
+This wrapper now runs `pnpm run pack` first so the packaged smoke flow does not reuse stale `release/*` output.
+
+Latest local workspace and packaged smoke runs: `PASS 30 / FAIL 0 / SKIP 0`
 
 ## Release
 
@@ -299,37 +310,37 @@ Tag rules:
 1. Finish macOS/external-host packaged smoke evidence using `PACKAGED_SMOKE.md`
 2. Provision release signing secrets and capture first signed/notarized evidence using `RELEASE_SIGNING.md`
 3. Recoverable global error UX follow-up (broader action coverage and contextual guidance)
-4. Operation center follow-up for broader operation coverage and cancel controls
+4. Operation center follow-up for richer progress timeline and grouped cancel/retry controls
 
 ## Remaining Work (Not Done Yet)
 
 1. `P0-F3`: finish the remaining macOS/external-host packaged smoke evidence on top of the current automated matrix
 2. `P0-F4`: finish secret provisioning and capture first signed/notarized installer evidence on top of the current preflight/verify baseline
 3. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
-4. `F8`: expand operation center baseline to cover more operation types and cancellation paths
+4. `F8`: extend Operation Center beyond the current tracked jobs with richer timeline and cancellation controls
 5. `P0-F1` + `P0-F2`: establish unit/integration test baseline for regression safety
 6. `P0-A3` + `F9` follow-up: SQLite migration and credential-safe encrypted backup/restore
 
 ## Candidate Features (Prioritized)
 
-Current next-wave emphasis: command snippets/playbooks v2, dangerous-command policy packs, and operation center follow-up. Additional ideas are listed below.
+Current next-wave emphasis: operation center timeline/control follow-up, session templates v2, and dangerous-command/workspace follow-up. Additional ideas are listed below.
 
 1. Advanced retry-center analytics and history export
 2. Session templates v2 (runtime prompts, import/export, layered presets)
-3. Operation center v2 (broader operation types, richer progress timeline, and action controls)
+3. Operation center v2 (richer progress timeline, grouped controls, and broader cancel/retry actions)
 4. Encrypted session export/import with credential-safe payload
 5. SSH jump-host chain builder (`ProxyJump`/bastion wizard)
 6. Transfer bandwidth limiter and schedule window
-7. Command snippets/playbooks v2 (parameter prompts, validation, dry-run preview, scoped variables)
+7. Command snippets/playbooks v2 follow-up (richer playbook workflows and validation packs)
 8. Session quick profiles v2 (multi-command chains, environment overrides)
 9. Multi-host command broadcast with dry-run preview
 10. Remote file snapshot and quick rollback for accidental edits
 11. Session tags and smart saved views (by env/owner/risk)
 12. Terminal session recording/replay with sanitized export
-13. Dangerous-command policy packs and environment-aware rule templates
+13. Dangerous-command follow-up (workspace-scoped defaults and richer team distribution)
 14. One-way sync profiles for recurring upload/download folders
 15. Connection quality timeline (latency/reconnect/throughput history)
-16. Workspace profile mode (`dev` / `staging` / `prod`) with visual risk cues
+16. Workspace profile follow-up (broader auto-switching and shared-profile workflows)
 17. Command palette / universal action launcher
 18. Remote file diff-first preview before overwrite/save-back
 19. Session health checks with proactive risk badges

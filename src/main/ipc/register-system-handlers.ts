@@ -405,6 +405,16 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
     }
   );
 
+  ipcMain.handle("system:readTextFileAtPath", async (_event, inputPath: string) => {
+    const filePath = normalizeRequiredPath(inputPath, "File path");
+    return readFile(filePath, "utf-8");
+  });
+
+  ipcMain.handle("system:writeTextFileAtPath", async (_event, inputPath: string, text: string) => {
+    const filePath = normalizeRequiredPath(inputPath, "File path");
+    await writeFile(filePath, typeof text === "string" ? text : "", "utf-8");
+  });
+
   ipcMain.handle("system:createTempOpenFilePath", async (_event, defaultName: string) => {
     const safeName = sanitizeLocalFileName(defaultName);
     const tempDirectory = join(tmpdir(), REMOTE_OPEN_FILE_TEMP_DIRECTORY);

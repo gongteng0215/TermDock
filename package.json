@@ -1,6 +1,6 @@
 {
   "name": "termdock",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
@@ -11,7 +11,7 @@
     "dev:main": "tsc -p tsconfig.node.json --watch",
     "dev:electron": "wait-on http://localhost:5273 file:dist-electron/main/main.js file:dist-electron/main/preload.cjs && node scripts/run-electron-dev.mjs",
     "smoke:ui": "node scripts/smoke-capture-all.mjs",
-    "smoke:ui:packaged": "node scripts/run-packaged-smoke.mjs",
+    "smoke:ui:packaged": "pnpm run pack && node scripts/run-packaged-smoke.mjs",
     "release:self-use:cert:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-self-use-windows-cert.ps1",
     "release:self-use:win": "node scripts/build-self-use-windows-release.mjs",
     "release:prepare-secrets": "node scripts/prepare-release-secrets.mjs",

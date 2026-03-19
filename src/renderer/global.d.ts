@@ -84,6 +84,8 @@ interface TermDockApi {
       filePath: string | null;
       text: string;
     }>;
+    readTextFileAtPath: (filePath: string) => Promise<string>;
+    writeTextFileAtPath: (filePath: string, text: string) => Promise<void>;
     createTempOpenFilePath: (defaultName: string) => Promise<string>;
     prepareRemoteOpenFile: (
       tabId: string,

@@ -91,10 +91,13 @@ function createMarkdownReport({
   lines.push("- Embedded local SSH fixture connect/auth lifecycle");
   lines.push("- Dangerous-command guardrails Settings > Safety UI and approval bar on a live SSH session");
   lines.push("- Embedded local SFTP fixture list/upload/download/delete flow");
-  lines.push("- Settings sections (Connection/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics)");
+  lines.push(
+    "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics)"
+  );
+  lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
   lines.push("- Command history manager (add/edit/export/import/delete)");
   lines.push("- Command history side panel context menu");
-  lines.push("- Operation Center modal");
+  lines.push("- Operation Center modal + tracked app-job baseline");
   lines.push("- Retry Center modal + grouped view");
 
   const passedSteps = steps.filter((entry) => entry.status === "pass");
@@ -776,6 +779,7 @@ async function main() {
       shots.push(await recordShot(page, "settings-connection"));
 
       const sections = [
+        { label: "Workspace", slug: "settings-workspace" },
         { label: "Safety", slug: "settings-safety" },
         { label: "Hotkeys", slug: "settings-hotkeys" },
         { label: "Monitor", slug: "settings-monitor" },
@@ -792,6 +796,25 @@ async function main() {
         }
         await navButton.click();
         await page.waitForTimeout(260);
+        if (section.label === "Workspace") {
+          const workspaceSyncToggle = page
+            .locator(
+              ".modal--settings label.settings-checkbox:has-text('Sync global Safety pack/template to workspace profile')"
+            )
+            .first();
+          const workspacePresets = page.locator(".settings-safety-preset").filter({
+            has: page.locator(".settings-safety-preset__count", {
+              hasText: "Safety default:"
+            })
+          });
+
+          if (!(await isVisible(workspaceSyncToggle))) {
+            throw new Error("workspace profile sync toggle not visible");
+          }
+          if ((await workspacePresets.count()) < 4) {
+            throw new Error("workspace profile presets not visible");
+          }
+        }
         if (section.label === "Safety") {
           const safetyToggle = page.locator(".modal--settings label.settings-checkbox").first();
           const safetyRule = page.locator(".settings-safety-rule input").first();
@@ -842,6 +865,73 @@ async function main() {
       }
       await page.waitForTimeout(260);
       return shots.join(", ");
+    });
+
+    await runStep("open snippet manager baseline", async () => {
+      const snippetButton = page
+        .locator(".panel__section--command-history .secondary-button:has-text('Snippets')")
+        .first();
+      if (!(await isVisible(snippetButton))) {
+        throw new Error("snippet manager button not found");
+      }
+      await snippetButton.click();
+      await page.locator(".modal--snippet-manager").waitFor({ state: "visible", timeout: 5000 });
+      try {
+        const newGroupButton = page
+          .locator(".modal--snippet-manager .secondary-button:has-text('New Group')")
+          .first();
+        const newSnippetButton = page
+          .locator(".modal--snippet-manager .secondary-button:has-text('New Snippet')")
+          .first();
+        if (!(await isVisible(newGroupButton)) || !(await isVisible(newSnippetButton))) {
+          throw new Error("snippet manager primary actions not visible");
+        }
+
+        await newGroupButton.click();
+        await page.waitForTimeout(220);
+        await newSnippetButton.click();
+        await page.waitForTimeout(260);
+
+        const promptSetField = page
+          .locator(".modal--snippet-manager .snippet-manager__field", {
+            hasText: "Reusable Prompt Set"
+          })
+          .first();
+        const newPromptSetButton = page
+          .locator(".modal--snippet-manager .secondary-button:has-text('New Prompt Set')")
+          .first();
+        if (!(await isVisible(promptSetField)) || !(await isVisible(newPromptSetButton))) {
+          throw new Error("prompt set controls not visible");
+        }
+
+        await newPromptSetButton.click();
+        await page.waitForTimeout(260);
+
+        const promptSetNameField = page
+          .locator(".modal--snippet-manager .snippet-manager__field", {
+            hasText: "Prompt Set Name"
+          })
+          .first();
+        const addPromptSetVariableButton = page
+          .locator(".modal--snippet-manager .secondary-button:has-text('Add Variable')")
+          .first();
+        if (
+          !(await isVisible(promptSetNameField)) ||
+          !(await isVisible(addPromptSetVariableButton))
+        ) {
+          throw new Error("prompt set variable controls not visible");
+        }
+
+        return await recordShot(page, "snippet-manager-baseline");
+      } finally {
+        const doneButton = page
+          .locator(".modal--snippet-manager .primary-button:has-text('Done')")
+          .first();
+        if (await isVisible(doneButton)) {
+          await doneButton.click();
+          await page.waitForTimeout(220);
+        }
+      }
     });
 
     await runStep("open command history manager", async () => {
@@ -1010,6 +1100,14 @@ async function main() {
       await page
         .locator(".modal--operation-center")
         .waitFor({ state: "visible", timeout: 5000 });
+      const trackedJobsTitle = page
+        .locator(".modal--operation-center .operation-center__title", {
+          hasText: "Tracked App Jobs"
+        })
+        .first();
+      if (!(await isVisible(trackedJobsTitle))) {
+        throw new Error("tracked app jobs card not visible");
+      }
       const fileName = await recordShot(page, "operation-center-open");
       const done = page
         .locator(".modal--operation-center .primary-button:has-text('Done')")

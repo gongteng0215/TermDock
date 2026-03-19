@@ -112,6 +112,10 @@ const api = {
         filePath: string | null;
         text: string;
       }>,
+    readTextFileAtPath: (filePath: string) =>
+      ipcRenderer.invoke("system:readTextFileAtPath", filePath) as Promise<string>,
+    writeTextFileAtPath: (filePath: string, text: string) =>
+      ipcRenderer.invoke("system:writeTextFileAtPath", filePath, text) as Promise<void>,
     createTempOpenFilePath: (defaultName: string) =>
       ipcRenderer.invoke("system:createTempOpenFilePath", defaultName) as Promise<string>,
     prepareRemoteOpenFile: (tabId: string, remotePath: string, defaultName: string) =>
