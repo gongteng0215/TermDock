@@ -431,16 +431,15 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
       const key = toRemoteOpenFileKey(normalizedTabId, normalizedRemotePath);
       const existingSession = remoteOpenFileSessions.get(key);
       if (existingSession && !existingSession.disposed) {
-        try {
-          const localStats = await lstat(existingSession.localPath);
-          if (localStats.isFile()) {
-            return {
-              localPath: existingSession.localPath,
-              alreadyOpen: true
-            };
-          }
-        } catch {
-          // Fall through and recreate local temp file path.
+        const canReuseExistingSession = await shouldReuseRemoteOpenFileSession(
+          existingSession,
+          terminalService
+        );
+        if (canReuseExistingSession) {
+          return {
+            localPath: existingSession.localPath,
+            alreadyOpen: true
+          };
         }
         disposeRemoteOpenFileSession(existingSession);
         remoteOpenFileSessions.delete(key);
@@ -848,6 +847,44 @@ function isMeaningfulLocalFileChange(current: Stats, previous: Stats): boolean {
   return current.mtimeMs !== previous.mtimeMs || current.size !== previous.size;
 }
 
+async function shouldReuseRemoteOpenFileSession(
+  session: RemoteOpenFileSession,
+  terminalService: TerminalService
+): Promise<boolean> {
+  try {
+    const localStats = await lstat(session.localPath);
+    if (!localStats.isFile()) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+  if (session.localHasPendingChanges || session.uploadInFlight || session.pendingUpload) {
+    return true;
+  }
+  const currentRemoteMetadata = await readRemotePathMetadataSafely(
+    terminalService,
+    session.tabId,
+    session.remotePath
+  );
+  if (isRemotePathMetadataCompatible(session.baseRemoteMetadata, currentRemoteMetadata)) {
+    return true;
+  }
+  appLogger.log(
+    "info",
+    "main:remote-open-file",
+    "Discarded stale remote open file session because remote metadata changed.",
+    {
+      tabId: session.tabId,
+      remotePath: session.remotePath,
+      localPath: session.localPath,
+      baseline: session.baseRemoteMetadata,
+      current: currentRemoteMetadata
+    }
+  );
+  return false;
+}
+
 function scheduleRemoteOpenFileUpload(
   session: RemoteOpenFileSession,
   terminalService: TerminalService
@@ -1100,6 +1137,21 @@ function normalizeRequiredPath(value: string, label: string): string {
 async function openPathWithProgram(programPath: string, targetPath: string): Promise<void> {
   if (process.platform === "darwin" && programPath.toLowerCase().endsWith(".app")) {
     await spawnDetached("open", ["-a", programPath, targetPath]);
+    return;
+  }
+  if (process.platform === "win32") {
+    const code = await runPowerShellScript(`
+try {
+  Start-Process -FilePath '${programPath.replace(/'/g, "''")}' -ArgumentList @('${targetPath.replace(/'/g, "''")}')
+  exit 0
+} catch {
+  Write-Error $_
+  exit 1
+}
+`);
+    if (code !== 0) {
+      throw new Error(`Failed to open path with program: ${programPath}`);
+    }
     return;
   }
   await spawnDetached(programPath, [targetPath]);

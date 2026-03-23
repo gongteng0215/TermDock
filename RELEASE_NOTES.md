@@ -4,7 +4,9 @@
 
 Release type: In development
 
-No unreleased changes recorded yet after the `v0.1.14` release cut.
+- Fixed remote file open/edit reliability:
+  - Windows preferred external editor launch now uses a cold-start friendly path, which is more reliable for VS Code style launchers
+  - reopening a remote file now refreshes the temp copy when the remote metadata changed instead of reusing a stale local snapshot
 
 ## v0.1.14 (2026-03-20)
 

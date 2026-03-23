@@ -7,7 +7,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 - Current stable release: `v0.1.14` (2026-03-20)
 - Current branch focus: post-`v0.1.14` hardening cycle on `master`
-- Current master addition: no unreleased delta yet; `master` currently matches the `v0.1.14` release baseline
+- Current master addition: fixed Windows preferred-editor cold-start and stale remote-open file reuse after remote-side changes
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)

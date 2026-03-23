@@ -1,6 +1,6 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-03-20
+Last updated: 2026-03-23
 
 ## Snapshot
 
@@ -12,6 +12,7 @@ Last updated: 2026-03-20
 - Master branch now also includes command snippets/playbooks v2 baseline with prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run
 - Master branch now also includes dangerous-command approval scopes, persistent approval policies, shared policy-bundle import/export/apply, manual sync-file pull/push, and workspace-profile mode with optional Safety sync
 - Master branch now also includes Operation Center tracked app jobs for session/snippet import-export plus bug-report export
+- Master branch now also includes remote file open reliability fixes for Windows preferred-editor cold-start and stale temp-file reuse after remote-side changes
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress

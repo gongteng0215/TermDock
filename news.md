@@ -17,6 +17,7 @@ Last updated: 2026-03-20
 ## Shipped in Recent Cycles
 
 - v0.1.14: command snippets/playbooks v2 baseline, dangerous-command/workspace follow-up, and Operation Center tracked app jobs
+- master (post-v0.1.14): fixed Windows preferred-editor cold-start and stale remote-open file reuse after remote-side changes
 - v0.1.13: packaged smoke baseline, release preflight/verify tooling, and session templates baseline
 - master (post-v0.1.13): added command snippets/playbooks v2 baseline with prompted parameters, regex validation, and preview-before-run
 - master (post-v0.1.13): added command snippet scoped remembered values (`snippet/group/session/global`) plus reusable prompt sets
