@@ -5,9 +5,9 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.15` (2026-03-30)
-- Current branch focus: post-`v0.1.15` validation cycle on `master`
-- Current master addition: v0.1.15 hardening includes remote-open/editor reliability fixes, per-tab port-forward state, and per-tab server-health/disconnect-report state tracking
+- Current stable release: `v0.1.16` (2026-03-30)
+- Current branch focus: post-`v0.1.16` validation cycle on `master`
+- Current master addition: `v0.1.16` upgrades packaged-smoke/release GitHub Actions runtimes to the current supported stack and clears the Node 20 deprecation path
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -15,6 +15,12 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 ## UI Rules
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
+
+## Release in `v0.1.16` (2026-03-30)
+
+- GitHub Actions runtimes used by `Packaged Smoke` and `Release` were upgraded to current supported versions.
+- The packaged smoke workflow now runs green without the previous `Node.js 20 actions are deprecated` warning path.
+- Latest GitHub packaged smoke workflow after the upgrade: [run #23733492999](https://github.com/gongteng0215/TermDock/actions/runs/23733492999)
 
 ## Release in `v0.1.15` (2026-03-30)
 

@@ -12,10 +12,11 @@ Last updated: 2026-03-30
 
 ## Release Baseline
 
-- Current stable release: `v0.1.15` (2026-03-30)
+- Current stable release: `v0.1.16` (2026-03-30)
 
 ## Shipped in Recent Cycles
 
+- v0.1.16: GitHub Actions runtimes for packaged smoke and release were upgraded to current supported versions, and packaged smoke stayed green after the change
 - v0.1.14: command snippets/playbooks v2 baseline, dangerous-command/workspace follow-up, and Operation Center tracked app jobs
 - v0.1.15: remote-open/editor reliability hardening, per-tab port-forward and Operation Center summary hardening, and tab-scoped server-health/disconnect-report state tracking
 - v0.1.15: smoke now verifies Windows preferred-opener launch/failure, remote-open conflict/reload/cleanup, live port-forward baseline, and unexpected disconnect-report capture

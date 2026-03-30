@@ -6,6 +6,27 @@ Release type: In development
 
 - No unreleased notes yet.
 
+## v0.1.16 (2026-03-30)
+
+Release type: Stable
+
+### Highlights
+
+- Upgraded GitHub Actions runtimes used by packaged smoke and release workflows:
+  - `actions/checkout` -> `v6`
+  - `pnpm/action-setup` -> `v5`
+  - `actions/setup-node` -> `v6`
+  - `actions/upload-artifact` -> `v7`
+  - `actions/download-artifact` -> `v8`
+- Removed the Node 20 deprecation path from the current CI baseline so routine `Packaged Smoke` and future tagged releases use the current supported action runtime stack.
+
+### Validation
+
+- GitHub Actions packaged smoke passed after the runtime upgrade:
+  - workflow: `Packaged Smoke`
+  - run: `#23733492999`
+  - result: `success`
+
 ## v0.1.15 (2026-03-30)
 
 Release type: Stable

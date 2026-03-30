@@ -4,7 +4,7 @@ Last updated: 2026-03-30
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.15`
+- Stable release shipped: `v0.1.16`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -17,6 +17,7 @@ Last updated: 2026-03-30
 - Master branch now also includes remote-open temp-file cleanup on tab/app dispose, background-tab persistent warnings, and an explicit stale-draft reopen chooser
 - Master branch now also includes per-tab port-forward state tracking, tab-switch-safe port-forward refresh, and Operation Center summaries that no longer depend on the active tab only
 - Master branch now also includes tab-scoped server-health/process state, stale monitor-request invalidation, and disconnect-report capture that now records the correct tab's monitor status
+- Master branch now also includes GitHub Actions runtime upgrades for packaged-smoke/release workflows, removing the previous Node 20 deprecation path from CI
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -33,6 +34,16 @@ Last updated: 2026-03-30
   - `P0-F3`: cross-platform smoke tests
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
+
+## Completed in v0.1.16
+
+- Upgraded workflow action runtimes:
+  - `actions/checkout` -> `v6`
+  - `pnpm/action-setup` -> `v5`
+  - `actions/setup-node` -> `v6`
+  - `actions/upload-artifact` -> `v7`
+  - `actions/download-artifact` -> `v8`
+- Confirmed GitHub `Packaged Smoke` still passes after the runtime upgrade without the previous Node 20 deprecation warning path
 
 ## Completed in v0.1.15
 
