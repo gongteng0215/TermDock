@@ -960,6 +960,18 @@ body::before {
   );
 }
 
+.settings-sftp-rate-grid,
+.settings-sftp-schedule-grid {
+  margin-top: 2px;
+}
+
+.settings-sftp-schedule-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 2px 0 4px;
+}
+
 .settings-safety-rules {
   display: grid;
   gap: 4px;

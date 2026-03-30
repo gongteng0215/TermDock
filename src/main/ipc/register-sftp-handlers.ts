@@ -1,6 +1,6 @@
 import { ipcMain } from "electron";
 
-import type { SftpEntryKind } from "../../shared/sftp.js";
+import type { SftpEntryKind, SftpTransferRunOptions } from "../../shared/sftp.js";
 import { TerminalService } from "../terminal/terminal-service.js";
 
 export function registerSftpHandlers(terminalService: TerminalService): void {
@@ -31,9 +31,10 @@ export function registerSftpHandlers(terminalService: TerminalService): void {
       tabId: string,
       transferId: string,
       localPath: string,
-      remoteDirectory: string
+      remoteDirectory: string,
+      options?: SftpTransferRunOptions
     ) =>
-      terminalService.uploadFile(tabId, transferId, localPath, remoteDirectory)
+      terminalService.uploadFile(tabId, transferId, localPath, remoteDirectory, options)
   );
   ipcMain.handle(
     "sftp:uploadFileToPath",
@@ -42,9 +43,10 @@ export function registerSftpHandlers(terminalService: TerminalService): void {
       tabId: string,
       transferId: string,
       localPath: string,
-      remotePath: string
+      remotePath: string,
+      options?: SftpTransferRunOptions
     ) =>
-      terminalService.uploadFileToPath(tabId, transferId, localPath, remotePath)
+      terminalService.uploadFileToPath(tabId, transferId, localPath, remotePath, options)
   );
   ipcMain.handle(
     "sftp:cancelUpload",
@@ -63,8 +65,9 @@ export function registerSftpHandlers(terminalService: TerminalService): void {
       tabId: string,
       transferId: string,
       remotePath: string,
-      localPath: string
+      localPath: string,
+      options?: SftpTransferRunOptions
     ) =>
-      terminalService.downloadFile(tabId, transferId, remotePath, localPath)
+      terminalService.downloadFile(tabId, transferId, remotePath, localPath, options)
   );
 }

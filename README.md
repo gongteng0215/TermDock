@@ -5,9 +5,9 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.17` (2026-03-30)
-- Current branch focus: post-`v0.1.17` validation cycle on `master`
-- Current master addition: `v0.1.17` focuses on upload throughput with `fastPut`, higher default upload concurrency, and faster batch directory preparation
+- Current stable release: `v0.1.18` (2026-03-30)
+- Current branch focus: post-`v0.1.18` validation cycle on `master`
+- Current master addition: no unreleased notes yet after the `v0.1.18` transfer-governance release
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -15,6 +15,13 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 ## UI Rules
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
+
+## Release in `v0.1.18` (2026-03-30)
+
+- `Settings > SFTP` now supports per-direction transfer rate limits for upload and download workers.
+- Queued upload/download work can now be restricted to selected weekdays plus a start/end time window.
+- Transfer queues now pause outside the configured window and auto-resume when the next allowed window opens.
+- Latest local workspace and packaged smoke runs remain green at `PASS 35 / FAIL 0 / SKIP 0`.
 
 ## Release in `v0.1.17` (2026-03-30)
 
@@ -207,6 +214,8 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - SFTP browse/create/rename/delete/open
 - Upload/download queues with:
   - progress, per-task cancel, cancel-all
+  - per-direction transfer rate limits (`Upload Limit` / `Download Limit`)
+  - optional queued-transfer schedule window with weekday + time range controls
   - conflict policy (`Overwrite` / `Skip` / `Rename`)
   - session-scoped remembered conflict default (`Overwrite` / `Skip` / `Rename`)
   - pending queue snapshot + restart restore/discard controls
@@ -295,21 +304,21 @@ pnpm run release:self-use:win
 Stable release:
 
 ```bash
-git tag v0.1.12
-git push origin v0.1.12
+git tag v0.1.18
+git push origin v0.1.18
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.13-test.1
-git push origin v0.1.13-test.1
+git tag v0.1.19-test.1
+git push origin v0.1.19-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.12`) => stable release
-- Tag with `-` (for example `v0.1.13-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.18`) => stable release
+- Tag with `-` (for example `v0.1.19-test.1`) => prerelease
 
 ## Known Limitations
 
@@ -347,7 +356,7 @@ Current next-wave emphasis: operation center timeline/control follow-up, session
 3. Operation center v2 (richer progress timeline, grouped controls, and broader cancel/retry actions)
 4. Encrypted session export/import with credential-safe payload
 5. SSH jump-host chain builder (`ProxyJump`/bastion wizard)
-6. Transfer bandwidth limiter and schedule window
+6. Transfer policy packs and richer schedule automation
 7. Command snippets/playbooks v2 follow-up (richer playbook workflows and validation packs)
 8. Session quick profiles v2 (multi-command chains, environment overrides)
 9. Multi-host command broadcast with dry-run preview

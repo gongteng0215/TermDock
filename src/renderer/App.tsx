@@ -105,7 +105,8 @@ const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const HOTKEY_CONFLICT_NAV_STORAGE_KEY = "termdock.hotkey-conflict-nav.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
 const LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
-const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v2";
+const PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v2";
+const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v3";
 const SFTP_TRANSFER_HISTORY_STORAGE_KEY = "termdock.sftp-transfer-history.v1";
 const SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY = "termdock.sftp-transfer-pending-restore.v1";
 const SFTP_CONFLICT_STRATEGY_STORAGE_KEY = "termdock.sftp-conflict-strategy.v1";
@@ -157,8 +158,19 @@ const DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD = 100;
 const MIN_RETRY_BATCH_CONFIRM_THRESHOLD = 0;
 const MAX_RETRY_BATCH_CONFIRM_THRESHOLD = 2000;
 const MAX_SFTP_TRANSFER_CONCURRENCY = 12;
+const MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS = 1024 * 1024;
 const SFTP_UPLOAD_DIRECTORY_PREWARM_CONCURRENCY = 12;
 const SFTP_UPLOAD_CONFLICT_SCAN_CONCURRENCY = 10;
+const SFTP_TRANSFER_WINDOW_EVALUATION_INTERVAL_MS = 30_000;
+const SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS = [
+  { value: 0, label: "Sun" },
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" }
+] as const;
 const COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN = /\$\{param:([a-zA-Z0-9_-]+)\}/g;
 const COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN = /[^a-zA-Z0-9_-]+/g;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
@@ -290,6 +302,12 @@ interface FileOpenPreferences {
 interface SftpTransferPreferences {
   uploadConcurrency: number;
   downloadConcurrency: number;
+  uploadRateLimitKiBps: number;
+  downloadRateLimitKiBps: number;
+  scheduleWindowEnabled: boolean;
+  scheduleWindowStartMinutes: number;
+  scheduleWindowEndMinutes: number;
+  scheduleWindowDays: number[];
 }
 
 interface SessionTransferConflictStrategy {
@@ -378,7 +396,13 @@ const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
 };
 const DEFAULT_SFTP_TRANSFER_PREFERENCES: SftpTransferPreferences = {
   uploadConcurrency: 4,
-  downloadConcurrency: 2
+  downloadConcurrency: 2,
+  uploadRateLimitKiBps: 0,
+  downloadRateLimitKiBps: 0,
+  scheduleWindowEnabled: false,
+  scheduleWindowStartMinutes: 0,
+  scheduleWindowEndMinutes: 0,
+  scheduleWindowDays: SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS.map((option) => option.value)
 };
 const DEFAULT_SESSION_TRANSFER_CONFLICT_STRATEGY_STATE: SessionTransferConflictStrategyState = {
   bySessionId: {}
@@ -2471,6 +2495,131 @@ function parseTransferConcurrency(value: unknown, fallback: number): number {
   return Math.min(MAX_SFTP_TRANSFER_CONCURRENCY, Math.max(1, Math.trunc(value)));
 }
 
+function parseSftpTransferRateLimitKiBps(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS, Math.max(0, Math.trunc(value)));
+}
+
+function parseSftpScheduleMinutes(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(24 * 60 - 1, Math.max(0, Math.trunc(value)));
+}
+
+function normalizeSftpScheduleDays(value: unknown, fallback: number[]): number[] {
+  if (!Array.isArray(value)) {
+    return [...fallback];
+  }
+  const seen = new Set<number>();
+  const normalized: number[] = [];
+  for (const rawValue of value) {
+    if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
+      continue;
+    }
+    const day = Math.trunc(rawValue);
+    if (day < 0 || day > 6 || seen.has(day)) {
+      continue;
+    }
+    seen.add(day);
+    normalized.push(day);
+  }
+  if (normalized.length === 0) {
+    return [...fallback];
+  }
+  normalized.sort((left, right) => left - right);
+  return normalized;
+}
+
+function formatSftpScheduleTimeInputValue(minutes: number): string {
+  const normalizedMinutes = parseSftpScheduleMinutes(
+    minutes,
+    DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowStartMinutes
+  );
+  const hours = Math.floor(normalizedMinutes / 60)
+    .toString()
+    .padStart(2, "0");
+  const mins = (normalizedMinutes % 60).toString().padStart(2, "0");
+  return `${hours}:${mins}`;
+}
+
+function parseSftpScheduleTimeInputValue(rawValue: string, fallback: number): number {
+  const normalized = rawValue.trim();
+  const match = normalized.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    return fallback;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (
+    !Number.isFinite(hours) ||
+    !Number.isFinite(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return fallback;
+  }
+  return hours * 60 + minutes;
+}
+
+function resolveSftpTransferRateLimitBytesPerSecond(rateLimitKiBps: number): number | undefined {
+  if (rateLimitKiBps <= 0) {
+    return undefined;
+  }
+  return rateLimitKiBps * 1024;
+}
+
+function isWithinSftpTransferScheduleWindow(
+  preferences: SftpTransferPreferences,
+  date = new Date()
+): boolean {
+  if (!preferences.scheduleWindowEnabled) {
+    return true;
+  }
+  const days = normalizeSftpScheduleDays(
+    preferences.scheduleWindowDays,
+    DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowDays
+  );
+  const startMinutes = parseSftpScheduleMinutes(
+    preferences.scheduleWindowStartMinutes,
+    DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowStartMinutes
+  );
+  const endMinutes = parseSftpScheduleMinutes(
+    preferences.scheduleWindowEndMinutes,
+    DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEndMinutes
+  );
+  const currentDay = date.getDay();
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+  if (startMinutes === endMinutes) {
+    return days.includes(currentDay);
+  }
+  if (startMinutes < endMinutes) {
+    return days.includes(currentDay) && currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  }
+  if (currentMinutes >= startMinutes) {
+    return days.includes(currentDay);
+  }
+  const previousDay = (currentDay + 6) % 7;
+  return days.includes(previousDay) && currentMinutes < endMinutes;
+}
+
+function formatSftpTransferScheduleWindowSummary(preferences: SftpTransferPreferences): string {
+  const days = normalizeSftpScheduleDays(
+    preferences.scheduleWindowDays,
+    DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowDays
+  );
+  const dayLabels = SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS.filter((option) =>
+    days.includes(option.value)
+  ).map((option) => option.label);
+  return `${dayLabels.join(", ")} ${formatSftpScheduleTimeInputValue(
+    preferences.scheduleWindowStartMinutes
+  )}-${formatSftpScheduleTimeInputValue(preferences.scheduleWindowEndMinutes)}`;
+}
+
 function parseRetryBatchConfirmThreshold(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
@@ -2990,6 +3139,7 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
   try {
     const rawValue =
       window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) ??
+      window.localStorage.getItem(PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) ??
       window.localStorage.getItem(LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY);
     if (!rawValue) {
       return DEFAULT_SFTP_TRANSFER_PREFERENCES;
@@ -3003,18 +3153,55 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
       parsed.downloadConcurrency,
       DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
     );
+    const normalizedUploadRateLimitKiBps = parseSftpTransferRateLimitKiBps(
+      parsed.uploadRateLimitKiBps,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadRateLimitKiBps
+    );
+    const normalizedDownloadRateLimitKiBps = parseSftpTransferRateLimitKiBps(
+      parsed.downloadRateLimitKiBps,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadRateLimitKiBps
+    );
+    const normalizedScheduleWindowEnabled =
+      typeof parsed.scheduleWindowEnabled === "boolean"
+        ? parsed.scheduleWindowEnabled
+        : DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEnabled;
+    const normalizedScheduleWindowStartMinutes = parseSftpScheduleMinutes(
+      parsed.scheduleWindowStartMinutes,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowStartMinutes
+    );
+    const normalizedScheduleWindowEndMinutes = parseSftpScheduleMinutes(
+      parsed.scheduleWindowEndMinutes,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEndMinutes
+    );
+    const normalizedScheduleWindowDays = normalizeSftpScheduleDays(
+      parsed.scheduleWindowDays,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowDays
+    );
     const migratedLegacyDefaults =
       normalizedUploadConcurrency === 2 &&
       normalizedDownloadConcurrency === 2 &&
-      window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null;
+      window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null &&
+      window.localStorage.getItem(PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null;
     return migratedLegacyDefaults
       ? {
           uploadConcurrency: DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency,
-          downloadConcurrency: normalizedDownloadConcurrency
+          downloadConcurrency: normalizedDownloadConcurrency,
+          uploadRateLimitKiBps: normalizedUploadRateLimitKiBps,
+          downloadRateLimitKiBps: normalizedDownloadRateLimitKiBps,
+          scheduleWindowEnabled: normalizedScheduleWindowEnabled,
+          scheduleWindowStartMinutes: normalizedScheduleWindowStartMinutes,
+          scheduleWindowEndMinutes: normalizedScheduleWindowEndMinutes,
+          scheduleWindowDays: normalizedScheduleWindowDays
         }
       : {
           uploadConcurrency: normalizedUploadConcurrency,
-          downloadConcurrency: normalizedDownloadConcurrency
+          downloadConcurrency: normalizedDownloadConcurrency,
+          uploadRateLimitKiBps: normalizedUploadRateLimitKiBps,
+          downloadRateLimitKiBps: normalizedDownloadRateLimitKiBps,
+          scheduleWindowEnabled: normalizedScheduleWindowEnabled,
+          scheduleWindowStartMinutes: normalizedScheduleWindowStartMinutes,
+          scheduleWindowEndMinutes: normalizedScheduleWindowEndMinutes,
+          scheduleWindowDays: normalizedScheduleWindowDays
         };
   } catch {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
@@ -4839,6 +5026,8 @@ export function App() {
   );
   const pausedUploadTabsRef = useRef<Record<string, true>>({});
   const pausedDownloadTabsRef = useRef<Record<string, true>>({});
+  const schedulePausedUploadTabsRef = useRef<Record<string, true>>({});
+  const schedulePausedDownloadTabsRef = useRef<Record<string, true>>({});
   const serverHealthByTabRef = useRef<Record<string, ServerHealthTabState>>(serverHealthByTab);
   const serverProcessByTabRef = useRef<Record<string, ServerProcessTabState>>(serverProcessByTab);
   const portForwardBusyRef = useRef<boolean>(portForwardBusy);
@@ -4945,6 +5134,8 @@ export function App() {
   >({});
   const [pausedUploadTabs, setPausedUploadTabs] = useState<Record<string, true>>({});
   const [pausedDownloadTabs, setPausedDownloadTabs] = useState<Record<string, true>>({});
+  const [schedulePausedUploadTabs, setSchedulePausedUploadTabs] = useState<Record<string, true>>({});
+  const [schedulePausedDownloadTabs, setSchedulePausedDownloadTabs] = useState<Record<string, true>>({});
   const [transferDockNotice, setTransferDockNotice] = useState<TransferDockNotice | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialogState | null>(null);
   const [appDialogInput, setAppDialogInput] = useState("");
@@ -4981,8 +5172,22 @@ export function App() {
   const serverProcessSnapshot = activeServerProcessState?.snapshot ?? null;
   const serverProcessLoading = activeServerProcessState?.loading ?? false;
   const serverProcessError = activeServerProcessState?.error ?? null;
-  const isActiveUploadQueuePaused = !!(activeTabId && pausedUploadTabs[activeTabId]);
-  const isActiveDownloadQueuePaused = !!(activeTabId && pausedDownloadTabs[activeTabId]);
+  const activeUploadPauseReason =
+    activeTabId && pausedUploadTabs[activeTabId]
+      ? "disconnected"
+      : activeTabId && schedulePausedUploadTabs[activeTabId]
+        ? "schedule-window"
+        : null;
+  const activeDownloadPauseReason =
+    activeTabId && pausedDownloadTabs[activeTabId]
+      ? "disconnected"
+      : activeTabId && schedulePausedDownloadTabs[activeTabId]
+        ? "schedule-window"
+        : null;
+  const isActiveUploadQueuePaused = activeUploadPauseReason !== null;
+  const isActiveDownloadQueuePaused = activeDownloadPauseReason !== null;
+  const isSftpTransferWindowOpen = isWithinSftpTransferScheduleWindow(sftpTransferPreferences);
+  const sftpTransferScheduleSummary = formatSftpTransferScheduleWindowSummary(sftpTransferPreferences);
   const activeTransferDockNotice =
     transferDockNotice && activeTabId && transferDockNotice.tabId === activeTabId
       ? transferDockNotice
@@ -5998,8 +6203,10 @@ export function App() {
         uploadQueued,
         downloadRunning,
         downloadQueued,
-        pausedUpload: !!pausedUploadTabsRef.current[tabId],
-        pausedDownload: !!pausedDownloadTabsRef.current[tabId],
+        pausedUpload:
+          !!pausedUploadTabsRef.current[tabId] || !!schedulePausedUploadTabsRef.current[tabId],
+        pausedDownload:
+          !!pausedDownloadTabsRef.current[tabId] || !!schedulePausedDownloadTabsRef.current[tabId],
         portForwardTotal: tabPortForwards.length,
         portForwardDegraded,
         portForwardBusy: portForwardBusyRef.current,
@@ -9297,8 +9504,59 @@ export function App() {
     [ensureRemoteDirectoryForUpload]
   );
 
+  const syncScheduledTransferPauseState = useCallback(() => {
+    if (!sftpTransferPreferences.scheduleWindowEnabled) {
+      setSchedulePausedUploadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+      setSchedulePausedDownloadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+      return true;
+    }
+    const windowOpen = isWithinSftpTransferScheduleWindow(sftpTransferPreferences);
+    if (windowOpen) {
+      setSchedulePausedUploadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+      setSchedulePausedDownloadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+      return true;
+    }
+
+    const nextPausedUploadTabs: Record<string, true> = {};
+    for (const job of uploadQueueRef.current) {
+      nextPausedUploadTabs[job.tabId] = true;
+    }
+
+    const nextPausedDownloadTabs: Record<string, true> = {};
+    for (const job of downloadQueueRef.current) {
+      nextPausedDownloadTabs[job.tabId] = true;
+    }
+
+    setSchedulePausedUploadTabs((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(nextPausedUploadTabs);
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((key) => key in nextPausedUploadTabs)
+      ) {
+        return prev;
+      }
+      return nextPausedUploadTabs;
+    });
+    setSchedulePausedDownloadTabs((prev) => {
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(nextPausedDownloadTabs);
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((key) => key in nextPausedDownloadTabs)
+      ) {
+        return prev;
+      }
+      return nextPausedDownloadTabs;
+    });
+    return false;
+  }, [sftpTransferPreferences]);
+
   const drainUploadQueue = useCallback(() => {
     if (!sftpApi || isDrainingUploadQueueRef.current) {
+      return;
+    }
+    if (!syncScheduledTransferPauseState()) {
       return;
     }
     isDrainingUploadQueueRef.current = true;
@@ -9318,7 +9576,12 @@ export function App() {
             nextJob.tabId,
             nextJob.transferId,
             nextJob.localPath,
-            nextJob.remotePath
+            nextJob.remotePath,
+            {
+              rateLimitBytesPerSecond: resolveSftpTransferRateLimitBytesPerSecond(
+                sftpTransferPreferences.uploadRateLimitKiBps
+              )
+            }
           );
         })()
           .catch((caughtError) => {
@@ -9403,11 +9666,16 @@ export function App() {
     resetEnsuredRemoteDirectoryCacheForTab,
     sftpApi,
     sftpTransferPreferences.uploadConcurrency,
+    sftpTransferPreferences.uploadRateLimitKiBps,
+    syncScheduledTransferPauseState,
     writeAppLog
   ]);
 
   const drainDownloadQueue = useCallback(() => {
     if (!sftpApi || isDrainingDownloadQueueRef.current) {
+      return;
+    }
+    if (!syncScheduledTransferPauseState()) {
       return;
     }
     isDrainingDownloadQueueRef.current = true;
@@ -9426,7 +9694,12 @@ export function App() {
             nextJob.tabId,
             nextJob.transferId,
             nextJob.remotePath,
-            nextJob.localPath
+            nextJob.localPath,
+            {
+              rateLimitBytesPerSecond: resolveSftpTransferRateLimitBytesPerSecond(
+                sftpTransferPreferences.downloadRateLimitKiBps
+              )
+            }
           )
           .catch((caughtError) => {
             const message = (caughtError as Error)?.message ?? "Download failed.";
@@ -9482,7 +9755,33 @@ export function App() {
     } finally {
       isDrainingDownloadQueueRef.current = false;
     }
-  }, [applySftpTransferEvent, sftpApi, sftpTransferPreferences.downloadConcurrency]);
+  }, [
+    applySftpTransferEvent,
+    sftpApi,
+    sftpTransferPreferences.downloadConcurrency,
+    sftpTransferPreferences.downloadRateLimitKiBps,
+    syncScheduledTransferPauseState
+  ]);
+
+  useEffect(() => {
+    const evaluateTransferScheduleWindow = () => {
+      const windowOpen = syncScheduledTransferPauseState();
+      if (!windowOpen) {
+        return;
+      }
+      drainUploadQueue();
+      drainDownloadQueue();
+    };
+
+    evaluateTransferScheduleWindow();
+    const timerId = window.setInterval(
+      evaluateTransferScheduleWindow,
+      SFTP_TRANSFER_WINDOW_EVALUATION_INTERVAL_MS
+    );
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [drainDownloadQueue, drainUploadQueue, syncScheduledTransferPauseState]);
 
   const loadSftpDirectory = useCallback(
     async (
@@ -10082,6 +10381,14 @@ export function App() {
   }, [pausedDownloadTabs]);
 
   useEffect(() => {
+    schedulePausedUploadTabsRef.current = schedulePausedUploadTabs;
+  }, [schedulePausedUploadTabs]);
+
+  useEffect(() => {
+    schedulePausedDownloadTabsRef.current = schedulePausedDownloadTabs;
+  }, [schedulePausedDownloadTabs]);
+
+  useEffect(() => {
     serverHealthByTabRef.current = serverHealthByTab;
   }, [serverHealthByTab]);
 
@@ -10260,6 +10567,7 @@ export function App() {
         JSON.stringify(sftpTransferPreferences)
       );
       window.localStorage.removeItem(LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY);
+      window.localStorage.removeItem(PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY);
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
@@ -10789,6 +11097,8 @@ export function App() {
     setPortForwardStatusMessagesByTab({});
     setPausedUploadTabs({});
     setPausedDownloadTabs({});
+    setSchedulePausedUploadTabs({});
+    setSchedulePausedDownloadTabs({});
   }, [terminalApi]);
 
   useEffect(() => {
@@ -15607,6 +15917,74 @@ export function App() {
     }));
   };
 
+  const setUploadRateLimitKiBps = (rawValue: string) => {
+    const parsed = Number(rawValue);
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      uploadRateLimitKiBps: parseSftpTransferRateLimitKiBps(
+        parsed,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadRateLimitKiBps
+      )
+    }));
+  };
+
+  const setDownloadRateLimitKiBps = (rawValue: string) => {
+    const parsed = Number(rawValue);
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      downloadRateLimitKiBps: parseSftpTransferRateLimitKiBps(
+        parsed,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadRateLimitKiBps
+      )
+    }));
+  };
+
+  const setSftpTransferScheduleWindowEnabled = (enabled: boolean) => {
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      scheduleWindowEnabled: enabled
+    }));
+  };
+
+  const setSftpTransferScheduleWindowStart = (rawValue: string) => {
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      scheduleWindowStartMinutes: parseSftpScheduleTimeInputValue(
+        rawValue,
+        prev.scheduleWindowStartMinutes
+      )
+    }));
+  };
+
+  const setSftpTransferScheduleWindowEnd = (rawValue: string) => {
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      scheduleWindowEndMinutes: parseSftpScheduleTimeInputValue(rawValue, prev.scheduleWindowEndMinutes)
+    }));
+  };
+
+  const toggleSftpTransferScheduleWindowDay = (day: number) => {
+    setSftpTransferPreferences((prev) => {
+      const currentDays = normalizeSftpScheduleDays(
+        prev.scheduleWindowDays,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowDays
+      );
+      const nextDays = currentDays.includes(day)
+        ? currentDays.filter((entry) => entry !== day)
+        : [...currentDays, day];
+      if (nextDays.length === 0) {
+        return prev;
+      }
+      return {
+        ...prev,
+        scheduleWindowDays: normalizeSftpScheduleDays(
+          nextDays,
+          DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowDays
+        )
+      };
+    });
+  };
+
   const addSessionGroup = (rawName: string) => {
     const normalized = normalizeSessionGroupName(rawName);
     if (!normalized) {
@@ -17843,6 +18221,7 @@ export function App() {
           totalBytes: 0,
           message: "canceled"
         });
+        syncScheduledTransferPauseState();
         drainUploadQueue();
         return;
       }
@@ -17881,6 +18260,7 @@ export function App() {
           totalBytes: 0,
           message: "canceled"
         });
+        syncScheduledTransferPauseState();
         drainDownloadQueue();
         return;
       }
@@ -17918,6 +18298,14 @@ export function App() {
         return next;
       });
       setPausedUploadTabs((prev) => {
+        if (!prev[normalizedTabId]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedTabId];
+        return next;
+      });
+      setSchedulePausedUploadTabs((prev) => {
         if (!prev[normalizedTabId]) {
           return prev;
         }
@@ -17964,6 +18352,7 @@ export function App() {
         }
       }
       if (!sftpApi) {
+        syncScheduledTransferPauseState();
         drainUploadQueue();
         return;
       }
@@ -17972,9 +18361,17 @@ export function App() {
           sftpApi.cancelUpload(normalizedTabId, transferId)
         )
       );
+      syncScheduledTransferPauseState();
       drainUploadQueue();
     },
-    [applySftpTransferEvent, drainUploadQueue, sftpApi, sftpTransfers, uploadBatchByTab]
+    [
+      applySftpTransferEvent,
+      drainUploadQueue,
+      sftpApi,
+      sftpTransfers,
+      syncScheduledTransferPauseState,
+      uploadBatchByTab
+    ]
   );
 
   const cancelAllDownloadsForTab = useCallback(
@@ -17996,6 +18393,14 @@ export function App() {
         return next;
       });
       setPausedDownloadTabs((prev) => {
+        if (!prev[normalizedTabId]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedTabId];
+        return next;
+      });
+      setSchedulePausedDownloadTabs((prev) => {
         if (!prev[normalizedTabId]) {
           return prev;
         }
@@ -18044,6 +18449,7 @@ export function App() {
         }
       }
       if (!sftpApi) {
+        syncScheduledTransferPauseState();
         drainDownloadQueue();
         return;
       }
@@ -18052,9 +18458,17 @@ export function App() {
           sftpApi.cancelDownload(normalizedTabId, transferId)
         )
       );
+      syncScheduledTransferPauseState();
       drainDownloadQueue();
     },
-    [applySftpTransferEvent, downloadBatchByTab, drainDownloadQueue, sftpApi, sftpTransfers]
+    [
+      applySftpTransferEvent,
+      downloadBatchByTab,
+      drainDownloadQueue,
+      sftpApi,
+      sftpTransfers,
+      syncScheduledTransferPauseState
+    ]
   );
 
   const cancelTransferTasksForTab = useCallback(
@@ -21553,7 +21967,9 @@ export function App() {
             </p>
             {isActiveUploadQueuePaused ? (
               <p className="hint sftp-transfer-panel__batch-progress">
-                Queue paused: terminal disconnected. Reconnect this tab to resume uploads.
+                {activeUploadPauseReason === "schedule-window"
+                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Uploads will resume automatically when the window opens.`
+                  : "Queue paused: terminal disconnected. Reconnect this tab to resume uploads."}
               </p>
             ) : null}
             {failedUploadHistory.length > 0 ? (
@@ -21643,7 +22059,9 @@ export function App() {
             </p>
             {isActiveDownloadQueuePaused ? (
               <p className="hint sftp-transfer-panel__batch-progress">
-                Queue paused: terminal disconnected. Reconnect this tab to resume downloads.
+                {activeDownloadPauseReason === "schedule-window"
+                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Downloads will resume automatically when the window opens.`
+                  : "Queue paused: terminal disconnected. Reconnect this tab to resume downloads."}
               </p>
             ) : null}
             {failedDownloadHistory.length > 0 ? (
@@ -25081,6 +25499,83 @@ export function App() {
                         value={sftpTransferPreferences.downloadConcurrency}
                       />
                     </label>
+                    <div className="field-grid settings-sftp-rate-grid">
+                      <label>
+                        Upload Limit (KiB/s)
+                        <input
+                          max={MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS}
+                          min={0}
+                          onChange={(event) => setUploadRateLimitKiBps(event.target.value)}
+                          type="number"
+                          value={sftpTransferPreferences.uploadRateLimitKiBps}
+                        />
+                      </label>
+                      <label>
+                        Download Limit (KiB/s)
+                        <input
+                          max={MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS}
+                          min={0}
+                          onChange={(event) => setDownloadRateLimitKiBps(event.target.value)}
+                          type="number"
+                          value={sftpTransferPreferences.downloadRateLimitKiBps}
+                        />
+                      </label>
+                    </div>
+                    <label className="settings-checkbox settings-checkbox--inline">
+                      <input
+                        checked={sftpTransferPreferences.scheduleWindowEnabled}
+                        onChange={(event) =>
+                          setSftpTransferScheduleWindowEnabled(event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      Restrict queued transfers to a schedule window
+                    </label>
+                    <div className="field-grid settings-sftp-schedule-grid">
+                      <label>
+                        Window Start
+                        <input
+                          disabled={!sftpTransferPreferences.scheduleWindowEnabled}
+                          onChange={(event) =>
+                            setSftpTransferScheduleWindowStart(event.target.value)
+                          }
+                          step={60}
+                          type="time"
+                          value={formatSftpScheduleTimeInputValue(
+                            sftpTransferPreferences.scheduleWindowStartMinutes
+                          )}
+                        />
+                      </label>
+                      <label>
+                        Window End
+                        <input
+                          disabled={!sftpTransferPreferences.scheduleWindowEnabled}
+                          onChange={(event) => setSftpTransferScheduleWindowEnd(event.target.value)}
+                          step={60}
+                          type="time"
+                          value={formatSftpScheduleTimeInputValue(
+                            sftpTransferPreferences.scheduleWindowEndMinutes
+                          )}
+                        />
+                      </label>
+                    </div>
+                    <div className="settings-sftp-schedule-days">
+                      {SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS.map((dayOption) => (
+                        <label
+                          className="settings-checkbox settings-checkbox--inline"
+                          key={dayOption.value}
+                        >
+                          <input
+                            checked={sftpTransferPreferences.scheduleWindowDays.includes(
+                              dayOption.value
+                            )}
+                            onChange={() => toggleSftpTransferScheduleWindowDay(dayOption.value)}
+                            type="checkbox"
+                          />
+                          {dayOption.label}
+                        </label>
+                      ))}
+                    </div>
                     <label>
                       Retry Confirm Threshold
                       <input
@@ -25099,6 +25594,26 @@ export function App() {
                       Controls max parallel upload/download tasks. Range: 1-
                       {MAX_SFTP_TRANSFER_CONCURRENCY}. New installs
                       default uploads to <code>4</code> and downloads to <code>2</code>.
+                    </p>
+                    <p className="hint">
+                      Per-direction rate limit uses KiB/s. Set <code>0</code> to disable throttling.
+                      Current upload limit:{" "}
+                      {sftpTransferPreferences.uploadRateLimitKiBps > 0
+                        ? `${sftpTransferPreferences.uploadRateLimitKiBps} KiB/s`
+                        : "unlimited"}
+                      . Current download limit:{" "}
+                      {sftpTransferPreferences.downloadRateLimitKiBps > 0
+                        ? `${sftpTransferPreferences.downloadRateLimitKiBps} KiB/s`
+                        : "unlimited"}
+                      .
+                    </p>
+                    <p className="hint">
+                      Schedule window:
+                      {sftpTransferPreferences.scheduleWindowEnabled
+                        ? ` ${sftpTransferScheduleSummary}. Transfers are currently ${
+                            isSftpTransferWindowOpen ? "inside" : "outside"
+                          } the allowed window.`
+                        : " disabled; queued transfers start immediately when threads are available."}
                     </p>
                     <p className="hint">
                       Large retry batches at or above this threshold require confirmation. Set to{" "}

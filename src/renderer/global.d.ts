@@ -8,6 +8,7 @@ import type {
 import type {
   SftpDirectoryListResult,
   SftpEntryKind,
+  SftpTransferRunOptions,
   SftpTransferEvent
 } from "../shared/sftp";
 import type {
@@ -148,13 +149,15 @@ interface TermDockApi {
       tabId: string,
       transferId: string,
       localPath: string,
-      remoteDirectory: string
+      remoteDirectory: string,
+      options?: SftpTransferRunOptions
     ) => Promise<void>;
     uploadFileToPath: (
       tabId: string,
       transferId: string,
       localPath: string,
-      remotePath: string
+      remotePath: string,
+      options?: SftpTransferRunOptions
     ) => Promise<void>;
     cancelUpload: (tabId: string, transferId: string) => Promise<boolean>;
     cancelDownload: (tabId: string, transferId: string) => Promise<boolean>;
@@ -162,7 +165,8 @@ interface TermDockApi {
       tabId: string,
       transferId: string,
       remotePath: string,
-      localPath: string
+      localPath: string,
+      options?: SftpTransferRunOptions
     ) => Promise<void>;
     onTransferEvent: (listener: (event: SftpTransferEvent) => void) => () => void;
   };

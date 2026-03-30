@@ -11,6 +11,7 @@ import type {
 import type {
   SftpDirectoryListResult,
   SftpEntryKind,
+  SftpTransferRunOptions,
   SftpTransferEvent
 } from "../shared/sftp.js";
 import type {
@@ -231,27 +232,31 @@ const api = {
       tabId: string,
       transferId: string,
       localPath: string,
-      remoteDirectory: string
+      remoteDirectory: string,
+      options?: SftpTransferRunOptions
     ) =>
       ipcRenderer.invoke(
         "sftp:uploadFile",
         tabId,
         transferId,
         localPath,
-        remoteDirectory
+        remoteDirectory,
+        options
       ) as Promise<void>,
     uploadFileToPath: (
       tabId: string,
       transferId: string,
       localPath: string,
-      remotePath: string
+      remotePath: string,
+      options?: SftpTransferRunOptions
     ) =>
       ipcRenderer.invoke(
         "sftp:uploadFileToPath",
         tabId,
         transferId,
         localPath,
-        remotePath
+        remotePath,
+        options
       ) as Promise<void>,
     cancelUpload: (tabId: string, transferId: string) =>
       ipcRenderer.invoke("sftp:cancelUpload", tabId, transferId) as Promise<boolean>,
@@ -261,14 +266,16 @@ const api = {
       tabId: string,
       transferId: string,
       remotePath: string,
-      localPath: string
+      localPath: string,
+      options?: SftpTransferRunOptions
     ) =>
       ipcRenderer.invoke(
         "sftp:downloadFile",
         tabId,
         transferId,
         remotePath,
-        localPath
+        localPath,
+        options
       ) as Promise<void>,
     onTransferEvent: (listener: (event: SftpTransferEvent) => void) => {
       const wrapped = (

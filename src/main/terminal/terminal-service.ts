@@ -1,6 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { once } from "node:events";
+import { createReadStream, createWriteStream } from "node:fs";
 import {
   mkdir as mkdirLocalDirectory,
   readFile,
@@ -12,6 +13,7 @@ import type { Server as NetServer, Socket } from "node:net";
 import { homedir } from "node:os";
 import { basename as basenamePath, dirname as dirnamePath, join as joinPath } from "node:path";
 import { posix as posixPath } from "node:path";
+import { finished } from "node:stream/promises";
 
 import type { WebContents } from "electron";
 import { Client } from "ssh2";
@@ -29,6 +31,7 @@ import type {
   SftpEntry,
   SftpEntryKind,
   SftpTransferDirection,
+  SftpTransferRunOptions,
   SftpTransferEvent
 } from "../../shared/sftp.js";
 import type {
@@ -626,7 +629,8 @@ export class TerminalService {
     tabId: string,
     transferId: string,
     localPath: string,
-    remoteDirectory: string
+    remoteDirectory: string,
+    options?: SftpTransferRunOptions
   ): Promise<void> {
     const normalizedLocalPath = normalizeLocalPath(localPath, "Local upload file path");
     const normalizedRemoteDirectory = normalizeRemotePath(remoteDirectory);
@@ -635,14 +639,21 @@ export class TerminalService {
       throw new Error("Upload file name is invalid.");
     }
     const remotePath = posixPath.join(normalizedRemoteDirectory, fileName);
-    await this.uploadLocalFileToRemotePath(tabId, transferId, normalizedLocalPath, remotePath);
+    await this.uploadLocalFileToRemotePath(
+      tabId,
+      transferId,
+      normalizedLocalPath,
+      remotePath,
+      options
+    );
   }
 
   async uploadFileToPath(
     tabId: string,
     transferId: string,
     localPath: string,
-    remotePath: string
+    remotePath: string,
+    options?: SftpTransferRunOptions
   ): Promise<void> {
     const normalizedLocalPath = normalizeLocalPath(localPath, "Local upload file path");
     const normalizedRemotePath = normalizeRemotePath(remotePath);
@@ -651,7 +662,8 @@ export class TerminalService {
       tabId,
       transferId,
       normalizedLocalPath,
-      normalizedRemotePath
+      normalizedRemotePath,
+      options
     );
   }
 
@@ -719,7 +731,8 @@ export class TerminalService {
     tabId: string,
     transferId: string,
     remotePath: string,
-    localPath: string
+    localPath: string,
+    options?: SftpTransferRunOptions
   ): Promise<void> {
     const connection = this.getConnectedSsh2Connection(tabId);
     const sftp = await this.ensureSftp(connection);
@@ -807,7 +820,10 @@ export class TerminalService {
         onChunk: (chunkSize) => {
           transferredBytes += chunkSize;
           reportProgress();
-        }
+        },
+        rateLimitBytesPerSecond: normalizeSftpTransferRateLimitBytesPerSecond(
+          options?.rateLimitBytesPerSecond
+        )
       });
       if (activeTransfer.canceled) {
         throw new TransferCanceledError();
@@ -1493,10 +1509,14 @@ export class TerminalService {
     tabId: string,
     transferId: string,
     normalizedLocalPath: string,
-    remotePath: string
+    remotePath: string,
+    options?: SftpTransferRunOptions
   ): Promise<void> {
     const connection = this.getConnectedSsh2Connection(tabId);
     const safeTransferId = normalizeTransferId(transferId);
+    const rateLimitBytesPerSecond = normalizeSftpTransferRateLimitBytesPerSecond(
+      options?.rateLimitBytesPerSecond
+    );
     const localStats = await statLocalFile(normalizedLocalPath);
     if (!localStats.isFile()) {
       throw new Error("Upload source must be a file.");
@@ -1581,60 +1601,77 @@ export class TerminalService {
         throw new TransferCanceledError();
       }
 
-      await new Promise<void>((resolve, reject) => {
-        let settled = false;
-        let cancelRequested = false;
-        const requestCancel = () => {
-          if (cancelRequested) {
-            return;
-          }
-          cancelRequested = true;
-          safeEndSftp(activeSftp);
-        };
-        const finalize = (error?: Error) => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          clearInterval(cancelPollTimer);
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        };
-        const cancelPollTimer = setInterval(() => {
-          if (!activeTransfer.canceled) {
-            return;
-          }
-          requestCancel();
-        }, 80);
-        activeSftp.fastPut(
-          normalizedLocalPath,
-          remotePath,
-          {
-            fileSize: totalBytes,
-            step: (totalTransferred) => {
-              transferredBytes = Math.max(transferredBytes, totalTransferred);
-              reportProgress();
-              if (activeTransfer.canceled) {
-                requestCancel();
-              }
-            }
+      if (rateLimitBytesPerSecond) {
+        const readStream = createReadStream(normalizedLocalPath, { highWaterMark: 64 * 1024 });
+        const writeStream = activeSftp.createWriteStream(remotePath, { highWaterMark: 64 * 1024 });
+        activeTransfer.readStream = readStream;
+        activeTransfer.writeStream = writeStream;
+        await this.pipeWithProgress({
+          readStream,
+          writeStream,
+          isCanceled: () => activeTransfer.canceled,
+          onChunk: (chunkSize) => {
+            transferredBytes += chunkSize;
+            reportProgress();
           },
-          (error) => {
-            if (activeTransfer.canceled) {
-              finalize(new TransferCanceledError());
+          rateLimitBytesPerSecond
+        });
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          let settled = false;
+          let cancelRequested = false;
+          const requestCancel = () => {
+            if (cancelRequested) {
               return;
             }
+            cancelRequested = true;
+            safeEndSftp(activeSftp);
+          };
+          const finalize = (error?: Error) => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            clearInterval(cancelPollTimer);
             if (error) {
-              finalize(error);
+              reject(error);
               return;
             }
-            finalize();
-          }
-        );
-      });
+            resolve();
+          };
+          const cancelPollTimer = setInterval(() => {
+            if (!activeTransfer.canceled) {
+              return;
+            }
+            requestCancel();
+          }, 80);
+          activeSftp.fastPut(
+            normalizedLocalPath,
+            remotePath,
+            {
+              fileSize: totalBytes,
+              step: (totalTransferred) => {
+                transferredBytes = Math.max(transferredBytes, totalTransferred);
+                reportProgress();
+                if (activeTransfer.canceled) {
+                  requestCancel();
+                }
+              }
+            },
+            (error) => {
+              if (activeTransfer.canceled) {
+                finalize(new TransferCanceledError());
+                return;
+              }
+              if (error) {
+                finalize(error);
+                return;
+              }
+              finalize();
+            }
+          );
+        });
+      }
       if (activeTransfer.canceled) {
         throw new TransferCanceledError();
       }
@@ -1700,6 +1737,8 @@ export class TerminalService {
       );
       throw error;
     } finally {
+      activeTransfer.readStream = undefined;
+      activeTransfer.writeStream = undefined;
       activeTransfer.sftp = undefined;
       safeEndSftp(uploadSftp);
       this.activeUploadTransfers.delete(transferKey);
@@ -2038,75 +2077,44 @@ export class TerminalService {
     writeStream: NodeJS.WritableStream;
     isCanceled?: () => boolean;
     onChunk: (chunkSize: number) => void;
+    rateLimitBytesPerSecond?: number;
   }): Promise<void> {
-    const { readStream, writeStream, isCanceled, onChunk } = options;
-    return new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const cancelPollTimer = setInterval(() => {
-        if (!isCanceled?.()) {
-          return;
-        }
-        this.cancelStreamPair(readStream, writeStream);
-        close(new TransferCanceledError());
-      }, 80);
-      const close = (error?: Error) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearInterval(cancelPollTimer);
-        readStream.removeListener("data", onData);
-        readStream.removeListener("error", onReadError);
-        readStream.removeListener("close", onReadClose);
-        writeStream.removeListener("error", onWriteError);
-        writeStream.removeListener("finish", onDone);
-        writeStream.removeListener("close", onDone);
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      };
-      const onData = (chunk: Buffer | string) => {
-        if (isCanceled?.()) {
-          this.cancelStreamPair(readStream, writeStream);
-          close(new TransferCanceledError());
-          return;
-        }
-        if (typeof chunk === "string") {
-          onChunk(Buffer.byteLength(chunk));
-          return;
-        }
-        onChunk(chunk.length);
-      };
-      const onReadError = (error: Error) => {
-        close(error);
-      };
-      const onReadClose = () => {
-        if (isCanceled?.()) {
-          close(new TransferCanceledError());
-        }
-      };
-      const onWriteError = (error: Error) => {
-        close(error);
-      };
-      const onDone = () => {
-        close();
-      };
-
-      readStream.on("data", onData);
-      readStream.once("error", onReadError);
-      readStream.once("close", onReadClose);
-      writeStream.once("error", onWriteError);
-      writeStream.once("finish", onDone);
-      writeStream.once("close", onDone);
-      if (isCanceled?.()) {
-        this.cancelStreamPair(readStream, writeStream);
-        close(new TransferCanceledError());
+    const { readStream, writeStream, isCanceled, onChunk, rateLimitBytesPerSecond } = options;
+    const writable = writeStream as NodeJS.WritableStream & {
+      write: (chunk: Buffer | string) => boolean;
+      end: () => void;
+    };
+    const rateLimiter = createTransferRateLimiter(rateLimitBytesPerSecond);
+    const cancelPollTimer = setInterval(() => {
+      if (!isCanceled?.()) {
         return;
       }
-      readStream.pipe(writeStream);
-    });
+      this.cancelStreamPair(readStream, writeStream);
+    }, 80);
+
+    try {
+      for await (const chunk of readStream as AsyncIterable<Buffer | string>) {
+        if (isCanceled?.()) {
+          throw new TransferCanceledError();
+        }
+        const chunkSize = typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+        if (!writable.write(chunk)) {
+          await once(writeStream as NodeJS.WritableStream, "drain");
+        }
+        onChunk(chunkSize);
+        await rateLimiter(chunkSize);
+      }
+      if (isCanceled?.()) {
+        throw new TransferCanceledError();
+      }
+      writable.end();
+      await finished(writeStream as NodeJS.WritableStream);
+    } catch (error) {
+      this.cancelStreamPair(readStream, writeStream);
+      throw error;
+    } finally {
+      clearInterval(cancelPollTimer);
+    }
   }
 
   private cancelStreamPair(readStream: NodeJS.ReadableStream, writeStream: NodeJS.WritableStream): void {
@@ -2478,6 +2486,43 @@ function safeEndSftp(sftp?: SFTPWrapper): void {
   } catch {
     // Best effort.
   }
+}
+
+function normalizeSftpTransferRateLimitBytesPerSecond(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const normalized = Math.trunc(value);
+  if (normalized <= 0) {
+    return undefined;
+  }
+  return Math.max(1024, normalized);
+}
+
+function createTransferRateLimiter(
+  rateLimitBytesPerSecond?: number
+): (chunkSize: number) => Promise<void> {
+  const normalizedRate = normalizeSftpTransferRateLimitBytesPerSecond(rateLimitBytesPerSecond);
+  if (!normalizedRate) {
+    return async () => undefined;
+  }
+  const startedAt = Date.now();
+  let transferredBytes = 0;
+  return async (chunkSize: number) => {
+    if (chunkSize <= 0) {
+      return;
+    }
+    transferredBytes += chunkSize;
+    const expectedElapsedMs = (transferredBytes / normalizedRate) * 1000;
+    const actualElapsedMs = Date.now() - startedAt;
+    const delayMs = Math.floor(expectedElapsedMs - actualElapsedMs);
+    if (delayMs <= 4) {
+      return;
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, delayMs);
+    });
+  };
 }
 
 function bridgeDuplexStreams(socket: Socket, sshStream: ClientChannel): void {

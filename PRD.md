@@ -1,6 +1,6 @@
 ﻿# TermDock PRD
 
-Version: v1.16
+Version: v1.18
 Last updated: 2026-03-30
 
 ## 1. Product Positioning
@@ -108,6 +108,8 @@ Target platforms:
 - Create folder, rename, delete
 - Upload/download with queue and progress
 - Cancel single task and cancel all
+- Per-direction transfer rate limits for upload/download workers
+- Optional queued-transfer weekday/time schedule window
 - Conflict policy for transfer collisions (`overwrite` / `skip` / `rename`)
 - Session-scoped default conflict strategy memory for repeated transfer workflows
 - Conflict pre-check acceleration with limited-concurrency directory scans
@@ -148,6 +150,7 @@ Target platforms:
 - Server health alert thresholds
 - File opening preferences
 - Upload/download concurrency
+- Upload/download transfer rate limits and queued-transfer schedule window
 - Port forwarding management section with preset save/apply controls
 - Safety section with built-in risky-command rules, custom pattern lines, and one-click reset
 - Diagnostics section with log path actions
@@ -210,6 +213,7 @@ Target platforms:
 - Some recursive SFTP safety flows still need hardening
 - Port forwarding diagnostics and analytics now exist in-session, but cross-device/shared correlation workflows are still pending; dynamic baseline is SOCKS5 no-auth `CONNECT` only
 - Retry-center analytics/export baseline exists, but longitudinal trend analytics and richer clustering are still pending
+- Transfer rate-limit and schedule-window baseline now exists, but richer transfer policy packs and more advanced schedule automation are still pending
 - Session/group JSON export is available, but secure full-fidelity backup/restore (including credentials) is not complete
 - Session templates baseline exists locally, but template import/export, runtime prompt overrides, and layered presets are still pending
 - Dangerous-command policy packs, environment templates, per-source toggles, session-group overrides, temporary exact-command approval scopes, persistent exact-command approval policies, shared-bundle import/export/apply plus manual shared sync-file pull/push, and workspace-profile sync now exist; richer workspace-scoped defaults and shared distribution follow-up are still pending
@@ -222,7 +226,8 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.14` (current stable): command snippets/playbooks v2 baseline, dangerous-command/workspace follow-up, and Operation Center tracked app jobs
+- `v0.1.18` (current stable): per-direction SFTP rate limits plus queued-transfer weekday/time schedule windows
+- `master` (in progress): post-`v0.1.18` validation cycle
 - `v0.1.13`: packaged smoke baseline, release tooling, and session templates baseline
 - `v0.1.12`: session double-click new-tab behavior fix and release polish
 - Next patch cycle (master in progress):
@@ -283,7 +288,7 @@ Target platforms:
   - Credential-safe encrypted session backup/restore (beyond current metadata export)
 - Capability cycle candidate C:
   - SSH jump-host chain builder (ProxyJump/bastion visual flow)
-  - Transfer bandwidth limiter and schedule window
+  - Transfer policy packs and richer schedule automation on top of the new rate-limit/window baseline
   - Command snippets/playbooks follow-up with richer playbook workflows and validation packs
   - Multi-host command broadcast with dry-run preview
   - Remote file snapshot and quick rollback

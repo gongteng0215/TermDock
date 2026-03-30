@@ -4,7 +4,7 @@ Last updated: 2026-03-30
 
 ## Current Release State
 
-- Stable release: `v0.1.15`
+- Stable release: `v0.1.18`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 
@@ -277,7 +277,7 @@ Last updated: 2026-03-30
 | F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline plus tracked session/snippet/diagnostics jobs landed; richer timeline and grouped controls are still pending |
 | F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
-| F11 | P2 | TODO | Transfer bandwidth limiter + schedule window | Avoid saturating production links during peak hours |
+| F11 | P2 | PARTIAL | Transfer bandwidth limiter + schedule window | Per-direction rate limits plus queued-transfer weekday/time windows landed; richer transfer policy packs and schedule automation are still pending |
 | F12 | P2 | PARTIAL | Command snippets/playbooks with parameter prompts | Prompted variables, scoped remembered values, reusable prompt sets, regex validation, and preview-before-run landed; richer playbook workflows and validation packs are still pending |
 | F13 | P2 | TODO | Multi-host command broadcast with dry-run preview | Speed up fleet operations while reducing blast radius |
 | F14 | P3 | TODO | Remote file snapshot + one-click rollback | Recover quickly from accidental edits during remote file open/save |

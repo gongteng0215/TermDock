@@ -207,7 +207,7 @@ async function isVisible(locator) {
   return (await locator.count()) > 0 && (await locator.first().isVisible());
 }
 
-async function closeMenusAndDialogs(page) {
+async function closeMenusAndDialogs(page, { closeTopLevelModals = false } = {}) {
   if (!page) {
     return;
   }
@@ -229,6 +229,19 @@ async function closeMenusAndDialogs(page) {
       }
       if (await isVisible(secondary)) {
         await secondary.click();
+        await page.waitForTimeout(220);
+        continue;
+      }
+    }
+
+    if (closeTopLevelModals) {
+      const modalCloseButton = page
+        .locator(
+          ".modal--settings .modal__header .icon-button, .modal--snippet-manager .modal__header .icon-button, .modal--command-history-manager .modal__header .icon-button, .modal--operation-center .modal__header .icon-button, .modal--retry-center .modal__header .icon-button"
+        )
+        .last();
+      if (await isVisible(modalCloseButton)) {
+        await modalCloseButton.click();
         await page.waitForTimeout(220);
         continue;
       }
@@ -437,7 +450,7 @@ async function main() {
     } catch (error) {
       pushStep(name, "fail", asErrorMessage(error));
       try {
-        await closeMenusAndDialogs(pageRef.current);
+        await closeMenusAndDialogs(pageRef.current, { closeTopLevelModals: true });
       } catch {
         // Best effort cleanup.
       }
@@ -1064,10 +1077,18 @@ async function main() {
 
       for (const section of sections) {
         const navButton = page.locator(".settings-nav__button", { hasText: section.label }).first();
-        if (!(await isVisible(navButton))) {
-          throw new Error(`settings nav missing: ${section.label}`);
-        }
+      if (!(await isVisible(navButton))) {
+        throw new Error(`settings nav missing: ${section.label}`);
+      }
         await navButton.click();
+        await waitForCondition(
+          async () =>
+            await navButton.evaluate((element) => element.classList.contains("is-active")),
+          {
+            timeout: 5_000,
+            description: `settings nav activation for ${section.label}`
+          }
+        );
         await page.waitForTimeout(260);
         if (section.label === "Workspace") {
           const workspaceSyncToggle = page
@@ -1116,6 +1137,45 @@ async function main() {
           if ((await customPatterns.inputValue()).trim().length !== 0) {
             throw new Error("safety patterns did not reset");
           }
+        }
+        if (section.label === "SFTP") {
+          const uploadThreads = page.locator(".modal--settings label:has-text('Upload Threads') input").first();
+          const downloadThreads = page
+            .locator(".modal--settings label:has-text('Download Threads') input")
+            .first();
+          const uploadLimit = page
+            .locator(".modal--settings label:has-text('Upload Limit (KiB/s)') input")
+            .first();
+          const downloadLimit = page
+            .locator(".modal--settings label:has-text('Download Limit (KiB/s)') input")
+            .first();
+          const scheduleToggle = page
+            .locator(
+              ".modal--settings label.settings-checkbox:has-text('Restrict queued transfers to a schedule window')"
+            )
+            .first();
+          const startWindow = page.locator(".modal--settings label:has-text('Window Start') input").first();
+          const endWindow = page.locator(".modal--settings label:has-text('Window End') input").first();
+
+          await waitForCondition(
+            async () => {
+              if (
+                !(await isVisible(uploadThreads)) ||
+                !(await isVisible(downloadThreads)) ||
+                !(await isVisible(uploadLimit)) ||
+                !(await isVisible(downloadLimit)) ||
+                !(await isVisible(scheduleToggle))
+              ) {
+                return false;
+              }
+              await uploadLimit.scrollIntoViewIfNeeded();
+              return (await isVisible(startWindow)) && (await isVisible(endWindow));
+            },
+            {
+              timeout: 5_000,
+              description: "SFTP transfer controls"
+            }
+          );
         }
         shots.push(await recordShot(page, section.slug));
       }

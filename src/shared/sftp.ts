@@ -26,6 +26,10 @@ export interface SftpDirectoryListResult {
   entries: SftpEntry[];
 }
 
+export interface SftpTransferRunOptions {
+  rateLimitBytesPerSecond?: number;
+}
+
 export interface SftpTransferEvent {
   tabId: string;
   transferId: string;

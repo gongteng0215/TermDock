@@ -4,7 +4,7 @@ Last updated: 2026-03-30
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.17`
+- Stable release shipped: `v0.1.18`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -19,6 +19,7 @@ Last updated: 2026-03-30
 - Master branch now also includes tab-scoped server-health/process state, stale monitor-request invalidation, and disconnect-report capture that now records the correct tab's monitor status
 - Master branch now also includes GitHub Actions runtime upgrades for packaged-smoke/release workflows, removing the previous Node 20 deprecation path from CI
 - Master branch now also includes upload fast-path/channel isolation, higher default upload concurrency, remote-directory prewarm, and concurrent local directory scan for upload batches
+- Master branch now also includes per-direction SFTP transfer rate limits plus queued-transfer weekday/time schedule windows
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -48,6 +49,14 @@ Last updated: 2026-03-30
   - legacy stored transfer preferences migrate to the new upload default baseline
   - upload queue now prewarms remote directories before workers need them
   - local upload directory expansion now scans folders concurrently
+
+## Completed in v0.1.18
+
+- SFTP transfer governance baseline:
+  - per-direction upload/download rate limits in `Settings > SFTP`
+  - queued-transfer weekday/time schedule windows
+  - queue pause outside the configured window plus automatic resume when the next allowed window opens
+  - transfer-preferences schema migration for the new controls
 
 ## Completed in v0.1.16
 
@@ -158,6 +167,10 @@ Last updated: 2026-03-30
   - uploads `artifacts/release-verify/**` for release evidence
 - Latest local Windows installer smoke run: `PASS artifact presence + silent install + silent uninstall`
 - Latest local self-use Windows release run: `PASS signature present on installer/unpacked exe + silent install + silent uninstall`
+- Added SFTP transfer governance baseline:
+  - `Settings > SFTP` now supports upload/download rate limits in KiB/s
+  - queued transfer workers can now be constrained to selected weekdays plus a start/end time window
+  - queues pause outside the configured window and automatically resume when the next allowed window opens
 
 ## Completed in v0.1.11
 - Port forwarding presets with optional auto-restore
@@ -394,7 +407,7 @@ Last updated: 2026-03-30
 1. Advanced retry-center analytics and history export
 2. Session templates v2 (runtime prompts, import/export, layered presets)
 3. SSH jump-host chain builder for bastion environments
-4. Transfer bandwidth limiter and schedule window
+4. Transfer policy packs and schedule automation follow-up
 5. Command snippets/playbooks v2 follow-up with richer playbook workflows and validation packs
 6. Session quick profiles v2 with multi-command chain support
 7. Multi-host command broadcast with dry-run preview

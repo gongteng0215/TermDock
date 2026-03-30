@@ -12,10 +12,11 @@ Last updated: 2026-03-30
 
 ## Release Baseline
 
-- Current stable release: `v0.1.17` (2026-03-30)
+- Current stable release: `v0.1.18` (2026-03-30)
 
 ## Shipped in Recent Cycles
 
+- v0.1.18: `Settings > SFTP` now adds per-direction transfer rate limits plus queued-transfer weekday/time schedule windows
 - v0.1.17: upload throughput now uses dedicated SFTP channels plus `fastPut`, default upload threads increased to `4`, and upload batches now prewarm remote directories with concurrent local folder expansion
 - v0.1.16: GitHub Actions runtimes for packaged smoke and release were upgraded to current supported versions, and packaged smoke stayed green after the change
 - v0.1.14: command snippets/playbooks v2 baseline, dangerous-command/workspace follow-up, and Operation Center tracked app jobs

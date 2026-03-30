@@ -6,6 +6,27 @@ Release type: In development
 
 - No unreleased notes yet.
 
+## v0.1.18 (2026-03-30)
+
+Release type: Stable
+
+### Highlights
+
+- Added SFTP transfer governance baseline:
+  - `Settings > SFTP` now supports per-direction transfer rate limits for upload and download workers
+  - queued upload/download work can now be restricted to a weekday + time-range schedule window
+  - queues outside the configured window now pause cleanly and auto-resume when the next allowed window opens
+  - stored SFTP transfer preferences now migrate forward to the new schema without losing prior concurrency settings
+- Expanded SFTP smoke coverage:
+  - `scripts/smoke-capture-all.mjs` now verifies the new `Settings > SFTP` rate-limit and schedule-window controls are visible in the settings capture flow
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 35 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 35 / FAIL 0 / SKIP 0`
+
 ## v0.1.17 (2026-03-30)
 
 Release type: Stable
