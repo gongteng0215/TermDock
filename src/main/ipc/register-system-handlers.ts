@@ -96,6 +96,8 @@ interface BugReportLogFile {
   sizeBytes: number;
 }
 
+const LOCAL_UPLOAD_DIRECTORY_SCAN_CONCURRENCY = 8;
+
 const REMOTE_OPEN_FILE_UPLOAD_DEBOUNCE_MS = 450;
 const REMOTE_OPEN_FILE_TEMP_DIRECTORY = "termdock-open-files";
 const REMOTE_OPEN_FILE_CLEANUP_RETRY_DELAYS_MS = [400, 1500, 4000];
@@ -673,21 +675,37 @@ async function collectDirectoryFiles(directoryPath: string): Promise<string[]> {
   const stack = [directoryPath];
   const files: string[] = [];
   while (stack.length > 0) {
-    const currentPath = stack.pop();
-    if (!currentPath) {
-      continue;
-    }
-    const rows = await readdir(currentPath, { withFileTypes: true });
-    rows.sort((left, right) => left.name.localeCompare(right.name));
-    for (const row of rows) {
-      const nextPath = join(currentPath, row.name);
-      if (row.isDirectory()) {
-        stack.push(nextPath);
-        continue;
-      }
-      if (row.isFile()) {
-        files.push(nextPath);
-      }
+    const batch = stack.splice(
+      Math.max(0, stack.length - LOCAL_UPLOAD_DIRECTORY_SCAN_CONCURRENCY),
+      LOCAL_UPLOAD_DIRECTORY_SCAN_CONCURRENCY
+    );
+    const batchResults = await Promise.all(
+      batch.map(async (currentPath) => {
+        const rows = await readdir(currentPath, { withFileTypes: true });
+        rows.sort((left, right) => left.name.localeCompare(right.name));
+        const nextDirectories: string[] = [];
+        const nextFiles: string[] = [];
+        for (const row of rows) {
+          const nextPath = join(currentPath, row.name);
+          if (row.isDirectory()) {
+            nextDirectories.push(nextPath);
+            continue;
+          }
+          if (row.isFile()) {
+            nextFiles.push(nextPath);
+          }
+        }
+        nextDirectories.sort((left, right) => left.localeCompare(right));
+        nextFiles.sort((left, right) => left.localeCompare(right));
+        return {
+          directories: nextDirectories,
+          files: nextFiles
+        };
+      })
+    );
+    for (const result of batchResults) {
+      stack.push(...result.directories);
+      files.push(...result.files);
     }
   }
   files.sort((left, right) => left.localeCompare(right));

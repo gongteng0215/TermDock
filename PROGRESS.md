@@ -4,7 +4,7 @@ Last updated: 2026-03-30
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.16`
+- Stable release shipped: `v0.1.17`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -18,6 +18,7 @@ Last updated: 2026-03-30
 - Master branch now also includes per-tab port-forward state tracking, tab-switch-safe port-forward refresh, and Operation Center summaries that no longer depend on the active tab only
 - Master branch now also includes tab-scoped server-health/process state, stale monitor-request invalidation, and disconnect-report capture that now records the correct tab's monitor status
 - Master branch now also includes GitHub Actions runtime upgrades for packaged-smoke/release workflows, removing the previous Node 20 deprecation path from CI
+- Master branch now also includes upload fast-path/channel isolation, higher default upload concurrency, remote-directory prewarm, and concurrent local directory scan for upload batches
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -34,6 +35,19 @@ Last updated: 2026-03-30
   - `P0-F3`: cross-platform smoke tests
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
+
+## Completed in v0.1.17
+
+- Upload throughput improvements:
+  - uploads now use dedicated SFTP channels plus `fastPut`
+  - upload progress emission is now throttled to lower IPC overhead
+  - canceling an upload no longer depends on tearing down shared SFTP state
+- Upload batch preparation improvements:
+  - default upload concurrency increased to `4`
+  - max upload/download thread setting increased to `12`
+  - legacy stored transfer preferences migrate to the new upload default baseline
+  - upload queue now prewarms remote directories before workers need them
+  - local upload directory expansion now scans folders concurrently
 
 ## Completed in v0.1.16
 

@@ -6,6 +6,30 @@ Release type: In development
 
 - No unreleased notes yet.
 
+## v0.1.17 (2026-03-30)
+
+Release type: Stable
+
+### Highlights
+
+- Upload performance tuning:
+  - SFTP uploads now use a dedicated transfer channel plus `fastPut` instead of the slower single-stream write path
+  - upload progress events are now throttled to reduce renderer IPC overhead during large transfers
+  - canceling an upload now closes only that upload's transfer channel instead of interfering with the shared SFTP session
+- Batch and directory upload tuning:
+  - default upload concurrency is now `4`
+  - upload/download thread setting max is now `12`
+  - legacy stored SFTP transfer preferences are migrated so old default installs pick up the higher upload baseline automatically
+  - upload queue now prewarms remote directories in the background so batches with many small files reach steady-state faster
+  - local directory expansion for upload now scans directories concurrently to reduce pre-queue delay on larger folder trees
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 35 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 35 / FAIL 0 / SKIP 0`
+
 ## v0.1.16 (2026-03-30)
 
 Release type: Stable

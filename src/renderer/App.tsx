@@ -104,7 +104,8 @@ const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const HOTKEY_CONFLICT_NAV_STORAGE_KEY = "termdock.hotkey-conflict-nav.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
-const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
+const LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
+const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v2";
 const SFTP_TRANSFER_HISTORY_STORAGE_KEY = "termdock.sftp-transfer-history.v1";
 const SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY = "termdock.sftp-transfer-pending-restore.v1";
 const SFTP_CONFLICT_STRATEGY_STORAGE_KEY = "termdock.sftp-conflict-strategy.v1";
@@ -155,6 +156,9 @@ const MAX_OPERATION_CENTER_APP_JOBS = 24;
 const DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD = 100;
 const MIN_RETRY_BATCH_CONFIRM_THRESHOLD = 0;
 const MAX_RETRY_BATCH_CONFIRM_THRESHOLD = 2000;
+const MAX_SFTP_TRANSFER_CONCURRENCY = 12;
+const SFTP_UPLOAD_DIRECTORY_PREWARM_CONCURRENCY = 12;
+const SFTP_UPLOAD_CONFLICT_SCAN_CONCURRENCY = 10;
 const COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN = /\$\{param:([a-zA-Z0-9_-]+)\}/g;
 const COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN = /[^a-zA-Z0-9_-]+/g;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
@@ -373,7 +377,7 @@ const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
   preferredProgramPath: ""
 };
 const DEFAULT_SFTP_TRANSFER_PREFERENCES: SftpTransferPreferences = {
-  uploadConcurrency: 2,
+  uploadConcurrency: 4,
   downloadConcurrency: 2
 };
 const DEFAULT_SESSION_TRANSFER_CONFLICT_STRATEGY_STATE: SessionTransferConflictStrategyState = {
@@ -2464,7 +2468,7 @@ function parseTransferConcurrency(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
-  return Math.min(8, Math.max(1, Math.trunc(value)));
+  return Math.min(MAX_SFTP_TRANSFER_CONCURRENCY, Math.max(1, Math.trunc(value)));
 }
 
 function parseRetryBatchConfirmThreshold(value: unknown, fallback: number): number {
@@ -2984,21 +2988,34 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
   }
   try {
-    const rawValue = window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY);
+    const rawValue =
+      window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) ??
+      window.localStorage.getItem(LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY);
     if (!rawValue) {
       return DEFAULT_SFTP_TRANSFER_PREFERENCES;
     }
     const parsed = JSON.parse(rawValue) as Partial<SftpTransferPreferences>;
-    return {
-      uploadConcurrency: parseTransferConcurrency(
-        parsed.uploadConcurrency,
-        DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency
-      ),
-      downloadConcurrency: parseTransferConcurrency(
-        parsed.downloadConcurrency,
-        DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
-      )
-    };
+    const normalizedUploadConcurrency = parseTransferConcurrency(
+      parsed.uploadConcurrency,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency
+    );
+    const normalizedDownloadConcurrency = parseTransferConcurrency(
+      parsed.downloadConcurrency,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
+    );
+    const migratedLegacyDefaults =
+      normalizedUploadConcurrency === 2 &&
+      normalizedDownloadConcurrency === 2 &&
+      window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null;
+    return migratedLegacyDefaults
+      ? {
+          uploadConcurrency: DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency,
+          downloadConcurrency: normalizedDownloadConcurrency
+        }
+      : {
+          uploadConcurrency: normalizedUploadConcurrency,
+          downloadConcurrency: normalizedDownloadConcurrency
+        };
   } catch {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
   }
@@ -9257,6 +9274,29 @@ export function App() {
     [sftpApi]
   );
 
+  const prewarmRemoteDirectoriesForUpload = useCallback(
+    async (tabId: string, remoteDirectories: string[]) => {
+      const uniqueDirectories = Array.from(
+        new Set(
+          remoteDirectories
+            .map((directory) => normalizeRemoteDirectoryPath(directory))
+            .filter((directory): directory is string => Boolean(directory))
+        )
+      );
+      if (uniqueDirectories.length === 0) {
+        return;
+      }
+      await runWithConcurrencyLimit(
+        uniqueDirectories,
+        SFTP_UPLOAD_DIRECTORY_PREWARM_CONCURRENCY,
+        async (remoteDirectory) => {
+          await ensureRemoteDirectoryForUpload(tabId, remoteDirectory);
+        }
+      );
+    },
+    [ensureRemoteDirectoryForUpload]
+  );
+
   const drainUploadQueue = useCallback(() => {
     if (!sftpApi || isDrainingUploadQueueRef.current) {
       return;
@@ -10219,6 +10259,7 @@ export function App() {
         SFTP_TRANSFER_PREFERENCES_STORAGE_KEY,
         JSON.stringify(sftpTransferPreferences)
       );
+      window.localStorage.removeItem(LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY);
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
@@ -16975,9 +17016,13 @@ export function App() {
         }
       }
 
-      await runWithConcurrencyLimit(Array.from(remoteDirectoryEntries.values()), 6, async (directory) => {
-        await getKnownRemoteNames(directory);
-      });
+      await runWithConcurrencyLimit(
+        Array.from(remoteDirectoryEntries.values()),
+        SFTP_UPLOAD_CONFLICT_SCAN_CONCURRENCY,
+        async (directory) => {
+          await getKnownRemoteNames(directory);
+        }
+      );
 
       const preparedEntries: PreparedUploadEntry[] = [];
       let conflictCount = 0;
@@ -17482,10 +17527,16 @@ export function App() {
         };
       });
       uploadQueueRef.current.push(...queuedJobs);
+      void prewarmRemoteDirectoriesForUpload(
+        tabId,
+        queuedJobs.map((job) => job.remoteDirectory)
+      ).catch(() => {
+        // Upload workers will surface the real error if directory prep fails.
+      });
       drainUploadQueue();
       return queuedJobs.length;
     },
-    [applySftpTransferEvent, drainUploadQueue]
+    [applySftpTransferEvent, drainUploadQueue, prewarmRemoteDirectoriesForUpload]
   );
 
   const enqueueUploadPathEntries = useCallback(
@@ -17563,10 +17614,16 @@ export function App() {
         };
       });
       uploadQueueRef.current.push(...queuedJobs);
+      void prewarmRemoteDirectoriesForUpload(
+        tabId,
+        queuedJobs.map((job) => job.remoteDirectory)
+      ).catch(() => {
+        // Upload workers will surface the real error if directory prep fails.
+      });
       drainUploadQueue();
       return queuedJobs.length;
     },
-    [applySftpTransferEvent, drainUploadQueue]
+    [applySftpTransferEvent, drainUploadQueue, prewarmRemoteDirectoriesForUpload]
   );
 
   const uploadLocalPathsToSftp = async (paths: string[]) => {
@@ -25007,7 +25064,7 @@ export function App() {
                     <label>
                       Upload Threads
                       <input
-                        max={8}
+                        max={MAX_SFTP_TRANSFER_CONCURRENCY}
                         min={1}
                         onChange={(event) => setUploadConcurrency(event.target.value)}
                         type="number"
@@ -25017,7 +25074,7 @@ export function App() {
                     <label>
                       Download Threads
                       <input
-                        max={8}
+                        max={MAX_SFTP_TRANSFER_CONCURRENCY}
                         min={1}
                         onChange={(event) => setDownloadConcurrency(event.target.value)}
                         type="number"
@@ -25039,7 +25096,9 @@ export function App() {
                       />
                     </label>
                     <p className="hint">
-                      Controls max parallel upload/download tasks. Range: 1-8.
+                      Controls max parallel upload/download tasks. Range: 1-
+                      {MAX_SFTP_TRANSFER_CONCURRENCY}. New installs
+                      default uploads to <code>4</code> and downloads to <code>2</code>.
                     </p>
                     <p className="hint">
                       Large retry batches at or above this threshold require confirmation. Set to{" "}

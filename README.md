@@ -5,9 +5,9 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.16` (2026-03-30)
-- Current branch focus: post-`v0.1.16` validation cycle on `master`
-- Current master addition: `v0.1.16` upgrades packaged-smoke/release GitHub Actions runtimes to the current supported stack and clears the Node 20 deprecation path
+- Current stable release: `v0.1.17` (2026-03-30)
+- Current branch focus: post-`v0.1.17` validation cycle on `master`
+- Current master addition: `v0.1.17` focuses on upload throughput with `fastPut`, higher default upload concurrency, and faster batch directory preparation
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -15,6 +15,14 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 ## UI Rules
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
+
+## Release in `v0.1.17` (2026-03-30)
+
+- Uploads now run through a dedicated SFTP transfer channel with `fastPut`, so single-file throughput is better than the previous single-stream write path.
+- Upload progress updates are throttled, which reduces renderer IPC overhead during larger transfers.
+- Default upload threads now start at `4`, the max thread setting is `12`, and legacy saved transfer preferences are migrated forward automatically.
+- Upload batches now prewarm remote directories in the background, and local folder expansion scans directories concurrently to reduce delay before many small files begin transferring.
+- Latest local workspace and packaged smoke runs remain green at `PASS 35 / FAIL 0 / SKIP 0`.
 
 ## Release in `v0.1.16` (2026-03-30)
 
