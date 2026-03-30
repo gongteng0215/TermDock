@@ -228,6 +228,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ needs.meta.outputs.tag_name }}
           IS_PRERELEASE: ${{ needs.meta.outputs.is_prerelease }}
         shell: bash
