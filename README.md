@@ -5,9 +5,9 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.14` (2026-03-20)
-- Current branch focus: post-`v0.1.14` hardening cycle on `master`
-- Current master addition: fixed Windows preferred-editor cold-start and stale remote-open file reuse after remote-side changes
+- Current stable release: `v0.1.15` (2026-03-30)
+- Current branch focus: post-`v0.1.15` validation cycle on `master`
+- Current master addition: v0.1.15 hardening includes remote-open/editor reliability fixes, per-tab port-forward state, and per-tab server-health/disconnect-report state tracking
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -16,13 +16,13 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
 
-## Release in `v0.1.14` (2026-03-20)
+## Release in `v0.1.15` (2026-03-30)
 
-- Command snippets/playbooks v2 baseline now includes prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run.
-- Dangerous-command guardrails now include policy packs, environment templates, per-source toggles, session-group overrides, exact-command approval scopes, persistent approval policies, shared bundles, and workspace-profile sync.
-- Workspace profile mode (`dev` / `staging` / `prod`) now ships with persistent risk cues and optional global Safety pack/template sync.
-- Operation Center now tracks session/snippet import-export jobs plus bug-report export jobs.
-- Latest local workspace and packaged smoke runs remain green at `PASS 30 / FAIL 0 / SKIP 0`.
+- Remote-open/editor hardening now covers stricter Windows preferred-editor parsing, stale-draft reopen choice, temp-file cleanup on tab/app dispose, and explicit save-back conflict warnings.
+- Port forwarding state is now tracked per tab, and Operation Center queue/port-forward summaries now reflect open-workspace totals instead of only the active tab.
+- Server Health and Disconnect Reports now keep tab-scoped monitor state, invalidate stale async refreshes, and keep disconnect evidence tied to the correct tab.
+- Smoke automation now verifies remote-open conflict/reload/cleanup, Windows preferred-opener launch validation, live port-forward baseline, and unexpected-fixture-shutdown disconnect-report capture.
+- Latest local workspace smoke run remains green at `PASS 35 / FAIL 0 / SKIP 0`.
 
 ## Patch in `v0.1.12` (2026-03-13)
 
@@ -101,6 +101,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Remote file auto-sync guard:
   - before save-back upload, compare remote metadata (exists/size/mtime) against baseline
   - skip unsafe auto-upload when remote changed unexpectedly and log guard event
+  - show explicit UI warnings when save-back is blocked or upload-back fails
 - Retry Center failure suggestions:
   - top failure reasons now include action suggestions for faster triage
 - SSH config import baseline (`~/.ssh/config`): preview + duplicate strategy (`skip`/`overwrite`/`rename`)
@@ -202,12 +203,13 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - persistent failed retry history per session
   - Retry Center for batch retry and history cleanup
   - Retry Center time-range + failure-reason filter and one-click retry for visible failed (active session)
-- Remote file open/edit with duplicate-open protection and auto-upload on save
+- Remote file open/edit with duplicate-open protection, stale-draft reopen choice, auto-upload on save, and temp-file cleanup on tab/app dispose
 - Remote file auto-upload guard to prevent silent overwrite when remote file changed since last baseline
 - Server health panel:
   - CPU, memory, disk, network, load, uptime
   - alert thresholds for CPU/memory/disk
   - detail view with trend samples, top CPU processes, and failed services
+  - tab-scoped monitor state with request invalidation on reconnect/close
 - Diagnostics logging:
   - runtime log file in app user-data directory
   - async queued writes with rotating archive retention (`termdock.log` + history files)
@@ -215,6 +217,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - one-click bug report bundle export (`.zip`)
   - bug report includes disconnect-report snapshot (`disconnect-reports.json`) when available
   - disconnect report capture for unexpected tab disconnect/error events
+  - disconnect report capture now keeps per-tab monitor/loading/error context instead of the active-tab snapshot only
   - disconnect report JSON/CSV export and quick copy-latest from diagnostics panel
   - disconnect report filter view (scope/trigger/time/query) with visible-only export/clear
   - global error bar quick action to copy latest disconnect report
@@ -246,7 +249,7 @@ Set SSH/SFTP target environment variables first. See `SOAK_TEST.md` for full set
 pnpm run smoke:ui
 ```
 
-The default smoke run boots an embedded local SSH/SFTP fixture, so auth/connect and baseline SFTP transfer coverage do not require an external host.
+The default smoke run boots an embedded local SSH/SFTP fixture, so auth/connect, baseline SFTP transfer coverage, remote-open-file conflict/reload/cleanup coverage, Windows preferred-opener parser coverage, live port-forward creation, and disconnect-report auto-capture validation do not require an external host.
 
 Use `PACKAGED_SMOKE.md` for packaged executable runs, output artifacts, and the Windows/macOS validation matrix.
 
@@ -258,7 +261,7 @@ pnpm run smoke:ui:packaged
 
 This wrapper now runs `pnpm run pack` first so the packaged smoke flow does not reuse stale `release/*` output.
 
-Latest local workspace and packaged smoke runs: `PASS 30 / FAIL 0 / SKIP 0`
+Latest local workspace smoke run: `PASS 35 / FAIL 0 / SKIP 0`
 
 ## Release
 

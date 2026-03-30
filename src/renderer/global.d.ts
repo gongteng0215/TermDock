@@ -18,6 +18,11 @@ import type {
   ServerProcessSnapshot,
   TerminalEvent
 } from "../shared/terminal";
+import type {
+  RemoteOpenFileAutoSyncEvent,
+  RemoteOpenFilePrepareOptions,
+  RemoteOpenFilePrepareResult
+} from "../shared/system";
 
 interface TermDockApi {
   app: {
@@ -90,16 +95,17 @@ interface TermDockApi {
     prepareRemoteOpenFile: (
       tabId: string,
       remotePath: string,
-      defaultName: string
-    ) => Promise<{
-      localPath: string;
-      alreadyOpen: boolean;
-    }>;
+      defaultName: string,
+      options?: RemoteOpenFilePrepareOptions
+    ) => Promise<RemoteOpenFilePrepareResult>;
     enableRemoteFileAutoSync: (
       tabId: string,
       remotePath: string,
       localPath: string
     ) => Promise<void>;
+    onRemoteOpenFileEvent: (
+      listener: (event: RemoteOpenFileAutoSyncEvent) => void
+    ) => () => void;
     disposeRemoteOpenFiles: (tabId?: string | null) => Promise<void>;
     openLocalPath: (localPath: string, preferredProgramPath?: string | null) => Promise<void>;
     expandUploadPaths: (

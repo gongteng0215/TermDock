@@ -1,7 +1,7 @@
 ﻿# TermDock PRD
 
-Version: v1.15
-Last updated: 2026-03-19
+Version: v1.16
+Last updated: 2026-03-30
 
 ## 1. Product Positioning
 
@@ -126,8 +126,10 @@ Target platforms:
 - Open remote file into local temp file
 - Prevent duplicate opens for same remote file
 - Reopen after close
+- If an unsynced local draft already exists, prompt to reuse it or discard and reload
 - Auto-upload on save back to remote path
 - Save-back guard using remote metadata baseline (exists/size/mtime) to avoid silent overwrite
+- Clean up remote-open temp files when the owning tab closes or the app disposes the session
 
 ### 5.5 Monitoring
 
@@ -135,6 +137,7 @@ Target platforms:
 - Alert thresholds for CPU/memory/disk
 - Trend detail panel
 - Top CPU processes and failed services
+- Tab-scoped monitor state so refresh/error/loading data does not bleed across terminal tabs
 
 ### 5.6 Settings
 
@@ -159,6 +162,7 @@ Target platforms:
 - Multi-file retention (`termdock.log` + archived rotation files) for longer investigation windows
 - Disconnect-report capture for unexpected terminal `closed/error` events
 - Disconnect-report export/copy tools in `Settings > Diagnostics`
+- Disconnect-report capture keeps per-tab monitor/error context instead of the active-tab snapshot
 - Bug-report bundle includes disconnect snapshot payload (`disconnect-reports.json`) when available
 - Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`)
 
@@ -240,9 +244,10 @@ Target platforms:
   - disconnect-aware transfer queue pause/resume UX
   - pending transfer queue snapshot persistence + restart restore/discard
   - transfer batch completion notice UX changed from blocking dialog to dock inline status
-  - async diagnostics log writer with expanded rotation retention
-  - monitor polling overlap guard during heavy transfer sessions
-  - small-window packaged terminal refit stabilization
+- async diagnostics log writer with expanded rotation retention
+- monitor polling overlap guard during heavy transfer sessions
+- tab-scoped monitor-state invalidation so stale async refreshes do not overwrite the current tab view
+- small-window packaged terminal refit stabilization
   - scripted transfer soak harness and matrix runbook
   - transfer conflict policy and failed-task retry actions
   - diagnostics logging baseline with settings log path tools
@@ -257,7 +262,9 @@ Target platforms:
   - runtime status (`Active` / `Degraded`) and last-error metadata for active forwards
   - recent event timeline and diagnostics snapshot export
   - recent-event analytics cards and analytics export (`JSON` / `CSV`)
-  - remote file auto-sync guard using remote metadata baseline checks before save-back upload
+- remote file auto-sync guard using remote metadata baseline checks before save-back upload
+- explicit per-tab UI warning when remote drift blocks save-back or upload-back fails
+- remote-open temp cleanup on tab/app dispose plus stale-draft reopen choice
   - recoverable global error bar baseline with quick actions
   - hotkey conflict workflow expansion:
     - inline conflict badges and auto-resolve

@@ -21,6 +21,11 @@ import type {
   ServerProcessSnapshot,
   TerminalEvent
 } from "../shared/terminal.js";
+import type {
+  RemoteOpenFileAutoSyncEvent,
+  RemoteOpenFilePrepareOptions,
+  RemoteOpenFilePrepareResult
+} from "../shared/system.js";
 
 const api = {
   app: {
@@ -118,16 +123,19 @@ const api = {
       ipcRenderer.invoke("system:writeTextFileAtPath", filePath, text) as Promise<void>,
     createTempOpenFilePath: (defaultName: string) =>
       ipcRenderer.invoke("system:createTempOpenFilePath", defaultName) as Promise<string>,
-    prepareRemoteOpenFile: (tabId: string, remotePath: string, defaultName: string) =>
+    prepareRemoteOpenFile: (
+      tabId: string,
+      remotePath: string,
+      defaultName: string,
+      options?: RemoteOpenFilePrepareOptions
+    ) =>
       ipcRenderer.invoke(
         "system:prepareRemoteOpenFile",
         tabId,
         remotePath,
-        defaultName
-      ) as Promise<{
-        localPath: string;
-        alreadyOpen: boolean;
-      }>,
+        defaultName,
+        options
+      ) as Promise<RemoteOpenFilePrepareResult>,
     enableRemoteFileAutoSync: (tabId: string, remotePath: string, localPath: string) =>
       ipcRenderer.invoke(
         "system:enableRemoteFileAutoSync",
@@ -135,6 +143,18 @@ const api = {
         remotePath,
         localPath
       ) as Promise<void>,
+    onRemoteOpenFileEvent: (listener: (event: RemoteOpenFileAutoSyncEvent) => void) => {
+      const wrapped = (
+        _event: IpcRendererEvent,
+        payload: RemoteOpenFileAutoSyncEvent
+      ) => {
+        listener(payload);
+      };
+      ipcRenderer.on("system:remoteOpenFileEvent", wrapped);
+      return () => {
+        ipcRenderer.removeListener("system:remoteOpenFileEvent", wrapped);
+      };
+    },
     disposeRemoteOpenFiles: (tabId?: string | null) =>
       ipcRenderer.invoke("system:disposeRemoteOpenFiles", tabId) as Promise<void>,
     openLocalPath: (localPath: string, preferredProgramPath?: string | null) =>

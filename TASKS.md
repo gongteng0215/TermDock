@@ -1,10 +1,10 @@
 ﻿# TermDock Task Board
 
-Last updated: 2026-03-20
+Last updated: 2026-03-30
 
 ## Current Release State
 
-- Stable release: `v0.1.14`
+- Stable release: `v0.1.15`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 
@@ -38,13 +38,13 @@ Last updated: 2026-03-20
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
 | P0-E1 | TODO | Startup performance benchmark/optimization |
 | P0-E2 | TODO | Large transfer memory optimization |
-| P0-E3 | PARTIAL | Recoverable global error action baseline landed; broader action coverage/guidance still pending |
+| P0-E3 | PARTIAL | Recoverable global error action baseline plus disconnect-report/export tooling landed; broader action coverage/guidance still pending |
 | P0-E4 | TODO | Persistence crash-recovery verification |
 | P0-F1 | TODO | Unit tests |
 | P0-F2 | TODO | Integration tests |
-| P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP smoke landed; macOS evidence and targeted external-host validation still pending |
+| P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP, remote-open-file save-back, and unexpected-disconnect smoke landed; macOS evidence and targeted external-host validation still pending |
 | P0-F4 | PARTIAL | Release preflight/verify baseline and self-use Windows path landed; public-trust signing secret provisioning and first signed/notarized evidence still pending |
-| P0-G1 | DONE | Server health panel baseline shipped |
+| P0-G1 | DONE | Server health panel baseline plus tab-scoped monitor-state hardening shipped |
 
 ## In Progress Track (v0.1.3+)
 
@@ -64,7 +64,7 @@ Last updated: 2026-03-20
    - packaged smoke script now supports report generation (`summary.json` + `full-test-matrix.md`)
    - packaged executable path override is available for Windows/macOS validation
    - GitHub Actions packaged smoke workflow now runs on Windows/macOS runners and uploads smoke artifacts
-   - embedded SSH/SFTP fixture now verifies live auth/connect, approval-bar flow, and SFTP list/upload/download/delete without an external host
+   - embedded SSH/SFTP fixture now verifies live auth/connect, approval-bar flow, SFTP list/upload/download/delete, remote-open-file save-back conflict warnings, and unexpected disconnect-report capture without an external host
 2. `P0-F4` Signing/notarization strategy and installation verification
    - `scripts/release-preflight.mjs` now validates Windows signing and macOS signing/notarization inputs before release build
    - `scripts/prepare-release-secrets.mjs` now materializes `APPLE_API_KEY_B64` into a temporary `.p8` path for CI notarization
@@ -205,6 +205,8 @@ Last updated: 2026-03-20
 21. Remote file save-back guard baseline:
    - auto-sync save-back checks remote metadata baseline (`exists` / `size` / `mtime`)
    - skips unsafe overwrite when remote file changed unexpectedly
+   - reopen with an unsynced local draft now prompts the user to reuse or discard+reload instead of silently reusing stale temp content
+   - temp remote-open files are cleaned on tab/app dispose, and background-tab save-back failures remain visible per tab
 22. Retry-center guidance baseline:
    - top failure reasons now show contextual suggestions for faster triage
 

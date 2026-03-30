@@ -1,15 +1,22 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { watchFile, unwatchFile } from "node:fs";
-import { lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { cpus, homedir, hostname, release, tmpdir, totalmem } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
 import { app, clipboard, dialog, ipcMain, shell } from "electron";
 import type { Stats } from "node:fs";
+import type { WebContents } from "electron";
 import JSZip from "jszip";
 
 import { appLogger } from "../logging/app-logger.js";
+import type {
+  RemoteOpenFileAutoSyncEvent,
+  RemoteOpenFileLocalDraftState,
+  RemoteOpenFilePrepareOptions,
+  RemoteOpenFilePrepareResult
+} from "../../shared/system.js";
 import { TerminalService } from "../terminal/terminal-service.js";
 import type { RemotePathMetadata } from "../terminal/terminal-service.js";
 
@@ -30,11 +37,13 @@ interface RemoteOpenFileSession {
   tabId: string;
   remotePath: string;
   localPath: string;
+  sender: WebContents;
   debounceTimer: NodeJS.Timeout | null;
   uploadInFlight: boolean;
   pendingUpload: boolean;
   localHasPendingChanges: boolean;
   baseRemoteMetadata: RemotePathMetadata | null;
+  lastUiNotificationKey: string | null;
   disposed: boolean;
 }
 
@@ -89,6 +98,7 @@ interface BugReportLogFile {
 
 const REMOTE_OPEN_FILE_UPLOAD_DEBOUNCE_MS = 450;
 const REMOTE_OPEN_FILE_TEMP_DIRECTORY = "termdock-open-files";
+const REMOTE_OPEN_FILE_CLEANUP_RETRY_DELAYS_MS = [400, 1500, 4000];
 const BUG_REPORT_MAX_DEPTH = 5;
 const BUG_REPORT_MAX_ARRAY_ITEMS = 64;
 const BUG_REPORT_MAX_OBJECT_KEYS = 64;
@@ -425,44 +435,71 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
 
   ipcMain.handle(
     "system:prepareRemoteOpenFile",
-    async (_event, tabId: string, remotePath: string, defaultName: string) => {
+    async (
+      _event,
+      tabId: string,
+      remotePath: string,
+      defaultName: string,
+      options?: RemoteOpenFilePrepareOptions
+    ): Promise<RemoteOpenFilePrepareResult> => {
       const normalizedTabId = normalizeRequiredPath(tabId, "Tab id");
       const normalizedRemotePath = normalizeRemoteOpenFilePath(remotePath);
+      const discardLocalChanges = options?.discardLocalChanges === true;
       const key = toRemoteOpenFileKey(normalizedTabId, normalizedRemotePath);
       const existingSession = remoteOpenFileSessions.get(key);
       if (existingSession && !existingSession.disposed) {
-        const canReuseExistingSession = await shouldReuseRemoteOpenFileSession(
+        const reuseDecision = await evaluateRemoteOpenFileSessionReuse(
           existingSession,
           terminalService
         );
-        if (canReuseExistingSession) {
+        if (reuseDecision.kind === "reuse-clean") {
           return {
             localPath: existingSession.localPath,
-            alreadyOpen: true
+            alreadyOpen: true,
+            reuseState: "reuse-clean"
           };
         }
-        disposeRemoteOpenFileSession(existingSession);
+        if (reuseDecision.kind === "reuse-local-draft" && !discardLocalChanges) {
+          return {
+            localPath: existingSession.localPath,
+            alreadyOpen: true,
+            reuseState: "reuse-local-draft",
+            localDraftState: reuseDecision.localDraftState
+          };
+        }
+        disposeRemoteOpenFileSession(existingSession, {
+          removeLocalFile: true
+        });
         remoteOpenFileSessions.delete(key);
+        const localPath = await createUniqueTempOpenFilePath(defaultName);
+        return {
+          localPath,
+          alreadyOpen: false,
+          reuseState: "new"
+        };
       }
       const localPath = await createStableTempOpenFilePath(key, defaultName);
       return {
         localPath,
-        alreadyOpen: false
+        alreadyOpen: false,
+        reuseState: "new"
       };
     }
   );
 
   ipcMain.handle(
     "system:enableRemoteFileAutoSync",
-    async (_event, tabId: string, remotePath: string, localPath: string) => {
+    async (event, tabId: string, remotePath: string, localPath: string) => {
       const normalizedTabId = normalizeRequiredPath(tabId, "Tab id");
       const normalizedRemotePath = normalizeRemoteOpenFilePath(remotePath);
       const normalizedLocalPath = normalizeRequiredPath(localPath, "Local file path");
       const key = toRemoteOpenFileKey(normalizedTabId, normalizedRemotePath);
       const existingSession = remoteOpenFileSessions.get(key);
       if (existingSession && !existingSession.disposed) {
+        existingSession.sender = event.sender;
         if (existingSession.localPath !== normalizedLocalPath) {
           unwatchFile(existingSession.localPath);
+          scheduleRemoteOpenFileLocalPathCleanup(existingSession.localPath);
           existingSession.localPath = normalizedLocalPath;
           watchRemoteOpenFileSession(existingSession, terminalService);
         }
@@ -472,6 +509,7 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
           normalizedTabId,
           normalizedRemotePath
         );
+        existingSession.lastUiNotificationKey = null;
         return;
       }
       const baseRemoteMetadata = await readRemotePathMetadataSafely(
@@ -484,11 +522,13 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
         tabId: normalizedTabId,
         remotePath: normalizedRemotePath,
         localPath: normalizedLocalPath,
+        sender: event.sender,
         debounceTimer: null,
         uploadInFlight: false,
         pendingUpload: false,
         localHasPendingChanges: false,
         baseRemoteMetadata,
+        lastUiNotificationKey: null,
         disposed: false
       };
       remoteOpenFileSessions.set(key, session);
@@ -824,6 +864,14 @@ async function createStableTempOpenFilePath(key: string, defaultName: string): P
   return join(tempDirectory, `${stableToken}-${safeName}`);
 }
 
+async function createUniqueTempOpenFilePath(defaultName: string): Promise<string> {
+  const safeName = sanitizeLocalFileName(defaultName);
+  const tempDirectory = join(tmpdir(), REMOTE_OPEN_FILE_TEMP_DIRECTORY);
+  await mkdir(tempDirectory, { recursive: true });
+  const uniqueToken = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  return join(tempDirectory, `${uniqueToken}-${safeName}`);
+}
+
 function watchRemoteOpenFileSession(
   session: RemoteOpenFileSession,
   terminalService: TerminalService
@@ -847,20 +895,37 @@ function isMeaningfulLocalFileChange(current: Stats, previous: Stats): boolean {
   return current.mtimeMs !== previous.mtimeMs || current.size !== previous.size;
 }
 
-async function shouldReuseRemoteOpenFileSession(
+async function evaluateRemoteOpenFileSessionReuse(
   session: RemoteOpenFileSession,
   terminalService: TerminalService
-): Promise<boolean> {
+): Promise<
+  | { kind: "reuse-clean" }
+  | { kind: "reuse-local-draft"; localDraftState: RemoteOpenFileLocalDraftState }
+  | { kind: "replace-session" }
+> {
   try {
     const localStats = await lstat(session.localPath);
     if (!localStats.isFile()) {
-      return false;
+      return {
+        kind: "replace-session"
+      };
     }
   } catch {
-    return false;
+    return {
+      kind: "replace-session"
+    };
   }
-  if (session.localHasPendingChanges || session.uploadInFlight || session.pendingUpload) {
-    return true;
+  if (session.uploadInFlight || session.pendingUpload) {
+    return {
+      kind: "reuse-local-draft",
+      localDraftState: "syncing"
+    };
+  }
+  if (session.localHasPendingChanges) {
+    return {
+      kind: "reuse-local-draft",
+      localDraftState: "modified"
+    };
   }
   const currentRemoteMetadata = await readRemotePathMetadataSafely(
     terminalService,
@@ -868,7 +933,9 @@ async function shouldReuseRemoteOpenFileSession(
     session.remotePath
   );
   if (isRemotePathMetadataCompatible(session.baseRemoteMetadata, currentRemoteMetadata)) {
-    return true;
+    return {
+      kind: "reuse-clean"
+    };
   }
   appLogger.log(
     "info",
@@ -882,7 +949,9 @@ async function shouldReuseRemoteOpenFileSession(
       current: currentRemoteMetadata
     }
   );
-  return false;
+  return {
+    kind: "replace-session"
+  };
 }
 
 function scheduleRemoteOpenFileUpload(
@@ -923,6 +992,17 @@ async function flushRemoteOpenFileUpload(
       session.remotePath
     );
     if (!isRemotePathMetadataCompatible(session.baseRemoteMetadata, currentRemoteMetadata)) {
+      notifyRemoteOpenFileAutoSyncEvent(
+        session,
+        {
+          type: "conflict-remote-changed",
+          tabId: session.tabId,
+          remotePath: session.remotePath,
+          localPath: session.localPath,
+          message: `Remote file changed before save-back. Local changes were not synced: ${session.remotePath}`
+        },
+        `conflict:${session.remotePath}:${serializeRemotePathMetadata(session.baseRemoteMetadata)}:${serializeRemotePathMetadata(currentRemoteMetadata)}`
+      );
       appLogger.log(
         "warn",
         "main:remote-open-file",
@@ -948,6 +1028,7 @@ async function flushRemoteOpenFileUpload(
       session.tabId,
       session.remotePath
     );
+    session.lastUiNotificationKey = null;
     appLogger.log("info", "main:remote-open-file", "Auto-synced local edit to remote path.", {
       tabId: session.tabId,
       remotePath: session.remotePath,
@@ -965,6 +1046,17 @@ async function flushRemoteOpenFileUpload(
         message: (error as Error).message
       }
     );
+    notifyRemoteOpenFileAutoSyncEvent(
+      session,
+      {
+        type: "upload-failed",
+        tabId: session.tabId,
+        remotePath: session.remotePath,
+        localPath: session.localPath,
+        message: `Failed to sync local edit back to remote file: ${session.remotePath}. ${(error as Error).message}`
+      },
+      `upload-failed:${session.remotePath}:${(error as Error).message}`
+    );
   } finally {
     session.uploadInFlight = false;
     if (session.disposed) {
@@ -979,6 +1071,28 @@ async function flushRemoteOpenFileUpload(
 
 function createRemoteOpenFileTransferId(): string {
   return `open-save-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function notifyRemoteOpenFileAutoSyncEvent(
+  session: RemoteOpenFileSession,
+  payload: RemoteOpenFileAutoSyncEvent,
+  notificationKey: string
+): void {
+  if (session.lastUiNotificationKey === notificationKey) {
+    return;
+  }
+  session.lastUiNotificationKey = notificationKey;
+  if (session.sender.isDestroyed()) {
+    return;
+  }
+  session.sender.send("system:remoteOpenFileEvent", payload);
+}
+
+function serializeRemotePathMetadata(metadata: RemotePathMetadata | null): string {
+  if (!metadata) {
+    return "null";
+  }
+  return `${metadata.exists ? "1" : "0"}:${metadata.size}:${metadata.modifiedTimeMs}`;
 }
 
 async function readRemotePathMetadataSafely(
@@ -1018,7 +1132,12 @@ function isRemotePathMetadataCompatible(
   );
 }
 
-function disposeRemoteOpenFileSession(session: RemoteOpenFileSession): void {
+function disposeRemoteOpenFileSession(
+  session: RemoteOpenFileSession,
+  options?: {
+    removeLocalFile?: boolean;
+  }
+): void {
   if (session.debounceTimer) {
     clearTimeout(session.debounceTimer);
     session.debounceTimer = null;
@@ -1026,6 +1145,9 @@ function disposeRemoteOpenFileSession(session: RemoteOpenFileSession): void {
   session.pendingUpload = false;
   session.disposed = true;
   unwatchFile(session.localPath);
+  if (options?.removeLocalFile) {
+    scheduleRemoteOpenFileLocalPathCleanup(session.localPath);
+  }
 }
 
 function disposeRemoteOpenFileSessionsByTab(tabId: string): void {
@@ -1033,16 +1155,45 @@ function disposeRemoteOpenFileSessionsByTab(tabId: string): void {
     if (session.tabId !== tabId) {
       continue;
     }
-    disposeRemoteOpenFileSession(session);
+    disposeRemoteOpenFileSession(session, {
+      removeLocalFile: true
+    });
     remoteOpenFileSessions.delete(key);
   }
 }
 
 function disposeAllRemoteOpenFileSessions(): void {
   for (const [key, session] of remoteOpenFileSessions.entries()) {
-    disposeRemoteOpenFileSession(session);
+    disposeRemoteOpenFileSession(session, {
+      removeLocalFile: true
+    });
     remoteOpenFileSessions.delete(key);
   }
+}
+
+function scheduleRemoteOpenFileLocalPathCleanup(localPath: string, attempt = 0): void {
+  void rm(localPath, { force: true }).catch((error) => {
+    const errorCode = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+    if (errorCode === "ENOENT") {
+      return;
+    }
+    if (attempt < REMOTE_OPEN_FILE_CLEANUP_RETRY_DELAYS_MS.length && isRetryableLocalCleanupError(errorCode)) {
+      setTimeout(() => {
+        scheduleRemoteOpenFileLocalPathCleanup(localPath, attempt + 1);
+      }, REMOTE_OPEN_FILE_CLEANUP_RETRY_DELAYS_MS[attempt]);
+      return;
+    }
+    appLogger.log("warn", "main:remote-open-file", "Failed to clean up local remote-open temp file.", {
+      localPath,
+      attempt,
+      code: errorCode,
+      message: error instanceof Error ? error.message : String(error)
+    });
+  });
+}
+
+function isRetryableLocalCleanupError(code: string): boolean {
+  return code === "EBUSY" || code === "EPERM" || code === "EACCES";
 }
 
 function hasActiveRemoteOpenSessionForLocalPath(localPath: string): boolean {
@@ -1140,9 +1291,16 @@ async function openPathWithProgram(programPath: string, targetPath: string): Pro
     return;
   }
   if (process.platform === "win32") {
+    const resolvedLaunchSpec = await resolveWindowsProgramLaunchSpec(programPath);
+    const launchArgs = [...resolvedLaunchSpec.args, targetPath];
+    appLogger.log("info", "main:file-open", "Launching local path with configured Windows opener.", {
+      programSpec: programPath,
+      resolvedCommand: resolvedLaunchSpec.command,
+      resolvedArgs: launchArgs
+    });
     const code = await runPowerShellScript(`
 try {
-  Start-Process -FilePath '${programPath.replace(/'/g, "''")}' -ArgumentList @('${targetPath.replace(/'/g, "''")}')
+  Start-Process -FilePath ${toPowerShellSingleQuotedLiteral(resolvedLaunchSpec.command)} -ArgumentList ${toPowerShellStringArrayLiteral(launchArgs)}
   exit 0
 } catch {
   Write-Error $_
@@ -1150,11 +1308,158 @@ try {
 }
 `);
     if (code !== 0) {
+      appLogger.log(
+        "warn",
+        "main:file-open",
+        "Failed to launch configured Windows opener.",
+        {
+          programSpec: programPath,
+          resolvedCommand: resolvedLaunchSpec.command,
+          resolvedArgs: launchArgs
+        }
+      );
       throw new Error(`Failed to open path with program: ${programPath}`);
     }
     return;
   }
   await spawnDetached(programPath, [targetPath]);
+}
+
+interface WindowsProgramLaunchSpec {
+  command: string;
+  args: string[];
+}
+
+async function resolveWindowsProgramLaunchSpec(
+  programSpec: string
+): Promise<WindowsProgramLaunchSpec> {
+  const normalizedSpec = normalizeRequiredPath(programSpec, "Open program");
+  const exactProgramPath = await normalizeExistingProgramPath(normalizedSpec);
+  if (exactProgramPath) {
+    return {
+      command: exactProgramPath,
+      args: []
+    };
+  }
+  const parsedSegments = splitWindowsCommandLine(normalizedSpec).map(stripWrappingQuotes);
+  if (parsedSegments.length === 0) {
+    throw new Error("Open program is required.");
+  }
+  const resolvedCommandPath = await normalizeExistingProgramPath(parsedSegments[0]);
+  if (resolvedCommandPath) {
+    return {
+      command: resolvedCommandPath,
+      args: parsedSegments.slice(1)
+    };
+  }
+  if (looksLikeExplicitWindowsProgramPath(parsedSegments[0])) {
+    throw new Error(
+      `Configured Windows opener was not found: ${parsedSegments[0]}. Quote paths with spaces or select the executable directly.`
+    );
+  }
+  return {
+    command: parsedSegments[0],
+    args: parsedSegments.slice(1)
+  };
+}
+
+async function normalizeExistingProgramPath(programPath: string): Promise<string | null> {
+  const normalizedPath = stripWrappingQuotes(programPath.trim());
+  if (!normalizedPath) {
+    return null;
+  }
+  try {
+    const fileStats = await lstat(normalizedPath);
+    if (fileStats.isFile()) {
+      return normalizedPath;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function splitWindowsCommandLine(input: string): string[] {
+  const segments: string[] = [];
+  let current = "";
+  let withinDoubleQuotes = false;
+  let pendingBackslashes = 0;
+  let sawTokenContent = false;
+  for (let index = 0; index < input.length; index += 1) {
+    const nextCharacter = input[index];
+    if (nextCharacter === "\\") {
+      pendingBackslashes += 1;
+      continue;
+    }
+    if (nextCharacter === '"') {
+      current += "\\".repeat(Math.floor(pendingBackslashes / 2));
+      if (pendingBackslashes % 2 === 1) {
+        current += '"';
+      } else {
+        withinDoubleQuotes = !withinDoubleQuotes;
+        sawTokenContent = true;
+      }
+      pendingBackslashes = 0;
+      continue;
+    }
+    if (pendingBackslashes > 0) {
+      current += "\\".repeat(pendingBackslashes);
+      pendingBackslashes = 0;
+    }
+    if (!withinDoubleQuotes && /\s/.test(nextCharacter)) {
+      if (sawTokenContent || current.length > 0) {
+        segments.push(current);
+        current = "";
+        sawTokenContent = false;
+      }
+      continue;
+    }
+    current += nextCharacter;
+    sawTokenContent = true;
+  }
+  if (pendingBackslashes > 0) {
+    current += "\\".repeat(pendingBackslashes);
+  }
+  if (sawTokenContent || current.length > 0) {
+    segments.push(current);
+  }
+  return segments;
+}
+
+function looksLikeExplicitWindowsProgramPath(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+  return (
+    value.includes("\\") ||
+    value.includes("/") ||
+    /^[A-Za-z]:/.test(value) ||
+    value.startsWith(".")
+  );
+}
+
+function stripWrappingQuotes(input: string): string {
+  const normalized = input.trim();
+  if (normalized.length < 2) {
+    return normalized;
+  }
+  const first = normalized[0];
+  const last = normalized[normalized.length - 1];
+  if ((first === '"' || first === "'") && last === first) {
+    return normalized.slice(1, -1);
+  }
+  return normalized;
+}
+
+function toPowerShellSingleQuotedLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function toPowerShellStringArrayLiteral(values: string[]): string {
+  if (values.length === 0) {
+    return "@()";
+  }
+  return `@(${values.map((value) => toPowerShellSingleQuotedLiteral(value)).join(", ")})`;
 }
 
 function spawnDetached(command: string, args: string[]): Promise<void> {

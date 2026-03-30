@@ -4,9 +4,36 @@
 
 Release type: In development
 
+- No unreleased notes yet.
+
+## v0.1.15 (2026-03-30)
+
+Release type: Stable
+
+### Highlights
+
 - Fixed remote file open/edit reliability:
-  - Windows preferred external editor launch now uses a cold-start friendly path, which is more reliable for VS Code style launchers
-  - reopening a remote file now refreshes the temp copy when the remote metadata changed instead of reusing a stale local snapshot
+  - Windows preferred external editor launch now validates configured commands more strictly and still handles VS Code style launcher invocations
+  - reopening a remote file with an unsynced local draft now prompts for reuse vs discard+reload instead of silently reusing stale temp content
+  - remote open-file save-back now shows an explicit per-tab UI warning when remote drift blocks auto-sync or when upload-back fails
+  - temp remote-open files are now cleaned when the owning tab closes or the app disposes the session
+- Port forwarding / Operation Center hardening:
+  - port-forward state is now stored per tab, so tab switches no longer race stale forward lists or status messages into the wrong session
+  - Operation Center queue/port-forward cards now summarize open-workspace activity instead of only the current tab
+- Server Health / Disconnect Report hardening:
+  - server-health and process refreshes now keep tab-scoped state and ignore stale async responses from older refreshes
+  - disconnect reports now capture the correct tab's monitor/loading/error state rather than the active tab snapshot
+  - disconnect-report dedupe state is now cleared on reconnect, clear-history, and tab close
+- Expanded smoke coverage:
+  - `scripts/smoke-capture-all.mjs` now verifies the remote-open-file conflict warning, stale-draft reload/replace, temp-file cleanup path, and Windows preferred-opener parser/launch behavior against local helpers
+  - `scripts/smoke-capture-all.mjs` now also verifies a live port-forward creation baseline, Operation Center summary visibility, and unexpected fixture shutdown -> disconnect-report capture
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 35 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 35 / FAIL 0 / SKIP 0`
 
 ## v0.1.14 (2026-03-20)
 

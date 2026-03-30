@@ -1,6 +1,6 @@
 ﻿# TermDock Product Notes
 
-Last updated: 2026-03-20
+Last updated: 2026-03-30
 
 ## Confirmed Direction
 
@@ -12,12 +12,13 @@ Last updated: 2026-03-20
 
 ## Release Baseline
 
-- Current stable release: `v0.1.14` (2026-03-20)
+- Current stable release: `v0.1.15` (2026-03-30)
 
 ## Shipped in Recent Cycles
 
 - v0.1.14: command snippets/playbooks v2 baseline, dangerous-command/workspace follow-up, and Operation Center tracked app jobs
-- master (post-v0.1.14): fixed Windows preferred-editor cold-start and stale remote-open file reuse after remote-side changes
+- v0.1.15: remote-open/editor reliability hardening, per-tab port-forward and Operation Center summary hardening, and tab-scoped server-health/disconnect-report state tracking
+- v0.1.15: smoke now verifies Windows preferred-opener launch/failure, remote-open conflict/reload/cleanup, live port-forward baseline, and unexpected disconnect-report capture
 - v0.1.13: packaged smoke baseline, release preflight/verify tooling, and session templates baseline
 - master (post-v0.1.13): added command snippets/playbooks v2 baseline with prompted parameters, regex validation, and preview-before-run
 - master (post-v0.1.13): added command snippet scoped remembered values (`snippet/group/session/global`) plus reusable prompt sets
@@ -32,7 +33,7 @@ Last updated: 2026-03-20
 - master (post-v0.1.9): session open is now deduplicated by session id (open existing tab instead of creating duplicates)
 - master (post-v0.1.9): command history panel now supports blank-area right-click menu (`Add` / `Import` / `Export` / `Manage`)
 - master (post-v0.1.9): session JSON load/create/update now normalizes known mojibake text patterns for better data hygiene
-- master (post-v0.1.9): expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`) with latest full pass `30/30`
+- master (post-v0.1.9): expanded Electron smoke automation (`scripts/smoke-capture-all.mjs`) with latest full pass `31/31`
 - master (post-v0.1.9): added self-use Windows release path with local self-signed certificate bootstrap, installer signing, and install smoke validation
 - master (post-v0.1.9): added session templates baseline with template-scoped env vars and create/apply/manage flows
 - master (post-v0.1.9): added transfer conflict policy (`overwrite/skip/rename`) for upload/download queueing

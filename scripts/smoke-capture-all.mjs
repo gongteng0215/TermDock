@@ -1,4 +1,5 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { basename, join, relative, resolve } from "node:path";
 
 import { _electron as electron } from "playwright";
@@ -52,6 +53,28 @@ function readSmokeConfig() {
   };
 }
 
+async function allocateLocalPort(host = "127.0.0.1") {
+  return await new Promise((resolvePromise, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, host, () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("Failed to resolve ephemeral port.")));
+        return;
+      }
+      const { port } = address;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolvePromise(port);
+      });
+    });
+  });
+}
+
 function createMarkdownReport({
   generatedAt,
   outputDir,
@@ -89,8 +112,11 @@ function createMarkdownReport({
   lines.push("- Session list double-click fresh-tab behavior");
   lines.push("- Close and reopen same session");
   lines.push("- Embedded local SSH fixture connect/auth lifecycle");
+  lines.push("- Windows preferred-opener parser/launch path with quoted-path success and broken-path failure on Windows hosts");
   lines.push("- Dangerous-command guardrails Settings > Safety UI and approval bar on a live SSH session");
   lines.push("- Embedded local SFTP fixture list/upload/download/delete flow");
+  lines.push("- Embedded remote-open-file save-back conflict notification path");
+  lines.push("- Unexpected fixture shutdown -> Diagnostics disconnect report capture path");
   lines.push(
     "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics)"
   );
@@ -149,7 +175,7 @@ function createMarkdownReport({
   lines.push("- Conflict strategy behaviors (`overwrite` / `skip` / `rename`) with real remote conflicts");
   lines.push("- Upload/download cancel semantics under real file-transfer load");
   lines.push("- Retry Center requeue with real failed transfer samples");
-  lines.push("- Remote file external editor save-back path against a live server");
+  lines.push("- Remote file external-editor save-back path against a non-fixture live host");
   lines.push("- Port forwarding creation/use/teardown with real remote sockets");
   lines.push("- Server Health metrics/process/service snapshots from a non-fixture live host");
   lines.push("- Unexpected disconnect auto-capture report with real connection interruptions");
@@ -369,7 +395,20 @@ async function main() {
   const uploadSourceFileName = basename(uploadSourcePath);
   const uploadedRemoteLocalPath = join(fixture.rootDir, uploadSourceFileName);
   const downloadTargetPath = join(outputDir, "fixture-download.txt");
+  const openerHarnessDir = join(outputDir, "opener harness with spaces");
+  const openerHarnessScriptPath = join(openerHarnessDir, "capture-open.cmd");
+  const openerHarnessLogPath = join(openerHarnessDir, "args.txt");
+  const openerTargetPath = join(outputDir, "fixture-open-target.txt");
+  const portForwardBindPort = await allocateLocalPort();
+  const remoteConflictContents = [
+    fixture.remoteSeedContents,
+    "Remote fixture mutation before save-back."
+  ].join("\n");
+  let remoteOpenConflictLocalPath = "";
+  let remoteOpenReloadedLocalPath = "";
+  let remoteOpenTabId = "";
   await writeFile(uploadSourcePath, uploadSourceContents, "utf8");
+  await writeFile(openerTargetPath, "TermDock opener smoke target\n", "utf8");
   pushStep(
     "start local SSH/SFTP fixture",
     "pass",
@@ -377,6 +416,7 @@ async function main() {
   );
 
   let app = null;
+  let fixtureClosed = false;
 
   let shotIndex = 1;
   const screenshotList = [];
@@ -456,6 +496,70 @@ async function main() {
       return `fixturePort=${fixture.port}, total=${total}, groupedCreated=${grouped.created}, ungroupedCreated=${ungrouped.created}, shot=${fileName}`;
     });
 
+    await runStep("windows preferred opener parser launches quoted path and rejects broken path", async () => {
+      if (process.platform !== "win32") {
+        return "not applicable on non-Windows host";
+      }
+      await mkdir(openerHarnessDir, { recursive: true });
+      await writeFile(
+        openerHarnessScriptPath,
+        ['@echo off', 'setlocal EnableExtensions', '> "%~dp0args.txt" echo %*', ""].join("\r\n"),
+        "utf8"
+      );
+      const quotedProgramSpec = `"${openerHarnessScriptPath}" --reuse-window smoke-token`;
+      await page.evaluate(
+        async ({ targetPathValue, programSpecValue }) =>
+          window.termdock.system.openLocalPath(targetPathValue, programSpecValue),
+        {
+          targetPathValue: openerTargetPath,
+          programSpecValue: quotedProgramSpec
+        }
+      );
+      const loggedArguments = await waitForCondition(
+        async () => {
+          try {
+            const logText = await readFile(openerHarnessLogPath, "utf8");
+            if (
+              logText.includes("--reuse-window") &&
+              logText.includes("smoke-token") &&
+              logText.includes(openerTargetPath)
+            ) {
+              return logText.trim();
+            }
+          } catch {
+            // Wait for helper output.
+          }
+          return false;
+        },
+        {
+          timeout: 10_000,
+          description: "quoted Windows opener helper output"
+        }
+      );
+      const brokenProgramSpec = `${openerHarnessScriptPath} --reuse-window smoke-token`;
+      const invalidMessage = await page.evaluate(
+        async ({ targetPathValue, programSpecValue }) => {
+          try {
+            await window.termdock.system.openLocalPath(targetPathValue, programSpecValue);
+            return "";
+          } catch (error) {
+            if (error instanceof Error) {
+              return error.message;
+            }
+            return String(error);
+          }
+        },
+        {
+          targetPathValue: openerTargetPath,
+          programSpecValue: brokenProgramSpec
+        }
+      );
+      if (!invalidMessage.includes("Configured Windows opener was not found:")) {
+        throw new Error(`expected explicit invalid opener error, got: ${invalidMessage || "(empty)"}`);
+      }
+      return `logged=${loggedArguments}; invalid=${invalidMessage}`;
+    });
+
     await runStep("monkeypatch file dialogs for export/import actions", async () => {
       const patched = await page.evaluate(() => {
         const bridge = window.termdock;
@@ -481,6 +585,13 @@ async function main() {
               commands: ["echo smoke_import_one", "echo smoke_import_two"]
             })
           });
+          bridge.system.openLocalPath = async (localPath) => {
+            if (!Array.isArray(window.__termdockSmokeOpenedLocalPaths)) {
+              window.__termdockSmokeOpenedLocalPaths = [];
+            }
+            window.__termdockSmokeOpenedLocalPaths.push(localPath);
+          };
+          window.__termdockSmokeOpenedLocalPaths = [];
           return true;
         } catch {
           return false;
@@ -603,11 +714,14 @@ async function main() {
     });
 
     await runStep("live SSH session connected", async () => {
-      const connectedStatus = page.locator(".terminal-pane__status.is-connected").first();
-      await connectedStatus.waitFor({ state: "visible", timeout: 15_000 });
-      const statusText = (await connectedStatus.textContent())?.trim() ?? "";
+      const activeTerminal = page.locator(".terminal-pane.is-active .xterm").first();
+      await activeTerminal.waitFor({ state: "visible", timeout: 15_000 });
+      await page
+        .locator(".terminal-pane.is-active .terminal-pane__status.is-connecting")
+        .first()
+        .waitFor({ state: "hidden", timeout: 15_000 });
       const fileName = await recordShot(page, "live-ssh-connected");
-      return `${statusText}, fixture=${fixture.host}:${fixture.port}, shot=${fileName}`;
+      return `fixture=${fixture.host}:${fixture.port}, shot=${fileName}`;
     });
 
     await runStep("live SFTP directory loaded", async () => {
@@ -717,6 +831,137 @@ async function main() {
       return `deleted=${uploadSourceFileName}, shot=${fileName}`;
     });
 
+    await runStep("remote open file save-back conflict shows UI warning", async () => {
+      const activeTabId = await getActiveTabId(page);
+      remoteOpenTabId = activeTabId;
+      const localTempPath = await page.evaluate(
+        async ({ tabIdValue, remotePathValue, defaultNameValue }) => {
+          const prepared = await window.termdock.system.prepareRemoteOpenFile(
+            tabIdValue,
+            remotePathValue,
+            defaultNameValue
+          );
+          await window.termdock.sftp.downloadFile(
+            tabIdValue,
+            `smoke-open-${Date.now()}`,
+            remotePathValue,
+            prepared.localPath
+          );
+          await window.termdock.system.enableRemoteFileAutoSync(
+            tabIdValue,
+            remotePathValue,
+            prepared.localPath
+          );
+          return prepared.localPath;
+        },
+        {
+          tabIdValue: activeTabId,
+          remotePathValue: fixture.remoteSeedPath,
+          defaultNameValue: fixture.remoteSeedFileName
+        }
+      );
+      await waitForFileContents(localTempPath, fixture.remoteSeedContents, 15_000);
+      await writeFile(join(fixture.rootDir, fixture.remoteSeedFileName), remoteConflictContents, "utf8");
+      await new Promise((resolvePromise) => {
+        setTimeout(resolvePromise, 120);
+      });
+      const localEditedContents = [
+        fixture.remoteSeedContents,
+        "Local temp edit that should not overwrite remote changes."
+      ].join("\n");
+      await writeFile(localTempPath, localEditedContents, "utf8");
+      const expectedWarningPrefix = "Remote file changed before save-back. Local changes were not synced:";
+      await waitForCondition(
+        async () => {
+          const appHintText = (
+            (await page.locator(".app-inline-hint-panel__text.is-warn").first().textContent()) ?? ""
+          ).replace(/\s+/g, " ").trim();
+          const sftpErrorText = (
+            (await page.locator(".hint.sftp-error").first().textContent()) ?? ""
+          ).replace(/\s+/g, " ").trim();
+          if (
+            appHintText.includes(expectedWarningPrefix) &&
+            sftpErrorText.includes(expectedWarningPrefix)
+          ) {
+            return {
+              appHintText,
+              sftpErrorText
+            };
+          }
+          return false;
+        },
+        {
+          timeout: 15_000,
+          description: "remote open file conflict warning"
+        }
+      );
+      await waitForFileContents(join(fixture.rootDir, fixture.remoteSeedFileName), remoteConflictContents, 15_000);
+      const fileName = await recordShot(page, "remote-open-file-conflict");
+      remoteOpenConflictLocalPath = localTempPath;
+      return `local=${toReportPath(localTempPath)}, remote=${fixture.remoteSeedPath}, shot=${fileName}`;
+    });
+
+    await runStep("remote open file reopen prompts for stale draft and reload replaces it", async () => {
+      const seedEntry = page.locator(".sftp-list__item", { hasText: fixture.remoteSeedFileName }).first();
+      await seedEntry.dblclick();
+      const choiceDialog = page.locator(".app-dialog[aria-label='Remote File Already Open']").first();
+      await choiceDialog.waitFor({ state: "visible", timeout: 10_000 });
+      const reuseButton = choiceDialog.locator("button:has-text('Use Local Draft')").first();
+      const reloadButton = choiceDialog.locator("button:has-text('Discard Draft + Reload')").first();
+      if (!(await isVisible(reuseButton)) || !(await isVisible(reloadButton))) {
+        throw new Error("remote-open-file choice dialog actions not visible");
+      }
+      const beforeShot = await recordShot(page, "remote-open-file-reopen-choice");
+      await reloadButton.click();
+      await choiceDialog.waitFor({ state: "hidden", timeout: 15_000 });
+      const reopenedState = await waitForCondition(
+        async () => {
+          const activeTabId = await getActiveTabId(page);
+          const prepared = await page.evaluate(
+            async ({ tabIdValue, remotePathValue, defaultNameValue }) =>
+              window.termdock.system.prepareRemoteOpenFile(
+                tabIdValue,
+                remotePathValue,
+                defaultNameValue
+              ),
+            {
+              tabIdValue: activeTabId,
+              remotePathValue: fixture.remoteSeedPath,
+              defaultNameValue: fixture.remoteSeedFileName
+            }
+          );
+          if (
+            !prepared.alreadyOpen ||
+            prepared.reuseState !== "reuse-clean" ||
+            prepared.localPath === remoteOpenConflictLocalPath
+          ) {
+            return false;
+          }
+          return prepared;
+        },
+        {
+          timeout: 15_000,
+          description: "reloaded remote-open local path"
+        }
+      );
+      const reopenedLocalPath = reopenedState.localPath;
+      if (reopenedLocalPath === remoteOpenConflictLocalPath) {
+        throw new Error("remote-open-file reload reused stale local draft path");
+      }
+      remoteOpenReloadedLocalPath = reopenedLocalPath;
+      await waitForMissingPath(remoteOpenConflictLocalPath, 15_000);
+      await waitForFileContents(reopenedLocalPath, remoteConflictContents, 15_000);
+      await waitForCondition(
+        async () => (await page.locator(".hint.sftp-error").count()) === 0,
+        {
+          timeout: 10_000,
+          description: "cleared remote open file warning after reload"
+        }
+      );
+      const afterShot = await recordShot(page, "remote-open-file-reload-replaced");
+      return `old=${toReportPath(remoteOpenConflictLocalPath)}, new=${toReportPath(reopenedLocalPath)}, shots=${beforeShot}, ${afterShot}`;
+    });
+
     await runStep("session list double-click opens fresh tab", async () => {
       const sessionButton = page.locator(".session-list__main").first();
       if (!(await isVisible(sessionButton))) {
@@ -735,10 +980,15 @@ async function main() {
     });
 
     await runStep("close tab then reopen same session", async () => {
-      const closeButton = page.locator(".terminal-tabs .tab.is-active .tab__close").first();
+      const closeButton = remoteOpenTabId
+        ? page.locator(`.terminal-tabs .tab[data-tab-id="${remoteOpenTabId}"] .tab__close`).first()
+        : page.locator(".terminal-tabs .tab.is-active .tab__close").first();
       if (await isVisible(closeButton)) {
         await closeButton.click();
         await page.waitForTimeout(450);
+        if (remoteOpenReloadedLocalPath) {
+          await waitForMissingPath(remoteOpenReloadedLocalPath, 15_000);
+        }
       }
 
       const sessionButton = page.locator(".session-list__main").first();
@@ -749,7 +999,30 @@ async function main() {
       if (tabCount <= 0) {
         throw new Error("reopen failed: no tabs after reopening session");
       }
-      return `tabCount=${tabCount}, shot=${fileName}`;
+      return `tabCount=${tabCount}, cleaned=${remoteOpenReloadedLocalPath ? toReportPath(remoteOpenReloadedLocalPath) : "n/a"}, shot=${fileName}`;
+    });
+
+    await runStep("live port forwarding create baseline", async () => {
+      const activeTabId = await getActiveTabId(page);
+      const created = await page.evaluate(
+        async ({ tabIdValue, bindPortValue, targetPortValue }) =>
+          window.termdock.terminal.createPortForward(tabIdValue, {
+            type: "local",
+            bindHost: "127.0.0.1",
+            bindPort: bindPortValue,
+            targetHost: "127.0.0.1",
+            targetPort: targetPortValue
+          }),
+        {
+          tabIdValue: activeTabId,
+          bindPortValue: portForwardBindPort,
+          targetPortValue: fixture.port
+        }
+      );
+      if (!created?.id) {
+        throw new Error("port forwarding create did not return a forward id");
+      }
+      return `${created.type} ${created.bindHost}:${created.bindPort} -> 127.0.0.1:${fixture.port}`;
     });
 
     await runStep("back to groups button and return", async () => {
@@ -1108,6 +1381,24 @@ async function main() {
       if (!(await isVisible(trackedJobsTitle))) {
         throw new Error("tracked app jobs card not visible");
       }
+      const portForwardCard = page
+        .locator(".modal--operation-center .operation-center__card", {
+          has: page.locator(".operation-center__title", { hasText: "Port Forwarding Ops" })
+        })
+        .first();
+      if (!(await isVisible(portForwardCard))) {
+        throw new Error("port forwarding ops card not visible");
+      }
+      await waitForCondition(
+        async () => {
+          const text = ((await portForwardCard.textContent()) ?? "").replace(/\s+/g, " ").trim();
+          return text.includes("active forwards 1") ? text : false;
+        },
+        {
+          timeout: 10_000,
+          description: "operation center port forwarding summary"
+        }
+      );
       const fileName = await recordShot(page, "operation-center-open");
       const done = page
         .locator(".modal--operation-center .primary-button:has-text('Done')")
@@ -1142,6 +1433,84 @@ async function main() {
       await done.click();
       await page.waitForTimeout(220);
       return `${openShot}, ${groupedShot}`;
+    });
+
+    await runStep("unexpected fixture shutdown captures disconnect report", async () => {
+      if (!fixtureClosed) {
+        await fixture.close();
+        fixtureClosed = true;
+      }
+
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found after fixture shutdown");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5000 });
+
+      const diagnosticsNav = page.locator(".settings-nav__button", { hasText: "Diagnostics" }).first();
+      if (!(await isVisible(diagnosticsNav))) {
+        throw new Error("diagnostics nav button not found");
+      }
+      await diagnosticsNav.click();
+      await page.waitForTimeout(260);
+
+      const disconnectScope = page
+        .locator(".modal--settings .settings-disconnect-reports-toolbar select")
+        .first();
+      if (await isVisible(disconnectScope)) {
+        await disconnectScope.selectOption("allSessions");
+      }
+      const resetFilters = page
+        .locator(".modal--settings .settings-disconnect-reports-toolbar button:has-text('Reset Filters')")
+        .first();
+      if (await isVisible(resetFilters) && !(await resetFilters.isDisabled())) {
+        await resetFilters.click();
+        await page.waitForTimeout(220);
+      }
+
+      const summaryText = await waitForCondition(
+        async () => {
+          const heading = page
+            .locator(".modal--settings .settings-port-forward-section__title", {
+              hasText: "Disconnect Reports ("
+            })
+            .first();
+          if (!(await isVisible(heading))) {
+            return false;
+          }
+          const text = ((await heading.textContent()) ?? "").replace(/\s+/g, " ").trim();
+          const match = text.match(/Disconnect Reports \((\d+)\/(\d+)\)/i);
+          if (!match) {
+            return false;
+          }
+          const visibleCount = Number.parseInt(match[1] ?? "0", 10);
+          const totalCount = Number.parseInt(match[2] ?? "0", 10);
+          if (visibleCount <= 0 || totalCount <= 0) {
+            return false;
+          }
+          return text;
+        },
+        {
+          timeout: 15_000,
+          description: "disconnect report captured after fixture shutdown"
+        }
+      );
+
+      const copyLatestVisible = page
+        .locator(".modal--settings button:has-text('Copy Latest Visible')")
+        .first();
+      if (!(await isVisible(copyLatestVisible)) || (await copyLatestVisible.isDisabled())) {
+        throw new Error("disconnect report actions did not enable after fixture shutdown");
+      }
+
+      const fileName = await recordShot(page, "diagnostics-disconnect-report-captured");
+      const done = page.locator(".modal--settings .primary-button:has-text('Done')").first();
+      if (await isVisible(done)) {
+        await done.click();
+        await page.waitForTimeout(220);
+      }
+      return `${summaryText}, shot=${fileName}`;
     });
 
     await runStep("final home screenshot", async () => {
@@ -1201,7 +1570,9 @@ async function main() {
     if (app) {
       await app.close();
     }
-    await fixture.close();
+    if (!fixtureClosed) {
+      await fixture.close();
+    }
   }
 }
 

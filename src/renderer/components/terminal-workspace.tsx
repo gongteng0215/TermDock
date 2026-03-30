@@ -107,7 +107,6 @@ interface TerminalSearchState {
 export interface TerminalCommandHistoryEntry {
   id: string;
   tabId: string;
-  tabTitle: string;
   command: string;
   executedAt: number;
   source: TerminalCommandHistorySource;
@@ -117,7 +116,10 @@ type CommandHistoryScope = "activeTab" | "allTabs";
 export type TerminalCommandHistorySource = "screen" | "buffer" | "manual" | "imported";
 
 export const MAX_TERMINAL_COMMAND_HISTORY = 500;
-export const TERMINAL_COMMAND_HISTORY_STORAGE_KEY = "termdock.terminal-command-history.v1";
+export const TERMINAL_COMMAND_HISTORY_STORAGE_KEY = "termdock.terminal-command-history.v2";
+export const LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS = [
+  "termdock.terminal-command-history.v1"
+];
 export const TERMINAL_COMMAND_HISTORY_APPEND_EVENT = "termdock:terminal-command-history-append";
 export const TERMINAL_COMMAND_HISTORY_REMOVE_EVENT = "termdock:terminal-command-history-remove";
 const COMMAND_CAPTURE_PROMPT_MARKERS = ["$ ", "# ", "% ", "> "];
@@ -273,7 +275,7 @@ export function readTerminalCommandHistory(): TerminalCommandHistoryEntry[] {
     return [];
   }
   try {
-    const rawValue = window.localStorage.getItem(TERMINAL_COMMAND_HISTORY_STORAGE_KEY);
+    const rawValue = readTerminalCommandHistoryStorageValue();
     if (!rawValue) {
       return [];
     }
@@ -311,16 +313,11 @@ export function readTerminalCommandHistory(): TerminalCommandHistoryEntry[] {
       }
       const rawId = typeof candidate.id === "string" ? candidate.id.trim() : "";
       const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "__legacy__";
-      const tabTitle =
-        typeof candidate.tabTitle === "string" && candidate.tabTitle.trim()
-          ? candidate.tabTitle.trim()
-          : "Legacy tab";
       const id = rawId || `legacy-${executedAt}-${index}`;
       const source = normalizeTerminalCommandHistorySource(candidate.source);
       entries.push({
         id,
         tabId,
-        tabTitle: tabTitle.slice(0, 200),
         command: command.slice(0, 4000),
         executedAt,
         source
@@ -331,6 +328,20 @@ export function readTerminalCommandHistory(): TerminalCommandHistoryEntry[] {
   } catch {
     return [];
   }
+}
+
+function readTerminalCommandHistoryStorageValue(): string | null {
+  const directValue = window.localStorage.getItem(TERMINAL_COMMAND_HISTORY_STORAGE_KEY);
+  if (directValue) {
+    return directValue;
+  }
+  for (const legacyKey of LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS) {
+    const legacyValue = window.localStorage.getItem(legacyKey);
+    if (legacyValue) {
+      return legacyValue;
+    }
+  }
+  return null;
 }
 
 export function TerminalWorkspace({
@@ -396,8 +407,7 @@ export function TerminalWorkspace({
         return true;
       }
       return (
-        entry.command.toLowerCase().includes(normalizedQuery) ||
-        entry.tabTitle.toLowerCase().includes(normalizedQuery)
+        entry.command.toLowerCase().includes(normalizedQuery)
       );
     });
   }, [activeTabId, commandHistoryEntries, commandHistoryQuery, commandHistoryScope]);
@@ -417,6 +427,9 @@ export function TerminalWorkspace({
         TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
         JSON.stringify(commandHistoryEntries.slice(0, MAX_TERMINAL_COMMAND_HISTORY))
       );
+      for (const legacyKey of LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS) {
+        window.localStorage.removeItem(legacyKey);
+      }
     } catch {
       // Ignore storage failures; runtime history remains available.
     }
@@ -764,11 +777,14 @@ export function TerminalWorkspace({
         return;
       }
       enqueueTerminalWriteTask(tabId, async () => {
-        const approved = await requestDangerousCommandApprovalForWrite(tabId, "clipboard", text);
-        if (!approved) {
-          return;
+        const isAlternateScreen = instance.terminal.buffer.active.type === "alternate";
+        if (!isAlternateScreen) {
+          const approved = await requestDangerousCommandApprovalForWrite(tabId, "clipboard", text);
+          if (!approved) {
+            return;
+          }
         }
-        await terminalApi.write(tabId, text);
+        await terminalApi.write(tabId, prepareClipboardTextForTerminalPaste(instance.terminal, text));
       });
       instance.terminal.focus();
     } catch {
@@ -1009,13 +1025,10 @@ export function TerminalWorkspace({
     if (!normalizedCommand) {
       return;
     }
-    const tab = tabsByIdRef.current.get(tabId);
-    const tabTitle = tab?.title?.trim() || `Tab ${tabId}`;
     setCommandHistoryEntries((prev) => {
       const next: TerminalCommandHistoryEntry = {
         id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
         tabId,
-        tabTitle,
         command: normalizedCommand,
         executedAt: Date.now(),
         source
@@ -1103,6 +1116,12 @@ export function TerminalWorkspace({
   const sendTerminalInput = useCallback(
     async (tabId: string, rawData: string): Promise<void> => {
       if (!rawData || !terminalApi) {
+        return;
+      }
+      const instance = terminalRefs.current.get(tabId) ?? null;
+      if (instance?.terminal.buffer.active.type === "alternate") {
+        commandInputBufferRef.current.set(tabId, "");
+        await terminalApi.write(tabId, rawData);
         return;
       }
       let buffer = commandInputBufferRef.current.get(tabId) ?? "";
@@ -1371,6 +1390,8 @@ export function TerminalWorkspace({
         }
         if (event.status === "connected") {
           clearReconnectState(event.tabId);
+          fitTerminal(event.tabId);
+          scheduleDeferredFit(event.tabId);
         }
         return;
       }
@@ -1384,7 +1405,15 @@ export function TerminalWorkspace({
     return () => {
       stopListening();
     };
-  }, [clearReconnectState, onError, scheduleReconnect, setTabStatus, terminalApi]);
+  }, [
+    clearReconnectState,
+    fitTerminal,
+    onError,
+    scheduleDeferredFit,
+    scheduleReconnect,
+    setTabStatus,
+    terminalApi
+  ]);
 
   useEffect(() => {
     if (!contextMenu) {
@@ -1670,7 +1699,7 @@ export function TerminalWorkspace({
       }
 
       const terminal = new Terminal({
-        convertEol: true,
+        convertEol: false,
         cursorBlink: true,
         scrollback: 5000,
         fontSize: 13,
@@ -1936,7 +1965,7 @@ export function TerminalWorkspace({
                 onContextMenu={(event) => openContextMenu(event, tab.id)}
                 ref={(node) => setContainerRef(tab.id, node)}
               />
-              {state ? (
+              {state && state.status !== "connected" ? (
                 <div className={`terminal-pane__status is-${state.status}`}>
                   <span>{getStatusText(state, tabsById.get(tab.id)?.title ?? tab.title)}</span>
                   {(state.status === "closed" || state.status === "error") ? (
@@ -2020,7 +2049,7 @@ export function TerminalWorkspace({
                 Search
                 <input
                   onChange={(event) => setCommandHistoryQuery(event.target.value)}
-                  placeholder="Filter by command or tab"
+                  placeholder="Filter by command"
                   ref={commandHistoryInputRef}
                   value={commandHistoryQuery}
                 />
@@ -2044,7 +2073,7 @@ export function TerminalWorkspace({
                         <code>{entry.command}</code>
                       </p>
                       <p className="hint terminal-history-dialog__meta">
-                        {entry.tabTitle} | {formatCommandHistoryTimestamp(entry.executedAt)} |{" "}
+                        {formatCommandHistoryTimestamp(entry.executedAt)} |{" "}
                         {getTerminalCommandHistorySourceLabel(entry.source)}
                       </p>
                       <div className="terminal-history-dialog__actions">
@@ -2318,5 +2347,16 @@ function scanBufferForMatch(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function prepareClipboardTextForTerminalPaste(terminal: Terminal, text: string): string {
+  const normalizedText = text.replace(/\r?\n/g, "\r");
+  if (
+    terminal.modes.bracketedPasteMode &&
+    terminal.options.ignoreBracketedPasteMode !== true
+  ) {
+    return `\u001b[200~${normalizedText}\u001b[201~`;
+  }
+  return normalizedText;
 }
 

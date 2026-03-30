@@ -43,7 +43,9 @@ import type {
   ServerProcessSnapshot,
   TerminalConnectionStatus
 } from "../shared/terminal";
+import type { RemoteOpenFileAutoSyncEvent } from "../shared/system";
 import {
+  LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
   MAX_TERMINAL_COMMAND_HISTORY,
   readTerminalCommandHistory,
   TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
@@ -467,6 +469,20 @@ interface ServerHealthHistoryPoint {
   diskUsagePercent: number;
   rxBytesPerSecond: number;
   txBytesPerSecond: number;
+}
+
+interface ServerHealthTabState {
+  snapshot: ServerHealthSnapshot | null;
+  metrics: ServerHealthDerivedMetrics | null;
+  history: ServerHealthHistoryPoint[];
+  loading: boolean;
+  error: string | null;
+}
+
+interface ServerProcessTabState {
+  snapshot: ServerProcessSnapshot | null;
+  loading: boolean;
+  error: string | null;
 }
 
 interface PortForwardFormState {
@@ -4734,13 +4750,19 @@ export function App() {
   const [commandSnippetManagerSnippetId, setCommandSnippetManagerSnippetId] = useState("");
   const [commandHistorySelection, setCommandHistorySelection] = useState<string[]>([]);
   const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
-  const [sftpError, setSftpError] = useState<string | null>(null);
+  const [globalSftpError, setGlobalSftpError] = useState<string | null>(null);
+  const [sftpErrorsByTab, setSftpErrorsByTab] = useState<Record<string, string>>({});
+  const [remoteOpenFileIssuesByTab, setRemoteOpenFileIssuesByTab] = useState<
+    Record<string, RemoteOpenFileAutoSyncEvent>
+  >({});
   const [logInfo, setLogInfo] = useState<{
     logDirectoryPath: string;
     logFilePath: string;
   } | null>(null);
   const [isExportingBugReport, setIsExportingBugReport] = useState(false);
-  const [portForwards, setPortForwards] = useState<PortForwardRecord[]>([]);
+  const [portForwardRecordsByTab, setPortForwardRecordsByTab] = useState<
+    Record<string, PortForwardRecord[]>
+  >({});
   const [portForwardForm, setPortForwardForm] = useState<PortForwardFormState>(
     DEFAULT_PORT_FORWARD_FORM
   );
@@ -4748,7 +4770,9 @@ export function App() {
     () => readPortForwardPresets()
   );
   const [portForwardBusy, setPortForwardBusy] = useState(false);
-  const [portForwardStatusMessage, setPortForwardStatusMessage] = useState<string | null>(null);
+  const [portForwardStatusMessagesByTab, setPortForwardStatusMessagesByTab] = useState<
+    Record<string, string | null>
+  >({});
   const [portForwardEventHistory, setPortForwardEventHistory] = useState<
     PortForwardEventHistoryItem[]
   >(() => readPortForwardEventHistory());
@@ -4770,14 +4794,8 @@ export function App() {
     name: string;
     kind: SftpEntry["kind"];
   } | null>(null);
-  const [serverHealth, setServerHealth] = useState<ServerHealthSnapshot | null>(null);
-  const [serverHealthMetrics, setServerHealthMetrics] = useState<ServerHealthDerivedMetrics | null>(null);
-  const [serverHealthHistory, setServerHealthHistory] = useState<ServerHealthHistoryPoint[]>([]);
-  const [serverProcessSnapshot, setServerProcessSnapshot] = useState<ServerProcessSnapshot | null>(null);
-  const [serverHealthLoading, setServerHealthLoading] = useState(false);
-  const [serverProcessLoading, setServerProcessLoading] = useState(false);
-  const [serverHealthError, setServerHealthError] = useState<string | null>(null);
-  const [serverProcessError, setServerProcessError] = useState<string | null>(null);
+  const [serverHealthByTab, setServerHealthByTab] = useState<Record<string, ServerHealthTabState>>({});
+  const [serverProcessByTab, setServerProcessByTab] = useState<Record<string, ServerProcessTabState>>({});
   const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
   const [terminalCommandHistoryEntries, setTerminalCommandHistoryEntries] = useState<
     TerminalCommandHistoryEntry[]
@@ -4804,11 +4822,10 @@ export function App() {
   );
   const pausedUploadTabsRef = useRef<Record<string, true>>({});
   const pausedDownloadTabsRef = useRef<Record<string, true>>({});
-  const serverHealthLoadingRef = useRef<boolean>(serverHealthLoading);
-  const serverProcessLoadingRef = useRef<boolean>(serverProcessLoading);
-  const serverHealthErrorRef = useRef<string | null>(serverHealthError);
-  const serverProcessErrorRef = useRef<string | null>(serverProcessError);
+  const serverHealthByTabRef = useRef<Record<string, ServerHealthTabState>>(serverHealthByTab);
+  const serverProcessByTabRef = useRef<Record<string, ServerProcessTabState>>(serverProcessByTab);
   const portForwardBusyRef = useRef<boolean>(portForwardBusy);
+  const activeSessionIdRef = useRef<string | null>(null);
   const intentionalTabCloseIdsRef = useRef<Set<string>>(new Set());
   const disconnectReportFingerprintByTabRef = useRef<
     Map<string, { fingerprint: string; capturedAt: number }>
@@ -4840,9 +4857,12 @@ export function App() {
   const appHintTimerRef = useRef<number | null>(null);
   const hotkeyRowRefs = useRef<Map<HotkeyActionId, HTMLDivElement | null>>(new Map());
   const hotkeyConflictHighlightTimerRef = useRef<number | null>(null);
-  const previousServerHealthRef = useRef<ServerHealthSnapshot | null>(null);
   const serverHealthRequestInFlightTabsRef = useRef<Set<string>>(new Set());
   const serverProcessRequestInFlightTabsRef = useRef<Set<string>>(new Set());
+  const serverHealthRequestIdsRef = useRef<Map<string, number>>(new Map());
+  const serverProcessRequestIdsRef = useRef<Map<string, number>>(new Map());
+  const portForwardListRequestIdsRef = useRef<Map<string, number>>(new Map());
+  const portForwardEventRequestIdsRef = useRef<Map<string, number>>(new Map());
   const uploadBatchNoticeRef = useRef<Set<string>>(new Set());
   const downloadBatchNoticeRef = useRef<Set<string>>(new Set());
   const canceledUploadBatchIdsRef = useRef<Set<string>>(new Set());
@@ -4853,6 +4873,53 @@ export function App() {
     (tabId: string, commands: string[]) => Promise<void>
   >(async () => undefined);
   const pendingTransferRestoreNoticeShownRef = useRef(false);
+  const activeRemoteOpenFileIssue = activeTabId ? remoteOpenFileIssuesByTab[activeTabId] ?? null : null;
+  const sftpError = activeTabId
+    ? activeRemoteOpenFileIssue?.message ?? sftpErrorsByTab[activeTabId] ?? null
+    : globalSftpError;
+
+  const setSftpError = useCallback((message: string | null, tabId?: string | null) => {
+    const normalizedTabId = typeof tabId === "string" ? tabId.trim() : "";
+    const targetTabId = normalizedTabId || activeTabIdRef.current || "";
+    if (!targetTabId) {
+      setGlobalSftpError(message);
+      return;
+    }
+    setSftpErrorsByTab((prev) => {
+      if (!message) {
+        if (!(targetTabId in prev)) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[targetTabId];
+        return next;
+      }
+      if (prev[targetTabId] === message) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [targetTabId]: message
+      };
+    });
+  }, []);
+
+  const clearRemoteOpenFileIssue = useCallback((tabId?: string | null) => {
+    const normalizedTabId = typeof tabId === "string" ? tabId.trim() : "";
+    const targetTabId = normalizedTabId || activeTabIdRef.current || "";
+    if (!targetTabId) {
+      return;
+    }
+    setRemoteOpenFileIssuesByTab((prev) => {
+      if (!(targetTabId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[targetTabId];
+      return next;
+    });
+  }, []);
+
   const [uploadBatchByTab, setUploadBatchByTab] = useState<
     Record<string, { batchId: string; total: number }>
   >({});
@@ -4887,6 +4954,16 @@ export function App() {
     [activeTabId, terminalTabs]
   );
   const isActiveTabConnected = !!(activeTabId && connectedTabIdsRef.current.has(activeTabId));
+  const activeServerHealthState = activeTabId ? serverHealthByTab[activeTabId] ?? null : null;
+  const activeServerProcessState = activeTabId ? serverProcessByTab[activeTabId] ?? null : null;
+  const serverHealth = activeServerHealthState?.snapshot ?? null;
+  const serverHealthMetrics = activeServerHealthState?.metrics ?? null;
+  const serverHealthHistory = activeServerHealthState?.history ?? [];
+  const serverHealthLoading = activeServerHealthState?.loading ?? false;
+  const serverHealthError = activeServerHealthState?.error ?? null;
+  const serverProcessSnapshot = activeServerProcessState?.snapshot ?? null;
+  const serverProcessLoading = activeServerProcessState?.loading ?? false;
+  const serverProcessError = activeServerProcessState?.error ?? null;
   const isActiveUploadQueuePaused = !!(activeTabId && pausedUploadTabs[activeTabId]);
   const isActiveDownloadQueuePaused = !!(activeTabId && pausedDownloadTabs[activeTabId]);
   const activeTransferDockNotice =
@@ -4894,6 +4971,14 @@ export function App() {
       ? transferDockNotice
       : null;
   const activeSessionId = activeTerminalTab?.sessionId ?? null;
+  const portForwards = activeTabId ? portForwardRecordsByTab[activeTabId] ?? [] : [];
+  const portForwardStatusMessage = activeTabId
+    ? portForwardStatusMessagesByTab[activeTabId] ?? null
+    : null;
+  const allPortForwards = useMemo(
+    () => Object.values(portForwardRecordsByTab).flat(),
+    [portForwardRecordsByTab]
+  );
   const pendingTransferRestoreCount = pendingTransferRestoreItems.length;
   const totalCommandSnippetCount = useMemo(
     () => commandSnippetGroups.reduce((total, group) => total + group.snippets.length, 0),
@@ -4980,10 +5065,7 @@ export function App() {
       if (!normalizedQuery) {
         return true;
       }
-      return (
-        entry.command.toLowerCase().includes(normalizedQuery) ||
-        entry.tabTitle.toLowerCase().includes(normalizedQuery)
-      );
+      return entry.command.toLowerCase().includes(normalizedQuery);
     });
     return filtered.slice(0, 120);
   }, [activeTabId, terminalCommandHistoryEntries, terminalCommandHistoryQuery, terminalCommandHistoryScope]);
@@ -5148,7 +5230,6 @@ export function App() {
       options?: {
         replaceEntryId?: string;
         preferredTabId?: string;
-        preferredTabTitle?: string;
         source?: TerminalCommandHistorySource;
       }
     ): boolean => {
@@ -5160,12 +5241,6 @@ export function App() {
       const preferredTabId = options?.preferredTabId?.trim();
       const fallbackTabId = activeTabIdRef.current ?? terminalTabsRef.current[0]?.id ?? "__manual__";
       const tabId = preferredTabId || fallbackTabId;
-      const tabTitleFromOpenTab =
-        terminalTabsRef.current.find((tab) => tab.id === tabId)?.title?.trim() ?? "";
-      const tabTitle =
-        options?.preferredTabTitle?.trim() ||
-        tabTitleFromOpenTab ||
-        (tabId === "__manual__" ? "Manual" : `Tab ${tabId}`);
       const source = options?.source ?? "manual";
 
       if (replaceEntryId) {
@@ -5196,7 +5271,6 @@ export function App() {
         const nextEntry: TerminalCommandHistoryEntry = {
           id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
           tabId,
-          tabTitle,
           command: normalizedCommand,
           executedAt: Date.now(),
           source
@@ -5884,6 +5958,8 @@ export function App() {
       ).length;
       const activeTabId = activeTabIdRef.current;
       const reconnectPreferences = connectionPreferencesRef.current;
+      const serverHealthStateForTab = serverHealthByTabRef.current[tabId];
+      const serverProcessStateForTab = serverProcessByTabRef.current[tabId];
       const report: DisconnectReportItem = {
         id: createDisconnectReportId(),
         createdAt: new Date(now).toISOString(),
@@ -5910,10 +5986,10 @@ export function App() {
         portForwardTotal: tabPortForwards.length,
         portForwardDegraded,
         portForwardBusy: portForwardBusyRef.current,
-        serverHealthLoading: serverHealthLoadingRef.current,
-        serverProcessLoading: serverProcessLoadingRef.current,
-        serverHealthError: serverHealthErrorRef.current ?? undefined,
-        serverProcessError: serverProcessErrorRef.current ?? undefined,
+        serverHealthLoading: serverHealthStateForTab?.loading ?? false,
+        serverProcessLoading: serverProcessStateForTab?.loading ?? false,
+        serverHealthError: serverHealthStateForTab?.error ?? undefined,
+        serverProcessError: serverProcessStateForTab?.error ?? undefined,
         recentFailures
       };
       setDisconnectReports((prev) => [report, ...prev].slice(0, MAX_DISCONNECT_REPORT_HISTORY));
@@ -6462,7 +6538,6 @@ export function App() {
       upsertTerminalCommandHistoryCommand(normalizedInput, {
         replaceEntryId: entry.id,
         preferredTabId: entry.tabId,
-        preferredTabTitle: entry.tabTitle,
         source: "manual"
       });
     },
@@ -6485,8 +6560,6 @@ export function App() {
           command: entry.command,
           source: entry.source,
           sourceLabel: formatTerminalCommandHistorySourceLabel(entry.source),
-          tabTitle: entry.tabTitle,
-          tabId: entry.tabId,
           executedAt: entry.executedAt,
           executedAtIso: toIsoTimestamp(entry.executedAt)
         }))
@@ -6621,36 +6694,106 @@ export function App() {
     const info = await systemApi.getLogInfo();
     setLogInfo(info);
   }, [systemApi]);
+  const setPortForwardsForTab = useCallback((tabId: string, records: PortForwardRecord[]) => {
+    const normalizedTabId = tabId.trim();
+    if (!normalizedTabId) {
+      return;
+    }
+    setPortForwardRecordsByTab((prev) => {
+      const nextRecords = [...records].sort((left, right) =>
+        right.createdAt.localeCompare(left.createdAt)
+      );
+      return {
+        ...prev,
+        [normalizedTabId]: nextRecords
+      };
+    });
+  }, []);
+  const clearPortForwardTabState = useCallback((tabId: string) => {
+    const normalizedTabId = tabId.trim();
+    if (!normalizedTabId) {
+      return;
+    }
+    portForwardListRequestIdsRef.current.delete(normalizedTabId);
+    portForwardEventRequestIdsRef.current.delete(normalizedTabId);
+    setPortForwardRecordsByTab((prev) => {
+      if (!(normalizedTabId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[normalizedTabId];
+      return next;
+    });
+    setPortForwardStatusMessagesByTab((prev) => {
+      if (!(normalizedTabId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[normalizedTabId];
+      return next;
+    });
+  }, []);
+  const setPortForwardStatusMessageForTab = useCallback((tabId: string, message: string | null) => {
+    const normalizedTabId = tabId.trim();
+    if (!normalizedTabId) {
+      return;
+    }
+    setPortForwardStatusMessagesByTab((prev) => {
+      if (!message) {
+        if (!(normalizedTabId in prev)) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedTabId];
+        return next;
+      }
+      if (prev[normalizedTabId] === message) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [normalizedTabId]: message
+      };
+    });
+  }, []);
   const refreshPortForwards = useCallback(
     async (targetTabId?: string | null): Promise<void> => {
       if (!terminalApi?.listPortForwards) {
-        setPortForwards([]);
-        setPortForwardStatusMessage(null);
+        if (activeTabIdRef.current) {
+          clearPortForwardTabState(activeTabIdRef.current);
+        }
         return;
       }
       const tabId = targetTabId ?? activeTabId;
       if (!tabId) {
-        setPortForwards([]);
-        setPortForwardStatusMessage(null);
         return;
       }
+      const requestId = (portForwardListRequestIdsRef.current.get(tabId) ?? 0) + 1;
+      portForwardListRequestIdsRef.current.set(tabId, requestId);
       try {
         const listed = await terminalApi.listPortForwards(tabId);
-        setPortForwards(listed);
+        if (portForwardListRequestIdsRef.current.get(tabId) !== requestId) {
+          return;
+        }
+        setPortForwardsForTab(tabId, listed);
         const degradedCount = listed.filter((entry) => entry.status === "degraded").length;
         if (degradedCount > 0) {
-          setPortForwardStatusMessage(
+          setPortForwardStatusMessageForTab(
+            tabId,
             `${degradedCount} active forward(s) currently degraded. Check their last error below.`
           );
         } else if (listed.length > 0) {
-          setPortForwardStatusMessage("All active forwards are healthy.");
+          setPortForwardStatusMessageForTab(tabId, "All active forwards are healthy.");
         } else {
-          setPortForwardStatusMessage("No active forwards on the current tab.");
+          setPortForwardStatusMessageForTab(tabId, "No active forwards on the current tab.");
         }
       } catch (caughtError) {
+        if (portForwardListRequestIdsRef.current.get(tabId) !== requestId) {
+          return;
+        }
         const message = toPortForwardErrorMessage(caughtError);
         setError(message);
-        setPortForwardStatusMessage(message);
+        setPortForwardStatusMessageForTab(tabId, message);
         writeAppLog(
           "error",
           "renderer:port-forwarding",
@@ -6659,7 +6802,7 @@ export function App() {
         );
       }
     },
-    [activeTabId, terminalApi, writeAppLog]
+    [activeTabId, clearPortForwardTabState, setPortForwardStatusMessageForTab, setPortForwardsForTab, terminalApi, writeAppLog]
   );
   const refreshPortForwardEvents = useCallback(
     async (targetTabId?: string | null): Promise<void> => {
@@ -6670,12 +6813,16 @@ export function App() {
       if (!tabId) {
         return;
       }
+      const requestId = (portForwardEventRequestIdsRef.current.get(tabId) ?? 0) + 1;
+      portForwardEventRequestIdsRef.current.set(tabId, requestId);
       try {
         const listed = await terminalApi.listPortForwardEvents(tabId, 40);
+        if (portForwardEventRequestIdsRef.current.get(tabId) !== requestId) {
+          return;
+        }
         const sessionIdForEvents =
-          tabId === activeTabId
-            ? activeSessionId
-            : terminalTabsRef.current.find((tab) => tab.id === tabId)?.sessionId ?? null;
+          terminalTabsRef.current.find((tab) => tab.id === tabId)?.sessionId ??
+          (tabId === activeTabIdRef.current ? activeSessionIdRef.current : null);
         if (sessionIdForEvents && listed.length > 0) {
           setPortForwardEventHistory((prev) => {
             const mergedByKey = new Map<string, PortForwardEventHistoryItem>();
@@ -6720,7 +6867,7 @@ export function App() {
         );
       }
     },
-    [activeSessionId, activeTabId, terminalApi, writeAppLog]
+    [activeTabId, terminalApi, writeAppLog]
   );
   const exportPortForwardSnapshot = useCallback(async (): Promise<void> => {
     try {
@@ -7293,12 +7440,18 @@ export function App() {
         throw new Error("Terminal bridge unavailable. Restart `pnpm dev`.");
       }
       const created = await terminalApi.createPortForward(tabId, input);
-      if ((options?.updateVisibleList ?? true) && tabId === activeTabId) {
-        setPortForwards((prev) => [created, ...prev.filter((entry) => entry.id !== created.id)]);
+      if (options?.updateVisibleList ?? true) {
+        setPortForwardRecordsByTab((prev) => {
+          const current = prev[tabId] ?? [];
+          return {
+            ...prev,
+            [tabId]: [created, ...current.filter((entry) => entry.id !== created.id)]
+          };
+        });
       }
       return created;
     },
-    [activeTabId, terminalApi]
+    [terminalApi]
   );
   const createPortForward = useCallback(async (): Promise<void> => {
     if (!activeTabId) {
@@ -7328,7 +7481,7 @@ export function App() {
           bindPort: `${created.bindPort}`
         }));
       }
-      setPortForwardStatusMessage(`Created ${formatPortForwardRecord(created)}.`);
+      setPortForwardStatusMessageForTab(activeTabId, `Created ${formatPortForwardRecord(created)}.`);
       await showAppAlert(
         `Port forwarding created.\n${formatPortForwardRecord(created)}`,
         {
@@ -7338,7 +7491,7 @@ export function App() {
     } catch (caughtError) {
       const message = toPortForwardErrorMessage(caughtError);
       setError(message);
-      setPortForwardStatusMessage(message);
+      setPortForwardStatusMessageForTab(activeTabId, message);
       writeAppLog(
         "error",
         "renderer:port-forwarding",
@@ -7352,6 +7505,7 @@ export function App() {
     activeTabId,
     createPortForwardOnTab,
     portForwardForm,
+    setPortForwardStatusMessageForTab,
     showAppAlert,
     writeAppLog
   ]);
@@ -7454,14 +7608,20 @@ export function App() {
           activeTabId,
           buildPortForwardInputFromPreset(preset)
         );
-        setPortForwardStatusMessage(`Applied preset "${preset.name}" successfully.`);
+        setPortForwardStatusMessageForTab(
+          activeTabId,
+          `Applied preset "${preset.name}" successfully.`
+        );
         await showAppAlert(`Port forwarding created.\n${formatPortForwardRecord(created)}`, {
           title: "Port Forwarding Preset"
         });
       } catch (caughtError) {
         const message = toPortForwardErrorMessage(caughtError);
         setError(message);
-        setPortForwardStatusMessage(`Failed to apply preset "${preset.name}": ${message}`);
+        setPortForwardStatusMessageForTab(
+          activeTabId,
+          `Failed to apply preset "${preset.name}": ${message}`
+        );
         writeAppLog(
           "error",
           "renderer:port-forwarding",
@@ -7472,7 +7632,7 @@ export function App() {
         setPortForwardBusy(false);
       }
     },
-    [activeTabId, createPortForwardOnTab, showAppAlert, writeAppLog]
+    [activeTabId, createPortForwardOnTab, setPortForwardStatusMessageForTab, showAppAlert, writeAppLog]
   );
   const setPortForwardPresetAutoRestore = useCallback((presetId: string, value: boolean) => {
     setPortForwardPresets((prev) =>
@@ -7519,9 +7679,7 @@ export function App() {
       let failedCount = 0;
       for (const preset of presets) {
         try {
-          await createPortForwardOnTab(tabId, buildPortForwardInputFromPreset(preset), {
-            updateVisibleList: tabId === activeTabId
-          });
+          await createPortForwardOnTab(tabId, buildPortForwardInputFromPreset(preset));
         } catch (caughtError) {
           failedCount += 1;
           writeAppLog(
@@ -7532,13 +7690,13 @@ export function App() {
           );
         }
       }
-      if (failedCount > 0 && tabId === activeTabId) {
+      if (failedCount > 0) {
         const message = `${failedCount} port forwarding preset(s) failed to auto-restore.`;
         setError(message);
-        setPortForwardStatusMessage(message);
+        setPortForwardStatusMessageForTab(tabId, message);
       }
     },
-    [activeTabId, createPortForwardOnTab, writeAppLog]
+    [createPortForwardOnTab, setPortForwardStatusMessageForTab, writeAppLog]
   );
   const removePortForward = useCallback(
     async (forward: PortForwardRecord): Promise<void> => {
@@ -7546,7 +7704,7 @@ export function App() {
         setError("Terminal bridge unavailable. Restart `pnpm dev`.");
         return;
       }
-      const tabId = activeTabId;
+      const tabId = forward.tabId;
       if (!tabId) {
         return;
       }
@@ -7564,12 +7722,18 @@ export function App() {
       try {
         setPortForwardBusy(true);
         await terminalApi.removePortForward(tabId, forward.id);
-        setPortForwards((prev) => prev.filter((entry) => entry.id !== forward.id));
-        setPortForwardStatusMessage(`Removed ${formatPortForwardRecord(forward)}.`);
+        setPortForwardRecordsByTab((prev) => {
+          const current = prev[tabId] ?? [];
+          return {
+            ...prev,
+            [tabId]: current.filter((entry) => entry.id !== forward.id)
+          };
+        });
+        setPortForwardStatusMessageForTab(tabId, `Removed ${formatPortForwardRecord(forward)}.`);
       } catch (caughtError) {
         const message = toPortForwardErrorMessage(caughtError);
         setError(message);
-        setPortForwardStatusMessage(message);
+        setPortForwardStatusMessageForTab(tabId, message);
         writeAppLog(
           "error",
           "renderer:port-forwarding",
@@ -7580,7 +7744,7 @@ export function App() {
         setPortForwardBusy(false);
       }
     },
-    [activeTabId, showAppConfirm, terminalApi, writeAppLog]
+    [setPortForwardStatusMessageForTab, showAppConfirm, terminalApi, writeAppLog]
   );
   const showAppChoice = useCallback(
     async (
@@ -8060,6 +8224,51 @@ export function App() {
       queued: activeDownloadQueueStats.queued
     };
   }, [activeDownloadBatchProgress, activeDownloadQueueStats]);
+  const operationCenterUploadSummary = useMemo(() => {
+    const openTabIds = new Set(terminalTabs.map((tab) => tab.id));
+    const relevantTransfers = sftpTransfers.filter(
+      (transfer) => transfer.direction === "upload" && openTabIds.has(transfer.tabId)
+    );
+    const activeTabCount = new Set(relevantTransfers.map((transfer) => transfer.tabId)).size;
+    return {
+      total: relevantTransfers.length,
+      running: relevantTransfers.filter((transfer) => transfer.status === "running").length,
+      queued: relevantTransfers.filter((transfer) => transfer.status === "queued").length,
+      completed: relevantTransfers.filter((transfer) => transfer.status === "completed").length,
+      failed: relevantTransfers.filter((transfer) => transfer.status === "failed").length,
+      canceled: relevantTransfers.filter((transfer) => transfer.status === "canceled").length,
+      activeTabCount
+    };
+  }, [sftpTransfers, terminalTabs]);
+  const operationCenterDownloadSummary = useMemo(() => {
+    const openTabIds = new Set(terminalTabs.map((tab) => tab.id));
+    const relevantTransfers = sftpTransfers.filter(
+      (transfer) => transfer.direction === "download" && openTabIds.has(transfer.tabId)
+    );
+    const activeTabCount = new Set(relevantTransfers.map((transfer) => transfer.tabId)).size;
+    return {
+      total: relevantTransfers.length,
+      running: relevantTransfers.filter((transfer) => transfer.status === "running").length,
+      queued: relevantTransfers.filter((transfer) => transfer.status === "queued").length,
+      completed: relevantTransfers.filter((transfer) => transfer.status === "completed").length,
+      failed: relevantTransfers.filter((transfer) => transfer.status === "failed").length,
+      canceled: relevantTransfers.filter((transfer) => transfer.status === "canceled").length,
+      activeTabCount
+    };
+  }, [sftpTransfers, terminalTabs]);
+  const operationCenterPortForwardSummary = useMemo(() => {
+    const tabIds = new Set(allPortForwards.map((entry) => entry.tabId));
+    const degraded = allPortForwards.filter((entry) => entry.status === "degraded").length;
+    return {
+      total: allPortForwards.length,
+      degraded,
+      activeTabCount: tabIds.size,
+      activeTabStatus:
+        activeTabId && portForwardStatusMessagesByTab[activeTabId]
+          ? portForwardStatusMessagesByTab[activeTabId]
+          : null
+    };
+  }, [activeTabId, allPortForwards, portForwardStatusMessagesByTab]);
   const buildBatchFailureDetailText = useCallback(
     (
       tabId: string,
@@ -9111,7 +9320,10 @@ export function App() {
                 };
               });
               uploadQueueRef.current.unshift(nextJob);
-              setSftpError("Terminal tab disconnected. Reconnect to resume queued uploads.");
+              setSftpError(
+                "Terminal tab disconnected. Reconnect to resume queued uploads.",
+                nextJob.tabId
+              );
               return;
             }
             setPausedUploadTabs((prev) => {
@@ -9122,7 +9334,7 @@ export function App() {
               delete next[nextJob.tabId];
               return next;
             });
-            setSftpError(message);
+            setSftpError(message, nextJob.tabId);
             applySftpTransferEvent({
               tabId: nextJob.tabId,
               transferId: nextJob.transferId,
@@ -9193,7 +9405,10 @@ export function App() {
                 };
               });
               downloadQueueRef.current.unshift(nextJob);
-              setSftpError("Terminal tab disconnected. Reconnect to resume queued downloads.");
+              setSftpError(
+                "Terminal tab disconnected. Reconnect to resume queued downloads.",
+                nextJob.tabId
+              );
               return;
             }
             setPausedDownloadTabs((prev) => {
@@ -9204,7 +9419,7 @@ export function App() {
               delete next[nextJob.tabId];
               return next;
             });
-            setSftpError(message);
+            setSftpError(message, nextJob.tabId);
             applySftpTransferEvent({
               tabId: nextJob.tabId,
               transferId: nextJob.transferId,
@@ -9243,18 +9458,18 @@ export function App() {
       }
       const targetTabId = options?.tabId ?? activeTabId;
       if (!targetTabId) {
-        setSftpError("Open a terminal tab before browsing SFTP.");
+        setSftpError("Open a terminal tab before browsing SFTP.", targetTabId);
         return;
       }
       if (!connectedTabIdsRef.current.has(targetTabId)) {
         if (!options?.suppressDisconnectedError) {
-          setSftpError("Terminal tab is not connected.");
+          setSftpError("Terminal tab is not connected.", targetTabId);
         }
         return;
       }
 
       setSftpLoading(true);
-      setSftpError(null);
+      setSftpError(null, targetTabId);
       try {
         const result = await sftpApi.listDirectory(targetTabId, path ?? ".");
         setSftpDirectory(result);
@@ -9272,7 +9487,7 @@ export function App() {
         if (options?.suppressDisconnectedError && isTabNotConnectedError(message)) {
           return;
         }
-        setSftpError(message);
+        setSftpError(message, targetTabId);
       } finally {
         setSftpLoading(false);
       }
@@ -9280,28 +9495,142 @@ export function App() {
     [activeTabId, sftpApi]
   );
 
-  const resetServerHealth = useCallback((message?: string | null) => {
-    previousServerHealthRef.current = null;
-    setServerHealth(null);
-    setServerHealthMetrics(null);
-    setServerHealthHistory([]);
-    setServerHealthLoading(false);
-    setServerHealthError(message ?? null);
+  const clearDisconnectReportFingerprintsForTabIds = useCallback((tabIds: string[]) => {
+    const uniqueTabIds = Array.from(new Set(tabIds.map((tabId) => tabId.trim()).filter(Boolean)));
+    for (const tabId of uniqueTabIds) {
+      disconnectReportFingerprintByTabRef.current.delete(tabId);
+    }
   }, []);
+
+  const invalidateServerHealthRequest = useCallback((tabId: string) => {
+    const nextRequestId = (serverHealthRequestIdsRef.current.get(tabId) ?? 0) + 1;
+    serverHealthRequestIdsRef.current.set(tabId, nextRequestId);
+    serverHealthRequestInFlightTabsRef.current.delete(tabId);
+  }, []);
+
+  const invalidateServerProcessRequest = useCallback((tabId: string) => {
+    const nextRequestId = (serverProcessRequestIdsRef.current.get(tabId) ?? 0) + 1;
+    serverProcessRequestIdsRef.current.set(tabId, nextRequestId);
+    serverProcessRequestInFlightTabsRef.current.delete(tabId);
+  }, []);
+
+  const resetServerHealth = useCallback(
+    (options?: { tabId?: string | null; message?: string | null }) => {
+      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
+      if (!targetTabId) {
+        return;
+      }
+      invalidateServerHealthRequest(targetTabId);
+      const nextState: ServerHealthTabState = {
+        snapshot: null,
+        metrics: null,
+        history: [],
+        loading: false,
+        error: options?.message ?? null
+      };
+      setServerHealthByTab((prev) => {
+        const previous = prev[targetTabId];
+        if (
+          previous &&
+          previous.snapshot === null &&
+          previous.metrics === null &&
+          previous.history.length === 0 &&
+          previous.loading === false &&
+          previous.error === nextState.error
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [targetTabId]: nextState
+        };
+      });
+    },
+    [invalidateServerHealthRequest]
+  );
+
+  const resetServerProcesses = useCallback(
+    (options?: { tabId?: string | null; message?: string | null }) => {
+      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
+      if (!targetTabId) {
+        return;
+      }
+      invalidateServerProcessRequest(targetTabId);
+      const nextState: ServerProcessTabState = {
+        snapshot: null,
+        loading: false,
+        error: options?.message ?? null
+      };
+      setServerProcessByTab((prev) => {
+        const previous = prev[targetTabId];
+        if (
+          previous &&
+          previous.snapshot === null &&
+          previous.loading === false &&
+          previous.error === nextState.error
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [targetTabId]: nextState
+        };
+      });
+    },
+    [invalidateServerProcessRequest]
+  );
+
+  const removeServerMonitorTabState = useCallback(
+    (tabId: string) => {
+      const targetTabId = tabId.trim();
+      if (!targetTabId) {
+        return;
+      }
+      invalidateServerHealthRequest(targetTabId);
+      invalidateServerProcessRequest(targetTabId);
+      setServerHealthByTab((prev) => {
+        if (!(targetTabId in prev)) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[targetTabId];
+        return next;
+      });
+      setServerProcessByTab((prev) => {
+        if (!(targetTabId in prev)) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[targetTabId];
+        return next;
+      });
+      clearDisconnectReportFingerprintsForTabIds([targetTabId]);
+    },
+    [
+      clearDisconnectReportFingerprintsForTabIds,
+      invalidateServerHealthRequest,
+      invalidateServerProcessRequest
+    ]
+  );
 
   const refreshServerHealth = useCallback(
     async (options?: { tabId?: string; silent?: boolean }) => {
-      if (!terminalApi) {
-        resetServerHealth("Terminal bridge unavailable. Restart `pnpm dev`.");
+      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
+      if (!targetTabId) {
         return;
       }
-      const targetTabId = options?.tabId ?? activeTabId;
-      if (!targetTabId) {
-        resetServerHealth(null);
+      if (!terminalApi) {
+        resetServerHealth({
+          tabId: targetTabId,
+          message: "Terminal bridge unavailable. Restart `pnpm dev`."
+        });
         return;
       }
       if (!connectedTabIdsRef.current.has(targetTabId)) {
-        resetServerHealth("Terminal tab is not connected.");
+        resetServerHealth({
+          tabId: targetTabId,
+          message: "Terminal tab is not connected."
+        });
         return;
       }
       const isSilent = options?.silent === true;
@@ -9320,61 +9649,93 @@ export function App() {
         }
       }
 
+      const previousSnapshot = serverHealthByTabRef.current[targetTabId]?.snapshot ?? null;
+      const requestId = (serverHealthRequestIdsRef.current.get(targetTabId) ?? 0) + 1;
+      serverHealthRequestIdsRef.current.set(targetTabId, requestId);
       serverHealthRequestInFlightTabsRef.current.add(targetTabId);
-      if (!isSilent) {
-        setServerHealthLoading(true);
-      }
+      setServerHealthByTab((prev) => {
+        const previous = prev[targetTabId];
+        return {
+          ...prev,
+          [targetTabId]: {
+            snapshot: previous?.snapshot ?? null,
+            metrics: previous?.metrics ?? null,
+            history: previous?.history ?? [],
+            loading: true,
+            error: isSilent ? previous?.error ?? null : null
+          }
+        };
+      });
       try {
         const snapshot = await terminalApi.getServerHealth(targetTabId);
-        const previousSnapshot =
-          previousServerHealthRef.current?.tabId === targetTabId
-            ? previousServerHealthRef.current
-            : null;
+        if (
+          serverHealthRequestIdsRef.current.get(targetTabId) !== requestId ||
+          !connectedTabIdsRef.current.has(targetTabId)
+        ) {
+          return;
+        }
         const nextMetrics = deriveServerHealthMetrics(snapshot, previousSnapshot);
-        setServerHealth(snapshot);
-        setServerHealthMetrics(nextMetrics);
-        setServerHealthHistory((previousHistory) => {
-          const baseHistory = previousSnapshot ? previousHistory : [];
+        setServerHealthByTab((prev) => {
+          const previous = prev[targetTabId];
+          const baseHistory = previousSnapshot ? previous?.history ?? [] : [];
           const nextPoint: ServerHealthHistoryPoint = {
             at: Date.now(),
             ...nextMetrics
           };
-          return [...baseHistory, nextPoint].slice(-SERVER_HEALTH_HISTORY_LIMIT);
+          return {
+            ...prev,
+            [targetTabId]: {
+              snapshot,
+              metrics: nextMetrics,
+              history: [...baseHistory, nextPoint].slice(-SERVER_HEALTH_HISTORY_LIMIT),
+              loading: false,
+              error: null
+            }
+          };
         });
-        setServerHealthError(null);
-        previousServerHealthRef.current = snapshot;
       } catch (caughtError) {
+        if (serverHealthRequestIdsRef.current.get(targetTabId) !== requestId) {
+          return;
+        }
         const message = (caughtError as Error).message;
-        setServerHealthError(message);
+        setServerHealthByTab((prev) => {
+          const previous = prev[targetTabId];
+          return {
+            ...prev,
+            [targetTabId]: {
+              snapshot: previous?.snapshot ?? null,
+              metrics: previous?.metrics ?? null,
+              history: previous?.history ?? [],
+              loading: false,
+              error: message
+            }
+          };
+        });
       } finally {
         serverHealthRequestInFlightTabsRef.current.delete(targetTabId);
-        if (!isSilent) {
-          setServerHealthLoading(false);
-        }
       }
     },
-    [activeTabId, resetServerHealth, terminalApi]
+    [resetServerHealth, terminalApi]
   );
-
-  const resetServerProcesses = useCallback((message?: string | null) => {
-    setServerProcessSnapshot(null);
-    setServerProcessLoading(false);
-    setServerProcessError(message ?? null);
-  }, []);
 
   const refreshServerProcesses = useCallback(
     async (options?: { tabId?: string; silent?: boolean }) => {
-      if (!terminalApi) {
-        resetServerProcesses("Terminal bridge unavailable. Restart `pnpm dev`.");
+      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
+      if (!targetTabId) {
         return;
       }
-      const targetTabId = options?.tabId ?? activeTabId;
-      if (!targetTabId) {
-        resetServerProcesses(null);
+      if (!terminalApi) {
+        resetServerProcesses({
+          tabId: targetTabId,
+          message: "Terminal bridge unavailable. Restart `pnpm dev`."
+        });
         return;
       }
       if (!connectedTabIdsRef.current.has(targetTabId)) {
-        resetServerProcesses("Terminal tab is not connected.");
+        resetServerProcesses({
+          tabId: targetTabId,
+          message: "Terminal tab is not connected."
+        });
         return;
       }
       const isSilent = options?.silent === true;
@@ -9392,25 +9753,58 @@ export function App() {
           return;
         }
       }
+
+      const requestId = (serverProcessRequestIdsRef.current.get(targetTabId) ?? 0) + 1;
+      serverProcessRequestIdsRef.current.set(targetTabId, requestId);
       serverProcessRequestInFlightTabsRef.current.add(targetTabId);
-      if (!isSilent) {
-        setServerProcessLoading(true);
-      }
+      setServerProcessByTab((prev) => {
+        const previous = prev[targetTabId];
+        return {
+          ...prev,
+          [targetTabId]: {
+            snapshot: previous?.snapshot ?? null,
+            loading: true,
+            error: isSilent ? previous?.error ?? null : null
+          }
+        };
+      });
       try {
         const snapshot = await terminalApi.getServerProcesses(targetTabId);
-        setServerProcessSnapshot(snapshot);
-        setServerProcessError(null);
+        if (
+          serverProcessRequestIdsRef.current.get(targetTabId) !== requestId ||
+          !connectedTabIdsRef.current.has(targetTabId)
+        ) {
+          return;
+        }
+        setServerProcessByTab((prev) => ({
+          ...prev,
+          [targetTabId]: {
+            snapshot,
+            loading: false,
+            error: null
+          }
+        }));
       } catch (caughtError) {
+        if (serverProcessRequestIdsRef.current.get(targetTabId) !== requestId) {
+          return;
+        }
         const message = (caughtError as Error).message;
-        setServerProcessError(message);
+        setServerProcessByTab((prev) => {
+          const previous = prev[targetTabId];
+          return {
+            ...prev,
+            [targetTabId]: {
+              snapshot: previous?.snapshot ?? null,
+              loading: false,
+              error: message
+            }
+          };
+        });
       } finally {
         serverProcessRequestInFlightTabsRef.current.delete(targetTabId);
-        if (!isSilent) {
-          setServerProcessLoading(false);
-        }
       }
     },
-    [activeTabId, resetServerProcesses, terminalApi]
+    [resetServerProcesses, terminalApi]
   );
 
   const closeSftpContextMenu = useCallback(() => {
@@ -9628,8 +10022,8 @@ export function App() {
   ]);
 
   useEffect(() => {
-    portForwardsRef.current = portForwards;
-  }, [portForwards]);
+    portForwardsRef.current = allPortForwards;
+  }, [allPortForwards]);
 
   useEffect(() => {
     connectionPreferencesRef.current = connectionPreferences;
@@ -9648,24 +10042,19 @@ export function App() {
   }, [pausedDownloadTabs]);
 
   useEffect(() => {
-    serverHealthLoadingRef.current = serverHealthLoading;
-  }, [serverHealthLoading]);
+    serverHealthByTabRef.current = serverHealthByTab;
+  }, [serverHealthByTab]);
 
   useEffect(() => {
-    serverProcessLoadingRef.current = serverProcessLoading;
-  }, [serverProcessLoading]);
-
-  useEffect(() => {
-    serverHealthErrorRef.current = serverHealthError;
-  }, [serverHealthError]);
-
-  useEffect(() => {
-    serverProcessErrorRef.current = serverProcessError;
-  }, [serverProcessError]);
+    serverProcessByTabRef.current = serverProcessByTab;
+  }, [serverProcessByTab]);
 
   useEffect(() => {
     portForwardBusyRef.current = portForwardBusy;
   }, [portForwardBusy]);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   useEffect(() => {
     portForwardPresetsRef.current = portForwardPresets;
@@ -9841,6 +10230,9 @@ export function App() {
         TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
         JSON.stringify(terminalCommandHistoryEntries.slice(0, MAX_TERMINAL_COMMAND_HISTORY))
       );
+      for (const legacyKey of LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS) {
+        window.localStorage.removeItem(legacyKey);
+      }
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
@@ -10092,6 +10484,37 @@ export function App() {
   }, [appApi]);
 
   useEffect(() => {
+    if (!systemApi) {
+      return;
+    }
+    const stopListening = systemApi.onRemoteOpenFileEvent((event: RemoteOpenFileAutoSyncEvent) => {
+      setRemoteOpenFileIssuesByTab((prev) => ({
+        ...prev,
+        [event.tabId]: event
+      }));
+      const tabTitle =
+        terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.title?.trim() ?? "";
+      const hintMessage =
+        event.tabId === activeTabIdRef.current || !tabTitle
+          ? event.message
+          : `${tabTitle}: ${event.message}`;
+      pushAppHintMessage(hintMessage, {
+        level: "warn",
+        durationMs: 5200
+      });
+      writeAppLog(
+        "warn",
+        "renderer:remote-open-file",
+        "Remote open file auto-sync needs user attention.",
+        event
+      );
+    });
+    return () => {
+      stopListening();
+    };
+  }, [pushAppHintMessage, systemApi, writeAppLog]);
+
+  useEffect(() => {
     writeAppLog("info", "renderer:lifecycle", "Renderer initialized.");
   }, [writeAppLog]);
 
@@ -10169,7 +10592,7 @@ export function App() {
       ]).catch((caughtError) => {
         const message = toPortForwardErrorMessage(caughtError);
         setError(message);
-        setPortForwardStatusMessage(message);
+        setPortForwardStatusMessageForTab(activeTabId, message);
         writeAppLog(
           "error",
           "renderer:port-forwarding",
@@ -10187,6 +10610,7 @@ export function App() {
     isSettingsOpen,
     refreshPortForwardEvents,
     refreshPortForwards,
+    setPortForwardStatusMessageForTab,
     writeAppLog
   ]);
 
@@ -10228,7 +10652,6 @@ export function App() {
 
   useEffect(() => {
     setSftpDirectory(null);
-    setSftpError(null);
     setSftpPath(".");
     setSelectedSftpPath(null);
     if (!activeTabId || !sftpApi) {
@@ -10241,7 +10664,6 @@ export function App() {
   }, [activeTabId, loadSftpDirectory, sftpApi]);
 
   useEffect(() => {
-    resetServerHealth(null);
     if (!activeTabId) {
       return;
     }
@@ -10251,10 +10673,9 @@ export function App() {
     void refreshServerHealth({
       tabId: activeTabId
     });
-  }, [activeTabId, refreshServerHealth, resetServerHealth]);
+  }, [activeTabId, refreshServerHealth]);
 
   useEffect(() => {
-    resetServerProcesses(null);
     if (!isServerHealthDetailOpen) {
       return;
     }
@@ -10271,7 +10692,6 @@ export function App() {
     activeTabId,
     isServerHealthDetailOpen,
     refreshServerProcesses,
-    resetServerProcesses
   ]);
 
   useEffect(() => {
@@ -10317,6 +10737,15 @@ export function App() {
     pendingStartupCommandsByTabRef.current.clear();
     ensuredRemoteDirectoriesRef.current.clear();
     ensuringRemoteDirectoriesRef.current.clear();
+    serverHealthRequestInFlightTabsRef.current.clear();
+    serverProcessRequestInFlightTabsRef.current.clear();
+    serverHealthRequestIdsRef.current.clear();
+    serverProcessRequestIdsRef.current.clear();
+    disconnectReportFingerprintByTabRef.current.clear();
+    setServerHealthByTab({});
+    setServerProcessByTab({});
+    setPortForwardRecordsByTab({});
+    setPortForwardStatusMessagesByTab({});
     setPausedUploadTabs({});
     setPausedDownloadTabs({});
   }, [terminalApi]);
@@ -10331,6 +10760,7 @@ export function App() {
         if (event.status === "connected") {
           intentionalTabCloseIdsRef.current.delete(event.tabId);
           connectedTabIdsRef.current.add(event.tabId);
+          clearDisconnectReportFingerprintsForTabIds([event.tabId]);
           setPausedUploadTabs((prev) => {
             if (!prev[event.tabId]) {
               return prev;
@@ -10403,20 +10833,38 @@ export function App() {
           autoRestoredPortForwardTabsRef.current.delete(event.tabId);
           ensuredRemoteDirectoriesRef.current.delete(event.tabId);
           ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+          clearPortForwardTabState(event.tabId);
+          resetServerHealth({
+            tabId: event.tabId,
+            message: "Terminal tab is reconnecting..."
+          });
+          resetServerProcesses({
+            tabId: event.tabId,
+            message: "Terminal tab is reconnecting..."
+          });
           writeAppLog("info", "renderer:terminal", "Terminal tab connecting.", {
             tabId: event.tabId,
             status: event.status
           });
-          if (event.tabId === activeTabIdRef.current) {
-            resetServerHealth("Terminal tab is reconnecting...");
-            resetServerProcesses("Terminal tab is reconnecting...");
-          }
         } else {
           const expectedClose = intentionalTabCloseIdsRef.current.has(event.tabId);
           connectedTabIdsRef.current.delete(event.tabId);
           autoRestoredPortForwardTabsRef.current.delete(event.tabId);
           ensuredRemoteDirectoriesRef.current.delete(event.tabId);
           ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+          clearPortForwardTabState(event.tabId);
+          if (expectedClose) {
+            removeServerMonitorTabState(event.tabId);
+          } else {
+            resetServerHealth({
+              tabId: event.tabId,
+              message: "Terminal tab is not connected."
+            });
+            resetServerProcesses({
+              tabId: event.tabId,
+              message: "Terminal tab is not connected."
+            });
+          }
           writeAppLog("warn", "renderer:terminal", "Terminal tab disconnected.", {
             tabId: event.tabId,
             status: event.status,
@@ -10431,10 +10879,6 @@ export function App() {
             });
           }
           intentionalTabCloseIdsRef.current.delete(event.tabId);
-          if (event.tabId === activeTabIdRef.current) {
-            resetServerHealth("Terminal tab is not connected.");
-            resetServerProcesses("Terminal tab is not connected.");
-          }
         }
       }
       if (event.type === "error") {
@@ -10443,6 +10887,19 @@ export function App() {
         autoRestoredPortForwardTabsRef.current.delete(event.tabId);
         ensuredRemoteDirectoriesRef.current.delete(event.tabId);
         ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+        clearPortForwardTabState(event.tabId);
+        if (expectedClose) {
+          removeServerMonitorTabState(event.tabId);
+        } else {
+          resetServerHealth({
+            tabId: event.tabId,
+            message: event.message
+          });
+          resetServerProcesses({
+            tabId: event.tabId,
+            message: event.message
+          });
+        }
         writeAppLog("error", "renderer:terminal", "Terminal tab error.", {
           tabId: event.tabId,
           message: event.message,
@@ -10456,10 +10913,6 @@ export function App() {
           });
         }
         intentionalTabCloseIdsRef.current.delete(event.tabId);
-        if (event.tabId === activeTabIdRef.current) {
-          resetServerHealth(event.message);
-          resetServerProcesses(event.message);
-        }
       }
       if (event.type !== "status" || event.status !== "connected") {
         return;
@@ -10478,10 +10931,13 @@ export function App() {
     };
   }, [
     captureDisconnectReport,
+    clearDisconnectReportFingerprintsForTabIds,
+    clearPortForwardTabState,
     drainDownloadQueue,
     drainUploadQueue,
     isServerHealthDetailOpen,
     loadSftpDirectory,
+    removeServerMonitorTabState,
     refreshServerHealth,
     refreshServerProcesses,
     resetServerHealth,
@@ -10502,11 +10958,10 @@ export function App() {
 
       if (
         event.status === "failed" &&
-        event.tabId === activeTabId &&
         event.message &&
         !isTransferCanceledMessage(event.message)
       ) {
-        setSftpError(event.message);
+        setSftpError(event.message, event.tabId);
       }
       if (event.status === "failed" && !isTransferCanceledMessage(event.message)) {
         writeAppLog("warn", "renderer:sftp-transfer", "SFTP transfer failed.", {
@@ -13052,11 +13507,8 @@ export function App() {
         return;
       }
       applyCommandSnippetScopedValueUpdates(parameterResult.scopedValueUpdates);
-      const tabTitle =
-        terminalTabsRef.current.find((entry) => entry.id === tabId)?.title ?? `Tab ${tabId}`;
       upsertTerminalCommandHistoryCommand(rendered, {
         preferredTabId: tabId,
-        preferredTabTitle: tabTitle,
         source: "manual"
       });
     },
@@ -13995,7 +14447,31 @@ export function App() {
       if (systemApi) {
         void systemApi.disposeRemoteOpenFiles(tabId);
       }
+      clearPortForwardTabState(tabId);
+      removeServerMonitorTabState(tabId);
     }
+    setSftpErrorsByTab((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const tabId of uniqueTabIds) {
+        if (tabId in next) {
+          delete next[tabId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setRemoteOpenFileIssuesByTab((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const tabId of uniqueTabIds) {
+        if (tabId in next) {
+          delete next[tabId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
 
     setUploadBatchByTab((prev) => {
       let changed = false;
@@ -14098,6 +14574,8 @@ export function App() {
     dangerousCommandApproval,
     drainDownloadQueue,
     drainUploadQueue,
+    clearPortForwardTabState,
+    removeServerMonitorTabState,
     resolveDangerousCommandApproval,
     systemApi,
     terminalApi
@@ -15805,6 +16283,7 @@ export function App() {
       return;
     }
     const visibleIds = new Set(visibleDisconnectReports.map((entry) => entry.id));
+    const visibleTabIds = visibleDisconnectReports.map((entry) => entry.tabId);
     const confirmed = await showAppConfirm(
       `Clear ${visibleDisconnectReports.length} visible disconnect report(s)?`,
       {
@@ -15817,10 +16296,16 @@ export function App() {
       return;
     }
     setDisconnectReports((prev) => prev.filter((entry) => !visibleIds.has(entry.id)));
+    clearDisconnectReportFingerprintsForTabIds(visibleTabIds);
     await showAppAlert("Visible disconnect reports cleared.", {
       title: "Diagnostics"
     });
-  }, [showAppAlert, showAppConfirm, visibleDisconnectReports]);
+  }, [
+    clearDisconnectReportFingerprintsForTabIds,
+    showAppAlert,
+    showAppConfirm,
+    visibleDisconnectReports
+  ]);
 
   const clearDisconnectReportsHistory = useCallback(async () => {
     if (disconnectReports.length === 0) {
@@ -15838,11 +16323,13 @@ export function App() {
       return;
     }
     setDisconnectReports([]);
-    disconnectReportFingerprintByTabRef.current.clear();
+    clearDisconnectReportFingerprintsForTabIds(
+      disconnectReports.map((entry) => entry.tabId)
+    );
     await showAppAlert("Disconnect reports cleared.", {
       title: "Diagnostics"
     });
-  }, [disconnectReports.length, showAppAlert, showAppConfirm]);
+  }, [clearDisconnectReportFingerprintsForTabIds, disconnectReports, showAppAlert, showAppConfirm]);
 
   const copyClashDirectRules = async (session: SessionRecord) => {
     const text = buildClashDirectRules(session);
@@ -16114,11 +16601,54 @@ export function App() {
 
     try {
       setSftpError(null);
-      const prepared = await systemApi.prepareRemoteOpenFile(
+      let prepared = await systemApi.prepareRemoteOpenFile(
         activeTabId,
         targetEntry.path,
         targetEntry.name
       );
+      if (prepared.reuseState === "reuse-local-draft") {
+        const hasSyncInFlight = prepared.localDraftState === "syncing";
+        const choice = await showAppChoice(
+          hasSyncInFlight
+            ? "A local draft for this remote file is still syncing. Reopen the existing draft instead of creating another temp copy."
+            : "A local draft for this remote file already exists. Decide whether to reopen the draft or discard it and reload the current remote file.",
+          hasSyncInFlight
+            ? [
+                {
+                  value: "reuse",
+                  label: "Use Local Draft"
+                }
+              ]
+            : [
+                {
+                  value: "reuse",
+                  label: "Use Local Draft"
+                },
+                {
+                  value: "reload",
+                  label: "Discard Draft + Reload",
+                  danger: true
+                }
+              ],
+          {
+            title: "Remote File Already Open",
+            cancelLabel: "Cancel",
+            detailText: [
+              `Remote: ${targetEntry.path}`,
+              `Local draft: ${prepared.localPath}`,
+              `Draft state: ${hasSyncInFlight ? "Syncing pending changes" : "Modified locally"}`
+            ].join("\n")
+          }
+        );
+        if (!choice) {
+          return;
+        }
+        if (choice === "reload") {
+          prepared = await systemApi.prepareRemoteOpenFile(activeTabId, targetEntry.path, targetEntry.name, {
+            discardLocalChanges: true
+          });
+        }
+      }
       if (!prepared.alreadyOpen) {
         await sftpApi.downloadFile(
           activeTabId,
@@ -16131,6 +16661,7 @@ export function App() {
           targetEntry.path,
           prepared.localPath
         );
+        clearRemoteOpenFileIssue(activeTabId);
       }
       const preferredProgramPath = fileOpenPreferences.preferredProgramPath.trim();
       await systemApi.openLocalPath(
@@ -20809,7 +21340,7 @@ export function App() {
               </select>
               <input
                 onChange={(event) => setTerminalCommandHistoryQuery(event.target.value)}
-                placeholder="Search command/tab"
+                placeholder="Search command"
                 value={terminalCommandHistoryQuery}
               />
             </div>
@@ -20829,13 +21360,10 @@ export function App() {
                         void pasteTerminalCommandHistoryEntry(entry);
                       }}
                       onContextMenu={(event) => openCommandHistoryContextMenu(event, entry.id)}
-                      title={`${entry.command}\n\nSource: ${formatTerminalCommandHistorySourceLabel(entry.source)}\n\nDouble-click to paste into active terminal. Right-click for actions.`}
+                      title={`${entry.command}\n\nDouble-click to paste into active terminal. Right-click for actions.`}
                     >
                       <p className="command-history-panel__command">
                         <code>{entry.command}</code>
-                      </p>
-                      <p className="hint command-history-panel__meta">
-                        {formatTerminalCommandHistorySourceLabel(entry.source)} | {entry.tabTitle}
                       </p>
                     </li>
                   ))}
@@ -21211,23 +21739,24 @@ export function App() {
                   <p className="operation-center__title">Upload Queue</p>
                   <span
                     className={
-                      activeUploadQueueStats.running + activeUploadQueueStats.queued > 0
+                      operationCenterUploadSummary.running + operationCenterUploadSummary.queued > 0
                         ? "operation-center__state is-active"
                         : "operation-center__state is-idle"
                     }
                   >
-                    {activeUploadQueueStats.running + activeUploadQueueStats.queued > 0
+                    {operationCenterUploadSummary.running + operationCenterUploadSummary.queued > 0
                       ? "Active"
                       : "Idle"}
                   </span>
                 </div>
                 <p className="operation-center__meta">
-                  running {activeUploadQueueStats.running} | queued {activeUploadQueueStats.queued}
+                  tabs {operationCenterUploadSummary.activeTabCount} | running{" "}
+                  {operationCenterUploadSummary.running} | queued {operationCenterUploadSummary.queued}
                 </p>
                 <p className="operation-center__meta">
-                  progress {activeUploadProgressStats.completed}/{activeUploadProgressStats.total} |
-                  failed {activeUploadProgressStats.failed} | canceled{" "}
-                  {activeUploadProgressStats.canceled}
+                  progress {operationCenterUploadSummary.completed}/{operationCenterUploadSummary.total} |
+                  failed {operationCenterUploadSummary.failed} | canceled{" "}
+                  {operationCenterUploadSummary.canceled}
                 </p>
                 <div className="operation-center__actions">
                   <button
@@ -21238,7 +21767,7 @@ export function App() {
                     }}
                     type="button"
                   >
-                    Cancel All Uploads
+                    Cancel Active Tab
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -21248,7 +21777,7 @@ export function App() {
                     }}
                     type="button"
                   >
-                    Retry Failed
+                    Retry Active Tab
                   </button>
                 </div>
               </article>
@@ -21258,23 +21787,30 @@ export function App() {
                   <p className="operation-center__title">Download Queue</p>
                   <span
                     className={
-                      activeDownloadQueueStats.running + activeDownloadQueueStats.queued > 0
+                      operationCenterDownloadSummary.running +
+                        operationCenterDownloadSummary.queued >
+                      0
                         ? "operation-center__state is-active"
                         : "operation-center__state is-idle"
                     }
                   >
-                    {activeDownloadQueueStats.running + activeDownloadQueueStats.queued > 0
+                    {operationCenterDownloadSummary.running +
+                      operationCenterDownloadSummary.queued >
+                    0
                       ? "Active"
                       : "Idle"}
                   </span>
                 </div>
                 <p className="operation-center__meta">
-                  running {activeDownloadQueueStats.running} | queued {activeDownloadQueueStats.queued}
+                  tabs {operationCenterDownloadSummary.activeTabCount} | running{" "}
+                  {operationCenterDownloadSummary.running} | queued{" "}
+                  {operationCenterDownloadSummary.queued}
                 </p>
                 <p className="operation-center__meta">
-                  progress {activeDownloadProgressStats.completed}/{activeDownloadProgressStats.total} |
-                  failed {activeDownloadProgressStats.failed} | canceled{" "}
-                  {activeDownloadProgressStats.canceled}
+                  progress {operationCenterDownloadSummary.completed}/
+                  {operationCenterDownloadSummary.total} | failed{" "}
+                  {operationCenterDownloadSummary.failed} | canceled{" "}
+                  {operationCenterDownloadSummary.canceled}
                 </p>
                 <div className="operation-center__actions">
                   <button
@@ -21285,7 +21821,7 @@ export function App() {
                     }}
                     type="button"
                   >
-                    Cancel All Downloads
+                    Cancel Active Tab
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -21295,7 +21831,7 @@ export function App() {
                     }}
                     type="button"
                   >
-                    Retry Failed
+                    Retry Active Tab
                   </button>
                 </div>
               </article>
@@ -21340,11 +21876,14 @@ export function App() {
                   </span>
                 </div>
                 <p className="operation-center__meta">
-                  active forwards {portForwards.length} | event history{" "}
-                  {activePortForwardEventHistory.length}
+                  tabs {operationCenterPortForwardSummary.activeTabCount} | active forwards{" "}
+                  {operationCenterPortForwardSummary.total} | degraded{" "}
+                  {operationCenterPortForwardSummary.degraded}
                 </p>
                 <p className="operation-center__meta">
-                  status: {portForwardStatusMessage?.trim() || "No recent status message."}
+                  active tab status:{" "}
+                  {operationCenterPortForwardSummary.activeTabStatus?.trim() ||
+                    "No recent status message."}
                 </p>
                 <div className="operation-center__actions">
                   <button
@@ -22319,7 +22858,7 @@ export function App() {
                         </button>
                       </div>
                       <p className="hint command-history-manager__meta">
-                        {entry.tabTitle} | {formatHistoryTimestamp(entry.executedAt)} |{" "}
+                        {formatHistoryTimestamp(entry.executedAt)} |{" "}
                         {formatTerminalCommandHistorySourceLabel(entry.source)}
                       </p>
                     </li>
@@ -24430,14 +24969,14 @@ export function App() {
                 {activeSettingsSection === "fileOpening" ? (
                   <>
                     <label>
-                      Open Program (optional)
+                      Open Program or Command (optional)
                       <div className="field-row">
                         <input
                           onChange={(event) => setPreferredOpenProgramPath(event.target.value)}
                           placeholder={
                             isMacPlatform
                               ? "/Applications/TextEdit.app"
-                              : "C:\\Program Files\\Notepad++\\notepad++.exe"
+                              : "code --reuse-window"
                           }
                           value={fileOpenPreferences.preferredProgramPath}
                         />
@@ -24455,6 +24994,10 @@ export function App() {
                     <p className="hint">
                       Leave empty to use system default app. Used by SFTP "Open File" and file
                       double-click.
+                    </p>
+                    <p className="hint">
+                      Windows accepts either a program path or a command like <code>code</code>,{" "}
+                      <code>cursor</code>, or <code>"C:\\Program Files\\Microsoft VS Code\\Code.exe" --reuse-window</code>.
                     </p>
                   </>
                 ) : null}

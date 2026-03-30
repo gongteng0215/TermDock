@@ -1,10 +1,10 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-03-23
+Last updated: 2026-03-30
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.14`
+- Stable release shipped: `v0.1.15`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -13,6 +13,10 @@ Last updated: 2026-03-23
 - Master branch now also includes dangerous-command approval scopes, persistent approval policies, shared policy-bundle import/export/apply, manual sync-file pull/push, and workspace-profile mode with optional Safety sync
 - Master branch now also includes Operation Center tracked app jobs for session/snippet import-export plus bug-report export
 - Master branch now also includes remote file open reliability fixes for Windows preferred-editor cold-start and stale temp-file reuse after remote-side changes
+- Master branch now also includes explicit UI warnings when remote-open-file save-back is blocked or upload-back fails
+- Master branch now also includes remote-open temp-file cleanup on tab/app dispose, background-tab persistent warnings, and an explicit stale-draft reopen chooser
+- Master branch now also includes per-tab port-forward state tracking, tab-switch-safe port-forward refresh, and Operation Center summaries that no longer depend on the active tab only
+- Master branch now also includes tab-scoped server-health/process state, stale monitor-request invalidation, and disconnect-report capture that now records the correct tab's monitor status
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -29,6 +33,26 @@ Last updated: 2026-03-23
   - `P0-F3`: cross-platform smoke tests
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
+
+## Completed in v0.1.15
+
+- Remote-open/editor reliability hardening:
+  - stricter Windows preferred-editor parsing and clearer invalid-path failure
+  - stale-draft reopen chooser plus discard+reload replacement path
+  - temp-file cleanup on tab/app dispose
+  - explicit per-tab save-back conflict/upload-failure warning path
+- Port-forward / Operation Center hardening:
+  - per-tab port-forward state and request-id guarded refresh
+  - Operation Center queue/port-forward summaries now reflect open-workspace totals
+- Monitor / diagnostics hardening:
+  - server-health/process refreshes now keep tab-scoped state and ignore stale async responses
+  - disconnect reports now capture the correct tab's monitor/loading/error state instead of the active tab snapshot
+  - disconnect-report fingerprint cleanup now follows reconnect/clear/close flows
+- Smoke coverage expanded to:
+  - Windows preferred-opener real launch/failure validation
+  - remote-open conflict/reload/cleanup flows
+  - live port-forward creation baseline
+  - unexpected fixture shutdown -> disconnect-report capture path
 
 ## Completed in v0.1.14
 
@@ -75,14 +99,16 @@ Last updated: 2026-03-23
 - Added embedded smoke SSH/SFTP fixture baseline:
   - local auth/connect + shell flow is exercised without an external host
   - SFTP list/upload/download/delete is exercised against a temporary remote filesystem
+  - remote-open-file conflict/reload/cleanup paths are exercised against the same embedded fixture
+  - Windows preferred-opener parser is now exercised against a real helper script with a quoted-path success case and an explicit broken-path failure case
 - Added dangerous-command guardrails baseline:
   - `Settings > Safety` exposes built-in risky-command rules and custom patterns
   - a fixed bottom approval bar blocks risky writes until a one-time run is approved
   - guardrails cover keyboard Enter, clipboard paste, command history run/paste, snippets, quick profiles, and startup commands
-- Packaged smoke now covers embedded live SSH connect, embedded live SFTP upload/download/delete, the `Settings > Workspace` + `Settings > Safety` sections, built-in rule reset flow, and approval-bar UI baseline
+- Packaged smoke now covers embedded live SSH connect, embedded live SFTP upload/download/delete, remote-open-file conflict/reload/cleanup flows, Windows preferred-opener parser/launch validation, the `Settings > Workspace` + `Settings > Safety` sections, built-in rule reset flow, and approval-bar UI baseline
 - `pnpm run pack` is now smoke-friendly on local Windows shells by skipping native rebuilds and `winCodeSign` resource-edit extraction, so `pnpm run smoke:ui:packaged` runs on this machine
 - `pnpm run smoke:ui:packaged` now rebuilds the packaged directory first, so local packaged smoke does not accidentally reuse stale `release/*` output
-- Latest local workspace and packaged smoke runs: `PASS 30 / FAIL 0 / SKIP 0`
+- Latest local workspace smoke run: `PASS 35 / FAIL 0 / SKIP 0`
 - Added release signing/notarization preflight baseline:
   - `scripts/release-preflight.mjs` validates required Windows signing and macOS signing/notarization inputs before release build
   - macOS hardened runtime entitlements are now checked in-repo via `build/entitlements.mac.plist` and `build/entitlements.mac.inherit.plist`

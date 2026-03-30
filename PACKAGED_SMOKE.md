@@ -1,6 +1,6 @@
 # TermDock Packaged Smoke
 
-Last updated: 2026-03-19
+Last updated: 2026-03-30
 
 ## Goal
 
@@ -92,8 +92,12 @@ The smoke runner now starts a local embedded SSH/SFTP fixture (`scripts/smoke-ss
 This baseline covers:
 
 - SSH auth/connect and shell open
+- Windows preferred-opener parser/launch validation via a helper script with a quoted-path success case and a broken-path failure case
 - dangerous-command approval on a live session
 - SFTP list/upload/download/delete against a real temporary remote filesystem
+- live port-forward creation baseline and Operation Center summary visibility
+- remote-open-file save-back conflict warning, stale-draft reload/replace, and temp-file cleanup against the embedded fixture
+- unexpected fixture shutdown and Diagnostics disconnect-report capture path
 
 No external host is required for the default workspace or packaged smoke pass.
 
@@ -113,6 +117,10 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 
 - Embedded live SSH auth/connect lifecycle
 - Embedded live SFTP list/upload/download/delete
+- Embedded live port-forward creation baseline plus Operation Center summary visibility
+- Embedded remote-open-file conflict warning, stale-draft reload/replace, and temp cleanup path
+- Unexpected fixture shutdown -> Diagnostics disconnect-report capture
+- Windows preferred-opener parser/launch validation on Windows hosts
 - Dangerous-command approval bar on a live SSH session
 - Sessions explorer context menus (blank/group/session)
 - Group open/back navigation
@@ -126,13 +134,14 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 - Command history side-panel context menu
 - Operation Center tracked app-job card baseline
 - Retry Center grouped view
+- Latest local workspace and packaged smoke runs: `PASS 35 / FAIL 0 / SKIP 0`
 
 ## Still Manual / Live-Host Coverage
 
 - External-host auth differences (agent auth, key prompts, bastion/proxy rules, host-key policy)
 - Conflict strategy behavior on real remote files
 - Transfer cancellation under active network load
-- Remote external-editor save-back against a live host
+- Remote external-editor save-back against a non-fixture live host
 - Port forwarding against real sockets
 - Server Health values from a live Linux host
 - Unexpected disconnect evidence capture during real interruptions
