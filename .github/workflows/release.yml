@@ -226,17 +226,47 @@ jobs:
           merge-multiple: true
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.meta.outputs.tag_name }}
-          name: TermDock ${{ needs.meta.outputs.tag_name }}
-          files: |
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.meta.outputs.tag_name }}
+          IS_PRERELEASE: ${{ needs.meta.outputs.is_prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          RELEASE_TITLE="TermDock ${TAG_NAME}"
+          ASSETS=(
             release-assets/*.dmg
             release-assets/*.zip
             release-assets/*.exe
             release-assets/*.blockmap
-          draft: false
-          prerelease: ${{ needs.meta.outputs.is_prerelease == 'true' }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          )
+
+          if [ ${#ASSETS[@]} -eq 0 ]; then
+            echo "::error::No release assets found to publish."
+            exit 1
+          fi
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --draft=false
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              gh release edit "$TAG_NAME" --prerelease
+            fi
+            gh release upload "$TAG_NAME" "${ASSETS[@]}" --clobber
+          else
+            RELEASE_ARGS=(
+              "$TAG_NAME"
+              "${ASSETS[@]}"
+              --title "$RELEASE_TITLE"
+              --draft=false
+              --generate-notes
+              --verify-tag
+            )
+
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              RELEASE_ARGS+=(--prerelease)
+            fi
+
+            gh release create "${RELEASE_ARGS[@]}"
+          fi
