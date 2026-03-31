@@ -1,6 +1,6 @@
 ﻿# TermDock Product Notes
 
-Last updated: 2026-03-30
+Last updated: 2026-03-31
 
 ## Confirmed Direction
 
@@ -12,10 +12,13 @@ Last updated: 2026-03-30
 
 ## Release Baseline
 
-- Current stable release: `v0.1.18` (2026-03-30)
+- Current stable release: `v0.1.19` (2026-03-31)
 
 ## Shipped in Recent Cycles
 
+- v0.1.19: batch SFTP uploads now recover from transient missing-path races and SSH SFTP channel pressure with targeted retries plus adaptive per-tab concurrency fallback
+- v0.1.19: `Settings > SFTP` now supports transfer policy pack save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push
+- v0.1.19: `Settings > SFTP` now adds one-click schedule presets, and smoke runs now use isolated per-run app profiles so saved settings do not bleed across workspace/packaged validation
 - v0.1.18: `Settings > SFTP` now adds per-direction transfer rate limits plus queued-transfer weekday/time schedule windows
 - v0.1.17: upload throughput now uses dedicated SFTP channels plus `fastPut`, default upload threads increased to `4`, and upload batches now prewarm remote directories with concurrent local folder expansion
 - v0.1.16: GitHub Actions runtimes for packaged smoke and release were upgraded to current supported versions, and packaged smoke stayed green after the change

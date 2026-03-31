@@ -185,7 +185,7 @@ Target platforms:
 - Screenshot-based artifact output for regression triage (`artifacts/smoke/<timestamp>`)
 - Packaged smoke runbook and reproducible report baseline (`PACKAGED_SMOKE.md`, `summary.json`, `full-test-matrix.md`)
 - GitHub Actions packaged smoke workflow baseline for Windows/macOS artifact capture
-- Current baseline run includes sessions/menu/settings/command-history/retry-center/operation-center coverage plus embedded live SSH/SFTP verification
+- Current baseline run includes sessions/menu/settings/command-history/retry-center/operation-center coverage plus embedded live SSH/SFTP verification, including injected SFTP directory-race and channel-pressure recovery
 - Release signing/notarization preflight baseline (`scripts/release-preflight.mjs`)
 - Release artifact verification baseline with report output (`scripts/verify-release-artifacts.mjs`, `artifacts/release-verify/<timestamp>`)
 - Self-use Windows release helper path (`scripts/create-self-use-windows-cert.ps1`, `scripts/build-self-use-windows-release.mjs`)
@@ -210,10 +210,10 @@ Target platforms:
 - SQLite migration not complete
 - Automated unit/integration coverage is incomplete, and external-host smoke evidence is still partial
 - Signing/notarization preflight and verification baseline exists, and self-use Windows release works locally, but public-trust secret provisioning and first signed/notarized evidence are still pending
-- Some recursive SFTP safety flows still need hardening
+- Some recursive SFTP safety/policy flows still need hardening, but upload-path reliability now includes targeted missing-path recovery plus adaptive channel-pressure fallback
 - Port forwarding diagnostics and analytics now exist in-session, but cross-device/shared correlation workflows are still pending; dynamic baseline is SOCKS5 no-auth `CONNECT` only
 - Retry-center analytics/export baseline exists, but longitudinal trend analytics and richer clustering are still pending
-- Transfer rate-limit and schedule-window baseline now exists, but richer transfer policy packs and more advanced schedule automation are still pending
+- Transfer rate-limit, schedule-window, one-click schedule presets, exact next-resume scheduling hints, and transfer policy pack baseline now exists, including linked sync-file pull/push plus optional auto-pull/auto-push, but richer schedule automation and auto-distribution are still pending
 - Session/group JSON export is available, but secure full-fidelity backup/restore (including credentials) is not complete
 - Session templates baseline exists locally, but template import/export, runtime prompt overrides, and layered presets are still pending
 - Dangerous-command policy packs, environment templates, per-source toggles, session-group overrides, temporary exact-command approval scopes, persistent exact-command approval policies, shared-bundle import/export/apply plus manual shared sync-file pull/push, and workspace-profile sync now exist; richer workspace-scoped defaults and shared distribution follow-up are still pending
@@ -226,8 +226,8 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.18` (current stable): per-direction SFTP rate limits plus queued-transfer weekday/time schedule windows
-- `master` (in progress): post-`v0.1.18` validation cycle
+- `v0.1.19` (current stable): transfer upload reliability hardening plus transfer-pack sync automation follow-up
+- `master` (in progress): post-`v0.1.19` transfer sync/distribution follow-up
 - `v0.1.13`: packaged smoke baseline, release tooling, and session templates baseline
 - `v0.1.12`: session double-click new-tab behavior fix and release polish
 - Next patch cycle (master in progress):
@@ -288,7 +288,7 @@ Target platforms:
   - Credential-safe encrypted session backup/restore (beyond current metadata export)
 - Capability cycle candidate C:
   - SSH jump-host chain builder (ProxyJump/bastion visual flow)
-  - Transfer policy packs and richer schedule automation on top of the new rate-limit/window baseline
+  - Auto-distributed transfer policy packs and richer schedule automation on top of the new rate-limit/window baseline
   - Command snippets/playbooks follow-up with richer playbook workflows and validation packs
   - Multi-host command broadcast with dry-run preview
   - Remote file snapshot and quick rollback

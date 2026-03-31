@@ -1,10 +1,10 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-03-30
+Last updated: 2026-03-31
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.18`
+- Stable release shipped: `v0.1.19`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -20,6 +20,7 @@ Last updated: 2026-03-30
 - Master branch now also includes GitHub Actions runtime upgrades for packaged-smoke/release workflows, removing the previous Node 20 deprecation path from CI
 - Master branch now also includes upload fast-path/channel isolation, higher default upload concurrency, remote-directory prewarm, and concurrent local directory scan for upload batches
 - Master branch now also includes per-direction SFTP transfer rate limits plus queued-transfer weekday/time schedule windows
+- Master branch now also includes upload batch reliability hardening for transient missing-path races and SSH SFTP channel-open backpressure, plus a fault-injected smoke path that verifies recovery
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -57,6 +58,23 @@ Last updated: 2026-03-30
   - queued-transfer weekday/time schedule windows
   - queue pause outside the configured window plus automatic resume when the next allowed window opens
   - transfer-preferences schema migration for the new controls
+
+## Completed in v0.1.19
+
+- SFTP transfer policy packs:
+  - `Settings > SFTP` can now save the current concurrency/rate-limit/window configuration as a reusable local policy pack
+  - saved packs can be applied, imported, exported individually, exported in bulk, and linked to a shared sync JSON file for manual pull/push plus optional auto-pull/auto-push
+  - workspace and packaged smoke now verify a real save/apply flow plus the presence of the sync/auto-sync controls in the SFTP settings panel
+- SFTP schedule automation follow-up:
+  - schedule-window evaluation now arms an exact next-boundary wake-up instead of relying only on the coarse polling interval
+  - `Settings > SFTP` and paused transfer queues now show the next queued-transfer resume time when the current window is closed
+  - `Settings > SFTP` now exposes one-click schedule presets for `Always On`, `Business Hours`, `Weeknights`, and `Weekends`
+  - workspace and packaged smoke now launch each run inside an isolated smoke-only `userData` profile so persisted settings from older runs do not leak into the next matrix
+- SFTP batch upload reliability:
+  - first-write `No such file` failures now invalidate only the affected remote-directory branch instead of flushing the entire tab cache
+  - SSH SFTP channel-open backpressure now triggers automatic requeue/backoff instead of immediate batch failure
+  - effective upload concurrency now shrinks per tab under backpressure and recovers after successful retries
+  - smoke fixture now injects transient directory-race and channel-pressure faults so this path is covered in both workspace and packaged smoke
 
 ## Completed in v0.1.16
 
@@ -142,7 +160,7 @@ Last updated: 2026-03-30
 - Packaged smoke now covers embedded live SSH connect, embedded live SFTP upload/download/delete, remote-open-file conflict/reload/cleanup flows, Windows preferred-opener parser/launch validation, the `Settings > Workspace` + `Settings > Safety` sections, built-in rule reset flow, and approval-bar UI baseline
 - `pnpm run pack` is now smoke-friendly on local Windows shells by skipping native rebuilds and `winCodeSign` resource-edit extraction, so `pnpm run smoke:ui:packaged` runs on this machine
 - `pnpm run smoke:ui:packaged` now rebuilds the packaged directory first, so local packaged smoke does not accidentally reuse stale `release/*` output
-- Latest local workspace smoke run: `PASS 35 / FAIL 0 / SKIP 0`
+- Latest local workspace smoke run: `PASS 36 / FAIL 0 / SKIP 0`
 - Added release signing/notarization preflight baseline:
   - `scripts/release-preflight.mjs` validates required Windows signing and macOS signing/notarization inputs before release build
   - macOS hardened runtime entitlements are now checked in-repo via `build/entitlements.mac.plist` and `build/entitlements.mac.inherit.plist`

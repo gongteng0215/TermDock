@@ -4,7 +4,7 @@ Last updated: 2026-03-30
 
 ## Current Release State
 
-- Stable release: `v0.1.18`
+- Stable release: `v0.1.19`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 
@@ -33,7 +33,7 @@ Last updated: 2026-03-30
 | P0-D1 | DONE | SFTP channel reuse via active tab |
 | P0-D2 | PARTIAL | SFTP panel is usable; final polish pending |
 | P0-D3 | PARTIAL | Browse/open/refresh works; edge error states still improving |
-| P0-D4 | PARTIAL | Queue/progress/cancel done; monitor contention mitigations landed, long-run stress hardening still pending |
+| P0-D4 | PARTIAL | Queue/progress/cancel done; monitor contention plus upload directory-race/channel-backpressure hardening landed, long-run stress tuning still pending |
 | P0-D5 | PARTIAL | Create/rename/delete done; recursive safety flows still evolving |
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
 | P0-E1 | TODO | Startup performance benchmark/optimization |
@@ -42,7 +42,7 @@ Last updated: 2026-03-30
 | P0-E4 | TODO | Persistence crash-recovery verification |
 | P0-F1 | TODO | Unit tests |
 | P0-F2 | TODO | Integration tests |
-| P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP, remote-open-file save-back, and unexpected-disconnect smoke landed; macOS evidence and targeted external-host validation still pending |
+| P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP, remote-open-file save-back, unexpected-disconnect, and SFTP fault-recovery smoke landed; macOS evidence and targeted external-host validation still pending |
 | P0-F4 | PARTIAL | Release preflight/verify baseline and self-use Windows path landed; public-trust signing secret provisioning and first signed/notarized evidence still pending |
 | P0-G1 | DONE | Server health panel baseline plus tab-scoped monitor-state hardening shipped |
 
@@ -277,7 +277,7 @@ Last updated: 2026-03-30
 | F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline plus tracked session/snippet/diagnostics jobs landed; richer timeline and grouped controls are still pending |
 | F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
-| F11 | P2 | PARTIAL | Transfer bandwidth limiter + schedule window | Per-direction rate limits plus queued-transfer weekday/time windows landed; richer transfer policy packs and schedule automation are still pending |
+| F11 | P2 | PARTIAL | Transfer bandwidth limiter + schedule window | Per-direction rate limits, queued-transfer weekday/time windows, one-click schedule presets, exact next-boundary wake-up with next-resume hints, transfer policy pack save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push, and upload reliability auto-recovery from transient missing-path plus SSH channel-pressure faults landed; richer schedule automation and auto-distribution are still pending |
 | F12 | P2 | PARTIAL | Command snippets/playbooks with parameter prompts | Prompted variables, scoped remembered values, reusable prompt sets, regex validation, and preview-before-run landed; richer playbook workflows and validation packs are still pending |
 | F13 | P2 | TODO | Multi-host command broadcast with dry-run preview | Speed up fleet operations while reducing blast radius |
 | F14 | P3 | TODO | Remote file snapshot + one-click rollback | Recover quickly from accidental edits during remote file open/save |

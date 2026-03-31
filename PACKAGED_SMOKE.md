@@ -95,11 +95,14 @@ This baseline covers:
 - Windows preferred-opener parser/launch validation via a helper script with a quoted-path success case and a broken-path failure case
 - dangerous-command approval on a live session
 - SFTP list/upload/download/delete against a real temporary remote filesystem
+- SFTP batch upload recovery under injected directory-race and SFTP session-pressure faults
+- `Settings > SFTP` save/apply validation, sync/auto-sync control visibility, schedule-preset wiring, and next-resume schedule-hint coverage
 - live port-forward creation baseline and Operation Center summary visibility
 - remote-open-file save-back conflict warning, stale-draft reload/replace, and temp-file cleanup against the embedded fixture
 - unexpected fixture shutdown and Diagnostics disconnect-report capture path
 
 No external host is required for the default workspace or packaged smoke pass.
+Each automated smoke run now uses its own isolated `userData` profile under the run artifact directory, so persisted local settings do not leak between runs.
 
 ## Optional Real SSH Annotation
 
@@ -117,6 +120,7 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 
 - Embedded live SSH auth/connect lifecycle
 - Embedded live SFTP list/upload/download/delete
+- Embedded live SFTP batch-upload recovery under transient missing-path and channel-pressure faults
 - Embedded live port-forward creation baseline plus Operation Center summary visibility
 - Embedded remote-open-file conflict warning, stale-draft reload/replace, and temp cleanup path
 - Unexpected fixture shutdown -> Diagnostics disconnect-report capture
@@ -134,7 +138,7 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 - Command history side-panel context menu
 - Operation Center tracked app-job card baseline
 - Retry Center grouped view
-- Latest local workspace and packaged smoke runs: `PASS 35 / FAIL 0 / SKIP 0`
+- Latest local workspace and packaged smoke runs: `PASS 36 / FAIL 0 / SKIP 0`
 
 ## Still Manual / Live-Host Coverage
 

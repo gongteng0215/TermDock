@@ -114,11 +114,13 @@ function createMarkdownReport({
   lines.push("- Embedded local SSH fixture connect/auth lifecycle");
   lines.push("- Windows preferred-opener parser/launch path with quoted-path success and broken-path failure on Windows hosts");
   lines.push("- Dangerous-command guardrails Settings > Safety UI and approval bar on a live SSH session");
-  lines.push("- Embedded local SFTP fixture list/upload/download/delete flow");
+  lines.push(
+    "- Embedded local SFTP fixture list/upload/download/delete flow, including batch-upload recovery under directory-race and channel-pressure faults"
+  );
   lines.push("- Embedded remote-open-file save-back conflict notification path");
   lines.push("- Unexpected fixture shutdown -> Diagnostics disconnect report capture path");
   lines.push(
-    "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics)"
+    "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics), including transfer pack save/apply, sync controls, and schedule resume hints"
   );
   lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
   lines.push("- Command history manager (add/edit/export/import/delete)");
@@ -386,6 +388,7 @@ async function main() {
   const stamp = toStamp(new Date());
   const outputDir = resolve("artifacts", "smoke", stamp);
   await mkdir(outputDir, { recursive: true });
+  const smokeUserDataDir = readOptionalEnv("TERMDOCK_SMOKE_USER_DATA_DIR") ?? join(outputDir, "user-data");
 
   const launchEnv = { ...process.env };
   delete launchEnv.ELECTRON_RUN_AS_NODE;
@@ -397,8 +400,20 @@ async function main() {
     console.log(`[${status.toUpperCase()}] ${name}${suffix}`);
   };
 
+  const throttledUploadSourceDir = join(outputDir, "fixture upload batch");
+  const throttledUploadSourceDirName = basename(throttledUploadSourceDir);
+  const throttledUploadFileSpecs = Array.from({ length: 6 }, (_value, index) => ({
+    name: `stress-${index + 1}.txt`,
+    contents: [
+      "TermDock throttled upload smoke fixture",
+      `Index: ${index + 1}`,
+      `Generated at ${new Date().toISOString()}`
+    ].join("\n")
+  }));
   const fixture = await startSmokeSshFixture({
-    rootDir: join(outputDir, "fixture-remote")
+    rootDir: join(outputDir, "fixture-remote"),
+    maxConcurrentSftpSessions: 2,
+    transientMissingWriteDirectories: [`/${throttledUploadSourceDirName}`]
   });
   const uploadSourcePath = join(outputDir, "fixture-upload.txt");
   const uploadSourceContents = [
@@ -407,6 +422,11 @@ async function main() {
   ].join("\n");
   const uploadSourceFileName = basename(uploadSourcePath);
   const uploadedRemoteLocalPath = join(fixture.rootDir, uploadSourceFileName);
+  const throttledUploadRemoteLocalDir = join(fixture.rootDir, throttledUploadSourceDirName);
+  const throttledUploadExpectedFiles = throttledUploadFileSpecs.map((fileSpec) => ({
+    ...fileSpec,
+    localPath: join(throttledUploadRemoteLocalDir, fileSpec.name)
+  }));
   const downloadTargetPath = join(outputDir, "fixture-download.txt");
   const openerHarnessDir = join(outputDir, "opener harness with spaces");
   const openerHarnessScriptPath = join(openerHarnessDir, "capture-open.cmd");
@@ -421,6 +441,12 @@ async function main() {
   let remoteOpenReloadedLocalPath = "";
   let remoteOpenTabId = "";
   await writeFile(uploadSourcePath, uploadSourceContents, "utf8");
+  await mkdir(throttledUploadSourceDir, { recursive: true });
+  await Promise.all(
+    throttledUploadFileSpecs.map((fileSpec) =>
+      writeFile(join(throttledUploadSourceDir, fileSpec.name), fileSpec.contents, "utf8")
+    )
+  );
   await writeFile(openerTargetPath, "TermDock opener smoke target\n", "utf8");
   pushStep(
     "start local SSH/SFTP fixture",
@@ -466,7 +492,8 @@ async function main() {
       env: {
         ...launchEnv,
         TERMDOCK_DISABLE_GPU: "1",
-        TERMDOCK_OPEN_DEVTOOLS: "0"
+        TERMDOCK_OPEN_DEVTOOLS: "0",
+        TERMDOCK_SMOKE_USER_DATA_DIR: smokeUserDataDir
       }
     });
 
@@ -580,24 +607,51 @@ async function main() {
           return false;
         }
         try {
+          const textFiles = {};
+          window.__termdockSmokeTextFiles = textFiles;
+          window.__termdockSmokeLastSavedTextFile = null;
+          window.__termdockSmokePickedTextFile = {
+            filePath: "C:/tmp/termdock-smoke-import.json",
+            text: JSON.stringify({
+              commands: ["echo smoke_import_one", "echo smoke_import_two"]
+            })
+          };
           bridge.system.saveTextFile = async (options) => {
             const base =
               typeof options?.defaultFileName === "string" && options.defaultFileName.trim().length > 0
                 ? options.defaultFileName.trim()
                 : "export.json";
             const safeBase = base.replace(/[^a-zA-Z0-9_.-]/g, "_");
+            const outputPath = `C:/tmp/termdock-smoke-${Date.now()}-${safeBase}`;
+            const text = typeof options?.text === "string" ? options.text : "";
+            textFiles[outputPath] = text;
+            window.__termdockSmokeLastSavedTextFile = {
+              outputPath,
+              text
+            };
             return {
               canceled: false,
-              outputPath: `C:/tmp/termdock-smoke-${Date.now()}-${safeBase}`
+              outputPath
             };
           };
           bridge.system.pickAndReadTextFile = async () => ({
             canceled: false,
-            filePath: "C:/tmp/termdock-smoke-import.json",
-            text: JSON.stringify({
-              commands: ["echo smoke_import_one", "echo smoke_import_two"]
-            })
+            filePath: window.__termdockSmokePickedTextFile?.filePath ?? "C:/tmp/termdock-smoke-import.json",
+            text:
+              window.__termdockSmokePickedTextFile?.text ??
+              JSON.stringify({
+                commands: ["echo smoke_import_one", "echo smoke_import_two"]
+              })
           });
+          bridge.system.readTextFileAtPath = async (filePath) => textFiles[filePath] ?? "";
+          bridge.system.writeTextFileAtPath = async (filePath, text) => {
+            const normalizedText = typeof text === "string" ? text : "";
+            textFiles[filePath] = normalizedText;
+            window.__termdockSmokeLastSavedTextFile = {
+              outputPath: filePath,
+              text: normalizedText
+            };
+          };
           bridge.system.openLocalPath = async (localPath) => {
             if (!Array.isArray(window.__termdockSmokeOpenedLocalPaths)) {
               window.__termdockSmokeOpenedLocalPaths = [];
@@ -842,6 +896,66 @@ async function main() {
       );
       const fileName = await recordShot(page, "live-sftp-delete");
       return `deleted=${uploadSourceFileName}, shot=${fileName}`;
+    });
+
+    await runStep("live SFTP batch upload recovers from directory race and channel pressure", async () => {
+      const dropZone = page.locator(".sftp-drop-zone").first();
+      await dropZone.waitFor({ state: "visible", timeout: 10_000 });
+      await page.evaluate(
+        ({ localDirectoryPathValue }) => {
+          const dropZoneElement = document.querySelector(".sftp-drop-zone");
+          if (!(dropZoneElement instanceof HTMLElement)) {
+            throw new Error("SFTP drop zone not found.");
+          }
+          const dataTransfer = new DataTransfer();
+          const droppedEntry = new File(["termdock"], "fixture-upload-batch");
+          Object.defineProperty(droppedEntry, "path", {
+            configurable: true,
+            value: localDirectoryPathValue
+          });
+          dataTransfer.items.add(droppedEntry);
+          dropZoneElement.dispatchEvent(
+            new DragEvent("dragover", {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer
+            })
+          );
+          dropZoneElement.dispatchEvent(
+            new DragEvent("drop", {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer
+            })
+          );
+        },
+        {
+          localDirectoryPathValue: throttledUploadSourceDir
+        }
+      );
+
+      for (const expectedFile of throttledUploadExpectedFiles) {
+        await waitForFileContents(expectedFile.localPath, expectedFile.contents, 40_000);
+      }
+
+      const refreshButton = page.locator("button[aria-label='Refresh directory']").first();
+      await refreshButton.click();
+      const uploadedDirectoryEntry = page
+        .locator(".sftp-list__item", { hasText: throttledUploadSourceDirName })
+        .first();
+      await uploadedDirectoryEntry.waitFor({ state: "visible", timeout: 15_000 });
+      await waitForCondition(
+        async () => {
+          const errorCount = await page.locator(".hint.sftp-error").count();
+          return errorCount === 0;
+        },
+        {
+          timeout: 5_000,
+          description: "batch upload completed without persistent SFTP error banner"
+        }
+      );
+      const fileName = await recordShot(page, "live-sftp-batch-upload-retry");
+      return `remoteDir=${toReportPath(relative(process.cwd(), throttledUploadRemoteLocalDir))}, files=${throttledUploadExpectedFiles.length}, shot=${fileName}`;
     });
 
     await runStep("remote open file save-back conflict shows UI warning", async () => {
@@ -1156,6 +1270,24 @@ async function main() {
             .first();
           const startWindow = page.locator(".modal--settings label:has-text('Window Start') input").first();
           const endWindow = page.locator(".modal--settings label:has-text('Window End') input").first();
+          const weeknightsPreset = page
+            .locator(".settings-safety-preset", {
+              has: page.locator(".settings-safety-preset__title", { hasText: "Weeknights" })
+            })
+            .first();
+          const autoPullToggle = page
+            .locator(
+              ".modal--settings label.settings-checkbox:has-text('Auto-pull linked sync file on launch')"
+            )
+            .first();
+          const autoPushToggle = page
+            .locator(
+              ".modal--settings label.settings-checkbox:has-text('Auto-push local pack changes to the linked sync file')"
+            )
+            .first();
+          const originalScheduleEnabled = await scheduleToggle.isChecked();
+          const originalStartWindow = await startWindow.inputValue();
+          const originalEndWindow = await endWindow.inputValue();
 
           await waitForCondition(
             async () => {
@@ -1169,13 +1301,163 @@ async function main() {
                 return false;
               }
               await uploadLimit.scrollIntoViewIfNeeded();
-              return (await isVisible(startWindow)) && (await isVisible(endWindow));
+              await autoPushToggle.scrollIntoViewIfNeeded();
+              return (
+                (await isVisible(startWindow)) &&
+                (await isVisible(endWindow)) &&
+                (await autoPullToggle.count()) > 0 &&
+                (await autoPushToggle.count()) > 0 &&
+                (await weeknightsPreset.count()) > 0
+              );
             },
             {
               timeout: 5_000,
               description: "SFTP transfer controls"
             }
           );
+          const originalAutoPullEnabled = await autoPullToggle.locator("input").isChecked();
+          const originalAutoPushEnabled = await autoPushToggle.locator("input").isChecked();
+          const saveCurrentPack = page
+            .locator(".modal--settings .secondary-button:has-text('Save Current...')")
+            .first();
+          if (!(await isVisible(saveCurrentPack))) {
+            throw new Error("transfer policy pack save button not visible");
+          }
+          const packName = `Smoke Transfer Pack ${Date.now().toString(36)}`;
+          const originalUploadThreads = await uploadThreads.inputValue();
+          await saveCurrentPack.click();
+          await page.locator(".modal.app-dialog").waitFor({ state: "visible", timeout: 5_000 });
+          const packNameInput = page.locator(".app-dialog__input").first();
+          await packNameInput.fill(packName);
+          const nextButton = page
+            .locator(".modal.app-dialog .primary-button:has-text('Next')")
+            .first();
+          await nextButton.click();
+          await page.locator(".modal.app-dialog").waitFor({ state: "visible", timeout: 5_000 });
+          const packDescriptionInput = page.locator(".app-dialog__textarea").first();
+          await packDescriptionInput.fill("smoke transfer policy pack");
+          const savePackButton = page
+            .locator(".modal.app-dialog .primary-button:has-text('Save')")
+            .first();
+          await savePackButton.click();
+          await page.waitForTimeout(220);
+          const okButton = page
+            .locator(".modal.app-dialog .primary-button:has-text('OK')")
+            .first();
+          if (await isVisible(okButton)) {
+            await okButton.click();
+            await page.waitForTimeout(220);
+          }
+
+          await uploadThreads.fill("1");
+          await uploadThreads.blur();
+          await page.waitForTimeout(180);
+          const applySavedPack = page
+            .locator(".settings-safety-preset", {
+              has: page.locator(".settings-safety-preset__title", { hasText: packName })
+            })
+            .locator(".secondary-button:has-text('Apply')")
+            .first();
+          if (!(await isVisible(applySavedPack))) {
+            throw new Error("saved transfer policy pack apply button not visible");
+          }
+          await applySavedPack.click();
+          const confirmApplyButton = page
+            .locator(".modal.app-dialog .primary-button:has-text('Apply')")
+            .first();
+          await confirmApplyButton.click();
+          await page.waitForTimeout(260);
+          if ((await uploadThreads.inputValue()) !== originalUploadThreads) {
+            throw new Error("transfer policy pack apply did not restore upload threads");
+          }
+
+          const pushSyncButton = page
+            .locator(".modal--settings .secondary-button:has-text('Push Sync')")
+            .first();
+          const pullSyncButton = page
+            .locator(".modal--settings .secondary-button:has-text('Pull Sync')")
+            .first();
+          const changeSyncButton = page
+            .locator(".modal--settings .secondary-button:has-text('Choose Sync File')")
+            .first();
+          if (
+            !(await isVisible(pushSyncButton)) ||
+            !(await isVisible(pullSyncButton)) ||
+            !(await isVisible(changeSyncButton))
+          ) {
+            throw new Error("transfer policy pack sync controls not visible");
+          }
+          await autoPullToggle.scrollIntoViewIfNeeded();
+          await autoPullToggle.click();
+          await page.waitForTimeout(120);
+          await autoPushToggle.click();
+          await page.waitForTimeout(120);
+          if (!(await autoPullToggle.locator("input").isChecked())) {
+            throw new Error("transfer policy auto-pull toggle did not change");
+          }
+          if (!(await autoPushToggle.locator("input").isChecked())) {
+            throw new Error("transfer policy auto-push toggle did not change");
+          }
+          await weeknightsPreset.scrollIntoViewIfNeeded();
+          await weeknightsPreset.click();
+          await page.waitForTimeout(220);
+          if (!(await scheduleToggle.isChecked())) {
+            throw new Error("schedule preset did not enable schedule window");
+          }
+          if (
+            !(await weeknightsPreset.evaluate((element) => element.classList.contains("is-active")))
+          ) {
+            throw new Error("schedule preset did not become active");
+          }
+
+          const futureWindow = await page.evaluate(() => {
+            const now = new Date();
+            const start = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+            const end = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+            const format = (value) =>
+              `${value.getHours().toString().padStart(2, "0")}:${value
+                .getMinutes()
+                .toString()
+                .padStart(2, "0")}`;
+            return {
+              start: format(start),
+              end: format(end)
+            };
+          });
+          if (!(await scheduleToggle.isChecked())) {
+            await scheduleToggle.click();
+          }
+          await startWindow.fill(futureWindow.start);
+          await startWindow.blur();
+          await endWindow.fill(futureWindow.end);
+          await endWindow.blur();
+          await page.waitForTimeout(260);
+          const nextResumeHint = page
+            .locator(".modal--settings .hint", {
+              hasText: "Next queued transfer resume:"
+            })
+            .first();
+          if (!(await isVisible(nextResumeHint))) {
+            throw new Error("SFTP schedule next-resume hint not visible");
+          }
+          if (!originalScheduleEnabled && (await scheduleToggle.isChecked())) {
+            await scheduleToggle.click();
+            await page.waitForTimeout(180);
+          } else if (originalScheduleEnabled) {
+            await startWindow.fill(originalStartWindow);
+            await startWindow.blur();
+            await endWindow.fill(originalEndWindow);
+            await endWindow.blur();
+            await page.waitForTimeout(180);
+          }
+          if ((await autoPullToggle.locator("input").isChecked()) !== originalAutoPullEnabled) {
+            await autoPullToggle.click();
+            await page.waitForTimeout(120);
+          }
+          if ((await autoPushToggle.locator("input").isChecked()) !== originalAutoPushEnabled) {
+            await autoPushToggle.click();
+            await page.waitForTimeout(120);
+          }
         }
         shots.push(await recordShot(page, section.slug));
       }
@@ -1452,7 +1734,7 @@ async function main() {
       await waitForCondition(
         async () => {
           const text = ((await portForwardCard.textContent()) ?? "").replace(/\s+/g, " ").trim();
-          return text.includes("active forwards 1") ? text : false;
+          return text.includes("tabs ") && text.includes("active forwards") ? text : false;
         },
         {
           timeout: 10_000,

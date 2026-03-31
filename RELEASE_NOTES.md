@@ -4,7 +4,43 @@
 
 Release type: In development
 
-- No unreleased notes yet.
+No unreleased entries yet.
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 36 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 36 / FAIL 0 / SKIP 0`
+
+## v0.1.19 (2026-03-31)
+
+Release type: Stable
+
+### Highlights
+
+- SFTP batch upload reliability hardening:
+  - transient first-write `No such file` failures now invalidate only the affected remote-directory branch and retry automatically
+  - SSH SFTP channel-open backpressure now requeues with backoff instead of failing the batch immediately
+  - effective upload concurrency now shrinks per tab under channel pressure and recovers after successful retries
+- SFTP transfer policy packs:
+  - `Settings > SFTP` can now save the current transfer concurrency, rate-limit, and schedule-window settings as reusable local policy packs
+  - saved packs support apply, single-pack export, bulk export, JSON import, linked sync-file pull/push, and optional auto-pull/auto-push
+- SFTP schedule automation polish:
+  - queued-transfer schedule windows now arm an exact next-boundary wake-up instead of depending only on the coarse polling interval
+  - the SFTP settings summary and paused queue banners now show the next queued-transfer resume time when the current window is closed
+  - `Settings > SFTP` now includes one-click schedule presets (`Always On`, `Business Hours`, `Weeknights`, `Weekends`) on top of the custom weekday/time editor
+- Smoke coverage expansion:
+  - `scripts/smoke-ssh-fixture.mjs` now injects transient directory-race and SFTP session-pressure faults
+  - `scripts/smoke-capture-all.mjs` now verifies the renderer queue recovers from those faults and that `Settings > SFTP` transfer policy pack save/apply, sync controls, auto-sync toggle wiring, schedule preset wiring, and next-resume schedule hint are present in both workspace and packaged runs
+  - smoke launches now use an isolated smoke-only `userData` profile so workspace and packaged runs do not inherit persisted settings from older passes
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 36 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 36 / FAIL 0 / SKIP 0`
 
 ## v0.1.18 (2026-03-30)
 

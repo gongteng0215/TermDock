@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu } from "electron";
 import type { BrowserWindowConstructorOptions, MenuItemConstructorOptions } from "electron";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { registerSftpHandlers } from "./ipc/register-sftp-handlers.js";
@@ -26,6 +26,13 @@ const shouldOpenDevtools =
 const OPEN_SETTINGS_CHANNEL = "app:openSettings";
 const runtimeIconCandidates = resolveRuntimeIconCandidates();
 const runtimeWindowIconPath = runtimeIconCandidates[0] ?? null;
+const smokeUserDataOverride = process.env.TERMDOCK_SMOKE_USER_DATA_DIR?.trim() ?? "";
+
+if (smokeUserDataOverride) {
+  const smokeUserDataPath = resolve(smokeUserDataOverride);
+  app.setPath("userData", smokeUserDataPath);
+  app.setPath("sessionData", join(smokeUserDataPath, "session-data"));
+}
 
 if (shouldDisableGpu) {
   app.disableHardwareAcceleration();

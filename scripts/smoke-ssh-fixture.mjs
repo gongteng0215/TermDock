@@ -30,6 +30,13 @@ export async function startSmokeSshFixture(options = {}) {
   const hostKey = createHostKey();
   const remoteRootPath = "/";
   const remoteSeedPath = posixPath.join(remoteRootPath, FIXTURE_SEED_FILE_NAME);
+  const maxConcurrentSftpSessions = normalizePositiveInteger(options.maxConcurrentSftpSessions);
+  const transientMissingWriteDirectories = new Map(
+    normalizeRemoteDirectoryList(options.transientMissingWriteDirectories).map((remoteDirectory) => [
+      remoteDirectory,
+      1
+    ])
+  );
 
   await mkdir(rootDir, { recursive: true });
   await mkdir(resolve(rootDir, "nested"), { recursive: true });
@@ -37,6 +44,7 @@ export async function startSmokeSshFixture(options = {}) {
   await writeFile(resolve(rootDir, "nested", "fixture-nested.txt"), "nested fixture data\n", "utf8");
 
   const activeClients = new Set();
+  let activeSftpSessions = 0;
   const server = new Server(
     {
       hostKeys: [hostKey],
@@ -94,10 +102,26 @@ export async function startSmokeSshFixture(options = {}) {
             handleExec(stream, info.command);
           });
 
-          session.on("sftp", (accept) => {
+          session.on("sftp", (accept, reject) => {
             debugFixture("sftp requested");
+            if (
+              typeof maxConcurrentSftpSessions === "number" &&
+              activeSftpSessions >= maxConcurrentSftpSessions
+            ) {
+              debugFixture("sftp rejected because max concurrent session limit was reached");
+              if (typeof reject === "function") {
+                reject();
+              }
+              return;
+            }
+            activeSftpSessions += 1;
             const sftp = accept();
-            attachSftpHandlers(sftp, rootDir);
+            attachSftpHandlers(sftp, rootDir, {
+              transientMissingWriteDirectories,
+              onClose: () => {
+                activeSftpSessions = Math.max(0, activeSftpSessions - 1);
+              }
+            });
           });
 
           session.on("close", () => {
@@ -365,10 +389,16 @@ function handleExec(stream, command) {
   stream.end(`fixture exec: ${trimmed || "ok"}\n`);
 }
 
-function attachSftpHandlers(sftp, rootDir) {
+function attachSftpHandlers(sftp, rootDir, options = {}) {
   debugFixture("sftp session opened");
   const openResources = new Map();
+  const transientMissingWriteDirectories =
+    options.transientMissingWriteDirectories instanceof Map
+      ? options.transientMissingWriteDirectories
+      : new Map();
+  const onClose = typeof options.onClose === "function" ? options.onClose : null;
   let nextHandleId = 1;
+  let sessionClosed = false;
 
   const createHandle = (resource) => {
     const id = nextHandleId;
@@ -396,6 +426,16 @@ function attachSftpHandlers(sftp, rootDir) {
     openResources.delete(id);
     if (resource?.type === "file") {
       await resource.fileHandle.close();
+    }
+  };
+
+  const finalizeSession = () => {
+    if (sessionClosed) {
+      return;
+    }
+    sessionClosed = true;
+    if (onClose) {
+      onClose();
     }
   };
 
@@ -501,6 +541,19 @@ function attachSftpHandlers(sftp, rootDir) {
         throw createStatusError(STATUS_CODE.FAILURE, "Unsupported open flags.");
       }
       if (/[wa+]/.test(mode)) {
+        const remoteDirectory = normalizeRemotePath(posixPath.dirname(remotePath));
+        const remainingTransientFailures = transientMissingWriteDirectories.get(remoteDirectory) ?? 0;
+        if (remainingTransientFailures > 0) {
+          if (remainingTransientFailures <= 1) {
+            transientMissingWriteDirectories.delete(remoteDirectory);
+          } else {
+            transientMissingWriteDirectories.set(remoteDirectory, remainingTransientFailures - 1);
+          }
+          throw createNodeStyleError(
+            "ENOENT",
+            `ENOENT: no such file or directory, open '${remotePath}'`
+          );
+        }
         await mkdir(dirname(localPath), { recursive: true });
       }
       const fileHandle = await open(localPath, mode);
@@ -607,10 +660,12 @@ function attachSftpHandlers(sftp, rootDir) {
 
   sftp.on("close", () => {
     debugFixture("sftp session closed");
+    finalizeSession();
   });
 
   sftp.on("end", () => {
     debugFixture("sftp session ended");
+    finalizeSession();
   });
 }
 
@@ -622,6 +677,27 @@ function normalizeRemotePath(input) {
   const withRoot = rawValue.startsWith("/") ? rawValue : `/${rawValue}`;
   const normalized = posixPath.normalize(withRoot);
   return normalized.startsWith("/") ? normalized : `/${normalized}`;
+}
+
+function normalizeRemoteDirectoryList(input) {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      input
+        .map((value) => normalizeRemotePath(value))
+        .filter((value) => value.length > 0)
+    )
+  );
+}
+
+function normalizePositiveInteger(value) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  const normalized = Math.trunc(value);
+  return normalized > 0 ? normalized : null;
 }
 
 function resolveRemotePath(rootDir, remotePath) {
@@ -685,6 +761,12 @@ function respondWithStatus(sftp, reqid, error) {
       : mapNodeErrorToStatus(error);
   const message = error instanceof Error ? error.message : String(error ?? "Unknown SFTP error.");
   sftp.status(reqid, statusCode, message);
+}
+
+function createNodeStyleError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
 }
 
 function mapNodeErrorToStatus(error) {

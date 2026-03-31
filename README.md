@@ -5,9 +5,9 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.18` (2026-03-30)
-- Current branch focus: post-`v0.1.18` validation cycle on `master`
-- Current master addition: no unreleased notes yet after the `v0.1.18` transfer-governance release
+- Current stable release: `v0.1.19` (2026-03-31)
+- Current branch focus: post-`v0.1.19` transfer sync/distribution follow-up on `master`
+- Current master addition: upload batches now recover from transient missing-path races and SSH SFTP channel pressure with targeted retries and adaptive per-tab concurrency fallback
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -16,12 +16,21 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
 
+## Release in `v0.1.19` (2026-03-31)
+
+- Batch SFTP uploads now invalidate only the affected remote-directory branch when a first write hits a transient `No such file` path race, then retry automatically.
+- SSH SFTP channel-open backpressure now triggers automatic requeue/backoff plus adaptive per-tab upload concurrency reduction instead of failing the whole batch immediately.
+- `Settings > SFTP` now adds one-click schedule presets on top of the custom weekday/time editor.
+- Transfer policy pack sync-file links now support optional `auto-pull` on launch and `auto-push` on local catalog changes.
+- Automated smoke runs now use isolated per-run `userData` profiles so saved local settings do not leak between workspace and packaged passes.
+- Latest local workspace and packaged smoke runs remain green at `PASS 36 / FAIL 0 / SKIP 0`.
+
 ## Release in `v0.1.18` (2026-03-30)
 
 - `Settings > SFTP` now supports per-direction transfer rate limits for upload and download workers.
 - Queued upload/download work can now be restricted to selected weekdays plus a start/end time window.
 - Transfer queues now pause outside the configured window and auto-resume when the next allowed window opens.
-- Latest local workspace and packaged smoke runs remain green at `PASS 35 / FAIL 0 / SKIP 0`.
+- Latest local workspace and packaged smoke runs remain green at `PASS 36 / FAIL 0 / SKIP 0`.
 
 ## Release in `v0.1.17` (2026-03-30)
 
@@ -216,6 +225,9 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - progress, per-task cancel, cancel-all
   - per-direction transfer rate limits (`Upload Limit` / `Download Limit`)
   - optional queued-transfer schedule window with weekday + time range controls
+  - one-click schedule presets (`Always On` / `Business Hours` / `Weeknights` / `Weekends`)
+  - next queued-transfer resume preview when the window is currently closed
+  - reusable transfer policy packs with local save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push
   - conflict policy (`Overwrite` / `Skip` / `Rename`)
   - session-scoped remembered conflict default (`Overwrite` / `Skip` / `Rename`)
   - pending queue snapshot + restart restore/discard controls
@@ -284,7 +296,7 @@ pnpm run smoke:ui:packaged
 
 This wrapper now runs `pnpm run pack` first so the packaged smoke flow does not reuse stale `release/*` output.
 
-Latest local workspace smoke run: `PASS 35 / FAIL 0 / SKIP 0`
+Latest local workspace smoke run: `PASS 36 / FAIL 0 / SKIP 0`
 
 ## Release
 
@@ -304,8 +316,8 @@ pnpm run release:self-use:win
 Stable release:
 
 ```bash
-git tag v0.1.18
-git push origin v0.1.18
+git tag v0.1.19
+git push origin v0.1.19
 ```
 
 Prerelease example:
@@ -317,7 +329,7 @@ git push origin v0.1.19-test.1
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.18`) => stable release
+- Tag without `-` (for example `v0.1.19`) => stable release
 - Tag with `-` (for example `v0.1.19-test.1`) => prerelease
 
 ## Known Limitations
@@ -356,7 +368,7 @@ Current next-wave emphasis: operation center timeline/control follow-up, session
 3. Operation center v2 (richer progress timeline, grouped controls, and broader cancel/retry actions)
 4. Encrypted session export/import with credential-safe payload
 5. SSH jump-host chain builder (`ProxyJump`/bastion wizard)
-6. Transfer policy packs and richer schedule automation
+6. Richer transfer schedule automation and transfer-pack distribution follow-up
 7. Command snippets/playbooks v2 follow-up (richer playbook workflows and validation packs)
 8. Session quick profiles v2 (multi-command chains, environment overrides)
 9. Multi-host command broadcast with dry-run preview

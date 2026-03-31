@@ -107,6 +107,8 @@ const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
 const LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
 const PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v2";
 const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v3";
+const SFTP_TRANSFER_POLICY_PACKS_STORAGE_KEY = "termdock.sftp-transfer-policy-packs.v1";
+const SFTP_TRANSFER_POLICY_PACK_SYNC_STORAGE_KEY = "termdock.sftp-transfer-policy-pack-sync.v1";
 const SFTP_TRANSFER_HISTORY_STORAGE_KEY = "termdock.sftp-transfer-history.v1";
 const SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY = "termdock.sftp-transfer-pending-restore.v1";
 const SFTP_CONFLICT_STRATEGY_STORAGE_KEY = "termdock.sftp-conflict-strategy.v1";
@@ -145,6 +147,7 @@ const MAX_COMMAND_SNIPPET_GROUPS = 40;
 const MAX_COMMAND_SNIPPETS_PER_GROUP = 120;
 const MAX_COMMAND_SNIPPET_PROMPT_SETS = 24;
 const MAX_DANGEROUS_COMMAND_POLICY_BUNDLES = 40;
+const MAX_SFTP_TRANSFER_POLICY_PACKS = 24;
 const MAX_DANGEROUS_COMMAND_TEMP_APPROVALS = 80;
 const MAX_COMMAND_SNIPPET_PARAMETERS = 12;
 const MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH = 80;
@@ -159,6 +162,9 @@ const MIN_RETRY_BATCH_CONFIRM_THRESHOLD = 0;
 const MAX_RETRY_BATCH_CONFIRM_THRESHOLD = 2000;
 const MAX_SFTP_TRANSFER_CONCURRENCY = 12;
 const MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS = 1024 * 1024;
+const SFTP_UPLOAD_CHANNEL_OPEN_RETRY_LIMIT = 4;
+const SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_BASE_MS = 250;
+const SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_MAX_MS = 2_500;
 const SFTP_UPLOAD_DIRECTORY_PREWARM_CONCURRENCY = 12;
 const SFTP_UPLOAD_CONFLICT_SCAN_CONCURRENCY = 10;
 const SFTP_TRANSFER_WINDOW_EVALUATION_INTERVAL_MS = 30_000;
@@ -171,6 +177,44 @@ const SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS = [
   { value: 5, label: "Fri" },
   { value: 6, label: "Sat" }
 ] as const;
+const SFTP_TRANSFER_SCHEDULE_PRESETS: SftpTransferSchedulePresetRecord[] = [
+  {
+    id: "always-on",
+    label: "Always On",
+    description: "Do not restrict queued transfers by weekday or time window.",
+    scheduleWindowEnabled: false,
+    scheduleWindowStartMinutes: 0,
+    scheduleWindowEndMinutes: 0,
+    scheduleWindowDays: SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS.map((option) => option.value)
+  },
+  {
+    id: "business-hours",
+    label: "Business Hours",
+    description: "Allow queued work during weekday office hours.",
+    scheduleWindowEnabled: true,
+    scheduleWindowStartMinutes: 9 * 60,
+    scheduleWindowEndMinutes: 18 * 60,
+    scheduleWindowDays: [1, 2, 3, 4, 5]
+  },
+  {
+    id: "weeknights",
+    label: "Weeknights",
+    description: "Hold queued work for weekday evening and overnight maintenance windows.",
+    scheduleWindowEnabled: true,
+    scheduleWindowStartMinutes: 18 * 60,
+    scheduleWindowEndMinutes: 9 * 60,
+    scheduleWindowDays: [1, 2, 3, 4, 5]
+  },
+  {
+    id: "weekends",
+    label: "Weekends",
+    description: "Run queued work only on Saturday and Sunday.",
+    scheduleWindowEnabled: true,
+    scheduleWindowStartMinutes: 0,
+    scheduleWindowEndMinutes: 0,
+    scheduleWindowDays: [0, 6]
+  }
+];
 const COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN = /\$\{param:([a-zA-Z0-9_-]+)\}/g;
 const COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN = /[^a-zA-Z0-9_-]+/g;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
@@ -304,6 +348,32 @@ interface SftpTransferPreferences {
   downloadConcurrency: number;
   uploadRateLimitKiBps: number;
   downloadRateLimitKiBps: number;
+  scheduleWindowEnabled: boolean;
+  scheduleWindowStartMinutes: number;
+  scheduleWindowEndMinutes: number;
+  scheduleWindowDays: number[];
+}
+
+interface SftpTransferPolicyPackRecord {
+  id: string;
+  name: string;
+  description: string;
+  updatedAtIso: string;
+  preferences: SftpTransferPreferences;
+}
+
+interface SftpTransferPolicyPackSyncState {
+  filePath: string;
+  lastPulledAtIso: string | null;
+  lastPushedAtIso: string | null;
+  autoPullOnLaunch: boolean;
+  autoPushOnChange: boolean;
+}
+
+interface SftpTransferSchedulePresetRecord {
+  id: string;
+  label: string;
+  description: string;
   scheduleWindowEnabled: boolean;
   scheduleWindowStartMinutes: number;
   scheduleWindowEndMinutes: number;
@@ -607,6 +677,8 @@ interface PendingUploadJob {
   remotePath: string;
   name: string;
   missingDirectoryRetryCount?: number;
+  channelOpenRetryCount?: number;
+  notBeforeAt?: number;
 }
 
 interface PendingDownloadJob {
@@ -1709,6 +1781,23 @@ function isRemotePathMissingError(message?: string): boolean {
   );
 }
 
+function isSftpChannelOpenFailureError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(channel open failure|administratively prohibited|open failed|unable to start subsystem:?\s*sftp|subsystem request failed)/i.test(
+    message
+  );
+}
+
+function getSftpChannelOpenRetryDelayMs(retryCount: number): number {
+  const normalizedRetryCount = Math.max(0, Math.trunc(retryCount));
+  return Math.min(
+    SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_MAX_MS,
+    SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_BASE_MS * 2 ** normalizedRetryCount
+  );
+}
+
 function isReconnectRecoverableError(message: string): boolean {
   return /(not connected|disconnected|connection lost|connection reset|broken pipe|handshake|timed out|timeout)/i.test(
     message
@@ -2198,6 +2287,16 @@ function normalizeRemoteDirectoryPath(pathValue: string): string {
   return hasLeadingSlash ? `/${compacted}` : compacted;
 }
 
+function isRemotePathWithinBranch(candidatePath: string, branchPath: string): boolean {
+  if (!branchPath) {
+    return false;
+  }
+  if (branchPath === "/") {
+    return candidatePath === "/" || candidatePath.startsWith("/");
+  }
+  return candidatePath === branchPath || candidatePath.startsWith(`${branchPath}/`);
+}
+
 function normalizeRelativeDirectoryPath(pathValue: string): string {
   const normalized = normalizeRemoteDirectoryPath(pathValue);
   if (normalized.startsWith("/")) {
@@ -2347,6 +2446,14 @@ function classifyTransferFailureReason(message?: string): string {
   ) {
     return "Connection issue";
   }
+  if (
+    lowered.includes("channel open failure") ||
+    lowered.includes("administratively prohibited") ||
+    lowered.includes("unable to start subsystem: sftp") ||
+    lowered.includes("subsystem request failed")
+  ) {
+    return "SSH channel limit reached";
+  }
   if (lowered.includes("canceled") || lowered.includes("cancelled")) {
     return "Canceled";
   }
@@ -2377,6 +2484,9 @@ function getTransferFailureSuggestion(reason: string): string | null {
   }
   if (reason === "Connection issue") {
     return "Reconnect session first, confirm network stability, then retry failed transfers.";
+  }
+  if (reason === "SSH channel limit reached") {
+    return "SSH server rejected opening more transfer channels. Reduce upload concurrency or retry smaller batches.";
   }
   if (reason === "Canceled") {
     return "Canceled items can be retried directly from Retry Center when needed.";
@@ -2618,6 +2728,364 @@ function formatSftpTransferScheduleWindowSummary(preferences: SftpTransferPrefer
   return `${dayLabels.join(", ")} ${formatSftpScheduleTimeInputValue(
     preferences.scheduleWindowStartMinutes
   )}-${formatSftpScheduleTimeInputValue(preferences.scheduleWindowEndMinutes)}`;
+}
+
+function createSftpTransferSchedulePreferencesFromPreset(
+  preset: SftpTransferSchedulePresetRecord
+): SftpTransferPreferences {
+  return normalizeSftpTransferPreferences({
+    ...DEFAULT_SFTP_TRANSFER_PREFERENCES,
+    scheduleWindowEnabled: preset.scheduleWindowEnabled,
+    scheduleWindowStartMinutes: preset.scheduleWindowStartMinutes,
+    scheduleWindowEndMinutes: preset.scheduleWindowEndMinutes,
+    scheduleWindowDays: preset.scheduleWindowDays
+  });
+}
+
+function doesSftpTransferSchedulePresetMatchPreferences(
+  preset: SftpTransferSchedulePresetRecord,
+  preferences: SftpTransferPreferences
+): boolean {
+  const presetPreferences = createSftpTransferSchedulePreferencesFromPreset(preset);
+  const normalizedPreferences = normalizeSftpTransferPreferences(preferences);
+  return (
+    presetPreferences.scheduleWindowEnabled === normalizedPreferences.scheduleWindowEnabled &&
+    presetPreferences.scheduleWindowStartMinutes === normalizedPreferences.scheduleWindowStartMinutes &&
+    presetPreferences.scheduleWindowEndMinutes === normalizedPreferences.scheduleWindowEndMinutes &&
+    presetPreferences.scheduleWindowDays.length === normalizedPreferences.scheduleWindowDays.length &&
+    presetPreferences.scheduleWindowDays.every(
+      (day, index) => day === normalizedPreferences.scheduleWindowDays[index]
+    )
+  );
+}
+
+function createSftpScheduleCandidateDate(baseDate: Date, dayOffset: number, minutes: number): Date {
+  const candidate = new Date(baseDate);
+  candidate.setHours(0, 0, 0, 0);
+  candidate.setDate(candidate.getDate() + dayOffset);
+  candidate.setMinutes(minutes);
+  return candidate;
+}
+
+function findNextSftpTransferWindowTransition(
+  preferences: SftpTransferPreferences,
+  fromDate = new Date()
+): { at: Date; opensWindow: boolean } | null {
+  if (!preferences.scheduleWindowEnabled) {
+    return null;
+  }
+  const candidateMinutes = Array.from(
+    new Set<number>([
+      0,
+      parseSftpScheduleMinutes(
+        preferences.scheduleWindowStartMinutes,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowStartMinutes
+      ),
+      parseSftpScheduleMinutes(
+        preferences.scheduleWindowEndMinutes,
+        DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEndMinutes
+      )
+    ])
+  ).sort((left, right) => left - right);
+  const fromTime = fromDate.getTime();
+  let best: { at: Date; opensWindow: boolean } | null = null;
+  for (let dayOffset = 0; dayOffset <= 14; dayOffset += 1) {
+    for (const minutes of candidateMinutes) {
+      const candidate = createSftpScheduleCandidateDate(fromDate, dayOffset, minutes);
+      if (candidate.getTime() <= fromTime + 500) {
+        continue;
+      }
+      const before = new Date(candidate.getTime() - 60_000);
+      const after = new Date(candidate.getTime() + 60_000);
+      const wasOpen = isWithinSftpTransferScheduleWindow(preferences, before);
+      const isOpen = isWithinSftpTransferScheduleWindow(preferences, after);
+      if (wasOpen === isOpen) {
+        continue;
+      }
+      if (!best || candidate.getTime() < best.at.getTime()) {
+        best = {
+          at: candidate,
+          opensWindow: isOpen
+        };
+      }
+    }
+  }
+  return best;
+}
+
+function getNextSftpTransferWindowOpening(
+  preferences: SftpTransferPreferences,
+  fromDate = new Date()
+): Date | null {
+  if (!preferences.scheduleWindowEnabled || isWithinSftpTransferScheduleWindow(preferences, fromDate)) {
+    return null;
+  }
+  const nextTransition = findNextSftpTransferWindowTransition(preferences, fromDate);
+  return nextTransition?.opensWindow ? nextTransition.at : null;
+}
+
+function normalizeSftpTransferPreferences(value: unknown): SftpTransferPreferences {
+  const parsed =
+    value && typeof value === "object"
+      ? (value as Partial<SftpTransferPreferences>)
+      : ({} as Partial<SftpTransferPreferences>);
+  return {
+    uploadConcurrency: parseTransferConcurrency(
+      parsed.uploadConcurrency,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency
+    ),
+    downloadConcurrency: parseTransferConcurrency(
+      parsed.downloadConcurrency,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
+    ),
+    uploadRateLimitKiBps: parseSftpTransferRateLimitKiBps(
+      parsed.uploadRateLimitKiBps,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadRateLimitKiBps
+    ),
+    downloadRateLimitKiBps: parseSftpTransferRateLimitKiBps(
+      parsed.downloadRateLimitKiBps,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadRateLimitKiBps
+    ),
+    scheduleWindowEnabled:
+      typeof parsed.scheduleWindowEnabled === "boolean"
+        ? parsed.scheduleWindowEnabled
+        : DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEnabled,
+    scheduleWindowStartMinutes: parseSftpScheduleMinutes(
+      parsed.scheduleWindowStartMinutes,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowStartMinutes
+    ),
+    scheduleWindowEndMinutes: parseSftpScheduleMinutes(
+      parsed.scheduleWindowEndMinutes,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEndMinutes
+    ),
+    scheduleWindowDays: normalizeSftpScheduleDays(
+      parsed.scheduleWindowDays,
+      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowDays
+    )
+  };
+}
+
+function cloneSftpTransferPreferences(
+  preferences: SftpTransferPreferences
+): SftpTransferPreferences {
+  return normalizeSftpTransferPreferences({
+    uploadConcurrency: preferences.uploadConcurrency,
+    downloadConcurrency: preferences.downloadConcurrency,
+    uploadRateLimitKiBps: preferences.uploadRateLimitKiBps,
+    downloadRateLimitKiBps: preferences.downloadRateLimitKiBps,
+    scheduleWindowEnabled: preferences.scheduleWindowEnabled,
+    scheduleWindowStartMinutes: preferences.scheduleWindowStartMinutes,
+    scheduleWindowEndMinutes: preferences.scheduleWindowEndMinutes,
+    scheduleWindowDays: [...preferences.scheduleWindowDays]
+  });
+}
+
+function normalizeSftpTransferPolicyPackName(value: unknown): string {
+  return typeof value === "string" ? value.trim().slice(0, 80) : "";
+}
+
+function normalizeSftpTransferPolicyPackDescription(value: unknown): string {
+  return typeof value === "string" ? value.trim().slice(0, 320) : "";
+}
+
+function normalizeSftpTransferPolicyPackRecord(value: unknown): SftpTransferPolicyPackRecord | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as Partial<SftpTransferPolicyPackRecord> & {
+    transferPreferences?: unknown;
+    sftpTransferPreferences?: unknown;
+  };
+  const name = normalizeSftpTransferPolicyPackName(candidate.name);
+  if (!name) {
+    return null;
+  }
+  const rawPreferences =
+    candidate.preferences ?? candidate.transferPreferences ?? candidate.sftpTransferPreferences;
+  if (!rawPreferences || typeof rawPreferences !== "object") {
+    return null;
+  }
+  const packId =
+    typeof candidate.id === "string" && candidate.id.trim()
+      ? candidate.id.trim().slice(0, 120)
+      : `stpp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  return {
+    id: packId,
+    name,
+    description: normalizeSftpTransferPolicyPackDescription(candidate.description),
+    updatedAtIso:
+      typeof candidate.updatedAtIso === "string" && candidate.updatedAtIso.trim()
+        ? candidate.updatedAtIso.trim().slice(0, 64)
+        : new Date().toISOString(),
+    preferences: normalizeSftpTransferPreferences(rawPreferences)
+  };
+}
+
+function normalizeSftpTransferPolicyPacks(payload: unknown): SftpTransferPolicyPackRecord[] {
+  const rows = Array.isArray(payload) ? payload : [];
+  const normalized: SftpTransferPolicyPackRecord[] = [];
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  for (const row of rows) {
+    const pack = normalizeSftpTransferPolicyPackRecord(row);
+    if (!pack) {
+      continue;
+    }
+    const idKey = pack.id.toLowerCase();
+    const nameKey = pack.name.toLowerCase();
+    if (seenIds.has(idKey) || seenNames.has(nameKey)) {
+      continue;
+    }
+    seenIds.add(idKey);
+    seenNames.add(nameKey);
+    normalized.push(pack);
+    if (normalized.length >= MAX_SFTP_TRANSFER_POLICY_PACKS) {
+      break;
+    }
+  }
+  normalized.sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }));
+  return normalized;
+}
+
+function parseSftpTransferPolicyPacksText(rawText: string): SftpTransferPolicyPackRecord[] {
+  const parsed = JSON.parse(rawText) as { pack?: unknown; packs?: unknown } | unknown;
+  if (Array.isArray(parsed)) {
+    return normalizeSftpTransferPolicyPacks(parsed);
+  }
+  if (parsed && typeof parsed === "object" && "packs" in parsed) {
+    return normalizeSftpTransferPolicyPacks(parsed.packs);
+  }
+  if (parsed && typeof parsed === "object" && "pack" in parsed) {
+    return normalizeSftpTransferPolicyPacks([parsed.pack]);
+  }
+  return normalizeSftpTransferPolicyPacks([parsed]);
+}
+
+function mergeSftpTransferPolicyPacks(
+  existing: SftpTransferPolicyPackRecord[],
+  incoming: SftpTransferPolicyPackRecord[]
+): SftpTransferPolicyPackRecord[] {
+  const merged = [...existing];
+  for (const pack of incoming) {
+    const existingIndex = merged.findIndex(
+      (entry) => entry.id === pack.id || entry.name.toLowerCase() === pack.name.toLowerCase()
+    );
+    if (existingIndex >= 0) {
+      merged[existingIndex] = pack;
+    } else {
+      merged.push(pack);
+    }
+  }
+  return normalizeSftpTransferPolicyPacks(merged);
+}
+
+function createSftpTransferPolicyPacksPayload(
+  packs: SftpTransferPolicyPackRecord[],
+  kind = "sftpTransferPolicyPacks"
+): {
+  exportedAtIso: string;
+  appVersion: string;
+  kind: string;
+  packCount: number;
+  packs: SftpTransferPolicyPackRecord[];
+} {
+  return {
+    exportedAtIso: new Date().toISOString(),
+    appVersion: APP_VERSION,
+    kind,
+    packCount: packs.length,
+    packs
+  };
+}
+
+function createSftpTransferPolicyPacksSignature(packs: SftpTransferPolicyPackRecord[]): string {
+  return JSON.stringify(
+    packs.map((pack) => ({
+      id: pack.id,
+      name: pack.name,
+      description: pack.description,
+      updatedAtIso: pack.updatedAtIso,
+      preferences: cloneSftpTransferPreferences(pack.preferences)
+    }))
+  );
+}
+
+function readSftpTransferPolicyPacks(): SftpTransferPolicyPackRecord[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SFTP_TRANSFER_POLICY_PACKS_STORAGE_KEY);
+    if (!rawValue) {
+      return [];
+    }
+    const parsed = JSON.parse(rawValue) as { packs?: unknown } | unknown;
+    if (Array.isArray(parsed)) {
+      return normalizeSftpTransferPolicyPacks(parsed);
+    }
+    if (parsed && typeof parsed === "object" && "packs" in parsed) {
+      return normalizeSftpTransferPolicyPacks(parsed.packs);
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeSftpTransferPolicyPackSyncState(payload: unknown): SftpTransferPolicyPackSyncState {
+  if (!payload || typeof payload !== "object") {
+    return {
+      filePath: "",
+      lastPulledAtIso: null,
+      lastPushedAtIso: null,
+      autoPullOnLaunch: false,
+      autoPushOnChange: false
+    };
+  }
+  const candidate = payload as Partial<SftpTransferPolicyPackSyncState>;
+  const normalizeTimestamp = (value: unknown): string | null =>
+    typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 64) : null;
+  return {
+    filePath:
+      typeof candidate.filePath === "string" ? candidate.filePath.trim().slice(0, 4096) : "",
+    lastPulledAtIso: normalizeTimestamp(candidate.lastPulledAtIso),
+    lastPushedAtIso: normalizeTimestamp(candidate.lastPushedAtIso),
+    autoPullOnLaunch:
+      typeof candidate.autoPullOnLaunch === "boolean" ? candidate.autoPullOnLaunch : false,
+    autoPushOnChange:
+      typeof candidate.autoPushOnChange === "boolean" ? candidate.autoPushOnChange : false
+  };
+}
+
+function readSftpTransferPolicyPackSyncState(): SftpTransferPolicyPackSyncState {
+  if (typeof window === "undefined") {
+    return normalizeSftpTransferPolicyPackSyncState(null);
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SFTP_TRANSFER_POLICY_PACK_SYNC_STORAGE_KEY);
+    if (!rawValue) {
+      return normalizeSftpTransferPolicyPackSyncState(null);
+    }
+    return normalizeSftpTransferPolicyPackSyncState(JSON.parse(rawValue));
+  } catch {
+    return normalizeSftpTransferPolicyPackSyncState(null);
+  }
+}
+
+function formatSftpTransferPolicyPackSummary(preferences: SftpTransferPreferences): string {
+  const uploadLimit =
+    preferences.uploadRateLimitKiBps > 0
+      ? `${preferences.uploadRateLimitKiBps} KiB/s`
+      : "unlimited";
+  const downloadLimit =
+    preferences.downloadRateLimitKiBps > 0
+      ? `${preferences.downloadRateLimitKiBps} KiB/s`
+      : "unlimited";
+  return `Upload ${preferences.uploadConcurrency} | Download ${preferences.downloadConcurrency} | UL ${uploadLimit} | DL ${downloadLimit} | Window ${
+    preferences.scheduleWindowEnabled
+      ? formatSftpTransferScheduleWindowSummary(preferences)
+      : "off"
+  }`;
 }
 
 function parseRetryBatchConfirmThreshold(value: unknown, fallback: number): number {
@@ -3144,65 +3612,24 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
     if (!rawValue) {
       return DEFAULT_SFTP_TRANSFER_PREFERENCES;
     }
-    const parsed = JSON.parse(rawValue) as Partial<SftpTransferPreferences>;
-    const normalizedUploadConcurrency = parseTransferConcurrency(
-      parsed.uploadConcurrency,
-      DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency
-    );
-    const normalizedDownloadConcurrency = parseTransferConcurrency(
-      parsed.downloadConcurrency,
-      DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
-    );
-    const normalizedUploadRateLimitKiBps = parseSftpTransferRateLimitKiBps(
-      parsed.uploadRateLimitKiBps,
-      DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadRateLimitKiBps
-    );
-    const normalizedDownloadRateLimitKiBps = parseSftpTransferRateLimitKiBps(
-      parsed.downloadRateLimitKiBps,
-      DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadRateLimitKiBps
-    );
-    const normalizedScheduleWindowEnabled =
-      typeof parsed.scheduleWindowEnabled === "boolean"
-        ? parsed.scheduleWindowEnabled
-        : DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEnabled;
-    const normalizedScheduleWindowStartMinutes = parseSftpScheduleMinutes(
-      parsed.scheduleWindowStartMinutes,
-      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowStartMinutes
-    );
-    const normalizedScheduleWindowEndMinutes = parseSftpScheduleMinutes(
-      parsed.scheduleWindowEndMinutes,
-      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowEndMinutes
-    );
-    const normalizedScheduleWindowDays = normalizeSftpScheduleDays(
-      parsed.scheduleWindowDays,
-      DEFAULT_SFTP_TRANSFER_PREFERENCES.scheduleWindowDays
-    );
+    const normalized = normalizeSftpTransferPreferences(JSON.parse(rawValue));
     const migratedLegacyDefaults =
-      normalizedUploadConcurrency === 2 &&
-      normalizedDownloadConcurrency === 2 &&
+      normalized.uploadConcurrency === 2 &&
+      normalized.downloadConcurrency === 2 &&
       window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null &&
       window.localStorage.getItem(PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null;
     return migratedLegacyDefaults
       ? {
           uploadConcurrency: DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency,
-          downloadConcurrency: normalizedDownloadConcurrency,
-          uploadRateLimitKiBps: normalizedUploadRateLimitKiBps,
-          downloadRateLimitKiBps: normalizedDownloadRateLimitKiBps,
-          scheduleWindowEnabled: normalizedScheduleWindowEnabled,
-          scheduleWindowStartMinutes: normalizedScheduleWindowStartMinutes,
-          scheduleWindowEndMinutes: normalizedScheduleWindowEndMinutes,
-          scheduleWindowDays: normalizedScheduleWindowDays
+          downloadConcurrency: normalized.downloadConcurrency,
+          uploadRateLimitKiBps: normalized.uploadRateLimitKiBps,
+          downloadRateLimitKiBps: normalized.downloadRateLimitKiBps,
+          scheduleWindowEnabled: normalized.scheduleWindowEnabled,
+          scheduleWindowStartMinutes: normalized.scheduleWindowStartMinutes,
+          scheduleWindowEndMinutes: normalized.scheduleWindowEndMinutes,
+          scheduleWindowDays: normalized.scheduleWindowDays
         }
-      : {
-          uploadConcurrency: normalizedUploadConcurrency,
-          downloadConcurrency: normalizedDownloadConcurrency,
-          uploadRateLimitKiBps: normalizedUploadRateLimitKiBps,
-          downloadRateLimitKiBps: normalizedDownloadRateLimitKiBps,
-          scheduleWindowEnabled: normalizedScheduleWindowEnabled,
-          scheduleWindowStartMinutes: normalizedScheduleWindowStartMinutes,
-          scheduleWindowEndMinutes: normalizedScheduleWindowEndMinutes,
-          scheduleWindowDays: normalizedScheduleWindowDays
-        };
+      : normalized;
   } catch {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
   }
@@ -4840,6 +5267,17 @@ export function App() {
   const [sftpTransferPreferences, setSftpTransferPreferences] = useState<SftpTransferPreferences>(
     () => readSftpTransferPreferences()
   );
+  const [sftpTransferPolicyPacks, setSftpTransferPolicyPacks] =
+    useState<SftpTransferPolicyPackRecord[]>(() => readSftpTransferPolicyPacks());
+  const [sftpTransferPolicyPackSyncState, setSftpTransferPolicyPackSyncState] =
+    useState<SftpTransferPolicyPackSyncState>(() => readSftpTransferPolicyPackSyncState());
+  const [sftpTransferPolicyPackSyncBusyAction, setSftpTransferPolicyPackSyncBusyAction] =
+    useState<"pull" | "push" | "change" | null>(null);
+  const sftpTransferPolicyPackAutoPullKeyRef = useRef<string | null>(null);
+  const sftpTransferPolicyPackAutoPushDebounceTimerRef = useRef<number | null>(null);
+  const sftpTransferPolicyPackHydratedRef = useRef(false);
+  const suppressNextSftpTransferPolicyPackAutoPushRef = useRef(false);
+  const lastSftpTransferPolicyPackAutoPushSignatureRef = useRef<string | null>(null);
   const [sessionTransferConflictStrategyState, setSessionTransferConflictStrategyState] =
     useState<SessionTransferConflictStrategyState>(() =>
       readSessionTransferConflictStrategyState()
@@ -5041,12 +5479,18 @@ export function App() {
   const connectedTabIdsRef = useRef<Set<string>>(new Set());
   const uploadQueueRef = useRef<PendingUploadJob[]>([]);
   const runningUploadIdsRef = useRef<Map<string, string>>(new Map());
+  const runningUploadCountsByTabRef = useRef<Map<string, number>>(new Map());
   const isDrainingUploadQueueRef = useRef(false);
   const downloadQueueRef = useRef<PendingDownloadJob[]>([]);
   const runningDownloadIdsRef = useRef<Map<string, string>>(new Map());
   const isDrainingDownloadQueueRef = useRef(false);
   const ensuredRemoteDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
   const ensuringRemoteDirectoriesRef = useRef<Map<string, Map<string, Promise<void>>>>(new Map());
+  const readyUploadDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
+  const warmingUploadDirectoriesRef = useRef<Map<string, Set<string>>>(new Map());
+  const adaptiveUploadConcurrencyByTabRef = useRef<Map<string, number>>(new Map());
+  const adaptiveUploadConcurrencyRecoveryByTabRef = useRef<Map<string, number>>(new Map());
+  const uploadQueueRetryTimerRef = useRef<number | null>(null);
   const openingRemoteFilesRef = useRef<Set<string>>(new Set());
   const sftpContextMenuRef = useRef<HTMLDivElement | null>(null);
   const sftpToolbarMenuRef = useRef<HTMLDivElement | null>(null);
@@ -5188,6 +5632,23 @@ export function App() {
   const isActiveDownloadQueuePaused = activeDownloadPauseReason !== null;
   const isSftpTransferWindowOpen = isWithinSftpTransferScheduleWindow(sftpTransferPreferences);
   const sftpTransferScheduleSummary = formatSftpTransferScheduleWindowSummary(sftpTransferPreferences);
+  const activeSftpTransferSchedulePresetId = useMemo(
+    () =>
+      SFTP_TRANSFER_SCHEDULE_PRESETS.find((preset) =>
+        doesSftpTransferSchedulePresetMatchPreferences(preset, sftpTransferPreferences)
+      )?.id ?? null,
+    [sftpTransferPreferences]
+  );
+  const nextSftpTransferWindowOpeningAt = useMemo(
+    () => getNextSftpTransferWindowOpening(sftpTransferPreferences),
+    [sftpTransferPreferences]
+  );
+  const nextSftpTransferWindowOpeningLabel = useMemo(() => {
+    if (!nextSftpTransferWindowOpeningAt) {
+      return null;
+    }
+    return nextSftpTransferWindowOpeningAt.toLocaleString();
+  }, [nextSftpTransferWindowOpeningAt]);
   const activeTransferDockNotice =
     transferDockNotice && activeTabId && transferDockNotice.tabId === activeTabId
       ? transferDockNotice
@@ -9423,6 +9884,188 @@ export function App() {
   const resetEnsuredRemoteDirectoryCacheForTab = useCallback((tabId: string) => {
     ensuredRemoteDirectoriesRef.current.delete(tabId);
     ensuringRemoteDirectoriesRef.current.delete(tabId);
+    readyUploadDirectoriesRef.current.delete(tabId);
+    warmingUploadDirectoriesRef.current.delete(tabId);
+  }, []);
+
+  const invalidateUploadDirectoryBranchForTab = useCallback((tabId: string, remoteDirectory: string) => {
+    const normalized = normalizeRemoteDirectoryPath(remoteDirectory);
+    if (!normalized) {
+      return;
+    }
+
+    const cache = ensuredRemoteDirectoriesRef.current.get(tabId);
+    if (cache) {
+      for (const cachedPath of Array.from(cache)) {
+        if (isRemotePathWithinBranch(cachedPath, normalized)) {
+          cache.delete(cachedPath);
+        }
+      }
+      if (cache.size === 0) {
+        ensuredRemoteDirectoriesRef.current.delete(tabId);
+      }
+    }
+
+    const inFlightByPath = ensuringRemoteDirectoriesRef.current.get(tabId);
+    if (inFlightByPath) {
+      for (const cachedPath of Array.from(inFlightByPath.keys())) {
+        if (isRemotePathWithinBranch(cachedPath, normalized)) {
+          inFlightByPath.delete(cachedPath);
+        }
+      }
+      if (inFlightByPath.size === 0) {
+        ensuringRemoteDirectoriesRef.current.delete(tabId);
+      }
+    }
+
+    const readyDirectories = readyUploadDirectoriesRef.current.get(tabId);
+    if (readyDirectories) {
+      for (const cachedPath of Array.from(readyDirectories)) {
+        if (isRemotePathWithinBranch(cachedPath, normalized)) {
+          readyDirectories.delete(cachedPath);
+        }
+      }
+      if (readyDirectories.size === 0) {
+        readyUploadDirectoriesRef.current.delete(tabId);
+      }
+    }
+
+    const warmingDirectories = warmingUploadDirectoriesRef.current.get(tabId);
+    if (warmingDirectories) {
+      for (const cachedPath of Array.from(warmingDirectories)) {
+        if (isRemotePathWithinBranch(cachedPath, normalized)) {
+          warmingDirectories.delete(cachedPath);
+        }
+      }
+      if (warmingDirectories.size === 0) {
+        warmingUploadDirectoriesRef.current.delete(tabId);
+      }
+    }
+  }, []);
+
+  const getEffectiveUploadConcurrencyForTab = useCallback(
+    (tabId: string) => {
+      const configured = Math.max(1, sftpTransferPreferences.uploadConcurrency);
+      const adaptive = adaptiveUploadConcurrencyByTabRef.current.get(tabId);
+      if (!adaptive || adaptive >= configured) {
+        return configured;
+      }
+      return Math.max(1, adaptive);
+    },
+    [sftpTransferPreferences.uploadConcurrency]
+  );
+
+  const noteUploadChannelBackpressureForTab = useCallback(
+    (tabId: string, message: string) => {
+      const configured = Math.max(1, sftpTransferPreferences.uploadConcurrency);
+      const current = adaptiveUploadConcurrencyByTabRef.current.get(tabId) ?? configured;
+      const next =
+        current <= 1 ? 1 : current <= 2 ? 1 : Math.max(1, Math.ceil(current / 2));
+      adaptiveUploadConcurrencyRecoveryByTabRef.current.set(tabId, 0);
+      if (next === current) {
+        return;
+      }
+      adaptiveUploadConcurrencyByTabRef.current.set(tabId, next);
+      writeAppLog(
+        "warn",
+        "renderer:sftp-transfer",
+        "Upload concurrency reduced after SSH channel-open backpressure.",
+        {
+          tabId,
+          configuredConcurrency: configured,
+          previousConcurrency: current,
+          nextConcurrency: next,
+          message
+        }
+      );
+    },
+    [sftpTransferPreferences.uploadConcurrency]
+  );
+
+  const noteUploadSuccessForTab = useCallback(
+    (tabId: string) => {
+      const configured = Math.max(1, sftpTransferPreferences.uploadConcurrency);
+      const current = adaptiveUploadConcurrencyByTabRef.current.get(tabId);
+      if (!current || current >= configured) {
+        adaptiveUploadConcurrencyByTabRef.current.delete(tabId);
+        adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(tabId);
+        return;
+      }
+      const recoveredCount =
+        (adaptiveUploadConcurrencyRecoveryByTabRef.current.get(tabId) ?? 0) + 1;
+      if (recoveredCount < current) {
+        adaptiveUploadConcurrencyRecoveryByTabRef.current.set(tabId, recoveredCount);
+        return;
+      }
+      const next = Math.min(configured, current + 1);
+      if (next >= configured) {
+        adaptiveUploadConcurrencyByTabRef.current.delete(tabId);
+        adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(tabId);
+      } else {
+        adaptiveUploadConcurrencyByTabRef.current.set(tabId, next);
+        adaptiveUploadConcurrencyRecoveryByTabRef.current.set(tabId, 0);
+      }
+      writeAppLog(
+        "info",
+        "renderer:sftp-transfer",
+        "Upload concurrency recovered after successful transfers.",
+        {
+          tabId,
+          configuredConcurrency: configured,
+          previousConcurrency: current,
+          nextConcurrency: next
+        }
+      );
+    },
+    [sftpTransferPreferences.uploadConcurrency]
+  );
+
+  const claimUploadDirectoryBarrier = useCallback((tabId: string, remoteDirectory: string) => {
+    const normalized = normalizeRemoteDirectoryPath(remoteDirectory);
+    if (!normalized) {
+      return null;
+    }
+    const readyDirectories = readyUploadDirectoriesRef.current.get(tabId);
+    if (readyDirectories?.has(normalized)) {
+      return null;
+    }
+    const warmingDirectories = warmingUploadDirectoriesRef.current.get(tabId) ?? new Set<string>();
+    warmingUploadDirectoriesRef.current.set(tabId, warmingDirectories);
+    if (warmingDirectories.has(normalized)) {
+      return null;
+    }
+    warmingDirectories.add(normalized);
+    return normalized;
+  }, []);
+
+  const markUploadDirectoryReady = useCallback((tabId: string, remoteDirectory: string | null) => {
+    if (!remoteDirectory) {
+      return;
+    }
+    const readyDirectories = readyUploadDirectoriesRef.current.get(tabId) ?? new Set<string>();
+    readyUploadDirectoriesRef.current.set(tabId, readyDirectories);
+    readyDirectories.add(remoteDirectory);
+    const warmingDirectories = warmingUploadDirectoriesRef.current.get(tabId);
+    if (warmingDirectories) {
+      warmingDirectories.delete(remoteDirectory);
+      if (warmingDirectories.size === 0) {
+        warmingUploadDirectoriesRef.current.delete(tabId);
+      }
+    }
+  }, []);
+
+  const releaseUploadDirectoryBarrier = useCallback((tabId: string, remoteDirectory: string | null) => {
+    if (!remoteDirectory) {
+      return;
+    }
+    const warmingDirectories = warmingUploadDirectoriesRef.current.get(tabId);
+    if (!warmingDirectories) {
+      return;
+    }
+    warmingDirectories.delete(remoteDirectory);
+    if (warmingDirectories.size === 0) {
+      warmingUploadDirectoriesRef.current.delete(tabId);
+    }
   }, []);
 
   const ensureRemoteDirectoryForUpload = useCallback(
@@ -9556,20 +10199,59 @@ export function App() {
     if (!sftpApi || isDrainingUploadQueueRef.current) {
       return;
     }
+    if (uploadQueueRetryTimerRef.current !== null) {
+      window.clearTimeout(uploadQueueRetryTimerRef.current);
+      uploadQueueRetryTimerRef.current = null;
+    }
     if (!syncScheduledTransferPauseState()) {
       return;
     }
     isDrainingUploadQueueRef.current = true;
     try {
       while (runningUploadIdsRef.current.size < sftpTransferPreferences.uploadConcurrency) {
-        const nextIndex = uploadQueueRef.current.findIndex((job) =>
-          connectedTabIdsRef.current.has(job.tabId)
-        );
+        const now = Date.now();
+        let earliestRetryAt: number | null = null;
+        const nextIndex = uploadQueueRef.current.findIndex((job) => {
+          if (!connectedTabIdsRef.current.has(job.tabId)) {
+            return false;
+          }
+          if (typeof job.notBeforeAt === "number" && job.notBeforeAt > now) {
+            earliestRetryAt =
+              earliestRetryAt === null ? job.notBeforeAt : Math.min(earliestRetryAt, job.notBeforeAt);
+            return false;
+          }
+          const runningCount = runningUploadCountsByTabRef.current.get(job.tabId) ?? 0;
+          if (runningCount >= getEffectiveUploadConcurrencyForTab(job.tabId)) {
+            return false;
+          }
+          const normalizedDirectory = normalizeRemoteDirectoryPath(job.remoteDirectory);
+          if (!normalizedDirectory) {
+            return true;
+          }
+          const readyDirectories = readyUploadDirectoriesRef.current.get(job.tabId);
+          if (readyDirectories?.has(normalizedDirectory)) {
+            return true;
+          }
+          const warmingDirectories = warmingUploadDirectoriesRef.current.get(job.tabId);
+          return !warmingDirectories?.has(normalizedDirectory);
+        });
         if (nextIndex < 0) {
+          if (earliestRetryAt !== null) {
+            const delayMs = Math.max(0, earliestRetryAt - now);
+            uploadQueueRetryTimerRef.current = window.setTimeout(() => {
+              uploadQueueRetryTimerRef.current = null;
+              drainUploadQueue();
+            }, delayMs);
+          }
           break;
         }
         const [nextJob] = uploadQueueRef.current.splice(nextIndex, 1);
+        const directoryBarrierKey = claimUploadDirectoryBarrier(nextJob.tabId, nextJob.remoteDirectory);
         runningUploadIdsRef.current.set(nextJob.transferId, nextJob.tabId);
+        runningUploadCountsByTabRef.current.set(
+          nextJob.tabId,
+          (runningUploadCountsByTabRef.current.get(nextJob.tabId) ?? 0) + 1
+        );
         void (async () => {
           await ensureRemoteDirectoryForUpload(nextJob.tabId, nextJob.remoteDirectory);
           await sftpApi.uploadFileToPath(
@@ -9583,6 +10265,8 @@ export function App() {
               )
             }
           );
+          markUploadDirectoryReady(nextJob.tabId, directoryBarrierKey);
+          noteUploadSuccessForTab(nextJob.tabId);
         })()
           .catch((caughtError) => {
             const message = (caughtError as Error)?.message ?? "Upload failed.";
@@ -9592,15 +10276,29 @@ export function App() {
             if (isRemotePathMissingError(message)) {
               const retryCount = nextJob.missingDirectoryRetryCount ?? 0;
               if (retryCount < 1) {
-                resetEnsuredRemoteDirectoryCacheForTab(nextJob.tabId);
+                invalidateUploadDirectoryBranchForTab(nextJob.tabId, nextJob.remoteDirectory);
                 uploadQueueRef.current.unshift({
                   ...nextJob,
-                  missingDirectoryRetryCount: retryCount + 1
+                  missingDirectoryRetryCount: retryCount + 1,
+                  notBeforeAt: Date.now() + 150
+                });
+                applySftpTransferEvent({
+                  tabId: nextJob.tabId,
+                  transferId: nextJob.transferId,
+                  direction: "upload",
+                  status: "queued",
+                  batchId: nextJob.batchId,
+                  name: nextJob.name,
+                  localPath: nextJob.localPath,
+                  remotePath: nextJob.remotePath,
+                  transferredBytes: 0,
+                  totalBytes: 0,
+                  message: "retrying after remote directory refresh"
                 });
                 writeAppLog(
                   "warn",
                   "renderer:sftp-transfer",
-                  "Upload hit missing remote path. Cleared ensured-directory cache and requeued once.",
+                  "Upload hit missing remote path. Cleared the affected remote-directory branch and requeued once.",
                   {
                     tabId: nextJob.tabId,
                     transferId: nextJob.transferId,
@@ -9608,6 +10306,49 @@ export function App() {
                     remotePath: nextJob.remotePath
                   }
                 );
+                return;
+              }
+            }
+            if (isSftpChannelOpenFailureError(message)) {
+              const retryCount = nextJob.channelOpenRetryCount ?? 0;
+              if (retryCount < SFTP_UPLOAD_CHANNEL_OPEN_RETRY_LIMIT) {
+                const backoffMs = getSftpChannelOpenRetryDelayMs(retryCount);
+                noteUploadChannelBackpressureForTab(nextJob.tabId, message);
+                uploadQueueRef.current.unshift({
+                  ...nextJob,
+                  channelOpenRetryCount: retryCount + 1,
+                  notBeforeAt: Date.now() + backoffMs
+                });
+                applySftpTransferEvent({
+                  tabId: nextJob.tabId,
+                  transferId: nextJob.transferId,
+                  direction: "upload",
+                  status: "queued",
+                  batchId: nextJob.batchId,
+                  name: nextJob.name,
+                  localPath: nextJob.localPath,
+                  remotePath: nextJob.remotePath,
+                  transferredBytes: 0,
+                  totalBytes: 0,
+                  message: `retrying after SSH channel-open backpressure (${retryCount + 1}/${SFTP_UPLOAD_CHANNEL_OPEN_RETRY_LIMIT})`
+                });
+                writeAppLog(
+                  "warn",
+                  "renderer:sftp-transfer",
+                  "Upload hit SSH channel-open backpressure. Requeued with backoff.",
+                  {
+                    tabId: nextJob.tabId,
+                    transferId: nextJob.transferId,
+                    remotePath: nextJob.remotePath,
+                    retryCount: retryCount + 1,
+                    backoffMs,
+                    message
+                  }
+                );
+                uploadQueueRetryTimerRef.current = window.setTimeout(() => {
+                  uploadQueueRetryTimerRef.current = null;
+                  drainUploadQueue();
+                }, backoffMs);
                 return;
               }
             }
@@ -9622,7 +10363,10 @@ export function App() {
                   [nextJob.tabId]: true
                 };
               });
-              uploadQueueRef.current.unshift(nextJob);
+              uploadQueueRef.current.unshift({
+                ...nextJob,
+                notBeforeAt: undefined
+              });
               setSftpError(
                 "Terminal tab disconnected. Reconnect to resume queued uploads.",
                 nextJob.tabId
@@ -9654,6 +10398,13 @@ export function App() {
           })
           .finally(() => {
             runningUploadIdsRef.current.delete(nextJob.transferId);
+            const nextRunningCount = (runningUploadCountsByTabRef.current.get(nextJob.tabId) ?? 1) - 1;
+            if (nextRunningCount <= 0) {
+              runningUploadCountsByTabRef.current.delete(nextJob.tabId);
+            } else {
+              runningUploadCountsByTabRef.current.set(nextJob.tabId, nextRunningCount);
+            }
+            releaseUploadDirectoryBarrier(nextJob.tabId, directoryBarrierKey);
             drainUploadQueue();
           });
       }
@@ -9663,7 +10414,13 @@ export function App() {
   }, [
     applySftpTransferEvent,
     ensureRemoteDirectoryForUpload,
-    resetEnsuredRemoteDirectoryCacheForTab,
+    claimUploadDirectoryBarrier,
+    getEffectiveUploadConcurrencyForTab,
+    invalidateUploadDirectoryBranchForTab,
+    markUploadDirectoryReady,
+    noteUploadChannelBackpressureForTab,
+    noteUploadSuccessForTab,
+    releaseUploadDirectoryBarrier,
     sftpApi,
     sftpTransferPreferences.uploadConcurrency,
     sftpTransferPreferences.uploadRateLimitKiBps,
@@ -9764,13 +10521,32 @@ export function App() {
   ]);
 
   useEffect(() => {
-    const evaluateTransferScheduleWindow = () => {
-      const windowOpen = syncScheduledTransferPauseState();
-      if (!windowOpen) {
+    let boundaryTimerId: number | null = null;
+    const clearBoundaryTimer = () => {
+      if (boundaryTimerId !== null) {
+        window.clearTimeout(boundaryTimerId);
+        boundaryTimerId = null;
+      }
+    };
+    const scheduleBoundaryEvaluation = () => {
+      clearBoundaryTimer();
+      const nextTransition = findNextSftpTransferWindowTransition(sftpTransferPreferences);
+      if (!nextTransition) {
         return;
       }
-      drainUploadQueue();
-      drainDownloadQueue();
+      const delayMs = Math.max(250, nextTransition.at.getTime() - Date.now() + 250);
+      boundaryTimerId = window.setTimeout(() => {
+        boundaryTimerId = null;
+        evaluateTransferScheduleWindow();
+      }, delayMs);
+    };
+    const evaluateTransferScheduleWindow = () => {
+      const windowOpen = syncScheduledTransferPauseState();
+      if (windowOpen) {
+        drainUploadQueue();
+        drainDownloadQueue();
+      }
+      scheduleBoundaryEvaluation();
     };
 
     evaluateTransferScheduleWindow();
@@ -9779,9 +10555,10 @@ export function App() {
       SFTP_TRANSFER_WINDOW_EVALUATION_INTERVAL_MS
     );
     return () => {
+      clearBoundaryTimer();
       window.clearInterval(timerId);
     };
-  }, [drainDownloadQueue, drainUploadQueue, syncScheduledTransferPauseState]);
+  }, [drainDownloadQueue, drainUploadQueue, sftpTransferPreferences, syncScheduledTransferPauseState]);
 
   const loadSftpDirectory = useCallback(
     async (
@@ -10576,6 +11353,28 @@ export function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
+        SFTP_TRANSFER_POLICY_PACKS_STORAGE_KEY,
+        JSON.stringify(sftpTransferPolicyPacks)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sftpTransferPolicyPacks]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        SFTP_TRANSFER_POLICY_PACK_SYNC_STORAGE_KEY,
+        JSON.stringify(sftpTransferPolicyPackSyncState)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sftpTransferPolicyPackSyncState]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
         TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
         JSON.stringify(terminalCommandHistoryEntries.slice(0, MAX_TERMINAL_COMMAND_HISTORY))
       );
@@ -11080,12 +11879,21 @@ export function App() {
   }, [activeTabId, isServerHealthDetailOpen, refreshServerProcesses, terminalApi]);
 
   useEffect(() => {
+    if (uploadQueueRetryTimerRef.current !== null) {
+      window.clearTimeout(uploadQueueRetryTimerRef.current);
+      uploadQueueRetryTimerRef.current = null;
+    }
     connectedTabIdsRef.current.clear();
     autoRestoredPortForwardTabsRef.current.clear();
     intentionalTabCloseIdsRef.current.clear();
     pendingStartupCommandsByTabRef.current.clear();
     ensuredRemoteDirectoriesRef.current.clear();
     ensuringRemoteDirectoriesRef.current.clear();
+    readyUploadDirectoriesRef.current.clear();
+    warmingUploadDirectoriesRef.current.clear();
+    runningUploadCountsByTabRef.current.clear();
+    adaptiveUploadConcurrencyByTabRef.current.clear();
+    adaptiveUploadConcurrencyRecoveryByTabRef.current.clear();
     serverHealthRequestInFlightTabsRef.current.clear();
     serverProcessRequestInFlightTabsRef.current.clear();
     serverHealthRequestIdsRef.current.clear();
@@ -11100,6 +11908,16 @@ export function App() {
     setSchedulePausedUploadTabs({});
     setSchedulePausedDownloadTabs({});
   }, [terminalApi]);
+
+  useEffect(
+    () => () => {
+      if (uploadQueueRetryTimerRef.current !== null) {
+        window.clearTimeout(uploadQueueRetryTimerRef.current);
+        uploadQueueRetryTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!terminalApi) {
@@ -11184,6 +12002,11 @@ export function App() {
           autoRestoredPortForwardTabsRef.current.delete(event.tabId);
           ensuredRemoteDirectoriesRef.current.delete(event.tabId);
           ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+          readyUploadDirectoriesRef.current.delete(event.tabId);
+          warmingUploadDirectoriesRef.current.delete(event.tabId);
+          runningUploadCountsByTabRef.current.delete(event.tabId);
+          adaptiveUploadConcurrencyByTabRef.current.delete(event.tabId);
+          adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(event.tabId);
           clearPortForwardTabState(event.tabId);
           resetServerHealth({
             tabId: event.tabId,
@@ -11203,6 +12026,11 @@ export function App() {
           autoRestoredPortForwardTabsRef.current.delete(event.tabId);
           ensuredRemoteDirectoriesRef.current.delete(event.tabId);
           ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+          readyUploadDirectoriesRef.current.delete(event.tabId);
+          warmingUploadDirectoriesRef.current.delete(event.tabId);
+          runningUploadCountsByTabRef.current.delete(event.tabId);
+          adaptiveUploadConcurrencyByTabRef.current.delete(event.tabId);
+          adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(event.tabId);
           clearPortForwardTabState(event.tabId);
           if (expectedClose) {
             removeServerMonitorTabState(event.tabId);
@@ -11238,6 +12066,11 @@ export function App() {
         autoRestoredPortForwardTabsRef.current.delete(event.tabId);
         ensuredRemoteDirectoriesRef.current.delete(event.tabId);
         ensuringRemoteDirectoriesRef.current.delete(event.tabId);
+        readyUploadDirectoriesRef.current.delete(event.tabId);
+        warmingUploadDirectoriesRef.current.delete(event.tabId);
+        runningUploadCountsByTabRef.current.delete(event.tabId);
+        adaptiveUploadConcurrencyByTabRef.current.delete(event.tabId);
+        adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(event.tabId);
         clearPortForwardTabState(event.tabId);
         if (expectedClose) {
           removeServerMonitorTabState(event.tabId);
@@ -14792,6 +15625,11 @@ export function App() {
       autoRestoredPortForwardTabsRef.current.delete(tabId);
       ensuredRemoteDirectoriesRef.current.delete(tabId);
       ensuringRemoteDirectoriesRef.current.delete(tabId);
+      readyUploadDirectoriesRef.current.delete(tabId);
+      warmingUploadDirectoriesRef.current.delete(tabId);
+      runningUploadCountsByTabRef.current.delete(tabId);
+      adaptiveUploadConcurrencyByTabRef.current.delete(tabId);
+      adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(tabId);
       if (terminalApi) {
         void terminalApi.close(tabId);
       }
@@ -15984,6 +16822,613 @@ export function App() {
       };
     });
   };
+
+  const applySftpTransferSchedulePreset = (presetId: string) => {
+    const preset = SFTP_TRANSFER_SCHEDULE_PRESETS.find((entry) => entry.id === presetId) ?? null;
+    if (!preset) {
+      return;
+    }
+    setSftpTransferPreferences((prev) => ({
+      ...prev,
+      ...createSftpTransferSchedulePreferencesFromPreset(preset)
+    }));
+  };
+
+  const saveCurrentSftpTransferPolicyPack = useCallback(async () => {
+    const suggestedName = `Transfer ${sftpTransferPreferences.uploadConcurrency}u-${sftpTransferPreferences.downloadConcurrency}d${
+      sftpTransferPreferences.scheduleWindowEnabled ? " windowed" : ""
+    }`;
+    const packNameInput = await showAppPrompt(
+      "Enter a name for this transfer policy pack.",
+      suggestedName,
+      {
+        title: "Save Transfer Policy Pack",
+        confirmLabel: "Next"
+      }
+    );
+    if (packNameInput === null) {
+      return;
+    }
+    const packName = normalizeSftpTransferPolicyPackName(packNameInput);
+    if (!packName) {
+      await showAppAlert("Policy pack name cannot be empty.", {
+        title: "Save Transfer Policy Pack"
+      });
+      return;
+    }
+    const existingPack =
+      sftpTransferPolicyPacks.find((pack) => pack.name.toLowerCase() === packName.toLowerCase()) ??
+      null;
+    if (!existingPack && sftpTransferPolicyPacks.length >= MAX_SFTP_TRANSFER_POLICY_PACKS) {
+      await showAppAlert(
+        `Policy pack limit reached (${MAX_SFTP_TRANSFER_POLICY_PACKS}). Delete or export an existing pack first.`,
+        {
+          title: "Save Transfer Policy Pack"
+        }
+      );
+      return;
+    }
+    const descriptionInput = await showAppPrompt(
+      "Optional description for this transfer policy pack.",
+      existingPack?.description ?? "",
+      {
+        title: "Save Transfer Policy Pack",
+        confirmLabel: existingPack ? "Update" : "Save",
+        multiline: true
+      }
+    );
+    if (descriptionInput === null) {
+      return;
+    }
+    const nextPack: SftpTransferPolicyPackRecord = {
+      id: existingPack?.id ?? `stpp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      name: packName,
+      description: normalizeSftpTransferPolicyPackDescription(descriptionInput),
+      updatedAtIso: new Date().toISOString(),
+      preferences: cloneSftpTransferPreferences(sftpTransferPreferences)
+    };
+    setSftpTransferPolicyPacks((prev) =>
+      normalizeSftpTransferPolicyPacks([
+        ...prev.filter(
+          (pack) => pack.id !== nextPack.id && pack.name.toLowerCase() !== nextPack.name.toLowerCase()
+        ),
+        nextPack
+      ])
+    );
+    await showAppAlert(
+      existingPack
+        ? `Updated transfer policy pack "${packName}".`
+        : `Saved transfer policy pack "${packName}".`,
+      {
+        title: "Save Transfer Policy Pack",
+        detailText: formatSftpTransferPolicyPackSummary(nextPack.preferences)
+      }
+    );
+  }, [sftpTransferPolicyPacks, sftpTransferPreferences, showAppAlert, showAppPrompt]);
+
+  const applySftpTransferPolicyPack = useCallback(
+    async (packId: string) => {
+      const pack = sftpTransferPolicyPacks.find((entry) => entry.id === packId) ?? null;
+      if (!pack) {
+        return;
+      }
+      const confirmed = await showAppConfirm(
+        `Apply transfer policy pack "${pack.name}"?\nThis replaces the current SFTP transfer settings.`,
+        {
+          title: "Apply Transfer Policy Pack",
+          confirmLabel: "Apply",
+          cancelLabel: "Cancel",
+          detailText:
+            `${formatSftpTransferPolicyPackSummary(pack.preferences)}${
+              pack.description ? `\n\n${pack.description}` : ""
+            }`
+        }
+      );
+      if (!confirmed) {
+        return;
+      }
+      setSftpTransferPreferences(cloneSftpTransferPreferences(pack.preferences));
+      pushAppHintMessage(`Applied transfer policy pack: ${pack.name}`, {
+        level: "info",
+        durationMs: 4200
+      });
+    },
+    [pushAppHintMessage, sftpTransferPolicyPacks, showAppConfirm]
+  );
+
+  const deleteSftpTransferPolicyPack = useCallback(
+    async (packId: string) => {
+      const pack = sftpTransferPolicyPacks.find((entry) => entry.id === packId) ?? null;
+      if (!pack) {
+        return;
+      }
+      const confirmed = await showAppConfirm(`Delete transfer policy pack "${pack.name}"?`, {
+        title: "Delete Transfer Policy Pack",
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        danger: true,
+        detailText:
+          `${formatSftpTransferPolicyPackSummary(pack.preferences)}${
+            pack.description ? `\n\n${pack.description}` : ""
+          }`
+      });
+      if (!confirmed) {
+        return;
+      }
+      setSftpTransferPolicyPacks((prev) => prev.filter((entry) => entry.id !== packId));
+    },
+    [sftpTransferPolicyPacks, showAppConfirm]
+  );
+
+  const exportSftpTransferPolicyPack = useCallback(
+    async (packId: string) => {
+      const pack = sftpTransferPolicyPacks.find((entry) => entry.id === packId) ?? null;
+      if (!pack) {
+        return;
+      }
+      const generatedAtIso = new Date().toISOString();
+      const fileSegment =
+        pack.name
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+|-+$/g, "") || "pack";
+      const payload = {
+        exportedAtIso: generatedAtIso,
+        appVersion: APP_VERSION,
+        kind: "sftpTransferPolicyPack",
+        pack
+      };
+      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+      if (systemApi?.saveTextFile) {
+        const result = await systemApi.saveTextFile({
+          title: "Export Transfer Policy Pack",
+          defaultFileName: `termdock-transfer-policy-pack-${fileSegment}-${generatedAtIso.replace(/[:]/g, "-")}.json`,
+          text: exportText,
+          filters: [{ name: "JSON", extensions: ["json"] }]
+        });
+        if (!result.canceled && result.outputPath) {
+          await showAppAlert(`Transfer policy pack exported:\n${result.outputPath}`, {
+            title: "Export Transfer Policy Pack"
+          });
+        }
+        return;
+      }
+      const copied = await copyTextToClipboard(exportText);
+      await showAppAlert(copied ? "Transfer policy pack JSON copied to clipboard." : exportText, {
+        title: "Export Transfer Policy Pack",
+        detailText: copied ? undefined : exportText
+      });
+    },
+    [sftpTransferPolicyPacks, showAppAlert, systemApi]
+  );
+
+  const exportSftpTransferPolicyPacks = useCallback(async () => {
+    if (sftpTransferPolicyPacks.length === 0) {
+      await showAppAlert("No transfer policy packs available to export.", {
+        title: "Export Transfer Policy Packs"
+      });
+      return;
+    }
+    const payload = createSftpTransferPolicyPacksPayload(sftpTransferPolicyPacks);
+    const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+    if (systemApi?.saveTextFile) {
+      const result = await systemApi.saveTextFile({
+        title: "Export Transfer Policy Packs",
+        defaultFileName: `termdock-transfer-policy-packs-${payload.exportedAtIso.replace(/[:]/g, "-")}.json`,
+        text: exportText,
+        filters: [{ name: "JSON", extensions: ["json"] }]
+      });
+      if (!result.canceled && result.outputPath) {
+        await showAppAlert(`Transfer policy packs exported:\n${result.outputPath}`, {
+          title: "Export Transfer Policy Packs"
+        });
+      }
+      return;
+    }
+    const copied = await copyTextToClipboard(exportText);
+    await showAppAlert(copied ? "Transfer policy pack JSON copied to clipboard." : exportText, {
+      title: "Export Transfer Policy Packs",
+      detailText: copied ? undefined : exportText
+    });
+  }, [sftpTransferPolicyPacks, showAppAlert, systemApi]);
+
+  const importSftpTransferPolicyPacks = useCallback(async () => {
+    if (!systemApi?.pickAndReadTextFile) {
+      await showAppAlert("File import is unavailable in this environment.", {
+        title: "Import Transfer Policy Packs"
+      });
+      return;
+    }
+    const result = await systemApi.pickAndReadTextFile({
+      title: "Import Transfer Policy Packs",
+      filters: [{ name: "JSON", extensions: ["json"] }]
+    });
+    if (result.canceled || !result.text) {
+      return;
+    }
+    const rawText = result.text.trim();
+    if (!rawText) {
+      await showAppAlert("Selected file is empty.", {
+        title: "Import Transfer Policy Packs"
+      });
+      return;
+    }
+    try {
+      const importedPacks = parseSftpTransferPolicyPacksText(rawText);
+      if (importedPacks.length === 0) {
+        await showAppAlert("No valid transfer policy packs found in the selected file.", {
+          title: "Import Transfer Policy Packs"
+        });
+        return;
+      }
+      setSftpTransferPolicyPacks((prev) => mergeSftpTransferPolicyPacks(prev, importedPacks));
+      await showAppAlert(
+        `Imported ${importedPacks.length} transfer policy pack${importedPacks.length === 1 ? "" : "s"}.`,
+        {
+          title: "Import Transfer Policy Packs"
+        }
+      );
+    } catch (caughtError) {
+      await showAppAlert(`Invalid JSON format.\n${toLogMessage(caughtError)}`, {
+        title: "Import Transfer Policy Packs"
+      });
+    }
+  }, [showAppAlert, systemApi]);
+
+  const pullSftpTransferPolicyPacksFromSync = useCallback(
+    async (
+      forceSelectFile = false,
+      options?: {
+        automatic?: boolean;
+      }
+    ) => {
+      const automatic = options?.automatic === true;
+      try {
+        setSftpTransferPolicyPackSyncBusyAction("pull");
+        let filePath = sftpTransferPolicyPackSyncState.filePath;
+        let rawText = "";
+        if (forceSelectFile || !filePath) {
+          if (!systemApi?.pickAndReadTextFile) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          const selected = await systemApi.pickAndReadTextFile({
+            title: "Pull Transfer Policy Packs From Sync File",
+            buttonLabel: "Use File",
+            filters: [
+              { name: "JSON", extensions: ["json"] },
+              { name: "All Files", extensions: ["*"] }
+            ]
+          });
+          if (selected.canceled || !selected.filePath) {
+            return false;
+          }
+          filePath = selected.filePath;
+          rawText = typeof selected.text === "string" ? selected.text : "";
+        } else {
+          if (!systemApi?.readTextFileAtPath) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          rawText = await systemApi.readTextFileAtPath(filePath);
+        }
+        if (!rawText.trim()) {
+          await showAppAlert("Selected sync file is empty.", {
+            title: "Pull Transfer Policy Packs"
+          });
+          return false;
+        }
+        const importedPacks = parseSftpTransferPolicyPacksText(rawText);
+        if (importedPacks.length === 0) {
+          await showAppAlert("No valid transfer policy packs found in sync file.", {
+            title: "Pull Transfer Policy Packs"
+          });
+          return false;
+        }
+        const pulledAtIso = new Date().toISOString();
+        suppressNextSftpTransferPolicyPackAutoPushRef.current = true;
+        setSftpTransferPolicyPacks((prev) => mergeSftpTransferPolicyPacks(prev, importedPacks));
+        setSftpTransferPolicyPackSyncState((prev) => ({
+          ...prev,
+          filePath,
+          lastPulledAtIso: pulledAtIso
+        }));
+        pushAppHintMessage(
+          `${
+            automatic ? "Auto-pulled" : "Pulled"
+          } ${importedPacks.length} transfer policy pack${importedPacks.length === 1 ? "" : "s"} from sync file.`,
+          {
+            level: "info",
+            durationMs: automatic ? 3200 : 4200
+          }
+        );
+        if (!automatic) {
+          await showAppAlert(
+            `Pulled ${importedPacks.length} transfer policy pack${importedPacks.length === 1 ? "" : "s"} from:\n${filePath}`,
+            {
+              title: "Pull Transfer Policy Packs"
+            }
+          );
+        }
+        return true;
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        if (automatic) {
+          pushAppHintMessage("Automatic transfer policy pack pull failed. Check logs.", {
+            level: "warn",
+            durationMs: 5200
+          });
+        }
+        writeAppLog(
+          "error",
+          "renderer:sftp-policy-packs",
+          "Failed to pull transfer policy packs from sync file.",
+          caughtError
+        );
+        return false;
+      } finally {
+        setSftpTransferPolicyPackSyncBusyAction(null);
+      }
+    },
+    [
+      pushAppHintMessage,
+      sftpTransferPolicyPackSyncState.filePath,
+      showAppAlert,
+      systemApi,
+      writeAppLog
+    ]
+  );
+
+  const pushSftpTransferPolicyPacksToSync = useCallback(
+    async (
+      forceSelectFile = false,
+      options?: {
+        automatic?: boolean;
+      }
+    ) => {
+      const automatic = options?.automatic === true;
+      try {
+        setSftpTransferPolicyPackSyncBusyAction("push");
+        const payload = createSftpTransferPolicyPacksPayload(
+          sftpTransferPolicyPacks,
+          "sftpTransferPolicyPacksSync"
+        );
+        const exportText = `${JSON.stringify(payload, null, 2)}\n`;
+        let filePath = sftpTransferPolicyPackSyncState.filePath;
+        if (forceSelectFile || !filePath) {
+          if (!systemApi?.saveTextFile) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          const result = await systemApi.saveTextFile({
+            title: "Push Transfer Policy Packs To Sync File",
+            defaultFileName: `termdock-transfer-policy-packs-sync-${payload.exportedAtIso.replace(/[:]/g, "-")}.json`,
+            text: exportText,
+            filters: [{ name: "JSON", extensions: ["json"] }]
+          });
+          if (result.canceled || !result.outputPath) {
+            return false;
+          }
+          filePath = result.outputPath;
+        } else {
+          if (!systemApi?.writeTextFileAtPath) {
+            throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+          }
+          await systemApi.writeTextFileAtPath(filePath, exportText);
+        }
+        setSftpTransferPolicyPackSyncState((prev) => ({
+          ...prev,
+          filePath,
+          lastPushedAtIso: payload.exportedAtIso
+        }));
+        sftpTransferPolicyPackAutoPullKeyRef.current = filePath;
+        lastSftpTransferPolicyPackAutoPushSignatureRef.current =
+          createSftpTransferPolicyPacksSignature(sftpTransferPolicyPacks);
+        pushAppHintMessage(
+          `${
+            automatic ? "Auto-pushed" : "Pushed"
+          } ${sftpTransferPolicyPacks.length} transfer policy pack${sftpTransferPolicyPacks.length === 1 ? "" : "s"} to sync file.`,
+          {
+            level: "info",
+            durationMs: automatic ? 3200 : 4200
+          }
+        );
+        if (!automatic) {
+          await showAppAlert(
+            `Pushed ${sftpTransferPolicyPacks.length} transfer policy pack${sftpTransferPolicyPacks.length === 1 ? "" : "s"} to:\n${filePath}`,
+            {
+              title: "Push Transfer Policy Packs"
+            }
+          );
+        }
+        return true;
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        if (automatic) {
+          pushAppHintMessage("Automatic transfer policy pack push failed. Check logs.", {
+            level: "warn",
+            durationMs: 5200
+          });
+        }
+        writeAppLog(
+          "error",
+          "renderer:sftp-policy-packs",
+          "Failed to push transfer policy packs to sync file.",
+          caughtError
+        );
+        return false;
+      } finally {
+        setSftpTransferPolicyPackSyncBusyAction(null);
+      }
+    },
+    [
+      pushAppHintMessage,
+      sftpTransferPolicyPackSyncState.filePath,
+      sftpTransferPolicyPacks,
+      showAppAlert,
+      systemApi,
+      writeAppLog
+    ]
+  );
+
+  const changeSftpTransferPolicyPackSyncTarget = useCallback(async () => {
+    setSftpTransferPolicyPackSyncBusyAction("change");
+    try {
+      const choice = await showAppChoice(
+        "Choose a shared sync file for transfer policy packs.",
+        [
+          {
+            value: "existing",
+            label: "Use Existing File"
+          },
+          {
+            value: "new",
+            label: "Create New File"
+          }
+        ],
+        {
+          title: "Change Transfer Policy Sync File",
+          cancelLabel: "Cancel",
+          detailText:
+            "Using an existing file pulls and merges packs into the local catalog. Creating a new file writes the current local pack catalog to a shared JSON file."
+        }
+      );
+      if (choice === "existing") {
+        await pullSftpTransferPolicyPacksFromSync(true);
+      } else if (choice === "new") {
+        await pushSftpTransferPolicyPacksToSync(true);
+      }
+    } finally {
+      setSftpTransferPolicyPackSyncBusyAction((current) =>
+        current === "change" ? null : current
+      );
+    }
+  }, [pullSftpTransferPolicyPacksFromSync, pushSftpTransferPolicyPacksToSync, showAppChoice]);
+
+  const clearSftpTransferPolicyPackSyncTarget = useCallback(async () => {
+    if (!sftpTransferPolicyPackSyncState.filePath) {
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      "Clear the current transfer policy sync file?\nThis only removes the local link. The shared JSON file will stay on disk.",
+      {
+        title: "Clear Transfer Policy Sync File",
+        confirmLabel: "Clear",
+        cancelLabel: "Cancel"
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    setSftpTransferPolicyPackSyncState({
+      filePath: "",
+      lastPulledAtIso: null,
+      lastPushedAtIso: null,
+      autoPullOnLaunch: sftpTransferPolicyPackSyncState.autoPullOnLaunch,
+      autoPushOnChange: sftpTransferPolicyPackSyncState.autoPushOnChange
+    });
+    sftpTransferPolicyPackAutoPullKeyRef.current = null;
+    pushAppHintMessage("Cleared transfer policy sync file.", {
+      level: "info",
+      durationMs: 4200
+    });
+  }, [
+    pushAppHintMessage,
+    sftpTransferPolicyPackSyncState.autoPullOnLaunch,
+    sftpTransferPolicyPackSyncState.autoPushOnChange,
+    sftpTransferPolicyPackSyncState.filePath,
+    showAppConfirm
+  ]);
+
+  const setSftpTransferPolicyPackAutoPullOnLaunch = (enabled: boolean) => {
+    setSftpTransferPolicyPackSyncState((prev) => ({
+      ...prev,
+      autoPullOnLaunch: enabled
+    }));
+  };
+
+  const setSftpTransferPolicyPackAutoPushOnChange = (enabled: boolean) => {
+    setSftpTransferPolicyPackSyncState((prev) => ({
+      ...prev,
+      autoPushOnChange: enabled
+    }));
+  };
+
+  useEffect(() => {
+    return () => {
+      if (sftpTransferPolicyPackAutoPushDebounceTimerRef.current !== null) {
+        window.clearTimeout(sftpTransferPolicyPackAutoPushDebounceTimerRef.current);
+        sftpTransferPolicyPackAutoPushDebounceTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!systemApi || !sftpTransferPolicyPackSyncState.autoPullOnLaunch) {
+      sftpTransferPolicyPackAutoPullKeyRef.current = null;
+      return;
+    }
+    const filePath = sftpTransferPolicyPackSyncState.filePath.trim();
+    if (!filePath) {
+      sftpTransferPolicyPackAutoPullKeyRef.current = null;
+      return;
+    }
+    if (sftpTransferPolicyPackAutoPullKeyRef.current === filePath) {
+      return;
+    }
+    sftpTransferPolicyPackAutoPullKeyRef.current = filePath;
+    void pullSftpTransferPolicyPacksFromSync(false, { automatic: true });
+  }, [
+    pullSftpTransferPolicyPacksFromSync,
+    sftpTransferPolicyPackSyncState.autoPullOnLaunch,
+    sftpTransferPolicyPackSyncState.filePath,
+    systemApi
+  ]);
+
+  useEffect(() => {
+    const packsSignature = createSftpTransferPolicyPacksSignature(sftpTransferPolicyPacks);
+    if (!sftpTransferPolicyPackHydratedRef.current) {
+      sftpTransferPolicyPackHydratedRef.current = true;
+      lastSftpTransferPolicyPackAutoPushSignatureRef.current = packsSignature;
+      return;
+    }
+    if (sftpTransferPolicyPackAutoPushDebounceTimerRef.current !== null) {
+      window.clearTimeout(sftpTransferPolicyPackAutoPushDebounceTimerRef.current);
+      sftpTransferPolicyPackAutoPushDebounceTimerRef.current = null;
+    }
+    if (
+      !systemApi ||
+      !sftpTransferPolicyPackSyncState.autoPushOnChange ||
+      !sftpTransferPolicyPackSyncState.filePath.trim() ||
+      sftpTransferPolicyPackSyncBusyAction !== null
+    ) {
+      return;
+    }
+    if (suppressNextSftpTransferPolicyPackAutoPushRef.current) {
+      suppressNextSftpTransferPolicyPackAutoPushRef.current = false;
+      lastSftpTransferPolicyPackAutoPushSignatureRef.current = packsSignature;
+      return;
+    }
+    if (lastSftpTransferPolicyPackAutoPushSignatureRef.current === packsSignature) {
+      return;
+    }
+    sftpTransferPolicyPackAutoPushDebounceTimerRef.current = window.setTimeout(() => {
+      sftpTransferPolicyPackAutoPushDebounceTimerRef.current = null;
+      void pushSftpTransferPolicyPacksToSync(false, { automatic: true });
+    }, 800);
+    return () => {
+      if (sftpTransferPolicyPackAutoPushDebounceTimerRef.current !== null) {
+        window.clearTimeout(sftpTransferPolicyPackAutoPushDebounceTimerRef.current);
+        sftpTransferPolicyPackAutoPushDebounceTimerRef.current = null;
+      }
+    };
+  }, [
+    pushSftpTransferPolicyPacksToSync,
+    sftpTransferPolicyPackSyncBusyAction,
+    sftpTransferPolicyPackSyncState.autoPushOnChange,
+    sftpTransferPolicyPackSyncState.filePath,
+    sftpTransferPolicyPacks,
+    systemApi
+  ]);
 
   const addSessionGroup = (rawName: string) => {
     const normalized = normalizeSessionGroupName(rawName);
@@ -21968,7 +23413,11 @@ export function App() {
             {isActiveUploadQueuePaused ? (
               <p className="hint sftp-transfer-panel__batch-progress">
                 {activeUploadPauseReason === "schedule-window"
-                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Uploads will resume automatically when the window opens.`
+                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Uploads will resume automatically${
+                      nextSftpTransferWindowOpeningLabel
+                        ? ` at ${nextSftpTransferWindowOpeningLabel}.`
+                        : " when the window opens."
+                    }`
                   : "Queue paused: terminal disconnected. Reconnect this tab to resume uploads."}
               </p>
             ) : null}
@@ -22060,7 +23509,11 @@ export function App() {
             {isActiveDownloadQueuePaused ? (
               <p className="hint sftp-transfer-panel__batch-progress">
                 {activeDownloadPauseReason === "schedule-window"
-                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Downloads will resume automatically when the window opens.`
+                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Downloads will resume automatically${
+                      nextSftpTransferWindowOpeningLabel
+                        ? ` at ${nextSftpTransferWindowOpeningLabel}.`
+                        : " when the window opens."
+                    }`
                   : "Queue paused: terminal disconnected. Reconnect this tab to resume downloads."}
               </p>
             ) : null}
@@ -25576,6 +27029,43 @@ export function App() {
                         </label>
                       ))}
                     </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Schedule Presets</h4>
+                        <p className="hint">
+                          Apply a ready-made weekday/time template, then fine-tune the exact window
+                          if needed.
+                        </p>
+                      </div>
+                      <div className="settings-safety-preset-grid">
+                        {SFTP_TRANSFER_SCHEDULE_PRESETS.map((preset) => {
+                          const presetPreferences =
+                            createSftpTransferSchedulePreferencesFromPreset(preset);
+                          return (
+                            <button
+                              className={
+                                preset.id === activeSftpTransferSchedulePresetId
+                                  ? "settings-safety-preset is-active"
+                                  : "settings-safety-preset"
+                              }
+                              key={preset.id}
+                              onClick={() => applySftpTransferSchedulePreset(preset.id)}
+                              type="button"
+                            >
+                              <span className="settings-safety-preset__title">{preset.label}</span>
+                              <span className="hint settings-safety-preset__meta">
+                                {preset.description}
+                              </span>
+                              <span className="settings-safety-preset__count">
+                                {preset.scheduleWindowEnabled
+                                  ? formatSftpTransferScheduleWindowSummary(presetPreferences)
+                                  : "No schedule restriction"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <label>
                       Retry Confirm Threshold
                       <input
@@ -25612,7 +27102,11 @@ export function App() {
                       {sftpTransferPreferences.scheduleWindowEnabled
                         ? ` ${sftpTransferScheduleSummary}. Transfers are currently ${
                             isSftpTransferWindowOpen ? "inside" : "outside"
-                          } the allowed window.`
+                          } the allowed window.${
+                            !isSftpTransferWindowOpen && nextSftpTransferWindowOpeningLabel
+                              ? ` Next queued transfer resume: ${nextSftpTransferWindowOpeningLabel}.`
+                              : ""
+                          }`
                         : " disabled; queued transfers start immediately when threads are available."}
                     </p>
                     <p className="hint">
@@ -25685,6 +27179,212 @@ export function App() {
                         </button>
                       </div>
                     ) : null}
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Transfer Policy Packs</h4>
+                        <p className="hint">
+                          Save reusable SFTP transfer defaults for rate limits, concurrency, and
+                          schedule windows, then import, export, apply, or sync them through a
+                          shared JSON file. Optional auto-pull and auto-push can keep the linked
+                          sync file aligned without a manual button press each time.
+                        </p>
+                      </div>
+                      <p className="hint">
+                        Stored packs {sftpTransferPolicyPacks.length}/
+                        {MAX_SFTP_TRANSFER_POLICY_PACKS}
+                      </p>
+                      <p className="hint">
+                        Sync file:{" "}
+                        {sftpTransferPolicyPackSyncState.filePath ? (
+                          <code>{sftpTransferPolicyPackSyncState.filePath}</code>
+                        ) : (
+                          "Not linked yet."
+                        )}
+                      </p>
+                      {(sftpTransferPolicyPackSyncState.lastPulledAtIso ||
+                        sftpTransferPolicyPackSyncState.lastPushedAtIso) && (
+                        <p className="hint">
+                          Last pull:{" "}
+                          {sftpTransferPolicyPackSyncState.lastPulledAtIso
+                            ? new Date(
+                                sftpTransferPolicyPackSyncState.lastPulledAtIso
+                              ).toLocaleString()
+                            : "never"}
+                          {" | "}last push:{" "}
+                          {sftpTransferPolicyPackSyncState.lastPushedAtIso
+                            ? new Date(
+                                sftpTransferPolicyPackSyncState.lastPushedAtIso
+                              ).toLocaleString()
+                            : "never"}
+                        </p>
+                      )}
+                      <label className="settings-checkbox">
+                        <input
+                          checked={sftpTransferPolicyPackSyncState.autoPullOnLaunch}
+                          onChange={(event) =>
+                            setSftpTransferPolicyPackAutoPullOnLaunch(event.target.checked)
+                          }
+                          type="checkbox"
+                        />
+                        <span>Auto-pull linked sync file on launch</span>
+                      </label>
+                      <label className="settings-checkbox">
+                        <input
+                          checked={sftpTransferPolicyPackSyncState.autoPushOnChange}
+                          onChange={(event) =>
+                            setSftpTransferPolicyPackAutoPushOnChange(event.target.checked)
+                          }
+                          type="checkbox"
+                        />
+                        <span>Auto-push local pack changes to the linked sync file</span>
+                      </label>
+                      <p className="hint">
+                        Auto sync stays off by default. It only runs when a sync file is linked and
+                        does not re-push immediately after a pull/merge.
+                      </p>
+                      <div className="modal__actions">
+                        <button
+                          className="secondary-button"
+                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
+                          onClick={() => {
+                            void saveCurrentSftpTransferPolicyPack();
+                          }}
+                          type="button"
+                        >
+                          Save Current...
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
+                          onClick={() => {
+                            void importSftpTransferPolicyPacks();
+                          }}
+                          type="button"
+                        >
+                          Import...
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={
+                            sftpTransferPolicyPacks.length === 0 ||
+                            sftpTransferPolicyPackSyncBusyAction !== null
+                          }
+                          onClick={() => {
+                            void exportSftpTransferPolicyPacks();
+                          }}
+                          type="button"
+                        >
+                          Export All...
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
+                          onClick={() => {
+                            void pullSftpTransferPolicyPacksFromSync();
+                          }}
+                          type="button"
+                        >
+                          {sftpTransferPolicyPackSyncBusyAction === "pull"
+                            ? "Pulling..."
+                            : sftpTransferPolicyPackSyncState.filePath
+                              ? "Pull Sync"
+                              : "Pull Sync..."}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
+                          onClick={() => {
+                            void pushSftpTransferPolicyPacksToSync();
+                          }}
+                          type="button"
+                        >
+                          {sftpTransferPolicyPackSyncBusyAction === "push"
+                            ? "Pushing..."
+                            : sftpTransferPolicyPackSyncState.filePath
+                              ? "Push Sync"
+                              : "Push Sync..."}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
+                          onClick={() => {
+                            void changeSftpTransferPolicyPackSyncTarget();
+                          }}
+                          type="button"
+                        >
+                          {sftpTransferPolicyPackSyncBusyAction === "change"
+                            ? "Choosing..."
+                            : sftpTransferPolicyPackSyncState.filePath
+                              ? "Change Sync File..."
+                              : "Choose Sync File..."}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          disabled={
+                            !sftpTransferPolicyPackSyncState.filePath ||
+                            sftpTransferPolicyPackSyncBusyAction !== null
+                          }
+                          onClick={() => {
+                            void clearSftpTransferPolicyPackSyncTarget();
+                          }}
+                          type="button"
+                        >
+                          Clear Sync File
+                        </button>
+                      </div>
+                      {sftpTransferPolicyPacks.length > 0 ? (
+                        <div className="settings-safety-preset-grid">
+                          {sftpTransferPolicyPacks.map((pack) => (
+                            <div className="settings-safety-preset" key={pack.id}>
+                              <div className="settings-safety-preset__title">{pack.name}</div>
+                              <div className="settings-safety-preset__meta">
+                                {formatSftpTransferPolicyPackSummary(pack.preferences)}
+                              </div>
+                              <div className="settings-safety-preset__count">
+                                Updated {formatPortForwardTimestamp(pack.updatedAtIso)}
+                              </div>
+                              {pack.description ? (
+                                <div className="settings-safety-preset__meta">{pack.description}</div>
+                              ) : null}
+                              <div className="modal__actions">
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  onClick={() => {
+                                    void applySftpTransferPolicyPack(pack.id);
+                                  }}
+                                  type="button"
+                                >
+                                  Apply
+                                </button>
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  onClick={() => {
+                                    void exportSftpTransferPolicyPack(pack.id);
+                                  }}
+                                  type="button"
+                                >
+                                  Export
+                                </button>
+                                <button
+                                  className="secondary-button secondary-button--small"
+                                  onClick={() => {
+                                    void deleteSftpTransferPolicyPack(pack.id);
+                                  }}
+                                  type="button"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="hint">
+                          No transfer policy packs saved yet. Save the current SFTP settings to
+                          reuse them later.
+                        </p>
+                      )}
+                    </div>
                   </>
                 ) : null}
 
