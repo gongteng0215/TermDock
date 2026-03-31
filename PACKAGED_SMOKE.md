@@ -92,6 +92,7 @@ The smoke runner now starts a local embedded SSH/SFTP fixture (`scripts/smoke-ss
 This baseline covers:
 
 - SSH auth/connect and shell open
+- alternate-screen editor focus mode enter/exit, workspace-toggle disable path, editor-theme selection, and layout restoration
 - Windows preferred-opener parser/launch validation via a helper script with a quoted-path success case and a broken-path failure case
 - dangerous-command approval on a live session
 - SFTP list/upload/download/delete against a real temporary remote filesystem
@@ -119,6 +120,9 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 ## Current Automated Coverage
 
 - Embedded live SSH auth/connect lifecycle
+- Alternate-screen editor focus mode enter/exit
+- Editor focus `Paper` theme selection and visual application
+- Workspace toggle disable path for editor focus mode
 - Embedded live SFTP list/upload/download/delete
 - Embedded live SFTP batch-upload recovery under transient missing-path and channel-pressure faults
 - Embedded live port-forward creation baseline plus Operation Center summary visibility
@@ -138,7 +142,7 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 - Command history side-panel context menu
 - Operation Center tracked app-job card baseline
 - Retry Center grouped view
-- Latest local workspace and packaged smoke runs: `PASS 36 / FAIL 0 / SKIP 0`
+- Latest local workspace and packaged smoke runs: `PASS 39 / FAIL 0 / SKIP 0`
 
 ## Still Manual / Live-Host Coverage
 

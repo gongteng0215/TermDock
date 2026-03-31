@@ -48,6 +48,7 @@ import {
   LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
   MAX_TERMINAL_COMMAND_HISTORY,
   readTerminalCommandHistory,
+  TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
   TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
   TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
   TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
@@ -60,6 +61,7 @@ import type {
   HotkeyPreferences,
   TerminalCommandHistoryEntry,
   TerminalCommandHistorySource,
+  TerminalEditorFocusThemeId,
   TerminalTab
 } from "./components/terminal-workspace";
 import {
@@ -101,6 +103,7 @@ const EMPTY_FORM: SessionCreateInput = {
 };
 
 const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
+const TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY = "termdock.terminal-editor-focus.v1";
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const HOTKEY_CONFLICT_NAV_STORAGE_KEY = "termdock.hotkey-conflict-nav.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
@@ -220,6 +223,10 @@ const COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN = /[^a-zA-Z0-9_-]+/g;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
+};
+const DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES: TerminalEditorFocusPreferences = {
+  autoLayoutEnabled: true,
+  themeId: TERMINAL_EDITOR_FOCUS_THEME_OPTIONS[0]?.id ?? "midnight"
 };
 const APP_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
 const DEFAULT_WORKSPACE_PROFILE_PREFERENCES: WorkspaceProfilePreferences = {
@@ -396,6 +403,11 @@ interface SessionGroupsState {
 interface WorkspaceProfilePreferences {
   profileId: WorkspaceProfileId;
   syncDangerousCommandSafety: boolean;
+}
+
+interface TerminalEditorFocusPreferences {
+  autoLayoutEnabled: boolean;
+  themeId: TerminalEditorFocusThemeId;
 }
 
 interface OperationCenterAppJob {
@@ -3187,6 +3199,33 @@ function readConnectionPreferences(): ConnectionPreferences {
   }
 }
 
+function readTerminalEditorFocusPreferences(): TerminalEditorFocusPreferences {
+  if (typeof window === "undefined") {
+    return DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY);
+    if (!rawValue) {
+      return DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES;
+    }
+    const parsed = JSON.parse(rawValue) as Partial<TerminalEditorFocusPreferences>;
+    const parsedThemeId = parsed.themeId;
+    return {
+      autoLayoutEnabled:
+        typeof parsed.autoLayoutEnabled === "boolean"
+          ? parsed.autoLayoutEnabled
+          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.autoLayoutEnabled,
+      themeId:
+        typeof parsedThemeId === "string" &&
+        TERMINAL_EDITOR_FOCUS_THEME_OPTIONS.some((option) => option.id === parsedThemeId)
+          ? parsedThemeId
+          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.themeId
+    };
+  } catch {
+    return DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES;
+  }
+}
+
 function readWorkspaceProfilePreferences(): WorkspaceProfilePreferences {
   if (typeof window === "undefined") {
     return DEFAULT_WORKSPACE_PROFILE_PREFERENCES;
@@ -5196,6 +5235,7 @@ export function App() {
   const [form, setForm] = useState<SessionCreateInput>(EMPTY_FORM);
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [isTerminalEditorFocusMode, setIsTerminalEditorFocusMode] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [activeSessionGroupKey, setActiveSessionGroupKey] = useState<string | null>(null);
   const [sessionSortMode, setSessionSortMode] = useState<SessionSortMode>(() => readSessionSortMode());
@@ -5213,6 +5253,8 @@ export function App() {
   const [connectionPreferences, setConnectionPreferences] = useState<ConnectionPreferences>(
     () => readConnectionPreferences()
   );
+  const [terminalEditorFocusPreferences, setTerminalEditorFocusPreferences] =
+    useState<TerminalEditorFocusPreferences>(() => readTerminalEditorFocusPreferences());
   const [workspaceProfilePreferences, setWorkspaceProfilePreferences] =
     useState<WorkspaceProfilePreferences>(() => readWorkspaceProfilePreferences());
   const [dangerousCommandGuardPreferences, setDangerousCommandGuardPreferences] =
@@ -5704,6 +5746,13 @@ export function App() {
   const selectedWorkspaceProfile = useMemo(
     () => getWorkspaceProfileOption(workspaceProfilePreferences.profileId),
     [workspaceProfilePreferences.profileId]
+  );
+  const selectedTerminalEditorFocusTheme = useMemo(
+    () =>
+      TERMINAL_EDITOR_FOCUS_THEME_OPTIONS.find(
+        (option) => option.id === terminalEditorFocusPreferences.themeId
+      ) ?? TERMINAL_EDITOR_FOCUS_THEME_OPTIONS[0],
+    [terminalEditorFocusPreferences.themeId]
   );
   const enabledDangerousCommandBuiltinRuleCount = useMemo(
     () =>
@@ -11263,6 +11312,17 @@ export function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
+        TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(terminalEditorFocusPreferences)
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [terminalEditorFocusPreferences]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
         WORKSPACE_PROFILE_STORAGE_KEY,
         JSON.stringify(workspaceProfilePreferences)
       );
@@ -15939,6 +15999,39 @@ export function App() {
       ...prev,
       reconnectDelaySeconds: parseReconnectDelaySeconds(parsed)
     }));
+  };
+
+  const setTerminalEditorAutoLayoutEnabled = (value: boolean) => {
+    setTerminalEditorFocusPreferences((prev) => ({
+      ...prev,
+      autoLayoutEnabled: value
+    }));
+    pushAppHintMessage(
+      value
+        ? "Terminal editor focus mode now auto-tightens layout for alternate-screen editors."
+        : "Terminal editor focus mode no longer auto-tightens layout for alternate-screen editors.",
+      {
+        level: "info",
+        durationMs: 3600
+      }
+    );
+  };
+
+  const setTerminalEditorFocusThemeId = (value: TerminalEditorFocusThemeId) => {
+    if (terminalEditorFocusPreferences.themeId === value) {
+      return;
+    }
+    const nextTheme =
+      TERMINAL_EDITOR_FOCUS_THEME_OPTIONS.find((option) => option.id === value) ??
+      TERMINAL_EDITOR_FOCUS_THEME_OPTIONS[0];
+    setTerminalEditorFocusPreferences((prev) => ({
+      ...prev,
+      themeId: nextTheme.id
+    }));
+    pushAppHintMessage(`Terminal editor focus theme set to ${nextTheme.label}.`, {
+      level: "info",
+      durationMs: 3200
+    });
   };
 
   const applyWorkspaceProfileToDangerousCommandGuard = useCallback(
@@ -22609,7 +22702,7 @@ export function App() {
         </header>
       ) : null}
 
-      <main className="layout">
+      <main className={isTerminalEditorFocusMode ? "layout is-terminal-editor-focus" : "layout"}>
         <aside className="panel panel--left">
           <section className="panel__section panel__section--sftp">
             <div className="panel__heading">
@@ -22780,8 +22873,11 @@ export function App() {
             activeTabId={activeTabId}
             connectionPreferences={connectionPreferences}
             dangerousCommandGuardPreferences={dangerousCommandGuardPreferences}
+            editorFocusModeEnabled={terminalEditorFocusPreferences.autoLayoutEnabled}
+            editorFocusThemeId={terminalEditorFocusPreferences.themeId}
             getDangerousCommandSessionGroupName={getSessionGroupNameForTab}
             hotkeyPreferences={hotkeyPreferences}
+            onActiveEditorModeChange={setIsTerminalEditorFocusMode}
             onCloseAllTabs={closeAllTabs}
             onCloseTab={closeTerminalTab}
             onCloseTabsLeft={closeTabsLeft}
@@ -25894,6 +25990,57 @@ export function App() {
                       When sync is enabled, the global Safety environment template and recommended
                       policy pack follow the selected workspace profile. Custom patterns,
                       persistent approvals, and session-group overrides stay untouched.
+                    </p>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Terminal Editor Focus</h4>
+                        <p className="hint">
+                          Automatically tighten the main layout when the active terminal tab enters
+                          an alternate-screen editor such as `nano` or `vim`.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="settings-checkbox">
+                      <input
+                        checked={terminalEditorFocusPreferences.autoLayoutEnabled}
+                        onChange={(event) =>
+                          setTerminalEditorAutoLayoutEnabled(event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      <span>Auto-focus alternate-screen terminal editors</span>
+                    </label>
+                    <div className="settings-safety-preset-grid">
+                      {TERMINAL_EDITOR_FOCUS_THEME_OPTIONS.map((theme) => (
+                        <button
+                          className={
+                            theme.id === terminalEditorFocusPreferences.themeId
+                              ? "settings-safety-preset settings-terminal-theme-preset is-active"
+                              : "settings-safety-preset settings-terminal-theme-preset"
+                          }
+                          data-editor-theme={theme.id}
+                          key={theme.id}
+                          onClick={() => setTerminalEditorFocusThemeId(theme.id)}
+                          type="button"
+                        >
+                          <div className="settings-safety-preset__title">{theme.label}</div>
+                          <div
+                            className="settings-terminal-theme-preview"
+                            data-editor-theme={theme.id}
+                          >
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                          <div className="settings-safety-preset__meta">{theme.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="hint">
+                      Current editor focus mode:{" "}
+                      {terminalEditorFocusPreferences.autoLayoutEnabled ? "on" : "off"}
+                      {" | "}Theme {selectedTerminalEditorFocusTheme.label}
+                      {" | "}Only affects the active tab and never rewrites terminal editor content
                     </p>
                   </>
                 ) : null}

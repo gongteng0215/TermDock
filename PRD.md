@@ -1,7 +1,7 @@
 ﻿# TermDock PRD
 
-Version: v1.18
-Last updated: 2026-03-30
+Version: v1.19
+Last updated: 2026-03-31
 
 ## 1. Product Positioning
 
@@ -226,8 +226,9 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.19` (current stable): transfer upload reliability hardening plus transfer-pack sync automation follow-up
-- `master` (in progress): post-`v0.1.19` transfer sync/distribution follow-up
+- `v0.1.20` (current stable): alternate-screen terminal editor focus mode with workspace toggle plus `Midnight` / `Graphite` / `Paper` editor-theme presets
+- `master` (in progress): post-`v0.1.20` editor and transfer workflow follow-up
+- `v0.1.19`: transfer upload reliability hardening plus transfer-pack sync automation follow-up
 - `v0.1.13`: packaged smoke baseline, release tooling, and session templates baseline
 - `v0.1.12`: session double-click new-tab behavior fix and release polish
 - Next patch cycle (master in progress):

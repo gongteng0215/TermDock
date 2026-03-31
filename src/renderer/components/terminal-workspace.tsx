@@ -3,7 +3,7 @@ import { History, X } from "lucide-react";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "xterm";
-import type { IDisposable } from "xterm";
+import type { IDisposable, ITheme } from "xterm";
 
 import type { TerminalConnectionStatus } from "../../shared/terminal";
 import {
@@ -25,6 +25,32 @@ export interface ConnectionPreferences {
   autoReconnect: boolean;
   reconnectDelaySeconds: number;
 }
+
+export type TerminalEditorFocusThemeId = "midnight" | "graphite" | "paper";
+
+export interface TerminalEditorFocusThemeOption {
+  id: TerminalEditorFocusThemeId;
+  label: string;
+  description: string;
+}
+
+export const TERMINAL_EDITOR_FOCUS_THEME_OPTIONS: TerminalEditorFocusThemeOption[] = [
+  {
+    id: "midnight",
+    label: "Midnight",
+    description: "Deep blue canvas with cool contrast for long dark-session editing."
+  },
+  {
+    id: "graphite",
+    label: "Graphite",
+    description: "Neutral slate palette with softer contrast and mint cursor accents."
+  },
+  {
+    id: "paper",
+    label: "Paper",
+    description: "Warm light canvas for terminal editing that feels closer to a text buffer."
+  }
+];
 
 export type HotkeyModifier = "primary" | "primaryShift" | "alt" | "altShift";
 
@@ -55,23 +81,54 @@ interface TerminalWorkspaceProps {
   systemApi: Window["termdock"]["system"] | null;
   terminalApi: Window["termdock"]["terminal"] | null;
   connectionPreferences: ConnectionPreferences;
+  editorFocusModeEnabled: boolean;
+  editorFocusThemeId: TerminalEditorFocusThemeId;
   hotkeyPreferences: HotkeyPreferences;
   dangerousCommandGuardPreferences: DangerousCommandGuardPreferences;
   getDangerousCommandSessionGroupName?: (tabId: string) => string | null;
   requestDangerousCommandApproval?: (request: DangerousCommandApprovalRequest) => Promise<boolean>;
   onCommandHistoryChange?: (entries: TerminalCommandHistoryEntry[]) => void;
+  onActiveEditorModeChange?: (isEditorMode: boolean) => void;
 }
 
 interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
   dataDisposable: IDisposable;
+  renderDisposable: IDisposable;
   removeWheelListener: () => void;
 }
 
 const WHEEL_PIXELS_PER_LINE = 40;
 const MAX_WHEEL_NAV_LINES = 12;
 const WHEEL_CAPTURE = true;
+
+const DEFAULT_TERMINAL_THEME: ITheme = {
+  background: "#070d14",
+  foreground: "#d6e2ef",
+  cursor: "#8fc9ff",
+  selectionBackground: "#244e7f"
+};
+
+const TERMINAL_EDITOR_FOCUS_THEMES: Record<TerminalEditorFocusThemeId, ITheme> = {
+  midnight: DEFAULT_TERMINAL_THEME,
+  graphite: {
+    background: "#11161c",
+    foreground: "#d7e1e8",
+    cursor: "#87d4cb",
+    selectionBackground: "#34535b"
+  },
+  paper: {
+    background: "#f4ead8",
+    foreground: "#2b251d",
+    cursor: "#8f6332",
+    selectionBackground: "#dbc4a1"
+  }
+};
+
+function getTerminalEditorFocusTheme(themeId: TerminalEditorFocusThemeId): ITheme {
+  return TERMINAL_EDITOR_FOCUS_THEMES[themeId] ?? DEFAULT_TERMINAL_THEME;
+}
 
 type TabUiStatus = {
   status: TerminalConnectionStatus | "error";
@@ -230,6 +287,10 @@ function readSubmittedCommandFromTerminal(terminal: Terminal, fallbackCommand: s
 }
 
 function shouldSkipTerminalCommandCapture(terminal: Terminal): boolean {
+  return isTerminalInAlternateScreen(terminal);
+}
+
+function isTerminalInAlternateScreen(terminal: Terminal): boolean {
   return terminal.buffer.active.type === "alternate";
 }
 
@@ -357,11 +418,14 @@ export function TerminalWorkspace({
   systemApi,
   terminalApi,
   connectionPreferences,
+  editorFocusModeEnabled,
+  editorFocusThemeId,
   hotkeyPreferences,
   dangerousCommandGuardPreferences,
   getDangerousCommandSessionGroupName,
   requestDangerousCommandApproval,
-  onCommandHistoryChange
+  onCommandHistoryChange,
+  onActiveEditorModeChange
 }: TerminalWorkspaceProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -377,6 +441,8 @@ export function TerminalWorkspace({
   const tabsByIdRef = useRef(new Map<string, TerminalTab>());
   const tabStatusesRef = useRef<Record<string, TabUiStatus>>({});
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabUiStatus>>({});
+  const tabEditorModesRef = useRef<Record<string, boolean>>({});
+  const [tabEditorModes, setTabEditorModes] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<ContextMenuState | null>(null);
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
@@ -419,6 +485,9 @@ export function TerminalWorkspace({
     tabStatusesRef.current = tabStatuses;
   }, [tabStatuses]);
   useEffect(() => {
+    tabEditorModesRef.current = tabEditorModes;
+  }, [tabEditorModes]);
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -442,6 +511,65 @@ export function TerminalWorkspace({
   const setTabStatus = useCallback((tabId: string, status: TabUiStatus) => {
     setTabStatuses((prev) => ({ ...prev, [tabId]: status }));
   }, []);
+
+  const setTabEditorMode = useCallback((tabId: string, isEditorMode: boolean) => {
+    if (tabEditorModesRef.current[tabId] === isEditorMode) {
+      return;
+    }
+    tabEditorModesRef.current = { ...tabEditorModesRef.current, [tabId]: isEditorMode };
+    setTabEditorModes((prev) => {
+      if (prev[tabId] === isEditorMode) {
+        return prev;
+      }
+      return { ...prev, [tabId]: isEditorMode };
+    });
+  }, []);
+
+  const clearTabEditorMode = useCallback((tabId: string) => {
+    if (!(tabId in tabEditorModesRef.current)) {
+      return;
+    }
+    const nextModes = { ...tabEditorModesRef.current };
+    delete nextModes[tabId];
+    tabEditorModesRef.current = nextModes;
+    setTabEditorModes((prev) => {
+      if (!(tabId in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+  }, []);
+
+  const isActiveEditorMode =
+    editorFocusModeEnabled && activeTabId ? (tabEditorModes[activeTabId] ?? false) : false;
+  const activeEditorThemeId = isActiveEditorMode ? editorFocusThemeId : null;
+
+  useEffect(() => {
+    if (!onActiveEditorModeChange) {
+      return;
+    }
+    onActiveEditorModeChange(isActiveEditorMode);
+  }, [isActiveEditorMode, onActiveEditorModeChange]);
+
+  useEffect(() => {
+    if (!onActiveEditorModeChange) {
+      return;
+    }
+    return () => {
+      onActiveEditorModeChange(false);
+    };
+  }, [onActiveEditorModeChange]);
+
+  useEffect(() => {
+    for (const [tabId, instance] of terminalRefs.current.entries()) {
+      const isEditorMode = editorFocusModeEnabled && (tabEditorModes[tabId] ?? false);
+      instance.terminal.options.theme = isEditorMode
+        ? getTerminalEditorFocusTheme(editorFocusThemeId)
+        : DEFAULT_TERMINAL_THEME;
+    }
+  }, [editorFocusModeEnabled, editorFocusThemeId, tabEditorModes]);
 
   const clearReconnectState = useCallback((tabId: string) => {
     reconnectAttemptsRef.current.delete(tabId);
@@ -1673,6 +1801,7 @@ export function TerminalWorkspace({
       clearPendingCommandCapture(tabId);
       instance.removeWheelListener();
       instance.dataDisposable.dispose();
+      instance.renderDisposable.dispose();
       instance.terminal.dispose();
       terminalRefs.current.delete(tabId);
       containerRefs.current.delete(tabId);
@@ -1687,6 +1816,7 @@ export function TerminalWorkspace({
         delete next[tabId];
         return next;
       });
+      clearTabEditorMode(tabId);
     }
 
     for (const tab of tabs) {
@@ -1706,12 +1836,7 @@ export function TerminalWorkspace({
         lineHeight: 1.25,
         fontFamily:
           'Menlo, Monaco, Consolas, "SF Mono", "Cascadia Mono", "Courier New", monospace',
-        theme: {
-          background: "#070d14",
-          foreground: "#d6e2ef",
-          cursor: "#8fc9ff",
-          selectionBackground: "#244e7f"
-        }
+        theme: DEFAULT_TERMINAL_THEME
       });
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
@@ -1723,6 +1848,13 @@ export function TerminalWorkspace({
           await sendTerminalInput(tab.id, data);
         });
       });
+      const syncTerminalEditorMode = () => {
+        setTabEditorMode(tab.id, isTerminalInAlternateScreen(terminal));
+      };
+      const renderDisposable = terminal.onRender(() => {
+        syncTerminalEditorMode();
+      });
+      syncTerminalEditorMode();
       let wheelLineRemainder = 0;
       const onWheel = (event: WheelEvent) => {
         if (event.ctrlKey || event.altKey || event.metaKey) {
@@ -1786,6 +1918,7 @@ export function TerminalWorkspace({
         terminal,
         fitAddon,
         dataDisposable,
+        renderDisposable,
         removeWheelListener: () => {
           for (const target of wheelTargets) {
             target.removeEventListener("wheel", onWheel, WHEEL_CAPTURE);
@@ -1807,10 +1940,12 @@ export function TerminalWorkspace({
     activeTabId,
     clearDeferredFitTimers,
     clearReconnectState,
+    clearTabEditorMode,
     connectTab,
     enqueueTerminalWriteTask,
     scheduleDeferredFit,
     sendTerminalInput,
+    setTabEditorMode,
     setTabStatus,
     tabs,
     terminalApi
@@ -1848,6 +1983,20 @@ export function TerminalWorkspace({
   }, [activeTabId, fitTerminal]);
 
   useEffect(() => {
+    if (tabs.length === 0) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      for (const [tabId, instance] of terminalRefs.current.entries()) {
+        setTabEditorMode(tabId, isTerminalInAlternateScreen(instance.terminal));
+      }
+    }, 120);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [setTabEditorMode, tabs.length]);
+
+  useEffect(() => {
     return () => {
       for (const [tabId, instance] of terminalRefs.current.entries()) {
         clearReconnectState(tabId);
@@ -1855,8 +2004,10 @@ export function TerminalWorkspace({
         clearPendingCommandCapture(tabId);
         instance.removeWheelListener();
         instance.dataDisposable.dispose();
+        instance.renderDisposable.dispose();
         instance.terminal.dispose();
         searchStateRef.current.delete(tabId);
+        clearTabEditorMode(tabId);
         if (terminalApi) {
           void terminalApi.close(tabId);
         }
@@ -1871,11 +2022,20 @@ export function TerminalWorkspace({
       pendingCommandCaptureTimersRef.current.clear();
       pendingTerminalWriteQueueRef.current.clear();
     };
-  }, [clearDeferredFitTimers, clearPendingCommandCapture, clearReconnectState, terminalApi]);
+  }, [
+    clearDeferredFitTimers,
+    clearPendingCommandCapture,
+    clearReconnectState,
+    clearTabEditorMode,
+    terminalApi
+  ]);
 
   return (
     <>
-      <div className="terminal-tabs">
+      <div
+        className={isActiveEditorMode ? "terminal-tabs is-editor-focus" : "terminal-tabs"}
+        data-editor-theme={activeEditorThemeId ?? undefined}
+      >
         {tabs.length === 0 ? (
           <div className="hint">No terminal tab. Use "Open" from session list.</div>
         ) : null}
@@ -1946,7 +2106,11 @@ export function TerminalWorkspace({
           })}
         </div>
       ) : null}
-      <div className="terminal-stage" ref={stageRef}>
+      <div
+        className={isActiveEditorMode ? "terminal-stage is-editor-focus" : "terminal-stage"}
+        data-editor-theme={activeEditorThemeId ?? undefined}
+        ref={stageRef}
+      >
         {tabs.length === 0 ? (
           <p className="hint terminal-empty">
             Terminal workspace ready. Open a session tab to start.
@@ -1954,11 +2118,21 @@ export function TerminalWorkspace({
         ) : null}
         {tabs.map((tab) => {
           const state = tabStatuses[tab.id];
+          const isEditorMode = editorFocusModeEnabled && (tabEditorModes[tab.id] ?? false);
+          const paneClassName =
+            activeTabId === tab.id
+              ? isEditorMode
+                ? "terminal-pane is-active is-editor-focus"
+                : "terminal-pane is-active"
+              : isEditorMode
+                ? "terminal-pane is-editor-focus"
+                : "terminal-pane";
           return (
             <div
               key={tab.id}
-              className={activeTabId === tab.id ? "terminal-pane is-active" : "terminal-pane"}
+              className={paneClassName}
               data-tab-id={tab.id}
+              data-editor-theme={isEditorMode ? editorFocusThemeId : undefined}
             >
               <div
                 className="terminal-pane__canvas"

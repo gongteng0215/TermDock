@@ -279,6 +279,30 @@ function attachShell(stream, rootDir) {
   });
 }
 
+function decodeFixturePrintfArgument(argument) {
+  if (typeof argument !== "string") {
+    return null;
+  }
+  const trimmed = argument.trim();
+  if (trimmed.length < 2) {
+    return null;
+  }
+  const quote = trimmed[0];
+  if ((quote !== "'" && quote !== '"') || trimmed.at(-1) !== quote) {
+    return null;
+  }
+  const inner = trimmed.slice(1, -1);
+  return inner
+    .replace(/\\033/g, "\u001b")
+    .replace(/\\e/g, "\u001b")
+    .replace(/\\r/g, "\r")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\\\/g, "\\")
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"');
+}
+
 async function renderShellCommand(stream, command, currentDirectory, rootDir) {
   if (command === "pwd") {
     stream.write(`\r\n${currentDirectory}`);
@@ -319,6 +343,15 @@ async function renderShellCommand(stream, command, currentDirectory, rootDir) {
   if (command === "exit") {
     stream.write("\r\n");
     return currentDirectory;
+  }
+
+  if (command.startsWith("printf ")) {
+    const output = decodeFixturePrintfArgument(command.slice(7));
+    if (output !== null) {
+      stream.write("\r\n");
+      stream.write(output);
+      return currentDirectory;
+    }
   }
 
   if (/^rm\s+-rf\s+/.test(command)) {

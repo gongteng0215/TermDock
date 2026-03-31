@@ -4,14 +4,35 @@
 
 Release type: In development
 
-No unreleased entries yet.
+### Highlights
+
+- No unreleased notes yet.
+
+### Validation
+
+- Pending next cycle.
+
+## v0.1.20 (2026-03-31)
+
+Release type: Stable
+
+### Highlights
+
+- Terminal editor focus mode:
+  - alternate-screen terminal editors now trigger an automatic focus layout that hides side panels and tightens terminal chrome
+  - `Settings > Workspace` now exposes an explicit toggle for that auto-focus behavior
+  - `Settings > Workspace` now also exposes `Midnight`, `Graphite`, and `Paper` editor-theme presets for the focused terminal canvas and xterm palette
+  - the focus mode is driven by terminal alternate-screen state only, so it does not rewrite `nano`/`vim` content
+- Smoke coverage expansion:
+  - `scripts/smoke-ssh-fixture.mjs` shell handling now replays `printf` ESC sequences needed for alternate-screen validation
+  - `scripts/smoke-capture-all.mjs` now verifies editor focus mode enter/exit, editor-theme selection, and the disabled-toggle path in both workspace and packaged runs
 
 ### Validation
 
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
-- Latest local workspace smoke run: `PASS 36 / FAIL 0 / SKIP 0`
-- Latest local packaged smoke run: `PASS 36 / FAIL 0 / SKIP 0`
+- Latest local workspace smoke run: `PASS 39 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 39 / FAIL 0 / SKIP 0`
 
 ## v0.1.19 (2026-03-31)
 

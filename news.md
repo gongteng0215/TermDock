@@ -12,10 +12,12 @@ Last updated: 2026-03-31
 
 ## Release Baseline
 
-- Current stable release: `v0.1.19` (2026-03-31)
+- Current stable release: `v0.1.20` (2026-03-31)
 
 ## Shipped in Recent Cycles
 
+- v0.1.20: alternate-screen terminal editors now trigger a focused layout that collapses side panels and tightens terminal chrome without rewriting editor content, and `Settings > Workspace` can disable that auto-focus behavior or switch between `Midnight`, `Graphite`, and `Paper` editor themes
+- v0.1.20: smoke fixture shell now replays `printf` ESC sequences, and workspace/packaged smoke now verify editor focus mode enter/exit, theme selection, and the disabled-toggle path
 - v0.1.19: batch SFTP uploads now recover from transient missing-path races and SSH SFTP channel pressure with targeted retries plus adaptive per-tab concurrency fallback
 - v0.1.19: `Settings > SFTP` now supports transfer policy pack save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push
 - v0.1.19: `Settings > SFTP` now adds one-click schedule presets, and smoke runs now use isolated per-run app profiles so saved settings do not bleed across workspace/packaged validation

@@ -112,6 +112,7 @@ function createMarkdownReport({
   lines.push("- Session list double-click fresh-tab behavior");
   lines.push("- Close and reopen same session");
   lines.push("- Embedded local SSH fixture connect/auth lifecycle");
+  lines.push("- Alternate-screen editor focus mode layout tightening and recovery");
   lines.push("- Windows preferred-opener parser/launch path with quoted-path success and broken-path failure on Windows hosts");
   lines.push("- Dangerous-command guardrails Settings > Safety UI and approval bar on a live SSH session");
   lines.push(
@@ -340,6 +341,25 @@ async function getActiveTabId(page) {
     throw new Error("Active terminal tab id not found in DOM.");
   }
   return tabId.trim();
+}
+
+async function runSmokeShellCommand(page, command) {
+  const terminalCanvas = page.locator(".terminal-pane.is-active .terminal-pane__canvas").first();
+  if (!(await isVisible(terminalCanvas))) {
+    throw new Error("active terminal pane not found");
+  }
+  await terminalCanvas.click();
+  await page.keyboard.type(command);
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(260);
+}
+
+async function enterSmokeAlternateScreen(page, message = "TermDock editor focus smoke") {
+  await runSmokeShellCommand(page, `printf '\\033[?1049h\\033[2J\\033[H${message}'`);
+}
+
+async function exitSmokeAlternateScreen(page) {
+  await runSmokeShellCommand(page, "printf '\\033[?1049l'");
 }
 
 async function ensureSession(page, sessionName, groupId, connection) {
@@ -791,6 +811,97 @@ async function main() {
       return `fixture=${fixture.host}:${fixture.port}, shot=${fileName}`;
     });
 
+    await runStep("alternate-screen editor focus mode tightens layout and restores", async () => {
+      await enterSmokeAlternateScreen(page);
+      await page.locator(".layout.is-terminal-editor-focus").first().waitFor({
+        state: "visible",
+        timeout: 8_000
+      });
+      await page
+        .locator(".terminal-pane.is-active.is-editor-focus .terminal-pane__canvas")
+        .first()
+        .waitFor({ state: "visible", timeout: 8_000 });
+      const focusShot = await recordShot(page, "editor-focus-mode-active");
+
+      await exitSmokeAlternateScreen(page);
+      await waitForCondition(
+        async () => {
+          const focusedLayouts = await page.locator(".layout.is-terminal-editor-focus").count();
+          return focusedLayouts === 0;
+        },
+        {
+          timeout: 8_000,
+          description: "editor focus mode to exit"
+        }
+      );
+      const restoredShot = await recordShot(page, "editor-focus-mode-restored");
+      return `${focusShot}, ${restoredShot}`;
+    });
+
+    await runStep("workspace editor focus theme applies selected palette", async () => {
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings nav activation for editor theme smoke"
+        }
+      );
+      const paperThemePreset = page
+        .locator(".settings-terminal-theme-preset[data-editor-theme='paper']")
+        .first();
+      if (!(await isVisible(paperThemePreset))) {
+        throw new Error("paper editor theme preset not visible");
+      }
+      await paperThemePreset.click();
+      await page.waitForTimeout(180);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(260);
+
+      await enterSmokeAlternateScreen(page, "TermDock editor theme smoke");
+      await page
+        .locator(".terminal-stage.is-editor-focus[data-editor-theme='paper']")
+        .first()
+        .waitFor({ state: "visible", timeout: 8_000 });
+      const themedCanvas = page
+        .locator(
+          ".terminal-pane.is-active.is-editor-focus[data-editor-theme='paper'] .terminal-pane__canvas"
+        )
+        .first();
+      await themedCanvas.waitFor({ state: "visible", timeout: 8_000 });
+      const canvasBorderColor = await themedCanvas.evaluate(
+        (element) => window.getComputedStyle(element).borderTopColor
+      );
+      if (!canvasBorderColor.includes("176, 148, 92")) {
+        throw new Error(`paper editor theme did not update canvas border color: ${canvasBorderColor}`);
+      }
+      const themeShot = await recordShot(page, "editor-focus-mode-paper-theme");
+      await exitSmokeAlternateScreen(page);
+
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNavRestore = page
+        .locator(".settings-nav__button", { hasText: "Workspace" })
+        .first();
+      await workspaceNavRestore.click();
+      await page
+        .locator(".settings-terminal-theme-preset[data-editor-theme='midnight']")
+        .first()
+        .click();
+      await page.waitForTimeout(150);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(220);
+
+      return `theme=paper, border=${canvasBorderColor}, shot=${themeShot}`;
+    });
+
     await runStep("live SFTP directory loaded", async () => {
       const seedEntry = page
         .locator(".sftp-list__item", { hasText: fixture.remoteSeedFileName })
@@ -1210,13 +1321,23 @@ async function main() {
               ".modal--settings label.settings-checkbox:has-text('Sync global Safety pack/template to workspace profile')"
             )
             .first();
+          const editorFocusToggle = page
+            .locator(
+              ".modal--settings label.settings-checkbox:has-text('Auto-focus alternate-screen terminal editors')"
+            )
+            .first();
+          const editorThemePresets = page.locator(".settings-terminal-theme-preset");
           const workspacePresets = page.locator(".settings-safety-preset").filter({
             has: page.locator(".settings-safety-preset__count", {
               hasText: "Safety default:"
             })
           });
 
-          if (!(await isVisible(workspaceSyncToggle))) {
+          if (
+            !(await isVisible(workspaceSyncToggle)) ||
+            !(await isVisible(editorFocusToggle)) ||
+            (await editorThemePresets.count()) < 3
+          ) {
             throw new Error("workspace profile sync toggle not visible");
           }
           if ((await workspacePresets.count()) < 4) {
@@ -1480,6 +1601,81 @@ async function main() {
       }
       await page.waitForTimeout(260);
       return shots.join(", ");
+    });
+
+    await runStep("workspace editor focus toggle disables auto layout until re-enabled", async () => {
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings nav activation"
+        }
+      );
+      const editorFocusToggle = page
+        .locator(
+          ".modal--settings label.settings-checkbox:has-text('Auto-focus alternate-screen terminal editors') input"
+        )
+        .first();
+      if (!(await isVisible(editorFocusToggle))) {
+        throw new Error("workspace editor focus toggle not visible");
+      }
+      const originalEnabled = await editorFocusToggle.isChecked();
+      if (originalEnabled) {
+        await editorFocusToggle.uncheck();
+        await page.waitForTimeout(180);
+      }
+      const doneButton = page.locator(".modal--settings .primary-button:has-text('Done')").first();
+      await doneButton.click();
+      await page.waitForTimeout(260);
+
+      await enterSmokeAlternateScreen(page, "TermDock editor focus disabled smoke");
+      await page.waitForTimeout(700);
+      const focusedLayouts = await page.locator(".layout.is-terminal-editor-focus").count();
+      if (focusedLayouts !== 0) {
+        throw new Error("editor focus layout still activated while the workspace toggle was disabled");
+      }
+      if (!(await isVisible(page.locator(".panel--left").first())) || !(await isVisible(page.locator(".panel--right").first()))) {
+        throw new Error("side panels should remain visible when editor focus toggle is disabled");
+      }
+      const disabledShot = await recordShot(page, "editor-focus-mode-disabled");
+      await exitSmokeAlternateScreen(page);
+
+      if (originalEnabled) {
+        await settingsButton.click();
+        await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+        const workspaceNavRestore = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+        await workspaceNavRestore.click();
+        await waitForCondition(
+          async () =>
+            await workspaceNavRestore.evaluate((element) => element.classList.contains("is-active")),
+          {
+            timeout: 5_000,
+            description: "workspace settings nav restore activation"
+          }
+        );
+        const restoreToggle = page
+          .locator(
+            ".modal--settings label.settings-checkbox:has-text('Auto-focus alternate-screen terminal editors') input"
+          )
+          .first();
+        if (!(await restoreToggle.isChecked())) {
+          await restoreToggle.check();
+          await page.waitForTimeout(180);
+        }
+        const doneRestore = page.locator(".modal--settings .primary-button:has-text('Done')").first();
+        await doneRestore.click();
+        await page.waitForTimeout(220);
+      }
+
+      return disabledShot;
     });
 
     await runStep("open snippet manager baseline", async () => {

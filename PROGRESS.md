@@ -4,7 +4,7 @@ Last updated: 2026-03-31
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.19`
+- Stable release shipped: `v0.1.20`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -21,6 +21,7 @@ Last updated: 2026-03-31
 - Master branch now also includes upload fast-path/channel isolation, higher default upload concurrency, remote-directory prewarm, and concurrent local directory scan for upload batches
 - Master branch now also includes per-direction SFTP transfer rate limits plus queued-transfer weekday/time schedule windows
 - Master branch now also includes upload batch reliability hardening for transient missing-path races and SSH SFTP channel-open backpressure, plus a fault-injected smoke path that verifies recovery
+- Master branch now also includes alternate-screen terminal editor focus mode that auto-tightens the main layout and terminal chrome while full-screen TUI editors are active, with a workspace-level enable/disable toggle plus editor-theme presets
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -59,6 +60,15 @@ Last updated: 2026-03-31
   - queue pause outside the configured window plus automatic resume when the next allowed window opens
   - transfer-preferences schema migration for the new controls
 
+## Completed in v0.1.20
+
+- Terminal editor focus mode:
+  - entering alternate-screen editors now switches the app into a chrome-light focus layout instead of leaving SFTP/session panels open beside the editor canvas
+  - terminal workspace tracks alternate-screen state per tab and restores the full layout immediately after the editor exits
+  - `Settings > Workspace` now exposes an explicit auto-focus toggle so the behavior can be disabled without changing terminal rendering
+  - `Settings > Workspace` now also exposes `Midnight` / `Graphite` / `Paper` editor-theme presets that retheme the focused terminal canvas and xterm palette without rewriting TUI output
+  - smoke fixture shell now supports `printf` ESC-sequence playback so workspace and packaged smoke both verify focus-mode enter/exit behavior, theme selection, and the disabled-toggle path
+
 ## Completed in v0.1.19
 
 - SFTP transfer policy packs:
@@ -75,7 +85,6 @@ Last updated: 2026-03-31
   - SSH SFTP channel-open backpressure now triggers automatic requeue/backoff instead of immediate batch failure
   - effective upload concurrency now shrinks per tab under backpressure and recovers after successful retries
   - smoke fixture now injects transient directory-race and channel-pressure faults so this path is covered in both workspace and packaged smoke
-
 ## Completed in v0.1.16
 
 - Upgraded workflow action runtimes:
