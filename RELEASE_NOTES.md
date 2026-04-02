@@ -12,6 +12,29 @@ Release type: In development
 
 - Pending next cycle.
 
+## v0.1.21 (2026-04-02)
+
+Release type: Stable
+
+### Highlights
+
+- Terminal editor focus follow-up:
+  - `Settings > Workspace` now also exposes `Compact`, `Balanced`, and `Reading` typography presets for editor-only font size and row height tuning
+  - editor typography changes trigger a refit of the active alternate-screen terminal so rows/columns do not stay stale after the preset switch
+  - `Settings > Workspace` now also exposes `System Mono`, `Coding Mono`, and `Drafting Mono` font presets for editor-only xterm font stack changes
+  - `Settings > Workspace` now also exposes `Crisp`, `Steady`, and `Open` text-rhythm presets for editor-only xterm spacing and stroke-weight changes
+  - `Settings > Workspace` now also exposes `Beam`, `Underline`, and `Block` cursor presets for editor-only xterm cursor-shape changes
+  - inactive editor tabs now collapse into smaller pills so the active editor tab keeps most of the top-bar emphasis during multi-tab editing
+- Smoke coverage expansion:
+  - `scripts/smoke-capture-all.mjs` now verifies the `Reading` editor-typography preset, the `Drafting Mono` editor-font preset, the `Open` text-rhythm preset, the `Underline` cursor preset, and inactive-tab compaction in both workspace and packaged runs
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 44 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 44 / FAIL 0 / SKIP 0`
+
 ## v0.1.20 (2026-03-31)
 
 Release type: Stable

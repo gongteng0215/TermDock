@@ -1,7 +1,7 @@
 ﻿# TermDock PRD
 
-Version: v1.19
-Last updated: 2026-03-31
+Version: v1.21
+Last updated: 2026-04-02
 
 ## 1. Product Positioning
 
@@ -226,8 +226,9 @@ Target platforms:
 
 ## 10. Version Plan
 
-- `v0.1.20` (current stable): alternate-screen terminal editor focus mode with workspace toggle plus `Midnight` / `Graphite` / `Paper` editor-theme presets
-- `master` (in progress): post-`v0.1.20` editor and transfer workflow follow-up
+- `v0.1.21` (current stable): alternate-screen terminal editor focus mode with workspace toggle, editor theme/typography/font/rhythm/cursor presets, and inactive-tab compaction
+- `master` (in progress): post-`v0.1.21` hardening and transfer/workspace follow-up
+- `v0.1.20`: alternate-screen terminal editor focus mode with workspace toggle plus `Midnight` / `Graphite` / `Paper` editor-theme presets
 - `v0.1.19`: transfer upload reliability hardening plus transfer-pack sync automation follow-up
 - `v0.1.13`: packaged smoke baseline, release tooling, and session templates baseline
 - `v0.1.12`: session double-click new-tab behavior fix and release polish

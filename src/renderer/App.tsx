@@ -48,7 +48,11 @@ import {
   LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
   MAX_TERMINAL_COMMAND_HISTORY,
   readTerminalCommandHistory,
+  TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
   TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
   TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
   TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
   TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
@@ -61,7 +65,11 @@ import type {
   HotkeyPreferences,
   TerminalCommandHistoryEntry,
   TerminalCommandHistorySource,
+  TerminalEditorFocusCursorId,
+  TerminalEditorFocusFontId,
+  TerminalEditorFocusRhythmId,
   TerminalEditorFocusThemeId,
+  TerminalEditorFocusTypographyId,
   TerminalTab
 } from "./components/terminal-workspace";
 import {
@@ -226,7 +234,11 @@ const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
 };
 const DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES: TerminalEditorFocusPreferences = {
   autoLayoutEnabled: true,
-  themeId: TERMINAL_EDITOR_FOCUS_THEME_OPTIONS[0]?.id ?? "midnight"
+  themeId: TERMINAL_EDITOR_FOCUS_THEME_OPTIONS[0]?.id ?? "midnight",
+  typographyId: TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS[1]?.id ?? "balanced",
+  fontId: TERMINAL_EDITOR_FOCUS_FONT_OPTIONS[0]?.id ?? "system",
+  rhythmId: TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS[1]?.id ?? "steady",
+  cursorId: TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS[2]?.id ?? "block"
 };
 const APP_VERSION = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
 const DEFAULT_WORKSPACE_PROFILE_PREFERENCES: WorkspaceProfilePreferences = {
@@ -408,6 +420,10 @@ interface WorkspaceProfilePreferences {
 interface TerminalEditorFocusPreferences {
   autoLayoutEnabled: boolean;
   themeId: TerminalEditorFocusThemeId;
+  typographyId: TerminalEditorFocusTypographyId;
+  fontId: TerminalEditorFocusFontId;
+  rhythmId: TerminalEditorFocusRhythmId;
+  cursorId: TerminalEditorFocusCursorId;
 }
 
 interface OperationCenterAppJob {
@@ -3210,6 +3226,10 @@ function readTerminalEditorFocusPreferences(): TerminalEditorFocusPreferences {
     }
     const parsed = JSON.parse(rawValue) as Partial<TerminalEditorFocusPreferences>;
     const parsedThemeId = parsed.themeId;
+    const parsedTypographyId = parsed.typographyId;
+    const parsedFontId = parsed.fontId;
+    const parsedRhythmId = parsed.rhythmId;
+    const parsedCursorId = parsed.cursorId;
     return {
       autoLayoutEnabled:
         typeof parsed.autoLayoutEnabled === "boolean"
@@ -3219,7 +3239,29 @@ function readTerminalEditorFocusPreferences(): TerminalEditorFocusPreferences {
         typeof parsedThemeId === "string" &&
         TERMINAL_EDITOR_FOCUS_THEME_OPTIONS.some((option) => option.id === parsedThemeId)
           ? parsedThemeId
-          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.themeId
+          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.themeId,
+      typographyId:
+        typeof parsedTypographyId === "string" &&
+        TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS.some(
+          (option) => option.id === parsedTypographyId
+        )
+          ? parsedTypographyId
+          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.typographyId,
+      fontId:
+        typeof parsedFontId === "string" &&
+        TERMINAL_EDITOR_FOCUS_FONT_OPTIONS.some((option) => option.id === parsedFontId)
+          ? parsedFontId
+          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.fontId,
+      rhythmId:
+        typeof parsedRhythmId === "string" &&
+        TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS.some((option) => option.id === parsedRhythmId)
+          ? parsedRhythmId
+          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.rhythmId,
+      cursorId:
+        typeof parsedCursorId === "string" &&
+        TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS.some((option) => option.id === parsedCursorId)
+          ? parsedCursorId
+          : DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES.cursorId
     };
   } catch {
     return DEFAULT_TERMINAL_EDITOR_FOCUS_PREFERENCES;
@@ -5753,6 +5795,34 @@ export function App() {
         (option) => option.id === terminalEditorFocusPreferences.themeId
       ) ?? TERMINAL_EDITOR_FOCUS_THEME_OPTIONS[0],
     [terminalEditorFocusPreferences.themeId]
+  );
+  const selectedTerminalEditorFocusTypography = useMemo(
+    () =>
+      TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS.find(
+        (option) => option.id === terminalEditorFocusPreferences.typographyId
+      ) ?? TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS[1] ?? TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS[0],
+    [terminalEditorFocusPreferences.typographyId]
+  );
+  const selectedTerminalEditorFocusFont = useMemo(
+    () =>
+      TERMINAL_EDITOR_FOCUS_FONT_OPTIONS.find(
+        (option) => option.id === terminalEditorFocusPreferences.fontId
+      ) ?? TERMINAL_EDITOR_FOCUS_FONT_OPTIONS[0],
+    [terminalEditorFocusPreferences.fontId]
+  );
+  const selectedTerminalEditorFocusRhythm = useMemo(
+    () =>
+      TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS.find(
+        (option) => option.id === terminalEditorFocusPreferences.rhythmId
+      ) ?? TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS[1] ?? TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS[0],
+    [terminalEditorFocusPreferences.rhythmId]
+  );
+  const selectedTerminalEditorFocusCursor = useMemo(
+    () =>
+      TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS.find(
+        (option) => option.id === terminalEditorFocusPreferences.cursorId
+      ) ?? TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS[2] ?? TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS[0],
+    [terminalEditorFocusPreferences.cursorId]
   );
   const enabledDangerousCommandBuiltinRuleCount = useMemo(
     () =>
@@ -16034,6 +16104,77 @@ export function App() {
     });
   };
 
+  const setTerminalEditorFocusTypographyId = (value: TerminalEditorFocusTypographyId) => {
+    if (terminalEditorFocusPreferences.typographyId === value) {
+      return;
+    }
+    const nextTypography =
+      TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS.find((option) => option.id === value) ??
+      TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS[1] ??
+      TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS[0];
+    setTerminalEditorFocusPreferences((prev) => ({
+      ...prev,
+      typographyId: nextTypography.id
+    }));
+    pushAppHintMessage(`Terminal editor focus typography set to ${nextTypography.label}.`, {
+      level: "info",
+      durationMs: 3200
+    });
+  };
+
+  const setTerminalEditorFocusFontId = (value: TerminalEditorFocusFontId) => {
+    if (terminalEditorFocusPreferences.fontId === value) {
+      return;
+    }
+    const nextFont =
+      TERMINAL_EDITOR_FOCUS_FONT_OPTIONS.find((option) => option.id === value) ??
+      TERMINAL_EDITOR_FOCUS_FONT_OPTIONS[0];
+    setTerminalEditorFocusPreferences((prev) => ({
+      ...prev,
+      fontId: nextFont.id
+    }));
+    pushAppHintMessage(`Terminal editor focus font set to ${nextFont.label}.`, {
+      level: "info",
+      durationMs: 3200
+    });
+  };
+
+  const setTerminalEditorFocusRhythmId = (value: TerminalEditorFocusRhythmId) => {
+    if (terminalEditorFocusPreferences.rhythmId === value) {
+      return;
+    }
+    const nextRhythm =
+      TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS.find((option) => option.id === value) ??
+      TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS[1] ??
+      TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS[0];
+    setTerminalEditorFocusPreferences((prev) => ({
+      ...prev,
+      rhythmId: nextRhythm.id
+    }));
+    pushAppHintMessage(`Terminal editor focus rhythm set to ${nextRhythm.label}.`, {
+      level: "info",
+      durationMs: 3200
+    });
+  };
+
+  const setTerminalEditorFocusCursorId = (value: TerminalEditorFocusCursorId) => {
+    if (terminalEditorFocusPreferences.cursorId === value) {
+      return;
+    }
+    const nextCursor =
+      TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS.find((option) => option.id === value) ??
+      TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS[2] ??
+      TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS[0];
+    setTerminalEditorFocusPreferences((prev) => ({
+      ...prev,
+      cursorId: nextCursor.id
+    }));
+    pushAppHintMessage(`Terminal editor focus cursor set to ${nextCursor.label}.`, {
+      level: "info",
+      durationMs: 3200
+    });
+  };
+
   const applyWorkspaceProfileToDangerousCommandGuard = useCallback(
     (profileId: WorkspaceProfileId) => {
       const profileTemplate =
@@ -22874,7 +23015,11 @@ export function App() {
             connectionPreferences={connectionPreferences}
             dangerousCommandGuardPreferences={dangerousCommandGuardPreferences}
             editorFocusModeEnabled={terminalEditorFocusPreferences.autoLayoutEnabled}
+            editorFocusCursorId={terminalEditorFocusPreferences.cursorId}
+            editorFocusFontId={terminalEditorFocusPreferences.fontId}
+            editorFocusRhythmId={terminalEditorFocusPreferences.rhythmId}
             editorFocusThemeId={terminalEditorFocusPreferences.themeId}
+            editorFocusTypographyId={terminalEditorFocusPreferences.typographyId}
             getDangerousCommandSessionGroupName={getSessionGroupNameForTab}
             hotkeyPreferences={hotkeyPreferences}
             onActiveEditorModeChange={setIsTerminalEditorFocusMode}
@@ -26036,10 +26181,138 @@ export function App() {
                         </button>
                       ))}
                     </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Editor Typography</h4>
+                        <p className="hint">
+                          Adjust editor-mode font size and row height without changing normal shell
+                          density.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="settings-safety-preset-grid">
+                      {TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS.map((preset) => (
+                        <button
+                          className={
+                            preset.id === terminalEditorFocusPreferences.typographyId
+                              ? "settings-safety-preset settings-terminal-typography-preset is-active"
+                              : "settings-safety-preset settings-terminal-typography-preset"
+                          }
+                          data-editor-typography={preset.id}
+                          key={preset.id}
+                          onClick={() => setTerminalEditorFocusTypographyId(preset.id)}
+                          type="button"
+                        >
+                          <div className="settings-safety-preset__title">{preset.label}</div>
+                          <div
+                            className="settings-terminal-typography-preview"
+                            data-editor-typography={preset.id}
+                          >
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                          <div className="settings-safety-preset__meta">{preset.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Editor Font</h4>
+                        <p className="hint">
+                          Swap the editor-mode mono stack without changing the normal terminal font.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="settings-safety-preset-grid">
+                      {TERMINAL_EDITOR_FOCUS_FONT_OPTIONS.map((preset) => (
+                        <button
+                          className={
+                            preset.id === terminalEditorFocusPreferences.fontId
+                              ? "settings-safety-preset settings-terminal-font-preset is-active"
+                              : "settings-safety-preset settings-terminal-font-preset"
+                          }
+                          data-editor-font={preset.id}
+                          key={preset.id}
+                          onClick={() => setTerminalEditorFocusFontId(preset.id)}
+                          type="button"
+                        >
+                          <div className="settings-safety-preset__title">{preset.label}</div>
+                          <div className="settings-terminal-font-preview" data-editor-font={preset.id}>
+                            <span>sudo vim /etc/nginx/nginx.conf</span>
+                            <span>server_name example.internal;</span>
+                          </div>
+                          <div className="settings-safety-preset__meta">{preset.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Editor Text Rhythm</h4>
+                        <p className="hint">
+                          Adjust editor-mode stroke weight and glyph spacing without changing the regular shell.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="settings-safety-preset-grid">
+                      {TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS.map((preset) => (
+                        <button
+                          className={
+                            preset.id === terminalEditorFocusPreferences.rhythmId
+                              ? "settings-safety-preset settings-terminal-rhythm-preset is-active"
+                              : "settings-safety-preset settings-terminal-rhythm-preset"
+                          }
+                          data-editor-rhythm={preset.id}
+                          key={preset.id}
+                          onClick={() => setTerminalEditorFocusRhythmId(preset.id)}
+                          type="button"
+                        >
+                          <div className="settings-safety-preset__title">{preset.label}</div>
+                          <div className="settings-terminal-rhythm-preview" data-editor-rhythm={preset.id}>
+                            <span>sudo systemctl restart nginx</span>
+                            <span>server_name example.internal;</span>
+                          </div>
+                          <div className="settings-safety-preset__meta">{preset.description}</div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="settings-safety-preset-section">
+                      <div className="settings-safety-preset-header">
+                        <h4 className="settings-group__title">Editor Cursor</h4>
+                        <p className="hint">
+                          Pick a distinct cursor shape for editor mode without changing the regular shell cursor.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="settings-safety-preset-grid">
+                      {TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS.map((preset) => (
+                        <button
+                          className={
+                            preset.id === terminalEditorFocusPreferences.cursorId
+                              ? "settings-safety-preset settings-terminal-cursor-preset is-active"
+                              : "settings-safety-preset settings-terminal-cursor-preset"
+                          }
+                          data-editor-cursor={preset.id}
+                          key={preset.id}
+                          onClick={() => setTerminalEditorFocusCursorId(preset.id)}
+                          type="button"
+                        >
+                          <div className="settings-safety-preset__title">{preset.label}</div>
+                          <div className="settings-terminal-cursor-preview" data-editor-cursor={preset.id}>
+                            <span />
+                          </div>
+                          <div className="settings-safety-preset__meta">{preset.description}</div>
+                        </button>
+                      ))}
+                    </div>
                     <p className="hint">
                       Current editor focus mode:{" "}
                       {terminalEditorFocusPreferences.autoLayoutEnabled ? "on" : "off"}
                       {" | "}Theme {selectedTerminalEditorFocusTheme.label}
+                      {" | "}Typography {selectedTerminalEditorFocusTypography.label}
+                      {" | "}Font {selectedTerminalEditorFocusFont.label}
+                      {" | "}Rhythm {selectedTerminalEditorFocusRhythm.label}
+                      {" | "}Cursor {selectedTerminalEditorFocusCursor.label}
                       {" | "}Only affects the active tab and never rewrites terminal editor content
                     </p>
                   </>

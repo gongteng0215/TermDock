@@ -1,6 +1,6 @@
 # TermDock Packaged Smoke
 
-Last updated: 2026-03-30
+Last updated: 2026-04-02
 
 ## Goal
 
@@ -92,7 +92,7 @@ The smoke runner now starts a local embedded SSH/SFTP fixture (`scripts/smoke-ss
 This baseline covers:
 
 - SSH auth/connect and shell open
-- alternate-screen editor focus mode enter/exit, workspace-toggle disable path, editor-theme selection, and layout restoration
+- alternate-screen editor focus mode enter/exit, workspace-toggle disable path, editor-theme selection, editor-typography selection, editor-font selection, editor-rhythm selection, editor-cursor selection, inactive-tab compaction, and layout restoration
 - Windows preferred-opener parser/launch validation via a helper script with a quoted-path success case and a broken-path failure case
 - dangerous-command approval on a live session
 - SFTP list/upload/download/delete against a real temporary remote filesystem
@@ -122,6 +122,11 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 - Embedded live SSH auth/connect lifecycle
 - Alternate-screen editor focus mode enter/exit
 - Editor focus `Paper` theme selection and visual application
+- Editor focus `Reading` typography preset application
+- Editor focus `Drafting Mono` font preset application
+- Editor focus `Open` text-rhythm preset application
+- Editor focus `Underline` cursor preset application
+- Editor focus inactive-tab compaction when multiple tabs remain open
 - Workspace toggle disable path for editor focus mode
 - Embedded live SFTP list/upload/download/delete
 - Embedded live SFTP batch-upload recovery under transient missing-path and channel-pressure faults
@@ -142,7 +147,7 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 - Command history side-panel context menu
 - Operation Center tracked app-job card baseline
 - Retry Center grouped view
-- Latest local workspace and packaged smoke runs: `PASS 39 / FAIL 0 / SKIP 0`
+- Latest local workspace and packaged smoke runs: `PASS 44 / FAIL 0 / SKIP 0`
 
 ## Still Manual / Live-Host Coverage
 

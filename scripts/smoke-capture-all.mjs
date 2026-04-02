@@ -110,9 +110,11 @@ function createMarkdownReport({
   lines.push("- Group open/back navigation");
   lines.push("- Same-session keyboard-open dedupe");
   lines.push("- Session list double-click fresh-tab behavior");
+  lines.push("- Editor-focus multi-tab inactive-tab compaction");
   lines.push("- Close and reopen same session");
   lines.push("- Embedded local SSH fixture connect/auth lifecycle");
   lines.push("- Alternate-screen editor focus mode layout tightening and recovery");
+  lines.push("- Editor-focus theme, typography, font stack, text rhythm, cursor shape, and inactive-tab compaction");
   lines.push("- Windows preferred-opener parser/launch path with quoted-path success and broken-path failure on Windows hosts");
   lines.push("- Dangerous-command guardrails Settings > Safety UI and approval bar on a live SSH session");
   lines.push(
@@ -902,6 +904,263 @@ async function main() {
       return `theme=paper, border=${canvasBorderColor}, shot=${themeShot}`;
     });
 
+    await runStep("workspace editor focus typography applies selected preset", async () => {
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings nav activation for editor typography smoke"
+        }
+      );
+      const readingPreset = page
+        .locator(".settings-terminal-typography-preset[data-editor-typography='reading']")
+        .first();
+      if (!(await isVisible(readingPreset))) {
+        throw new Error("reading editor typography preset not visible");
+      }
+      await readingPreset.click();
+      await page.waitForTimeout(180);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(260);
+
+      await enterSmokeAlternateScreen(page, "TermDock editor typography smoke");
+      await page
+        .locator(".terminal-stage.is-editor-focus[data-editor-typography='reading']")
+        .first()
+        .waitFor({ state: "visible", timeout: 8_000 });
+      const readingPane = page
+        .locator(".terminal-pane.is-active.is-editor-focus[data-editor-typography='reading']")
+        .first();
+      await readingPane.waitFor({ state: "visible", timeout: 8_000 });
+      const readingPaddingTop = await readingPane.evaluate(
+        (element) => window.getComputedStyle(element).paddingTop
+      );
+      if (readingPaddingTop !== "14px") {
+        throw new Error(
+          `reading editor typography did not update pane padding as expected: ${readingPaddingTop}`
+        );
+      }
+      const typographyShot = await recordShot(page, "editor-focus-mode-reading-typography");
+      await exitSmokeAlternateScreen(page);
+
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNavRestore = page
+        .locator(".settings-nav__button", { hasText: "Workspace" })
+        .first();
+      await workspaceNavRestore.click();
+      await page
+        .locator(".settings-terminal-typography-preset[data-editor-typography='balanced']")
+        .first()
+        .click();
+      await page.waitForTimeout(150);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(220);
+
+      return `typography=reading, paddingTop=${readingPaddingTop}, shot=${typographyShot}`;
+    });
+
+    await runStep("workspace editor focus font preset applies selected stack", async () => {
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings nav activation for editor font smoke"
+        }
+      );
+      const draftingPreset = page
+        .locator(".settings-terminal-font-preset[data-editor-font='drafting']")
+        .first();
+      if (!(await isVisible(draftingPreset))) {
+        throw new Error("drafting editor font preset not visible");
+      }
+      await draftingPreset.click();
+      await page.waitForTimeout(180);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(260);
+
+      await enterSmokeAlternateScreen(page, "TermDock editor font smoke");
+      await page
+        .locator(".terminal-stage.is-editor-focus[data-editor-font='drafting']")
+        .first()
+        .waitFor({ state: "visible", timeout: 8_000 });
+      const draftingPane = page
+        .locator(".terminal-pane.is-active.is-editor-focus[data-editor-font='drafting']")
+        .first();
+      await draftingPane.waitFor({ state: "visible", timeout: 8_000 });
+      const xtermSurface = draftingPane.locator(".xterm").first();
+      await xtermSurface.waitFor({ state: "visible", timeout: 8_000 });
+      const fontFamily = await xtermSurface.evaluate((element) => window.getComputedStyle(element).fontFamily);
+      if (!fontFamily.includes("IBM Plex Mono")) {
+        throw new Error(`drafting editor font did not update xterm font-family: ${fontFamily}`);
+      }
+      const fontShot = await recordShot(page, "editor-focus-mode-drafting-font");
+      await exitSmokeAlternateScreen(page);
+
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNavRestore = page
+        .locator(".settings-nav__button", { hasText: "Workspace" })
+        .first();
+      await workspaceNavRestore.click();
+      await page
+        .locator(".settings-terminal-font-preset[data-editor-font='system']")
+        .first()
+        .click();
+      await page.waitForTimeout(150);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(220);
+
+      return `font=drafting, fontFamily=${fontFamily}, shot=${fontShot}`;
+    });
+
+    await runStep("workspace editor focus rhythm preset applies selected spacing", async () => {
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings nav activation for editor rhythm smoke"
+        }
+      );
+      const openPreset = page
+        .locator(".settings-terminal-rhythm-preset[data-editor-rhythm='open']")
+        .first();
+      if (!(await isVisible(openPreset))) {
+        throw new Error("open editor rhythm preset not visible");
+      }
+      await openPreset.click();
+      await page.waitForTimeout(180);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(260);
+
+      await enterSmokeAlternateScreen(page, "TermDock editor rhythm smoke");
+      await page
+        .locator(".terminal-stage.is-editor-focus[data-editor-rhythm='open']")
+        .first()
+        .waitFor({ state: "visible", timeout: 8_000 });
+      const openPane = page
+        .locator(".terminal-pane.is-active.is-editor-focus[data-editor-rhythm='open']")
+        .first();
+      await openPane.waitFor({ state: "visible", timeout: 8_000 });
+      const xtermSurface = openPane.locator(".xterm").first();
+      await xtermSurface.waitFor({ state: "visible", timeout: 8_000 });
+      const metrics = await xtermSurface.evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return {
+          letterSpacing: style.letterSpacing,
+          fontWeight: style.fontWeight
+        };
+      });
+      if (metrics.letterSpacing !== "0.8px" || metrics.fontWeight !== "600") {
+        throw new Error(
+          `open editor rhythm did not update xterm metrics: ${JSON.stringify(metrics)}`
+        );
+      }
+      const rhythmShot = await recordShot(page, "editor-focus-mode-open-rhythm");
+      await exitSmokeAlternateScreen(page);
+
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNavRestore = page
+        .locator(".settings-nav__button", { hasText: "Workspace" })
+        .first();
+      await workspaceNavRestore.click();
+      await page
+        .locator(".settings-terminal-rhythm-preset[data-editor-rhythm='steady']")
+        .first()
+        .click();
+      await page.waitForTimeout(150);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(220);
+
+      return `rhythm=open, metrics=${JSON.stringify(metrics)}, shot=${rhythmShot}`;
+    });
+
+    await runStep("workspace editor focus cursor preset applies selected shape", async () => {
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings nav activation for editor cursor smoke"
+        }
+      );
+      const underlinePreset = page
+        .locator(".settings-terminal-cursor-preset[data-editor-cursor='underline']")
+        .first();
+      if (!(await isVisible(underlinePreset))) {
+        throw new Error("underline editor cursor preset not visible");
+      }
+      await underlinePreset.click();
+      await page.waitForTimeout(180);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(260);
+
+      await enterSmokeAlternateScreen(page, "TermDock editor cursor smoke");
+      await page
+        .locator(".terminal-stage.is-editor-focus[data-editor-cursor='underline']")
+        .first()
+        .waitFor({ state: "visible", timeout: 8_000 });
+      const cursorClassName = await page
+        .locator(
+          ".terminal-pane.is-active.is-editor-focus[data-editor-cursor='underline'] .xterm .xterm-cursor"
+        )
+        .first()
+        .evaluate((element) => element.className);
+      if (!cursorClassName.includes("xterm-cursor-underline")) {
+        throw new Error(`underline editor cursor did not update xterm cursor class: ${cursorClassName}`);
+      }
+      const cursorShot = await recordShot(page, "editor-focus-mode-underline-cursor");
+      await exitSmokeAlternateScreen(page);
+
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const workspaceNavRestore = page
+        .locator(".settings-nav__button", { hasText: "Workspace" })
+        .first();
+      await workspaceNavRestore.click();
+      await page
+        .locator(".settings-terminal-cursor-preset[data-editor-cursor='block']")
+        .first()
+        .click();
+      await page.waitForTimeout(150);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(220);
+
+      return `cursor=underline, class=${cursorClassName}, shot=${cursorShot}`;
+    });
+
     await runStep("live SFTP directory loaded", async () => {
       const seedEntry = page
         .locator(".sftp-list__item", { hasText: fixture.remoteSeedFileName })
@@ -1217,6 +1476,49 @@ async function main() {
       return `before=${before}, after=${afterOpen}, shot=${fileName}`;
     });
 
+    await runStep("editor focus mode compacts inactive tabs when multiple tabs are open", async () => {
+      const activeTerminal = page.locator(".terminal-pane.is-active .terminal-pane__canvas").first();
+      await activeTerminal.waitFor({ state: "visible", timeout: 10_000 });
+      await enterSmokeAlternateScreen(page, "TermDock compact editor tabs smoke");
+      try {
+        await page.locator(".layout.is-terminal-editor-focus").first().waitFor({
+          state: "visible",
+          timeout: 8_000
+        });
+        const tabMetrics = await page
+          .locator(".terminal-tabs.is-editor-focus .tab")
+          .evaluateAll((elements) =>
+            elements.map((element) => ({
+              className: element.className,
+              width: element.getBoundingClientRect().width
+            }))
+          );
+        const activeMetric = tabMetrics.find((entry) => entry.className.includes("is-active"));
+        const inactiveMetric = tabMetrics.find((entry) => !entry.className.includes("is-active"));
+        if (!activeMetric || !inactiveMetric) {
+          throw new Error(`editor focus tab metrics incomplete: ${JSON.stringify(tabMetrics)}`);
+        }
+        const activeWidth = activeMetric.width;
+        const collapsedWidth = inactiveMetric.width;
+        if (!(collapsedWidth < activeWidth)) {
+          throw new Error(
+            `inactive editor tab did not compact: activeWidth=${activeWidth}, collapsedWidth=${collapsedWidth}, metrics=${JSON.stringify(tabMetrics)}`
+          );
+        }
+        const compactShot = await recordShot(page, "editor-focus-mode-multi-tab-compact");
+        return `activeWidth=${activeWidth.toFixed(1)}, collapsedWidth=${collapsedWidth.toFixed(1)}, shot=${compactShot}`;
+      } finally {
+        await exitSmokeAlternateScreen(page);
+        await waitForCondition(
+          async () => (await page.locator(".layout.is-terminal-editor-focus").count()) === 0,
+          {
+            timeout: 8_000,
+            description: "editor focus mode to exit after multi-tab compact check"
+          }
+        );
+      }
+    });
+
     await runStep("close tab then reopen same session", async () => {
       const closeButton = remoteOpenTabId
         ? page.locator(`.terminal-tabs .tab[data-tab-id="${remoteOpenTabId}"] .tab__close`).first()
@@ -1327,6 +1629,10 @@ async function main() {
             )
             .first();
           const editorThemePresets = page.locator(".settings-terminal-theme-preset");
+          const editorTypographyPresets = page.locator(".settings-terminal-typography-preset");
+          const editorFontPresets = page.locator(".settings-terminal-font-preset");
+          const editorRhythmPresets = page.locator(".settings-terminal-rhythm-preset");
+          const editorCursorPresets = page.locator(".settings-terminal-cursor-preset");
           const workspacePresets = page.locator(".settings-safety-preset").filter({
             has: page.locator(".settings-safety-preset__count", {
               hasText: "Safety default:"
@@ -1336,7 +1642,11 @@ async function main() {
           if (
             !(await isVisible(workspaceSyncToggle)) ||
             !(await isVisible(editorFocusToggle)) ||
-            (await editorThemePresets.count()) < 3
+            (await editorThemePresets.count()) < 3 ||
+            (await editorTypographyPresets.count()) < 3 ||
+            (await editorFontPresets.count()) < 3 ||
+            (await editorRhythmPresets.count()) < 3 ||
+            (await editorCursorPresets.count()) < 3
           ) {
             throw new Error("workspace profile sync toggle not visible");
           }

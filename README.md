@@ -5,10 +5,10 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.20` (2026-03-31)
-- Current branch focus: post-`v0.1.20` editor and transfer workflow follow-up on `master`
+- Current stable release: `v0.1.21` (2026-04-02)
+- Current branch focus: post-`v0.1.21` hardening and transport/workspace follow-up on `master`
 - Current stable release includes alternate-screen editor focus mode with selectable `Midnight` / `Graphite` / `Paper` themes in `Settings > Workspace`
-- Current stable release keeps the upload reliability hardening, transfer-pack sync automation, and isolated smoke profile baseline from `v0.1.19`
+- Current stable release also includes `Compact` / `Balanced` / `Reading` typography presets, `System Mono` / `Coding Mono` / `Drafting Mono` font presets, `Crisp` / `Steady` / `Open` text-rhythm presets, `Beam` / `Underline` / `Block` cursor presets, and inactive-tab compaction for editor-only focus mode
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -17,13 +17,15 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
 
-## Release in `v0.1.20` (2026-03-31)
+## Release in `v0.1.21` (2026-04-02)
 
 - Alternate-screen terminal editors now trigger a focused layout that collapses side panels and tightens terminal chrome while full-screen TUI editors are active.
 - `Settings > Workspace` now includes an explicit auto-focus toggle for that layout behavior.
 - `Settings > Workspace` now also includes `Midnight`, `Graphite`, and `Paper` editor-theme presets that restyle the focused terminal canvas and xterm palette without rewriting TUI content.
-- Smoke automation now verifies editor focus mode enter/exit, theme selection, and the disabled-toggle path in both workspace and packaged runs.
-- Latest local workspace and packaged smoke runs remain green at `PASS 39 / FAIL 0 / SKIP 0`.
+- `Settings > Workspace` now also includes `Compact`, `Balanced`, and `Reading` typography presets, `System Mono`, `Coding Mono`, and `Drafting Mono` font presets, `Crisp`, `Steady`, and `Open` text-rhythm presets, plus `Beam`, `Underline`, and `Block` editor-cursor presets.
+- Multi-tab editor focus mode now compresses inactive tabs into smaller navigation pills so the active editor tab keeps most of the top-bar emphasis.
+- Smoke automation now verifies editor focus mode enter/exit, theme selection, typography selection, font preset selection, text-rhythm selection, cursor preset selection, inactive-tab compaction, and the disabled-toggle path in both workspace and packaged runs.
+- Latest local workspace and packaged smoke runs remain green at `PASS 44 / FAIL 0 / SKIP 0`.
 
 ## Release in `v0.1.19` (2026-03-31)
 
@@ -212,6 +214,11 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Multi-tab xterm terminal with single-tab-per-session dedupe (opening an already-open session focuses existing tab)
 - Alternate-screen editor focus mode that can be enabled or disabled from `Settings > Workspace`, automatically collapsing side panels and tightening terminal chrome while full-screen terminal editors are active
 - Editor focus theme presets (`Midnight`, `Graphite`, `Paper`) that restyle the focused terminal canvas and xterm palette without rewriting terminal editor content
+- Editor focus typography presets (`Compact`, `Balanced`, `Reading`) that adjust editor-mode font size and row height without changing regular shell density
+- Editor focus font presets (`System Mono`, `Coding Mono`, `Drafting Mono`) that swap the editor-only xterm mono stack without changing the regular shell font
+- Editor focus text-rhythm presets (`Crisp`, `Steady`, `Open`) that adjust editor-only xterm letter spacing and font weight without changing the regular shell renderer
+- Editor focus cursor presets (`Beam`, `Underline`, `Block`) that switch editor-only xterm cursor shape without affecting the normal shell cursor
+- Editor focus multi-tab compaction that compresses inactive tabs into smaller pills while the active editor tab remains full-width
 - Terminal context menu and reconnect flow
 - Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`)
 - Dangerous-command guardrails with `Settings > Safety`, a fixed bottom approval bar, exact-command temporary approval scopes, persistent approval policies, per-source toggles, policy packs, environment templates, session-group overrides, optional workspace-profile sync, and shared bundle import/export/apply/sync-file pull/push for risky execution sources
@@ -295,7 +302,7 @@ Set SSH/SFTP target environment variables first. See `SOAK_TEST.md` for full set
 pnpm run smoke:ui
 ```
 
-The default smoke run boots an embedded local SSH/SFTP fixture, so auth/connect, alternate-screen editor focus mode coverage, workspace toggle coverage, editor-theme coverage, baseline SFTP transfer coverage, remote-open-file conflict/reload/cleanup coverage, Windows preferred-opener parser coverage, live port-forward creation, and disconnect-report auto-capture validation do not require an external host.
+The default smoke run boots an embedded local SSH/SFTP fixture, so auth/connect, alternate-screen editor focus mode coverage, workspace toggle coverage, editor-theme coverage, editor-typography coverage, editor-font coverage, editor-rhythm coverage, editor-cursor coverage, multi-tab compaction coverage, baseline SFTP transfer coverage, remote-open-file conflict/reload/cleanup coverage, Windows preferred-opener parser coverage, live port-forward creation, and disconnect-report auto-capture validation do not require an external host.
 
 Use `PACKAGED_SMOKE.md` for packaged executable runs, output artifacts, and the Windows/macOS validation matrix.
 
@@ -307,7 +314,7 @@ pnpm run smoke:ui:packaged
 
 This wrapper now runs `pnpm run pack` first so the packaged smoke flow does not reuse stale `release/*` output.
 
-Latest local workspace smoke run: `PASS 39 / FAIL 0 / SKIP 0`
+Latest local workspace smoke run: `PASS 44 / FAIL 0 / SKIP 0`
 
 ## Release
 
@@ -327,21 +334,21 @@ pnpm run release:self-use:win
 Stable release:
 
 ```bash
-git tag v0.1.20
-git push origin v0.1.20
+git tag v0.1.21
+git push origin v0.1.21
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.20-test.1
-git push origin v0.1.20-test.1
+git tag v0.1.21-test.1
+git push origin v0.1.21-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.20`) => stable release
-- Tag with `-` (for example `v0.1.20-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.21`) => stable release
+- Tag with `-` (for example `v0.1.21-test.1`) => prerelease
 
 ## Known Limitations
 

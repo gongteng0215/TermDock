@@ -1,10 +1,10 @@
 ﻿# TermDock Task Board
 
-Last updated: 2026-03-31
+Last updated: 2026-04-02
 
 ## Current Release State
 
-- Stable release: `v0.1.20`
+- Stable release: `v0.1.21`
 - Branch baseline: `master`
 - Priority direction: hardening and release quality, not new broad feature expansion
 

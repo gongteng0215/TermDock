@@ -28,10 +28,48 @@ export interface ConnectionPreferences {
 
 export type TerminalEditorFocusThemeId = "midnight" | "graphite" | "paper";
 
+export type TerminalEditorFocusTypographyId = "compact" | "balanced" | "reading";
+
+export type TerminalEditorFocusFontId = "system" | "coding" | "drafting";
+
+export type TerminalEditorFocusRhythmId = "crisp" | "steady" | "open";
+
+export type TerminalEditorFocusCursorId = "beam" | "underline" | "block";
+
 export interface TerminalEditorFocusThemeOption {
   id: TerminalEditorFocusThemeId;
   label: string;
   description: string;
+}
+
+export interface TerminalEditorFocusTypographyOption {
+  id: TerminalEditorFocusTypographyId;
+  label: string;
+  description: string;
+}
+
+export interface TerminalEditorFocusFontOption {
+  id: TerminalEditorFocusFontId;
+  label: string;
+  description: string;
+  fontFamily: string;
+}
+
+export interface TerminalEditorFocusRhythmOption {
+  id: TerminalEditorFocusRhythmId;
+  label: string;
+  description: string;
+  letterSpacing: number;
+  fontWeight: number;
+  fontWeightBold: number;
+}
+
+export interface TerminalEditorFocusCursorOption {
+  id: TerminalEditorFocusCursorId;
+  label: string;
+  description: string;
+  cursorStyle: "bar" | "underline" | "block";
+  cursorWidth: number;
 }
 
 export const TERMINAL_EDITOR_FOCUS_THEME_OPTIONS: TerminalEditorFocusThemeOption[] = [
@@ -49,6 +87,99 @@ export const TERMINAL_EDITOR_FOCUS_THEME_OPTIONS: TerminalEditorFocusThemeOption
     id: "paper",
     label: "Paper",
     description: "Warm light canvas for terminal editing that feels closer to a text buffer."
+  }
+];
+
+export const TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS: TerminalEditorFocusTypographyOption[] = [
+  {
+    id: "compact",
+    label: "Compact",
+    description: "Tighter rows and smaller type for maximum visible context."
+  },
+  {
+    id: "balanced",
+    label: "Balanced",
+    description: "Default terminal editor density with moderate breathing room."
+  },
+  {
+    id: "reading",
+    label: "Reading",
+    description: "Larger type and taller rows for longer focused editing sessions."
+  }
+];
+
+export const TERMINAL_EDITOR_FOCUS_FONT_OPTIONS: TerminalEditorFocusFontOption[] = [
+  {
+    id: "system",
+    label: "System Mono",
+    description: "Lean on the platform default mono stack for the most native terminal feel.",
+    fontFamily:
+      '"Cascadia Mono", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace'
+  },
+  {
+    id: "coding",
+    label: "Coding Mono",
+    description: "Bias toward developer fonts such as Cascadia Code, JetBrains Mono, and Fira Code.",
+    fontFamily:
+      '"Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", monospace'
+  },
+  {
+    id: "drafting",
+    label: "Drafting Mono",
+    description: "Use calmer editorial mono stacks for long config and prose editing sessions.",
+    fontFamily:
+      '"IBM Plex Mono", "Cascadia Mono", "SF Mono", Menlo, Monaco, Consolas, monospace'
+  }
+];
+
+export const TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS: TerminalEditorFocusRhythmOption[] = [
+  {
+    id: "crisp",
+    label: "Crisp",
+    description: "Tighter tracking with lighter stroke weight for dense config and code edits.",
+    letterSpacing: -0.2,
+    fontWeight: 400,
+    fontWeightBold: 600
+  },
+  {
+    id: "steady",
+    label: "Steady",
+    description: "Balanced text weight and spacing for everyday terminal editing.",
+    letterSpacing: 0,
+    fontWeight: 500,
+    fontWeightBold: 700
+  },
+  {
+    id: "open",
+    label: "Open",
+    description: "Adds more air between glyphs and a heavier stroke for long prose-like edits.",
+    letterSpacing: 0.8,
+    fontWeight: 600,
+    fontWeightBold: 700
+  }
+];
+
+export const TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS: TerminalEditorFocusCursorOption[] = [
+  {
+    id: "beam",
+    label: "Beam",
+    description: "Thin insertion beam for dense line-by-line editing.",
+    cursorStyle: "bar",
+    cursorWidth: 2
+  },
+  {
+    id: "underline",
+    label: "Underline",
+    description: "Underline cursor that stays out of the way in text-heavy buffers.",
+    cursorStyle: "underline",
+    cursorWidth: 1
+  },
+  {
+    id: "block",
+    label: "Block",
+    description: "Full block cursor for strong position tracking in modal editors.",
+    cursorStyle: "block",
+    cursorWidth: 1
   }
 ];
 
@@ -83,6 +214,10 @@ interface TerminalWorkspaceProps {
   connectionPreferences: ConnectionPreferences;
   editorFocusModeEnabled: boolean;
   editorFocusThemeId: TerminalEditorFocusThemeId;
+  editorFocusTypographyId: TerminalEditorFocusTypographyId;
+  editorFocusFontId: TerminalEditorFocusFontId;
+  editorFocusRhythmId: TerminalEditorFocusRhythmId;
+  editorFocusCursorId: TerminalEditorFocusCursorId;
   hotkeyPreferences: HotkeyPreferences;
   dangerousCommandGuardPreferences: DangerousCommandGuardPreferences;
   getDangerousCommandSessionGroupName?: (tabId: string) => string | null;
@@ -102,6 +237,15 @@ interface TerminalInstance {
 const WHEEL_PIXELS_PER_LINE = 40;
 const MAX_WHEEL_NAV_LINES = 12;
 const WHEEL_CAPTURE = true;
+const DEFAULT_TERMINAL_FONT_SIZE = 13;
+const DEFAULT_TERMINAL_LINE_HEIGHT = 1.25;
+const DEFAULT_TERMINAL_FONT_FAMILY =
+  '"Cascadia Mono", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace';
+const DEFAULT_TERMINAL_LETTER_SPACING = 0;
+const DEFAULT_TERMINAL_FONT_WEIGHT = 400;
+const DEFAULT_TERMINAL_FONT_WEIGHT_BOLD = 700;
+const DEFAULT_TERMINAL_CURSOR_STYLE = "block";
+const DEFAULT_TERMINAL_CURSOR_WIDTH = 1;
 
 const DEFAULT_TERMINAL_THEME: ITheme = {
   background: "#070d14",
@@ -109,6 +253,22 @@ const DEFAULT_TERMINAL_THEME: ITheme = {
   cursor: "#8fc9ff",
   selectionBackground: "#244e7f"
 };
+
+const DEFAULT_TERMINAL_TYPOGRAPHY = {
+  fontSize: DEFAULT_TERMINAL_FONT_SIZE,
+  lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT
+} as const;
+
+const DEFAULT_TERMINAL_RHYTHM = {
+  letterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+  fontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+  fontWeightBold: DEFAULT_TERMINAL_FONT_WEIGHT_BOLD
+} as const;
+
+const DEFAULT_TERMINAL_CURSOR = {
+  cursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+  cursorWidth: DEFAULT_TERMINAL_CURSOR_WIDTH
+} as const;
 
 const TERMINAL_EDITOR_FOCUS_THEMES: Record<TerminalEditorFocusThemeId, ITheme> = {
   midnight: DEFAULT_TERMINAL_THEME,
@@ -128,6 +288,45 @@ const TERMINAL_EDITOR_FOCUS_THEMES: Record<TerminalEditorFocusThemeId, ITheme> =
 
 function getTerminalEditorFocusTheme(themeId: TerminalEditorFocusThemeId): ITheme {
   return TERMINAL_EDITOR_FOCUS_THEMES[themeId] ?? DEFAULT_TERMINAL_THEME;
+}
+
+function getTerminalEditorFocusTypography(themeId: TerminalEditorFocusTypographyId) {
+  switch (themeId) {
+    case "compact":
+      return {
+        fontSize: 12,
+        lineHeight: 1.12
+      } as const;
+    case "reading":
+      return {
+        fontSize: 14,
+        lineHeight: 1.34
+      } as const;
+    case "balanced":
+    default:
+      return DEFAULT_TERMINAL_TYPOGRAPHY;
+  }
+}
+
+function getTerminalEditorFocusFontFamily(fontId: TerminalEditorFocusFontId): string {
+  return (
+    TERMINAL_EDITOR_FOCUS_FONT_OPTIONS.find((option) => option.id === fontId)?.fontFamily ??
+    DEFAULT_TERMINAL_FONT_FAMILY
+  );
+}
+
+function getTerminalEditorFocusRhythm(rhythmId: TerminalEditorFocusRhythmId) {
+  return (
+    TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS.find((option) => option.id === rhythmId) ??
+    DEFAULT_TERMINAL_RHYTHM
+  );
+}
+
+function getTerminalEditorFocusCursor(cursorId: TerminalEditorFocusCursorId) {
+  return (
+    TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS.find((option) => option.id === cursorId) ??
+    DEFAULT_TERMINAL_CURSOR
+  );
 }
 
 type TabUiStatus = {
@@ -420,6 +619,10 @@ export function TerminalWorkspace({
   connectionPreferences,
   editorFocusModeEnabled,
   editorFocusThemeId,
+  editorFocusTypographyId,
+  editorFocusFontId,
+  editorFocusRhythmId,
+  editorFocusCursorId,
   hotkeyPreferences,
   dangerousCommandGuardPreferences,
   getDangerousCommandSessionGroupName,
@@ -545,6 +748,10 @@ export function TerminalWorkspace({
   const isActiveEditorMode =
     editorFocusModeEnabled && activeTabId ? (tabEditorModes[activeTabId] ?? false) : false;
   const activeEditorThemeId = isActiveEditorMode ? editorFocusThemeId : null;
+  const activeEditorTypographyId = isActiveEditorMode ? editorFocusTypographyId : null;
+  const activeEditorFontId = isActiveEditorMode ? editorFocusFontId : null;
+  const activeEditorRhythmId = isActiveEditorMode ? editorFocusRhythmId : null;
+  const activeEditorCursorId = isActiveEditorMode ? editorFocusCursorId : null;
 
   useEffect(() => {
     if (!onActiveEditorModeChange) {
@@ -561,15 +768,6 @@ export function TerminalWorkspace({
       onActiveEditorModeChange(false);
     };
   }, [onActiveEditorModeChange]);
-
-  useEffect(() => {
-    for (const [tabId, instance] of terminalRefs.current.entries()) {
-      const isEditorMode = editorFocusModeEnabled && (tabEditorModes[tabId] ?? false);
-      instance.terminal.options.theme = isEditorMode
-        ? getTerminalEditorFocusTheme(editorFocusThemeId)
-        : DEFAULT_TERMINAL_THEME;
-    }
-  }, [editorFocusModeEnabled, editorFocusThemeId, tabEditorModes]);
 
   const clearReconnectState = useCallback((tabId: string) => {
     reconnectAttemptsRef.current.delete(tabId);
@@ -688,6 +886,50 @@ export function TerminalWorkspace({
     },
     [clearDeferredFitTimers, fitTerminal]
   );
+
+  useEffect(() => {
+    for (const [tabId, instance] of terminalRefs.current.entries()) {
+      const isEditorMode = editorFocusModeEnabled && (tabEditorModes[tabId] ?? false);
+      const nextTypography = isEditorMode
+        ? getTerminalEditorFocusTypography(editorFocusTypographyId)
+        : DEFAULT_TERMINAL_TYPOGRAPHY;
+      const nextFontFamily = isEditorMode
+        ? getTerminalEditorFocusFontFamily(editorFocusFontId)
+        : DEFAULT_TERMINAL_FONT_FAMILY;
+      const nextRhythm = isEditorMode
+        ? getTerminalEditorFocusRhythm(editorFocusRhythmId)
+        : DEFAULT_TERMINAL_RHYTHM;
+      const nextCursor = isEditorMode
+        ? getTerminalEditorFocusCursor(editorFocusCursorId)
+        : DEFAULT_TERMINAL_CURSOR;
+      instance.terminal.options.theme = isEditorMode
+        ? getTerminalEditorFocusTheme(editorFocusThemeId)
+        : DEFAULT_TERMINAL_THEME;
+      instance.terminal.options.fontSize = nextTypography.fontSize;
+      instance.terminal.options.lineHeight = nextTypography.lineHeight;
+      instance.terminal.options.fontFamily = nextFontFamily;
+      instance.terminal.options.letterSpacing = nextRhythm.letterSpacing;
+      instance.terminal.options.fontWeight = nextRhythm.fontWeight;
+      instance.terminal.options.fontWeightBold = nextRhythm.fontWeightBold;
+      instance.terminal.options.cursorStyle = nextCursor.cursorStyle;
+      instance.terminal.options.cursorWidth = nextCursor.cursorWidth;
+    }
+    if (activeTabId) {
+      fitTerminal(activeTabId);
+      scheduleDeferredFit(activeTabId);
+    }
+  }, [
+    activeTabId,
+    editorFocusModeEnabled,
+    editorFocusFontId,
+    editorFocusRhythmId,
+    editorFocusCursorId,
+    editorFocusThemeId,
+    editorFocusTypographyId,
+    fitTerminal,
+    scheduleDeferredFit,
+    tabEditorModes
+  ]);
 
   const focusTerminal = useCallback((tabId: string) => {
     const instance = terminalRefs.current.get(tabId);
@@ -1832,10 +2074,14 @@ export function TerminalWorkspace({
         convertEol: false,
         cursorBlink: true,
         scrollback: 5000,
-        fontSize: 13,
-        lineHeight: 1.25,
-        fontFamily:
-          'Menlo, Monaco, Consolas, "SF Mono", "Cascadia Mono", "Courier New", monospace',
+        fontSize: DEFAULT_TERMINAL_FONT_SIZE,
+        lineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+        fontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
+        letterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+        fontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+        fontWeightBold: DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
+        cursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+        cursorWidth: DEFAULT_TERMINAL_CURSOR_WIDTH,
         theme: DEFAULT_TERMINAL_THEME
       });
       const fitAddon = new FitAddon();
@@ -2034,39 +2280,53 @@ export function TerminalWorkspace({
     <>
       <div
         className={isActiveEditorMode ? "terminal-tabs is-editor-focus" : "terminal-tabs"}
+        data-editor-cursor={activeEditorCursorId ?? undefined}
+        data-editor-font={activeEditorFontId ?? undefined}
+        data-editor-rhythm={activeEditorRhythmId ?? undefined}
         data-editor-theme={activeEditorThemeId ?? undefined}
+        data-editor-typography={activeEditorTypographyId ?? undefined}
       >
         {tabs.length === 0 ? (
           <div className="hint">No terminal tab. Use "Open" from session list.</div>
         ) : null}
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={activeTabId === tab.id ? "tab is-active" : "tab"}
-            data-tab-id={tab.id}
-            onClick={() => onSelectTab(tab.id)}
-            onContextMenu={(event) => openTabContextMenu(event, tab.id)}
-            onMouseDown={(event) => {
-              if (event.button !== 1) {
-                return;
-              }
-              event.preventDefault();
-              onCloseTab(tab.id);
-            }}
-            type="button"
-          >
-            <span>{tab.title}</span>
-            <span
-              className="tab__close"
-              onClick={(event) => {
-                event.stopPropagation();
+        {tabs.map((tab) => {
+          const isActiveTab = activeTabId === tab.id;
+          const tabClassName = isActiveEditorMode
+            ? isActiveTab
+              ? "tab is-active is-editor-primary"
+              : "tab is-editor-collapsed"
+            : isActiveTab
+              ? "tab is-active"
+              : "tab";
+          return (
+            <button
+              key={tab.id}
+              className={tabClassName}
+              data-tab-id={tab.id}
+              onClick={() => onSelectTab(tab.id)}
+              onContextMenu={(event) => openTabContextMenu(event, tab.id)}
+              onMouseDown={(event) => {
+                if (event.button !== 1) {
+                  return;
+                }
+                event.preventDefault();
                 onCloseTab(tab.id);
               }}
+              type="button"
             >
-              <X aria-hidden="true" className="ui-icon tab__close-icon" strokeWidth={2} />
-            </span>
-          </button>
-        ))}
+              <span>{tab.title}</span>
+              <span
+                className="tab__close"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCloseTab(tab.id);
+                }}
+              >
+                <X aria-hidden="true" className="ui-icon tab__close-icon" strokeWidth={2} />
+              </span>
+            </button>
+          );
+        })}
         <div className="terminal-tabs__actions">
           <button
             className="icon-button terminal-tabs__action"
@@ -2108,7 +2368,11 @@ export function TerminalWorkspace({
       ) : null}
       <div
         className={isActiveEditorMode ? "terminal-stage is-editor-focus" : "terminal-stage"}
+        data-editor-cursor={activeEditorCursorId ?? undefined}
+        data-editor-font={activeEditorFontId ?? undefined}
+        data-editor-rhythm={activeEditorRhythmId ?? undefined}
         data-editor-theme={activeEditorThemeId ?? undefined}
+        data-editor-typography={activeEditorTypographyId ?? undefined}
         ref={stageRef}
       >
         {tabs.length === 0 ? (
@@ -2132,7 +2396,11 @@ export function TerminalWorkspace({
               key={tab.id}
               className={paneClassName}
               data-tab-id={tab.id}
+              data-editor-cursor={isEditorMode ? editorFocusCursorId : undefined}
+              data-editor-font={isEditorMode ? editorFocusFontId : undefined}
+              data-editor-rhythm={isEditorMode ? editorFocusRhythmId : undefined}
               data-editor-theme={isEditorMode ? editorFocusThemeId : undefined}
+              data-editor-typography={isEditorMode ? editorFocusTypographyId : undefined}
             >
               <div
                 className="terminal-pane__canvas"

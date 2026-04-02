@@ -1,6 +1,6 @@
 ﻿# TermDock Product Notes
 
-Last updated: 2026-03-31
+Last updated: 2026-04-02
 
 ## Confirmed Direction
 
@@ -12,10 +12,19 @@ Last updated: 2026-03-31
 
 ## Release Baseline
 
-- Current stable release: `v0.1.20` (2026-03-31)
+- Current stable release: `v0.1.21` (2026-04-02)
 
 ## Shipped in Recent Cycles
 
+- v0.1.21: `Settings > Workspace` now also exposes `Compact`, `Balanced`, and `Reading` editor-typography presets for alternate-screen terminal editors, separate from the editor theme selection
+- v0.1.21: workspace/packaged smoke now verify the `Reading` typography preset path and the active editor pane refit behavior after the preset switch
+- v0.1.21: `Settings > Workspace` now also exposes `System Mono`, `Coding Mono`, and `Drafting Mono` editor-font presets for alternate-screen terminal editors
+- v0.1.21: workspace/packaged smoke now verify the `Drafting Mono` editor-font path against the actual focused xterm surface
+- v0.1.21: `Settings > Workspace` now also exposes `Crisp`, `Steady`, and `Open` text-rhythm presets for alternate-screen terminal editors
+- v0.1.21: workspace/packaged smoke now verify the `Open` text-rhythm path against the actual focused xterm spacing and font-weight metrics
+- v0.1.21: `Settings > Workspace` now also exposes `Beam`, `Underline`, and `Block` editor-cursor presets for alternate-screen terminal editors
+- v0.1.21: workspace/packaged smoke now verify the `Underline` cursor preset path against the focused xterm cursor shape
+- v0.1.21: editor focus mode now compacts inactive tabs into smaller navigation pills so the active editor tab keeps most of the top-bar emphasis during multi-tab editing
 - v0.1.20: alternate-screen terminal editors now trigger a focused layout that collapses side panels and tightens terminal chrome without rewriting editor content, and `Settings > Workspace` can disable that auto-focus behavior or switch between `Midnight`, `Graphite`, and `Paper` editor themes
 - v0.1.20: smoke fixture shell now replays `printf` ESC sequences, and workspace/packaged smoke now verify editor focus mode enter/exit, theme selection, and the disabled-toggle path
 - v0.1.19: batch SFTP uploads now recover from transient missing-path races and SSH SFTP channel pressure with targeted retries plus adaptive per-tab concurrency fallback
