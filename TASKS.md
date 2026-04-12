@@ -6,7 +6,7 @@ Last updated: 2026-04-02
 
 - Stable release: `v0.1.21`
 - Branch baseline: `master`
-- Priority direction: hardening and release quality, not new broad feature expansion
+- Priority direction: self-use runtime hardening and workflow quality, not public-release signing/testing work
 
 ## P0 Matrix
 
@@ -38,12 +38,12 @@ Last updated: 2026-04-02
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
 | P0-E1 | TODO | Startup performance benchmark/optimization |
 | P0-E2 | TODO | Large transfer memory optimization |
-| P0-E3 | PARTIAL | Recoverable global error action baseline plus disconnect-report/export tooling landed; broader action coverage/guidance still pending |
+| P0-E3 | PARTIAL | Recoverable global error baseline now covers disconnect copy, `Hotkeys` / `Port Fwd` / `Retry Center` routing, and bug-report/export guidance; deeper coverage is still pending |
 | P0-E4 | TODO | Persistence crash-recovery verification |
-| P0-F1 | TODO | Unit tests |
-| P0-F2 | TODO | Integration tests |
-| P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP, remote-open-file save-back, unexpected-disconnect, and SFTP fault-recovery smoke landed; macOS evidence and targeted external-host validation still pending |
-| P0-F4 | PARTIAL | Release preflight/verify baseline and self-use Windows path landed; public-trust signing secret provisioning and first signed/notarized evidence still pending |
+| P0-F1 | TODO | Unit tests; low priority for current self-use track |
+| P0-F2 | TODO | Integration tests; low priority for current self-use track |
+| P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP, remote-open-file save-back, unexpected-disconnect, and SFTP fault-recovery smoke landed; remaining macOS evidence and targeted external-host validation are low priority for current self-use track |
+| P0-F4 | PARTIAL | Release preflight/verify baseline and self-use Windows path landed; public-trust signing secret provisioning and first signed/notarized evidence are low priority for current self-use track |
 | P0-G1 | DONE | Server health panel baseline plus tab-scoped monitor-state hardening shipped |
 
 ## In Progress Track (v0.1.3+)
@@ -159,6 +159,7 @@ Last updated: 2026-04-02
    - upgraded global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
    - added `Copy Latest Disconnect` quick action when disconnect reports exist
    - contextual recovery hints for connection/bridge related errors
+- high-frequency error types now route directly to `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when that recovery path is more specific than generic diagnostics
 15. Operation center baseline (`F8`):
    - added `Operation Center` modal with active long-running operation summary
    - includes upload/download queue status, remote delete status, and port-forward busy status
@@ -212,19 +213,20 @@ Last updated: 2026-04-02
 
 ## Immediate Next Target
 
-1. `P0-F3` Remaining macOS/external-host smoke evidence and reproducible report
-2. `P0-F4` Signing/notarization strategy and installation verification
-3. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
-4. `F8` Operation center follow-up (richer timeline + grouped controls)
+1. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
+2. `F8` Operation center follow-up (richer timeline + grouped controls)
+3. `P0-A3`/`F9` Persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
+4. `P0-E1`/`P0-E2` Startup and large-transfer performance follow-up
 
 ## Not Done Yet (Top Blocking Items)
 
-1. `P0-F3`: finish macOS evidence and targeted external-host packaged validation on top of the current smoke matrix/report format
-2. `P0-F4`: complete public-trust secret provisioning and capture first signed/notarized installer evidence on top of the current preflight/verify/self-use baseline
-3. `P0-E3`: recoverable global error action coverage expansion (beyond current baseline)
-4. `P0-F1`/`P0-F2`: unit and integration test baseline
-5. `P0-A3`: JSON-to-SQLite migration planning and execution
-6. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
+1. `P0-E3`: recoverable global error action coverage expansion (beyond current baseline)
+2. `F8`: richer timeline and grouped controls for Operation Center
+3. `P0-A3`: JSON-to-SQLite migration planning and execution
+4. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
+5. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
+6. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
+7. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
 
 ## Backlog Candidates
 

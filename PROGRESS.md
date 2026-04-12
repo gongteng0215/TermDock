@@ -1,10 +1,10 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-04-02
+Last updated: 2026-04-12
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.21`
+- Stable release shipped: `v0.1.22`
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -22,6 +22,8 @@ Last updated: 2026-04-02
 - Master branch now also includes per-direction SFTP transfer rate limits plus queued-transfer weekday/time schedule windows
 - Master branch now also includes upload batch reliability hardening for transient missing-path races and SSH SFTP channel-open backpressure, plus a fault-injected smoke path that verifies recovery
 - Master branch now also includes alternate-screen terminal editor focus mode that auto-tightens the main layout and terminal chrome while full-screen TUI editors are active, with a workspace-level enable/disable toggle plus editor-theme, typography, font, text-rhythm, and cursor presets
+- Master branch now also includes richer recoverable global error routing so high-frequency errors can jump directly to `Hotkeys`, `Port Fwd`, `Retry Center`, settings, `Operation Center`, or bug-report export instead of generic diagnostics only
+- Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -32,12 +34,13 @@ Last updated: 2026-04-02
 
 ## Release Readiness
 
-- Current quality: suitable for early production and power users
+- Current quality: suitable for self-use and power users
 - Not fully GA-hardened yet
 - Minimum gates before broad rollout:
   - `P0-F3`: cross-platform smoke tests
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
+- Those broad-rollout gates are not the active priority for the current self-use track
 
 ## Completed in v0.1.17
 
@@ -315,6 +318,7 @@ Last updated: 2026-04-02
   - `Export Bug Report` now includes disconnect report snapshot (`disconnect-reports.json`) when captured
 - Improved recoverable global error UX follow-up:
   - global error bar now also supports `Copy Latest Disconnect` when report history exists
+- high-frequency error types now route directly to `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when that recovery path is more specific than generic diagnostics
 - Added operation center baseline (`F8`):
   - new modal to consolidate active long-running operations
   - includes queue state for uploads/downloads, remote delete status, and port-forward busy state
@@ -405,30 +409,31 @@ Last updated: 2026-04-02
 
 ## Main Risks
 
-- No automated unit/integration test safety net yet
-- Packaging pipeline exists and self-use Windows signing works locally, but public-trust signing/notarization policy is still incomplete
+- No automated unit/integration test safety net yet, but that is currently low priority for the self-use track
+- Packaging pipeline exists and self-use Windows signing works locally, but public-trust signing/notarization policy is intentionally deprioritized for the self-use track
 - Some SFTP recursive/safety operations still need hardening
 - Port-forward diagnostics are now richer, but there is still no cross-device/shared diagnostics sync workflow
 - Server health currently relies on Linux `/proc` and single-root disk sampling
 
 ## Next Focus
 
-1. Finish macOS release evidence and targeted external-host validation for packaged smoke (`P0-F3`)
-2. Provision signing secrets and capture first public-trust signed/notarized release evidence (`P0-F4`)
-3. Extend recoverable global error actions and guidance coverage (`P0-E3`)
-4. Continue session templates v2 follow-up with import/export and runtime prompts (`F6` follow-up)
+1. Extend recoverable global error actions and guidance coverage (`P0-E3`)
+2. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
+3. Complete persistence hardening (`P0-A3`/`F9`)
+4. Continue startup and large-transfer performance follow-up (`P0-E1`/`P0-E2`)
 5. Continue dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
 
 ## Remaining Work Snapshot
 
-1. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`)
-2. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`)
-3. Expand global error recovery actions beyond current baseline (`P0-E3`)
-4. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
-5. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`)
-6. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
-7. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
-8. Session templates v2 (import/export, runtime prompt overrides, layered presets)
+1. Expand global error recovery actions beyond current baseline (`P0-E3`)
+2. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
+3. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
+4. Continue startup and large-transfer performance follow-up (`P0-E1`/`P0-E2`)
+5. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
+6. Session templates v2 (import/export, runtime prompt overrides, layered presets)
+7. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`), low priority for self-use
+8. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`), low priority for self-use
+9. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`), low priority for self-use
 
 ## Feature Candidates After Hardening
 

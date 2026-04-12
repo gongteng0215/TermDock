@@ -1,6 +1,6 @@
 ﻿# TermDock Product Notes
 
-Last updated: 2026-04-02
+Last updated: 2026-04-12
 
 ## Confirmed Direction
 
@@ -12,10 +12,14 @@ Last updated: 2026-04-02
 
 ## Release Baseline
 
-- Current stable release: `v0.1.21` (2026-04-02)
+- Current stable release: `v0.1.22` (2026-04-12)
 
 ## Shipped in Recent Cycles
 
+- v0.1.22: global error recovery now routes hotkey/port-forward failures into `Hotkeys` / `Port Fwd`, and transfer failures can jump straight into `Retry Center` when history exists
+- v0.1.22: error bar long messages now wrap instead of forcing horizontal scrolling
+- v0.1.22: SFTP create-directory now treats "already exists" as success and gives clearer permission/path guidance on true failures
+- v0.1.22: smoke now verifies the hotkey error recovery route in both workspace and packaged runs
 - v0.1.21: `Settings > Workspace` now also exposes `Compact`, `Balanced`, and `Reading` editor-typography presets for alternate-screen terminal editors, separate from the editor theme selection
 - v0.1.21: workspace/packaged smoke now verify the `Reading` typography preset path and the active editor pane refit behavior after the preset switch
 - v0.1.21: `Settings > Workspace` now also exposes `System Mono`, `Coding Mono`, and `Drafting Mono` editor-font presets for alternate-screen terminal editors
@@ -103,6 +107,7 @@ Last updated: 2026-04-02
 - master (post-v0.1.9): `Export Bug Report` now includes disconnect-report snapshot payload for one-file issue handoff
 - master (post-v0.1.9): disconnect reports now support CSV export, copy-latest action, and diagnostics auto-capture toggle
 - master (post-v0.1.9): global error bar now adds `Copy Latest Disconnect` when reports exist
+- master: global error bar now routes high-frequency error types directly to `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when that path is more specific than generic diagnostics
 - master (post-v0.1.9): disconnect reports now support filters (scope/trigger/time/query) and visible-only export/clear
 - master (post-v0.1.9): added recoverable global error bar actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
 - master (post-v0.1.9): added operation center baseline modal for active long-running operation visibility
@@ -139,13 +144,13 @@ Last updated: 2026-04-02
 
 ## Current Top Problems to Solve
 
-1. Cross-platform smoke test coverage is still incomplete
-2. Public-trust installer signing/notarization workflow is not finalized, although self-use Windows release is now available locally
-3. Global recoverable error UX still needs broader action coverage/guidance
-4. Operation center now tracks more app jobs, but richer timeline and grouped controls are still limited
-5. Large transfer/folder edge cases still need hardening
-6. Automated unit/integration regression coverage is still weak
-7. SQLite migration and credential-safe encrypted backup/restore are not complete
+1. Global recoverable error UX still needs broader action coverage/guidance
+2. Operation center now tracks more app jobs, but richer timeline and grouped controls are still limited
+3. Large transfer/folder edge cases still need hardening
+4. SQLite migration and credential-safe encrypted backup/restore are not complete
+5. Cross-platform smoke test coverage is still incomplete, but that is currently low priority for this self-use workflow
+6. Public-trust installer signing/notarization workflow is not finalized, but that is currently low priority for this self-use workflow
+7. Automated unit/integration regression coverage is still weak, but that is currently low priority for this self-use workflow
 
 ## Next Candidate Features
 

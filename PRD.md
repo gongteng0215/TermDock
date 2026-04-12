@@ -167,7 +167,7 @@ Target platforms:
 - Disconnect-report export/copy tools in `Settings > Diagnostics`
 - Disconnect-report capture keeps per-tab monitor/error context instead of the active-tab snapshot
 - Bug-report bundle includes disconnect snapshot payload (`disconnect-reports.json`) when available
-- Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`)
+- Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`) plus contextual routing into `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when the error category is clear enough
 
 ### 5.8 Stability Hardening (active)
 
@@ -208,8 +208,9 @@ Target platforms:
 ## 8. Current Limitations
 
 - SQLite migration not complete
-- Automated unit/integration coverage is incomplete, and external-host smoke evidence is still partial
-- Signing/notarization preflight and verification baseline exists, and self-use Windows release works locally, but public-trust secret provisioning and first signed/notarized evidence are still pending
+- Automated unit/integration coverage is incomplete, but that is currently low priority for the self-use workflow
+- External-host smoke evidence is still partial, but that is currently low priority for the self-use workflow
+- Signing/notarization preflight and verification baseline exists, and self-use Windows release works locally, but public-trust secret provisioning and first signed/notarized evidence are intentionally low priority for the self-use workflow
 - Some recursive SFTP safety/policy flows still need hardening, but upload-path reliability now includes targeted missing-path recovery plus adaptive channel-pressure fallback
 - Port forwarding diagnostics and analytics now exist in-session, but cross-device/shared correlation workflows are still pending; dynamic baseline is SOCKS5 no-auth `CONNECT` only
 - Retry-center analytics/export baseline exists, but longitudinal trend analytics and richer clustering are still pending
@@ -220,6 +221,8 @@ Target platforms:
 
 ## 9. Release Gates Before Broader Rollout
 
+These broader rollout gates still apply for public distribution, but they are not the current priority for the self-use workflow.
+
 1. Cross-platform smoke testing (`P0-F3`)
 2. Installer signing/notarization and install verification (`P0-F4`)
 3. Recoverable global error UX follow-up (`P0-E3`)
@@ -227,7 +230,7 @@ Target platforms:
 ## 10. Version Plan
 
 - `v0.1.21` (current stable): alternate-screen terminal editor focus mode with workspace toggle, editor theme/typography/font/rhythm/cursor presets, and inactive-tab compaction
-- `master` (in progress): post-`v0.1.21` hardening and transfer/workspace follow-up
+- `master` (in progress): self-use runtime hardening and transfer/workspace follow-up
 - `v0.1.20`: alternate-screen terminal editor focus mode with workspace toggle plus `Midnight` / `Graphite` / `Paper` editor-theme presets
 - `v0.1.19`: transfer upload reliability hardening plus transfer-pack sync automation follow-up
 - `v0.1.13`: packaged smoke baseline, release tooling, and session templates baseline
@@ -280,7 +283,7 @@ Target platforms:
     - conflict navigation (`Locate`, `Focus First Conflict`, `Prev`, `Next`)
     - keyboard traversal (`Alt + [` / `Alt + ]`) and cursor signature persistence
   - dangerous-command guardrails baseline with `Settings > Safety`, bottom approval bar, one-time approval flow, policy packs, and environment templates
-- Next hardening cycle: testing, installer reliability, error recovery
+- Next hardening cycle: self-use runtime reliability, persistence hardening, and error recovery
 - Capability cycle candidate A:
   - Cross-session/shared diagnostics correlation workflows
   - Retry-center longitudinal analytics and trend package

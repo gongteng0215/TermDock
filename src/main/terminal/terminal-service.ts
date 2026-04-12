@@ -1934,15 +1934,48 @@ export class TerminalService {
   }
 
   private async mkdir(sftp: SFTPWrapper, targetPath: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      sftp.mkdir(targetPath, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        sftp.mkdir(targetPath, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
       });
-    });
+    } catch (error) {
+      const code = (error as { code?: number | string }).code;
+      const exists = await this.pathExistsAsDirectory(sftp, targetPath);
+      if (exists) {
+        return;
+      }
+      const errorMessage =
+        typeof (error as Error)?.message === "string" ? (error as Error).message : String(error);
+      if (code === 4 || code === "4" || /failure/i.test(errorMessage)) {
+        throw new Error(
+          `Failed to create directory "${targetPath}". Check permissions, parent path, or existing file conflicts.`
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async pathExistsAsDirectory(sftp: SFTPWrapper, targetPath: string): Promise<boolean> {
+    try {
+      const stats = await new Promise<Attributes>((resolve, reject) => {
+        sftp.stat(targetPath, (error, nextStats) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(nextStats);
+        });
+      });
+      return (stats.mode & 0o040000) === 0o040000;
+    } catch {
+      return false;
+    }
   }
 
   private async rename(

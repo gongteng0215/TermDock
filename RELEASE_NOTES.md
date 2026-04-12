@@ -6,11 +6,31 @@ Release type: In development
 
 ### Highlights
 
-- No unreleased notes yet.
+No changes yet.
 
 ### Validation
 
-- Pending next cycle.
+- Not run yet for this cycle.
+
+## v0.1.22 (2026-04-12)
+
+Release type: Stable
+
+### Highlights
+
+- Recoverable global error UX follow-up:
+  - global error bar now routes high-frequency error types directly to `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when that recovery path is more specific than generic diagnostics
+  - bridge/runtime issues now steer toward logs or bug-report export, and transfer-style failures now reuse the existing failure-suggestion guidance in the error bar hint
+  - invalid hotkey error routing now has direct smoke coverage so the `Hotkeys` recovery action is exercised instead of only rendered
+- Error bar long messages now wrap instead of forcing horizontal scrolling.
+- SFTP create-directory failures now treat "already exists" as success and provide clearer permission/path guidance when creation truly fails.
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest local workspace smoke run: `PASS 45 / FAIL 0 / SKIP 0`
+- Latest local packaged smoke run: `PASS 45 / FAIL 0 / SKIP 0`
 
 ## v0.1.21 (2026-04-02)
 

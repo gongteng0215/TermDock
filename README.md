@@ -5,10 +5,11 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.21` (2026-04-02)
-- Current branch focus: post-`v0.1.21` hardening and transport/workspace follow-up on `master`
+- Current stable release: `v0.1.22` (2026-04-12)
+- Current branch focus: post-`v0.1.22` hardening and transport/workspace follow-up on `master`
 - Current stable release includes alternate-screen editor focus mode with selectable `Midnight` / `Graphite` / `Paper` themes in `Settings > Workspace`
 - Current stable release also includes `Compact` / `Balanced` / `Reading` typography presets, `System Mono` / `Coding Mono` / `Drafting Mono` font presets, `Crisp` / `Steady` / `Open` text-rhythm presets, `Beam` / `Underline` / `Block` cursor presets, and inactive-tab compaction for editor-only focus mode
+- Current master addition: recoverable global error UX now also routes hotkey and port-forward failures into `Hotkeys` / `Port Fwd`, and transfer-style failures can jump straight into `Retry Center` in addition to the existing settings, `Operation Center`, and bug-report actions
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -16,6 +17,13 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 ## UI Rules
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
+
+## Release in `v0.1.22` (2026-04-12)
+
+- Global error recovery bar now routes hotkey/port-forward failures into `Hotkeys` / `Port Fwd`, and transfer failures can jump straight into `Retry Center` when history exists.
+- Error bar long messages now wrap instead of forcing horizontal scrolling.
+- SFTP create-directory failures now treat "already exists" as success and provide clearer permission/path guidance when creation truly fails.
+- Smoke automation now verifies the hotkey error recovery route in both workspace and packaged runs.
 
 ## Release in `v0.1.21` (2026-04-02)
 
@@ -25,7 +33,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - `Settings > Workspace` now also includes `Compact`, `Balanced`, and `Reading` typography presets, `System Mono`, `Coding Mono`, and `Drafting Mono` font presets, `Crisp`, `Steady`, and `Open` text-rhythm presets, plus `Beam`, `Underline`, and `Block` editor-cursor presets.
 - Multi-tab editor focus mode now compresses inactive tabs into smaller navigation pills so the active editor tab keeps most of the top-bar emphasis.
 - Smoke automation now verifies editor focus mode enter/exit, theme selection, typography selection, font preset selection, text-rhythm selection, cursor preset selection, inactive-tab compaction, and the disabled-toggle path in both workspace and packaged runs.
-- Latest local workspace and packaged smoke runs remain green at `PASS 44 / FAIL 0 / SKIP 0`.
+- Latest local workspace and packaged smoke runs remain green at `PASS 45 / FAIL 0 / SKIP 0`.
 
 ## Release in `v0.1.19` (2026-03-31)
 
@@ -184,6 +192,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - upgraded error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
   - includes `Copy Latest Disconnect` action when reports are available
   - connection/bridge related errors now show contextual recovery hints
+- high-frequency error types now route directly to `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when that recovery path is more specific than plain diagnostics
 - Operation center baseline:
   - new `Operation Center` modal for active long-running operations
   - consolidated status for upload/download queues, remote delete, and port-forward busy state
@@ -220,7 +229,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Editor focus cursor presets (`Beam`, `Underline`, `Block`) that switch editor-only xterm cursor shape without affecting the normal shell cursor
 - Editor focus multi-tab compaction that compresses inactive tabs into smaller pills while the active editor tab remains full-width
 - Terminal context menu and reconnect flow
-- Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`)
+- Recoverable global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`, `Copy Latest Disconnect`) plus contextual routing into `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` for high-frequency recovery paths
 - Dangerous-command guardrails with `Settings > Safety`, a fixed bottom approval bar, exact-command temporary approval scopes, persistent approval policies, per-source toggles, policy packs, environment templates, session-group overrides, optional workspace-profile sync, and shared bundle import/export/apply/sync-file pull/push for risky execution sources
 - Workspace profile mode (`dev` / `staging` / `prod`) with persistent risk badges and optional global Safety pack/template sync
 - Command History side panel + manager, including blank-area context menu actions (`Add` / `Import` / `Export` / `Manage`)
@@ -314,7 +323,7 @@ pnpm run smoke:ui:packaged
 
 This wrapper now runs `pnpm run pack` first so the packaged smoke flow does not reuse stale `release/*` output.
 
-Latest local workspace smoke run: `PASS 44 / FAIL 0 / SKIP 0`
+Latest local workspace smoke run: `PASS 45 / FAIL 0 / SKIP 0`
 
 ## Release
 
@@ -357,25 +366,27 @@ Tag rules:
 - Session/group exports currently exclude decrypted credentials/secrets
 - Active runtime port forwards remain tab-scoped; event history now persists locally per session, but there is no cross-device sync workflow yet
 - Dynamic forwarding currently supports SOCKS5 no-auth `CONNECT` baseline only
-- Cross-platform packaged smoke baseline is in place, but macOS release evidence and targeted external-host validation are still pending
-- Release signing/notarization preflight and verification baseline now exists, and self-use Windows release is available locally, but CI secret provisioning and first public-trust signed/notarized evidence are still pending
+- Cross-platform packaged smoke baseline is in place, but the remaining macOS release evidence and targeted external-host validation are currently low priority for this self-use workflow
+- Release signing/notarization preflight and verification baseline now exists, and self-use Windows release is available locally, but public-trust signed/notarized evidence is currently low priority for this self-use workflow
 - No in-app auto-update yet
 
 ## Near-Term Execution Focus
 
-1. Finish macOS/external-host packaged smoke evidence using `PACKAGED_SMOKE.md`
-2. Provision release signing secrets and capture first signed/notarized evidence using `RELEASE_SIGNING.md`
-3. Recoverable global error UX follow-up (broader action coverage and contextual guidance)
-4. Operation center follow-up for richer progress timeline and grouped cancel/retry controls
+1. Recoverable global error UX follow-up (broader action coverage and contextual guidance)
+2. Operation center follow-up for richer progress timeline and grouped cancel/retry controls
+3. Persistence hardening (`SQLite` migration planning plus credential-safe backup/restore follow-up)
+4. Startup and large-transfer performance follow-up
+5. Keep signing/notarization and broader release/test evidence in the low-priority self-use backlog
 
 ## Remaining Work (Not Done Yet)
 
-1. `P0-F3`: finish the remaining macOS/external-host packaged smoke evidence on top of the current automated matrix
-2. `P0-F4`: finish secret provisioning and capture first signed/notarized installer evidence on top of the current preflight/verify baseline
-3. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
-4. `F8`: extend Operation Center beyond the current tracked jobs with richer timeline and cancellation controls
-5. `P0-F1` + `P0-F2`: establish unit/integration test baseline for regression safety
-6. `P0-A3` + `F9` follow-up: SQLite migration and credential-safe encrypted backup/restore
+1. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
+2. `F8`: extend Operation Center beyond the current tracked jobs with richer timeline and cancellation controls
+3. `P0-A3` + `F9` follow-up: SQLite migration and credential-safe encrypted backup/restore
+4. `P0-E1` + `P0-E2`: startup and large-transfer performance follow-up
+5. `P0-F3`: remaining macOS/external-host packaged validation, now low priority for self-use
+6. `P0-F4`: public-trust signing/notarization evidence, now low priority for self-use
+7. `P0-F1` + `P0-F2`: unit/integration test baseline, now low priority for self-use
 
 ## Candidate Features (Prioritized)
 

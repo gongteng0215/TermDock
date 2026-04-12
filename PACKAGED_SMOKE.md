@@ -1,6 +1,6 @@
 # TermDock Packaged Smoke
 
-Last updated: 2026-04-02
+Last updated: 2026-04-12
 
 ## Goal
 
@@ -142,12 +142,13 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 - Close and reopen same session
 - `Settings > Safety` section, built-in rule reset, and approval-bar UI baseline
 - Settings sections
+- Recoverable global error bar routing for invalid hotkey errors back into `Hotkeys`
 - Snippet manager group/snippet/prompt-set baseline
 - Command history manager flows
 - Command history side-panel context menu
 - Operation Center tracked app-job card baseline
 - Retry Center grouped view
-- Latest local workspace and packaged smoke runs: `PASS 44 / FAIL 0 / SKIP 0`
+- Latest local workspace and packaged smoke runs: `PASS 45 / FAIL 0 / SKIP 0`
 
 ## Still Manual / Live-Host Coverage
 

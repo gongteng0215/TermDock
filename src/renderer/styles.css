@@ -3599,11 +3599,15 @@ body::before {
   font-size: 12px;
   line-height: 1.4;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .error-bar__hint {
   color: #ffbfcc;
   font-size: 11px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .error-bar__actions {

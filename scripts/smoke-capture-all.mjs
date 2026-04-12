@@ -125,6 +125,7 @@ function createMarkdownReport({
   lines.push(
     "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics), including transfer pack save/apply, sync controls, and schedule resume hints"
   );
+  lines.push("- Recoverable global error bar routing for invalid hotkey imports");
   lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
   lines.push("- Command history manager (add/edit/export/import/delete)");
   lines.push("- Command history side panel context menu");
@@ -1911,6 +1912,62 @@ async function main() {
       }
       await page.waitForTimeout(260);
       return shots.join(", ");
+    });
+
+    await runStep("global error bar routes invalid hotkey error back to hotkeys settings", async () => {
+      const invalidMessage = await page.evaluate(() => {
+        if (typeof window.__termdockSmokeSetGlobalError !== "function") {
+          throw new Error("smoke global error setter not installed");
+        }
+        const message = "Invalid hotkey file: no recognized hotkey actions.";
+        window.__termdockSmokeSetGlobalError(message);
+        return message;
+      });
+      await waitForCondition(
+        async () => {
+          const message =
+            ((await page.locator(".error-bar__message").first().textContent()) ?? "").trim();
+          return message.includes("Invalid hotkey file") ? message : false;
+        },
+        {
+          timeout: 8_000,
+          description: "invalid hotkey global error bar message"
+        }
+      );
+      const hotkeysAction = page.locator(".error-bar button:has-text('Hotkeys')").first();
+      if (!(await isVisible(hotkeysAction))) {
+        throw new Error("hotkeys recovery action not visible in global error bar");
+      }
+      const errorShot = await recordShot(page, "global-error-hotkeys-action");
+      await hotkeysAction.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const reopenedHotkeysNav = page.locator(".settings-nav__button", { hasText: "Hotkeys" }).first();
+      const hotkeysActive = await waitForCondition(
+        async () =>
+          (await reopenedHotkeysNav.count()) > 0 &&
+          (await reopenedHotkeysNav.evaluate((element) => element.classList.contains("is-active"))),
+        {
+          timeout: 5_000,
+          description: "global error route back to hotkeys settings"
+        }
+      );
+      if (!hotkeysActive) {
+        throw new Error("global error hotkeys action did not reopen hotkeys settings");
+      }
+      const routeShot = await recordShot(page, "global-error-hotkeys-routed");
+      const restoreDoneButton = page
+        .locator(".modal--settings .primary-button:has-text('Done')")
+        .first();
+      if (await isVisible(restoreDoneButton)) {
+        await restoreDoneButton.click();
+      }
+      await page.waitForTimeout(220);
+      const dismissErrorButton = page.locator(".error-bar .icon-button[aria-label='Dismiss error']").first();
+      if (await isVisible(dismissErrorButton)) {
+        await dismissErrorButton.click();
+        await page.waitForTimeout(180);
+      }
+      return `message=${invalidMessage}; shots=${errorShot}, ${routeShot}`;
     });
 
     await runStep("workspace editor focus toggle disables auto layout until re-enabled", async () => {
