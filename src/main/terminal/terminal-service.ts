@@ -100,6 +100,8 @@ interface ReusableUploadSftpEntry {
   sftp: SFTPWrapper;
 }
 
+const MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB = 1;
+
 interface ActivePortForwardBase {
   id: string;
   tabId: string;
@@ -1975,6 +1977,10 @@ export class TerminalService {
       tabId: connection.tabId,
       sftp
     });
+    while (pool.length > MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB) {
+      const staleEntry = pool.shift();
+      safeEndSftp(staleEntry?.sftp);
+    }
   }
 
   private clearReusableUploadSftp(tabId: string): void {

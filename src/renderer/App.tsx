@@ -23006,168 +23006,177 @@ export function App() {
 
       <main className={isTerminalEditorFocusMode ? "layout is-terminal-editor-focus" : "layout"}>
         <aside className="panel panel--left">
-          <section className="panel__section panel__section--sftp">
-            <div className="panel__heading">
-              <h2>SFTP</h2>
-            </div>
-            {activeTerminalTab ? (
-              <>
-                <p className="hint sftp-binding">
-                  Bound to tab: <strong>{activeTerminalTab.title}</strong>
-                </p>
-                <div className="sftp-toolbar">
-                  <input
-                    className="sftp-path-input"
-                    onChange={(event) => setSftpPath(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter") {
-                        return;
-                      }
-                      event.preventDefault();
-                      void loadSftpDirectory(sftpPath);
-                    }}
-                    placeholder="/var/log"
-                    value={sftpPath}
-                  />
-                  <button
-                    aria-label="Go to parent directory"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading || !sftpDirectory?.parent}
-                    onClick={() => {
-                      if (!sftpDirectory?.parent) {
-                        return;
-                      }
-                      void loadSftpDirectory(sftpDirectory.parent);
-                    }}
-                    title="Go Up"
-                    type="button"
+          <div className="workbench-sidebar workbench-sidebar--explorer">
+            <section className="panel__section panel__section--sftp">
+              <div className="panel__heading">
+                <h2>SFTP</h2>
+              </div>
+              {activeTerminalTab ? (
+                <>
+                  <p className="hint sftp-binding">
+                    Bound to tab: <strong>{activeTerminalTab.title}</strong>
+                  </p>
+                  <div className="sftp-toolbar">
+                    <input
+                      className="sftp-path-input"
+                      onChange={(event) => setSftpPath(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") {
+                          return;
+                        }
+                        event.preventDefault();
+                        void loadSftpDirectory(sftpPath);
+                      }}
+                      placeholder="/var/log"
+                      value={sftpPath}
+                    />
+                    <button
+                      aria-label="Go to parent directory"
+                      className="icon-button sftp-toolbar__button"
+                      disabled={sftpLoading || sftpActionLoading || !sftpDirectory?.parent}
+                      onClick={() => {
+                        if (!sftpDirectory?.parent) {
+                          return;
+                        }
+                        void loadSftpDirectory(sftpDirectory.parent);
+                      }}
+                      title="Go Up"
+                      type="button"
+                    >
+                      <UiIcon name="arrowUp" />
+                    </button>
+                    <button
+                      aria-label="Refresh directory"
+                      className="icon-button sftp-toolbar__button"
+                      disabled={sftpLoading || sftpActionLoading}
+                      onClick={() => {
+                        void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
+                      }}
+                      title="Refresh"
+                      type="button"
+                    >
+                      <UiIcon name="refresh" />
+                    </button>
+                    <button
+                      aria-label="SFTP actions"
+                      className="icon-button sftp-toolbar__button sftp-toolbar__button--menu"
+                      onClick={toggleSftpToolbarMenu}
+                      title="SFTP actions"
+                      type="button"
+                    >
+                      <UiIcon name="menu" />
+                    </button>
+                  </div>
+                  <p className="hint sftp-current-path">
+                    Current: {sftpDirectory?.cwd ?? "(not loaded)"}
+                  </p>
+                  {sftpError ? <p className="hint sftp-error">{sftpError}</p> : null}
+                  {sftpDeleteProgress ? (
+                    <div className="sftp-delete-progress" role="status" aria-live="polite">
+                      <p className="hint sftp-delete-progress__label">
+                        Deleting{" "}
+                        {sftpDeleteProgress.kind === "directory" ? "directory" : "file"}{" "}
+                        "{sftpDeleteProgress.name}"...
+                      </p>
+                      <div className="sftp-delete-progress__track">
+                        <span className="sftp-delete-progress__bar" />
+                      </div>
+                    </div>
+                  ) : null}
+                  <div
+                    className={sftpDropActive ? "sftp-drop-zone is-active" : "sftp-drop-zone"}
+                    onDragLeave={onSftpDragLeave}
+                    onDragOver={onSftpDragOver}
+                    onDrop={onSftpDrop}
                   >
-                    <UiIcon name="arrowUp" />
-                  </button>
-                  <button
-                    aria-label="Refresh directory"
-                    className="icon-button sftp-toolbar__button"
-                    disabled={sftpLoading || sftpActionLoading}
-                    onClick={() => {
-                      void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
-                    }}
-                    title="Refresh"
-                    type="button"
-                  >
-                    <UiIcon name="refresh" />
-                  </button>
-                  <button
-                    aria-label="SFTP actions"
-                    className="icon-button sftp-toolbar__button sftp-toolbar__button--menu"
-                    onClick={toggleSftpToolbarMenu}
-                    title="SFTP actions"
-                    type="button"
-                  >
-                    <UiIcon name="menu" />
-                  </button>
-                </div>
-                <p className="hint sftp-current-path">
-                  Current: {sftpDirectory?.cwd ?? "(not loaded)"}
-                </p>
-                {sftpError ? <p className="hint sftp-error">{sftpError}</p> : null}
-                {sftpDeleteProgress ? (
-                  <div className="sftp-delete-progress" role="status" aria-live="polite">
-                    <p className="hint sftp-delete-progress__label">
-                      Deleting{" "}
-                      {sftpDeleteProgress.kind === "directory" ? "directory" : "file"}{" "}
-                      "{sftpDeleteProgress.name}"...
+                    <p className="hint sftp-drop-hint">
+                      Drop files or folders into this box to upload to current directory.
                     </p>
-                    <div className="sftp-delete-progress__track">
-                      <span className="sftp-delete-progress__bar" />
+                    <div
+                      className="sftp-drop-zone__body"
+                      onContextMenu={(event) => openSftpContextMenu(event)}
+                    >
+                      <ul className="sftp-list">
+                        {(sftpDirectory?.entries ?? []).map((entry) => (
+                          <li
+                            className={
+                              selectedSftpPath === entry.path
+                                ? "sftp-list__item is-selected"
+                                : "sftp-list__item"
+                            }
+                            key={`${entry.path}-${entry.modifiedAt ?? ""}`}
+                            onClick={() => {
+                              setSelectedSftpPath(entry.path);
+                            }}
+                            onDoubleClick={() => {
+                              if (entry.kind === "directory") {
+                                return;
+                              }
+                              void openSftpEntryFile(entry);
+                            }}
+                            onContextMenu={(event) => openSftpContextMenu(event, entry)}
+                          >
+                            {entry.kind === "directory" ? (
+                              <button
+                                className="sftp-list__name sftp-list__name--directory"
+                                onClick={() => {
+                                  void loadSftpDirectory(entry.path);
+                                }}
+                                title={entry.path}
+                                type="button"
+                              >
+                                {entry.name}/
+                              </button>
+                            ) : (
+                              <span
+                                className="sftp-list__name sftp-list__name--plain"
+                                title={entry.path}
+                              >
+                                {entry.name}
+                              </span>
+                            )}
+                            <span className="sftp-list__mtime">
+                              {formatSftpMtimeForLs(entry.modifiedAt)}
+                            </span>
+                            <span className={`sftp-list__mode sftp-list__mode--${entry.kind}`}>
+                              {entry.permissions}
+                            </span>
+                            <span className="sftp-list__links">
+                              {formatSftpLinksForLs(entry.links)}
+                            </span>
+                            <span className="sftp-list__owner">{entry.owner}</span>
+                            <span className="sftp-list__group">{entry.group}</span>
+                            <span className="sftp-list__meta">
+                              {formatSftpSizeForLs(entry.size)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   </div>
-                ) : null}
-                <div
-                  className={sftpDropActive ? "sftp-drop-zone is-active" : "sftp-drop-zone"}
-                  onDragLeave={onSftpDragLeave}
-                  onDragOver={onSftpDragOver}
-                  onDrop={onSftpDrop}
-                >
-                  <p className="hint sftp-drop-hint">
-                    Drop files or folders into this box to upload to current directory.
-                  </p>
-                  <div
-                    className="sftp-drop-zone__body"
-                    onContextMenu={(event) => openSftpContextMenu(event)}
-                  >
-                    <ul className="sftp-list">
-                      {(sftpDirectory?.entries ?? []).map((entry) => (
-                        <li
-                          className={
-                            selectedSftpPath === entry.path
-                              ? "sftp-list__item is-selected"
-                              : "sftp-list__item"
-                          }
-                          key={`${entry.path}-${entry.modifiedAt ?? ""}`}
-                          onClick={() => {
-                            setSelectedSftpPath(entry.path);
-                          }}
-                          onDoubleClick={() => {
-                            if (entry.kind === "directory") {
-                              return;
-                            }
-                            void openSftpEntryFile(entry);
-                          }}
-                          onContextMenu={(event) => openSftpContextMenu(event, entry)}
-                        >
-                          {entry.kind === "directory" ? (
-                            <button
-                              className="sftp-list__name sftp-list__name--directory"
-                              onClick={() => {
-                                void loadSftpDirectory(entry.path);
-                              }}
-                              title={entry.path}
-                              type="button"
-                            >
-                              {entry.name}/
-                            </button>
-                          ) : (
-                            <span className="sftp-list__name sftp-list__name--plain" title={entry.path}>
-                              {entry.name}
-                            </span>
-                          )}
-                          <span className="sftp-list__mtime">
-                            {formatSftpMtimeForLs(entry.modifiedAt)}
-                          </span>
-                          <span className={`sftp-list__mode sftp-list__mode--${entry.kind}`}>
-                            {entry.permissions}
-                          </span>
-                          <span className="sftp-list__links">{formatSftpLinksForLs(entry.links)}</span>
-                          <span className="sftp-list__owner">{entry.owner}</span>
-                          <span className="sftp-list__group">{entry.group}</span>
-                          <span className="sftp-list__meta">
-                            {formatSftpSizeForLs(entry.size)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                  {sftpLoading ? (
+                    <p className="hint sftp-loading-indicator" role="status" aria-live="polite">
+                      Loading remote directory...
+                    </p>
+                  ) : null}
+                  <div className="sftp-summary">
+                    <p className="hint sftp-summary__item">
+                      Entries: {sftpSummary.entryCount} (Files: {sftpSummary.fileCount}, Dirs:{" "}
+                      {sftpSummary.directoryCount})
+                    </p>
+                    <p className="hint sftp-summary__item">
+                      Current directory size: {formatExactByteCount(sftpSummary.totalSize)} (
+                      {formatTransferBytes(sftpSummary.totalSize)})
+                    </p>
                   </div>
-                </div>
-                {sftpLoading ? (
-                  <p className="hint sftp-loading-indicator" role="status" aria-live="polite">
-                    Loading remote directory...
-                  </p>
-                ) : null}
-                <div className="sftp-summary">
-                  <p className="hint sftp-summary__item">
-                    Entries: {sftpSummary.entryCount} (Files: {sftpSummary.fileCount}, Dirs: {sftpSummary.directoryCount})
-                  </p>
-                  <p className="hint sftp-summary__item">
-                    Current directory size: {formatExactByteCount(sftpSummary.totalSize)} ({formatTransferBytes(sftpSummary.totalSize)})
-                  </p>
-                </div>
-              </>
-            ) : (
-              <p className="hint">
-                Open a terminal tab first. SFTP panel reuses the active tab SSH connection.
-              </p>
-            )}
-          </section>
+                </>
+              ) : (
+                <p className="hint">
+                  Open a terminal tab first. SFTP panel reuses the active tab SSH connection.
+                </p>
+              )}
+            </section>
+          </div>
         </aside>
 
         <section className="panel panel--center">
@@ -23200,495 +23209,507 @@ export function App() {
         </section>
 
         <aside className="panel panel--right">
-          <section className="panel__section" onContextMenu={openSessionBlankContextMenu}>
-            <div className="panel__heading">
-              <div className="panel__title-group">
-                <h2>Sessions</h2>
-                <span className="panel__badge">{sessionBadgeText}</span>
-                {workspaceProfilePreferences.profileId !== "none" ? (
-                  <span
-                    className={`panel__badge workspace-profile-badge workspace-profile-badge--${workspaceProfilePreferences.profileId}`}
-                  >
-                    {selectedWorkspaceProfile.shortLabel}
-                  </span>
-                ) : null}
-              </div>
-              <div className="session-panel__heading-actions">
-                <span className="hint session-explorer__location">
-                  {activeSessionGroup ? `Group: ${activeSessionGroup.label}` : "Groups"}
-                </span>
-                <button
-                  aria-label="Open settings"
-                  className="icon-button session-panel__settings-button"
-                  onClick={() => openSettingsPanel("connection")}
-                  title="Settings"
-                  type="button"
-                >
-                  <UiIcon name="settings" />
-                </button>
-              </div>
-            </div>
-            {loading ? <p className="hint">Loading sessions...</p> : null}
-            <div className="session-explorer">
-              <div className="session-filter-bar">
-                <input
-                  className="session-filter-input"
-                  onChange={(event) => setSessionFilterQuery(event.target.value)}
-                  placeholder="Filter name/host/user/group"
-                  value={sessionFilterQuery}
-                />
-                <button
-                  aria-label={sessionFavoritesOnly ? "Show all sessions" : "Show favorite sessions only"}
-                  className={sessionFavoritesOnly ? "session-filter-toggle is-active" : "session-filter-toggle"}
-                  onClick={() => setSessionFavoritesOnly((prev) => !prev)}
-                  title={sessionFavoritesOnly ? "Show all" : "Favorites only"}
-                  type="button"
-                >
-                  {sessionFavoritesOnly ? "Favorites" : "All"}
-                </button>
-              </div>
-              {!activeSessionGroup ? (
-                <>
-                  {!loading && filteredSessions.length === 0 ? (
-                    <p className="hint">
-                      {sessions.length === 0
-                        ? "No sessions yet."
-                        : "No sessions match current filters."}
-                    </p>
-                  ) : null}
-                  <ul className="session-folder-list">
-                    {groupedSessions.map((group) => (
-                      <li
-                        className={
-                          selectedGroupKeySet.has(group.key)
-                            ? "session-folder-list__item is-selected"
-                            : "session-folder-list__item"
-                        }
-                        key={group.key}
-                        onContextMenu={(event) =>
-                          openSessionContextMenu(event, {
-                            type: "group",
-                            groupKey: group.key,
-                            groupName: group.groupName,
-                            label: group.label
-                          })
-                        }
+          <div className="workbench-sidebar workbench-sidebar--inspector">
+            <section className="panel__section" onContextMenu={openSessionBlankContextMenu}>
+              <div className="panel__heading panel__heading--inspector">
+                <div className="panel__heading-main">
+                  <div className="panel__title-group">
+                    <h2>Sessions</h2>
+                    <span className="panel__badge">{sessionBadgeText}</span>
+                    {workspaceProfilePreferences.profileId !== "none" ? (
+                      <span
+                        className={`panel__badge workspace-profile-badge workspace-profile-badge--${workspaceProfilePreferences.profileId}`}
                       >
-                        <button
-                          className="session-folder-list__main"
-                          onClick={(event) => {
-                            const isMultiSelect = event.ctrlKey || event.metaKey;
-                            if (isMultiSelect) {
-                              setSelectedGroupKeys((prev) =>
-                                prev.includes(group.key)
-                                  ? prev.filter((groupKey) => groupKey !== group.key)
-                                  : [...prev, group.key]
-                              );
-                              return;
-                            }
-                            setSelectedGroupKeys([group.key]);
-                            setActiveSessionGroupKey(group.key);
-                          }}
-                          title={`${group.label} (${group.sessions.length})`}
-                          type="button"
-                        >
-                          <span className="session-folder-list__name">{group.label}</span>
-                          <span className="session-folder-list__count">{group.sessions.length}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : (
-                <>
+                        {selectedWorkspaceProfile.shortLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="session-panel__heading-actions">
+                    <button
+                      aria-label="Open settings"
+                      className="icon-button session-panel__settings-button"
+                      onClick={() => openSettingsPanel("connection")}
+                      title="Settings"
+                      type="button"
+                    >
+                      <UiIcon name="settings" />
+                    </button>
+                  </div>
+                </div>
+                <div className="panel__subheading">
+                  <span className="hint session-explorer__location">
+                    {activeSessionGroup ? `Group: ${activeSessionGroup.label}` : "Groups"}
+                  </span>
+                </div>
+              </div>
+              {loading ? <p className="hint">Loading sessions...</p> : null}
+              <div className="session-explorer">
+                <div className="session-filter-bar">
+                  <input
+                    className="session-filter-input"
+                    onChange={(event) => setSessionFilterQuery(event.target.value)}
+                    placeholder="Filter name/host/user/group"
+                    value={sessionFilterQuery}
+                  />
                   <button
-                    aria-label="Back to groups"
-                    className="icon-button session-explorer__back"
-                    onClick={() => setActiveSessionGroupKey(null)}
-                    title="Back to groups"
+                    aria-label={sessionFavoritesOnly ? "Show all sessions" : "Show favorite sessions only"}
+                    className={sessionFavoritesOnly ? "session-filter-toggle is-active" : "session-filter-toggle"}
+                    onClick={() => setSessionFavoritesOnly((prev) => !prev)}
+                    title={sessionFavoritesOnly ? "Show all" : "Favorites only"}
                     type="button"
                   >
-                    <UiIcon name="chevronLeft" />
+                    {sessionFavoritesOnly ? "Favorites" : "All"}
                   </button>
-                  {!loading && activeGroupSessions.length === 0 ? (
-                    <p className="hint">No sessions in this group.</p>
-                  ) : null}
-                  <ul className="session-list">
-                    {activeGroupSessions.map((session) => (
-                      <li
-                        key={session.id}
-                        className={
-                          selectedSessionIdSet.has(session.id)
-                            ? "session-list__item is-selected"
-                            : "session-list__item"
-                        }
-                        onContextMenu={(event) =>
-                          openSessionContextMenu(event, {
-                            type: "session",
-                            sessionId: session.id
-                          })
-                        }
-                      >
-                        <button
-                          className="session-list__main"
-                          onClick={(event) => {
-                            const isMultiSelect = event.ctrlKey || event.metaKey;
-                            if (isMultiSelect) {
-                              setSelectedSessionIds((prev) => {
-                                if (prev.includes(session.id)) {
-                                  const next = prev.filter((sessionId) => sessionId !== session.id);
-                                  setSelectedSessionId(next[0] ?? null);
-                                  return next;
-                                }
-                                setSelectedSessionId(session.id);
-                                return [...prev, session.id];
-                              });
-                              return;
-                            }
-                            setSelectedSessionId(session.id);
-                            setSelectedSessionIds([session.id]);
-                          }}
-                          onKeyDown={(event) => {
-                            if (
-                              event.key !== "Enter" ||
-                              event.altKey ||
-                              event.ctrlKey ||
-                              event.metaKey ||
-                              event.shiftKey
-                            ) {
-                              return;
-                            }
-                            event.preventDefault();
-                            openTerminalTab(session);
-                          }}
-                          onDoubleClick={() =>
-                            openTerminalTab(session, {
-                              forceNewTab: true
+                </div>
+                {!activeSessionGroup ? (
+                  <>
+                    {!loading && filteredSessions.length === 0 ? (
+                      <p className="hint">
+                        {sessions.length === 0
+                          ? "No sessions yet."
+                          : "No sessions match current filters."}
+                      </p>
+                    ) : null}
+                    <ul className="session-folder-list">
+                      {groupedSessions.map((group) => (
+                        <li
+                          className={
+                            selectedGroupKeySet.has(group.key)
+                              ? "session-folder-list__item is-selected"
+                              : "session-folder-list__item"
+                          }
+                          key={group.key}
+                          onContextMenu={(event) =>
+                            openSessionContextMenu(event, {
+                              type: "group",
+                              groupKey: group.key,
+                              groupName: group.groupName,
+                              label: group.label
                             })
                           }
-                          title={`${session.username}@${session.host}:${session.port}`}
-                          type="button"
                         >
-                          <span className="session-list__name">{session.name}</span>
-                          <span className="session-list__host">{session.host}</span>
-                        </button>
+                          <button
+                            className="session-folder-list__main"
+                            onClick={(event) => {
+                              const isMultiSelect = event.ctrlKey || event.metaKey;
+                              if (isMultiSelect) {
+                                setSelectedGroupKeys((prev) =>
+                                  prev.includes(group.key)
+                                    ? prev.filter((groupKey) => groupKey !== group.key)
+                                    : [...prev, group.key]
+                                );
+                                return;
+                              }
+                              setSelectedGroupKeys([group.key]);
+                              setActiveSessionGroupKey(group.key);
+                            }}
+                            title={`${group.label} (${group.sessions.length})`}
+                            type="button"
+                          >
+                            <span className="session-folder-list__name">{group.label}</span>
+                            <span className="session-folder-list__count">{group.sessions.length}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      aria-label="Back to groups"
+                      className="icon-button session-explorer__back"
+                      onClick={() => setActiveSessionGroupKey(null)}
+                      title="Back to groups"
+                      type="button"
+                    >
+                      <UiIcon name="chevronLeft" />
+                    </button>
+                    {!loading && activeGroupSessions.length === 0 ? (
+                      <p className="hint">No sessions in this group.</p>
+                    ) : null}
+                    <ul className="session-list">
+                      {activeGroupSessions.map((session) => (
+                        <li
+                          key={session.id}
+                          className={
+                            selectedSessionIdSet.has(session.id)
+                              ? "session-list__item is-selected"
+                              : "session-list__item"
+                          }
+                          onContextMenu={(event) =>
+                            openSessionContextMenu(event, {
+                              type: "session",
+                              sessionId: session.id
+                            })
+                          }
+                        >
+                          <button
+                            className="session-list__main"
+                            onClick={(event) => {
+                              const isMultiSelect = event.ctrlKey || event.metaKey;
+                              if (isMultiSelect) {
+                                setSelectedSessionIds((prev) => {
+                                  if (prev.includes(session.id)) {
+                                    const next = prev.filter((sessionId) => sessionId !== session.id);
+                                    setSelectedSessionId(next[0] ?? null);
+                                    return next;
+                                  }
+                                  setSelectedSessionId(session.id);
+                                  return [...prev, session.id];
+                                });
+                                return;
+                              }
+                              setSelectedSessionId(session.id);
+                              setSelectedSessionIds([session.id]);
+                            }}
+                            onKeyDown={(event) => {
+                              if (
+                                event.key !== "Enter" ||
+                                event.altKey ||
+                                event.ctrlKey ||
+                                event.metaKey ||
+                                event.shiftKey
+                              ) {
+                                return;
+                              }
+                              event.preventDefault();
+                              openTerminalTab(session);
+                            }}
+                            onDoubleClick={() =>
+                              openTerminalTab(session, {
+                                forceNewTab: true
+                              })
+                            }
+                            title={`${session.username}@${session.host}:${session.port}`}
+                            type="button"
+                          >
+                            <span className="session-list__name">{session.name}</span>
+                            <span className="session-list__host">{session.host}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            </section>
+            <section className="panel__section panel__section--server-health">
+              <div className="panel__heading panel__heading--inspector">
+                <div className="panel__heading-main">
+                  <h2>Server Health</h2>
+                  <div className="server-health__actions">
+                    <button
+                      aria-label="Toggle server health details"
+                      className={
+                        isServerHealthDetailOpen
+                          ? "icon-button server-health__detail-toggle is-active"
+                          : "icon-button server-health__detail-toggle"
+                      }
+                      disabled={!activeTerminalTab}
+                      onClick={() => setIsServerHealthDetailOpen((prev) => !prev)}
+                      title={isServerHealthDetailOpen ? "Hide details" : "Show details"}
+                      type="button"
+                    >
+                      <UiIcon name={isServerHealthDetailOpen ? "minus" : "plus"} />
+                    </button>
+                    <button
+                      aria-label="Refresh server metrics"
+                      className="icon-button"
+                      disabled={
+                        !activeTerminalTab ||
+                        !isActiveTabConnected ||
+                        serverHealthLoading ||
+                        (isServerHealthDetailOpen && serverProcessLoading)
+                      }
+                      onClick={() => {
+                        void refreshServerHealth();
+                        if (isServerHealthDetailOpen) {
+                          void refreshServerProcesses();
+                        }
+                      }}
+                      title="Refresh"
+                      type="button"
+                    >
+                      <UiIcon name="refresh" />
+                    </button>
+                    <span
+                      className={
+                        serverHealthAlertStatus.hasAny
+                          ? "server-health__state server-health__state--alert"
+                          : "server-health__state"
+                      }
+                      title={
+                        serverHealthAlertStatus.hasAny
+                          ? "One or more metrics exceeded alert threshold."
+                          : "No alert triggered."
+                      }
+                    >
+                      {serverHealthAlertStatus.hasAny ? "ALERT" : "OK"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {activeTerminalTab ? (
+                <>
+                  <p className="hint server-health__binding">
+                    Monitoring tab: <strong>{activeTerminalTab.title}</strong>
+                  </p>
+                  {!isActiveTabConnected ? (
+                    <p className="hint">Connect the active terminal tab to collect metrics.</p>
+                  ) : null}
+                  {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
+                  {serverHealthAlertStatus.hasAny ? (
+                    <p className="hint server-health__alert-text">
+                      Threshold reached:
+                      {serverHealthAlertStatus.cpuHigh ? " CPU" : ""}
+                      {serverHealthAlertStatus.memoryHigh ? " Memory" : ""}
+                      {serverHealthAlertStatus.diskHigh ? " Disk" : ""}
+                    </p>
+                  ) : null}
+                  {serverHealthLoading ? (
+                    <p className="hint" role="status" aria-live="polite">
+                      Collecting server metrics...
+                    </p>
+                  ) : null}
+                  {serverHealth ? (
+                    <>
+                      <div className="server-health-grid">
+                        <div
+                          className={
+                            serverHealthAlertStatus.cpuHigh
+                              ? "server-health-card server-health-card--cpu is-alert"
+                              : "server-health-card server-health-card--cpu"
+                          }
+                        >
+                          <span className="server-health-card__label">CPU</span>
+                          <strong className="server-health-card__value">
+                            {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
+                          </strong>
+                        </div>
+                        <div
+                          className={
+                            serverHealthAlertStatus.memoryHigh
+                              ? "server-health-card server-health-card--memory is-alert"
+                              : "server-health-card server-health-card--memory"
+                          }
+                        >
+                          <span className="server-health-card__label">Memory</span>
+                          <strong className="server-health-card__value">
+                            {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
+                          </strong>
+                          <span className="server-health-card__meta">
+                            {formatTransferBytes(serverHealth.memoryUsedBytes)}/
+                            {formatTransferBytes(serverHealth.memoryTotalBytes)}
+                          </span>
+                        </div>
+                        <div
+                          className={
+                            serverHealthAlertStatus.diskHigh
+                              ? "server-health-card server-health-card--disk is-alert"
+                              : "server-health-card server-health-card--disk"
+                          }
+                        >
+                          <span className="server-health-card__label">Disk</span>
+                          <strong className="server-health-card__value">
+                            {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
+                          </strong>
+                          <span className="server-health-card__meta">
+                            {serverHealth.diskPath} | {formatTransferBytes(serverHealth.diskUsedBytes)}/
+                            {formatTransferBytes(serverHealth.diskTotalBytes)}
+                          </span>
+                        </div>
+                        <div className="server-health-card server-health-card--network">
+                          <span className="server-health-card__label">Network</span>
+                          <strong className="server-health-card__value">
+                            RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
+                          </strong>
+                          <span className="server-health-card__meta">
+                            TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
+                          </span>
+                        </div>
+                        <div className="server-health-card server-health-card--load">
+                          <span className="server-health-card__label">Load</span>
+                          <strong className="server-health-card__value">
+                            {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
+                            {serverHealth.load15.toFixed(2)}
+                          </strong>
+                        </div>
+                        <div className="server-health-card server-health-card--uptime">
+                          <span className="server-health-card__label">Uptime</span>
+                          <strong className="server-health-card__value">
+                            {formatServerUptime(serverHealth.uptimeSeconds)}
+                          </strong>
+                          <span className="server-health-card__meta">{serverHealth.hostname}</span>
+                        </div>
+                      </div>
+                      {isServerHealthDetailOpen ? (
+                        <div className="server-health-details">
+                          {recentServerHealthPoints.length > 0 ? (
+                            <div className="server-health-trend">
+                              <p className="hint server-health-trend__title">
+                                Recent trend (last {recentServerHealthPoints.length} samples)
+                              </p>
+                              <div className="server-health-trend__bars" aria-hidden="true">
+                                {recentServerHealthPoints.map((point, index) => (
+                                  <div className="server-health-trend__sample" key={`${point.at}-${index}`}>
+                                    <span
+                                      className="server-health-trend__bar server-health-trend__bar--cpu"
+                                      style={{ height: `${Math.max(4, point.cpuUsagePercent)}%` }}
+                                      title={`CPU ${formatPercent(point.cpuUsagePercent)}`}
+                                    />
+                                    <span
+                                      className="server-health-trend__bar server-health-trend__bar--memory"
+                                      style={{ height: `${Math.max(4, point.memoryUsagePercent)}%` }}
+                                      title={`Memory ${formatPercent(point.memoryUsagePercent)}`}
+                                    />
+                                    <span
+                                      className="server-health-trend__bar server-health-trend__bar--disk"
+                                      style={{ height: `${Math.max(4, point.diskUsagePercent)}%` }}
+                                      title={`Disk ${formatPercent(point.diskUsagePercent)}`}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {serverProcessError ? (
+                            <p className="hint sftp-error">{serverProcessError}</p>
+                          ) : null}
+                          {serverProcessLoading ? (
+                            <p className="hint" role="status" aria-live="polite">
+                              Collecting process details...
+                            </p>
+                          ) : null}
+                          <div className="server-health-processes">
+                            <p className="hint server-health-processes__title">Top processes (CPU)</p>
+                            {serverProcessSnapshot?.processes?.length ? (
+                              <ul className="server-health-processes__list">
+                                {serverProcessSnapshot.processes.map((entry) => (
+                                  <li
+                                    className="server-health-processes__item"
+                                    key={`${entry.pid}-${entry.command}`}
+                                  >
+                                    <span className="server-health-processes__pid">{entry.pid}</span>
+                                    <span className="server-health-processes__command" title={entry.command}>
+                                      {entry.command}
+                                    </span>
+                                    <span className="server-health-processes__cpu">
+                                      {formatProcessPercent(entry.cpuPercent)}
+                                    </span>
+                                    <span className="server-health-processes__mem">
+                                      {formatProcessPercent(entry.memoryPercent)}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="hint">No process data yet.</p>
+                            )}
+                          </div>
+                          <div className="server-health-services">
+                            <p className="hint server-health-processes__title">Failed services</p>
+                            {serverProcessSnapshot?.failedServices?.length ? (
+                              <ul className="server-health-services__list">
+                                {serverProcessSnapshot.failedServices.map((name) => (
+                                  <li className="server-health-services__item" key={name}>
+                                    {name}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="hint">No failed services detected.</p>
+                            )}
+                          </div>
+                          <p className="hint server-health__footnote">
+                            Updated: {serverHealthUpdatedLabel} | RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
+                            {formatTransferBytes(serverHealth.networkTxBytes)}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="hint server-health__footnote">
+                          Updated: {serverHealthUpdatedLabel}
+                        </p>
+                      )}
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <p className="hint">Open and connect a terminal tab to monitor server status.</p>
+              )}
+            </section>
+            <section className="panel__section panel__section--command-history">
+              <div className="panel__heading panel__heading--inspector">
+                <div className="panel__heading-main">
+                  <div className="panel__title-group">
+                    <h2>Command History</h2>
+                    <span className="panel__badge">
+                      {visibleTerminalCommandHistoryEntries.length}/{terminalCommandHistoryEntries.length}
+                    </span>
+                  </div>
+                  <div className="command-history-panel__heading-actions">
+                    <button
+                      className="secondary-button secondary-button--small command-history-panel__snippet-button"
+                      onClick={() => {
+                        void openCommandSnippetManager();
+                      }}
+                      type="button"
+                    >
+                      Snippets ({totalCommandSnippetCount})
+                    </button>
+                    <button
+                      className="secondary-button secondary-button--small"
+                      onClick={openCommandHistoryManager}
+                      type="button"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="command-history-panel__filters">
+                <select
+                  onChange={(event) =>
+                    setTerminalCommandHistoryScope(event.target.value as TerminalCommandHistoryScope)
+                  }
+                  value={terminalCommandHistoryScope}
+                >
+                  <option value="activeTab">Active Tab</option>
+                  <option value="allTabs">All Tabs</option>
+                </select>
+                <input
+                  onChange={(event) => setTerminalCommandHistoryQuery(event.target.value)}
+                  placeholder="Search command"
+                  value={terminalCommandHistoryQuery}
+                />
+              </div>
+              <div
+                className="command-history-panel__list-shell"
+                onContextMenu={openCommandHistoryPanelContextMenu}
+              >
+                {visibleTerminalCommandHistoryEntries.length === 0 ? (
+                  <p className="hint command-history-panel__empty">No command history entries.</p>
+                ) : (
+                  <ul className="command-history-panel__list">
+                    {visibleTerminalCommandHistoryEntries.map((entry) => (
+                      <li
+                        className="command-history-panel__item"
+                        key={entry.id}
+                        onDoubleClick={() => {
+                          void pasteTerminalCommandHistoryEntry(entry);
+                        }}
+                        onContextMenu={(event) => openCommandHistoryContextMenu(event, entry.id)}
+                        title={`${entry.command}\n\nDouble-click to paste into active terminal. Right-click for actions.`}
+                      >
+                        <p className="command-history-panel__command">
+                          <code>{entry.command}</code>
+                        </p>
                       </li>
                     ))}
                   </ul>
-                </>
-              )}
-            </div>
-          </section>
-          <section className="panel__section panel__section--server-health">
-            <div className="panel__heading">
-              <h2>Server Health</h2>
-              <div className="server-health__actions">
-                <button
-                  aria-label="Toggle server health details"
-                  className={
-                    isServerHealthDetailOpen
-                      ? "icon-button server-health__detail-toggle is-active"
-                      : "icon-button server-health__detail-toggle"
-                  }
-                  disabled={!activeTerminalTab}
-                  onClick={() => setIsServerHealthDetailOpen((prev) => !prev)}
-                  title={isServerHealthDetailOpen ? "Hide details" : "Show details"}
-                  type="button"
-                >
-                  <UiIcon name={isServerHealthDetailOpen ? "minus" : "plus"} />
-                </button>
-                <button
-                  aria-label="Refresh server metrics"
-                  className="icon-button"
-                  disabled={
-                    !activeTerminalTab ||
-                    !isActiveTabConnected ||
-                    serverHealthLoading ||
-                    (isServerHealthDetailOpen && serverProcessLoading)
-                  }
-                  onClick={() => {
-                    void refreshServerHealth();
-                    if (isServerHealthDetailOpen) {
-                      void refreshServerProcesses();
-                    }
-                  }}
-                  title="Refresh"
-                  type="button"
-                >
-                  <UiIcon name="refresh" />
-                </button>
-                <span
-                  className={
-                    serverHealthAlertStatus.hasAny
-                      ? "server-health__state server-health__state--alert"
-                      : "server-health__state"
-                  }
-                  title={
-                    serverHealthAlertStatus.hasAny
-                      ? "One or more metrics exceeded alert threshold."
-                      : "No alert triggered."
-                  }
-                >
-                  {serverHealthAlertStatus.hasAny ? "ALERT" : "OK"}
-                </span>
+                )}
               </div>
-            </div>
-            {activeTerminalTab ? (
-              <>
-                <p className="hint server-health__binding">
-                  Monitoring tab: <strong>{activeTerminalTab.title}</strong>
-                </p>
-                {!isActiveTabConnected ? (
-                  <p className="hint">Connect the active terminal tab to collect metrics.</p>
-                ) : null}
-                {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
-                {serverHealthAlertStatus.hasAny ? (
-                  <p className="hint server-health__alert-text">
-                    Threshold reached:
-                    {serverHealthAlertStatus.cpuHigh ? " CPU" : ""}
-                    {serverHealthAlertStatus.memoryHigh ? " Memory" : ""}
-                    {serverHealthAlertStatus.diskHigh ? " Disk" : ""}
-                  </p>
-                ) : null}
-                {serverHealthLoading ? (
-                  <p className="hint" role="status" aria-live="polite">
-                    Collecting server metrics...
-                  </p>
-                ) : null}
-                {serverHealth ? (
-                  <>
-                    <div className="server-health-grid">
-                      <div
-                        className={
-                          serverHealthAlertStatus.cpuHigh
-                            ? "server-health-card is-alert"
-                            : "server-health-card"
-                        }
-                      >
-                        <span className="server-health-card__label">CPU</span>
-                        <strong className="server-health-card__value">
-                          {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
-                        </strong>
-                      </div>
-                      <div
-                        className={
-                          serverHealthAlertStatus.memoryHigh
-                            ? "server-health-card is-alert"
-                            : "server-health-card"
-                        }
-                      >
-                        <span className="server-health-card__label">Memory</span>
-                        <strong className="server-health-card__value">
-                          {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
-                        </strong>
-                        <span className="server-health-card__meta">
-                          {formatTransferBytes(serverHealth.memoryUsedBytes)}/
-                          {formatTransferBytes(serverHealth.memoryTotalBytes)}
-                        </span>
-                      </div>
-                      <div
-                        className={
-                          serverHealthAlertStatus.diskHigh
-                            ? "server-health-card is-alert"
-                            : "server-health-card"
-                        }
-                      >
-                        <span className="server-health-card__label">Disk</span>
-                        <strong className="server-health-card__value">
-                          {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
-                        </strong>
-                        <span className="server-health-card__meta">
-                          {serverHealth.diskPath} | {formatTransferBytes(serverHealth.diskUsedBytes)}/
-                          {formatTransferBytes(serverHealth.diskTotalBytes)}
-                        </span>
-                      </div>
-                      <div className="server-health-card">
-                        <span className="server-health-card__label">Network</span>
-                        <strong className="server-health-card__value">
-                          RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
-                        </strong>
-                        <span className="server-health-card__meta">
-                          TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
-                        </span>
-                      </div>
-                      <div className="server-health-card">
-                        <span className="server-health-card__label">Load</span>
-                        <strong className="server-health-card__value">
-                          {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
-                          {serverHealth.load15.toFixed(2)}
-                        </strong>
-                      </div>
-                      <div className="server-health-card">
-                        <span className="server-health-card__label">Uptime</span>
-                        <strong className="server-health-card__value">
-                          {formatServerUptime(serverHealth.uptimeSeconds)}
-                        </strong>
-                        <span className="server-health-card__meta">{serverHealth.hostname}</span>
-                      </div>
-                    </div>
-                    {isServerHealthDetailOpen ? (
-                      <div className="server-health-details">
-                        {recentServerHealthPoints.length > 0 ? (
-                          <div className="server-health-trend">
-                            <p className="hint server-health-trend__title">
-                              Recent trend (last {recentServerHealthPoints.length} samples)
-                            </p>
-                            <div className="server-health-trend__bars" aria-hidden="true">
-                              {recentServerHealthPoints.map((point, index) => (
-                                <div className="server-health-trend__sample" key={`${point.at}-${index}`}>
-                                  <span
-                                    className="server-health-trend__bar server-health-trend__bar--cpu"
-                                    style={{ height: `${Math.max(4, point.cpuUsagePercent)}%` }}
-                                    title={`CPU ${formatPercent(point.cpuUsagePercent)}`}
-                                  />
-                                  <span
-                                    className="server-health-trend__bar server-health-trend__bar--memory"
-                                    style={{ height: `${Math.max(4, point.memoryUsagePercent)}%` }}
-                                    title={`Memory ${formatPercent(point.memoryUsagePercent)}`}
-                                  />
-                                  <span
-                                    className="server-health-trend__bar server-health-trend__bar--disk"
-                                    style={{ height: `${Math.max(4, point.diskUsagePercent)}%` }}
-                                    title={`Disk ${formatPercent(point.diskUsagePercent)}`}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        {serverProcessError ? (
-                          <p className="hint sftp-error">{serverProcessError}</p>
-                        ) : null}
-                        {serverProcessLoading ? (
-                          <p className="hint" role="status" aria-live="polite">
-                            Collecting process details...
-                          </p>
-                        ) : null}
-                        <div className="server-health-processes">
-                          <p className="hint server-health-processes__title">Top processes (CPU)</p>
-                          {serverProcessSnapshot?.processes?.length ? (
-                            <ul className="server-health-processes__list">
-                              {serverProcessSnapshot.processes.map((entry) => (
-                                <li
-                                  className="server-health-processes__item"
-                                  key={`${entry.pid}-${entry.command}`}
-                                >
-                                  <span className="server-health-processes__pid">{entry.pid}</span>
-                                  <span className="server-health-processes__command" title={entry.command}>
-                                    {entry.command}
-                                  </span>
-                                  <span className="server-health-processes__cpu">
-                                    {formatProcessPercent(entry.cpuPercent)}
-                                  </span>
-                                  <span className="server-health-processes__mem">
-                                    {formatProcessPercent(entry.memoryPercent)}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="hint">No process data yet.</p>
-                          )}
-                        </div>
-                        <div className="server-health-services">
-                          <p className="hint server-health-processes__title">Failed services</p>
-                          {serverProcessSnapshot?.failedServices?.length ? (
-                            <ul className="server-health-services__list">
-                              {serverProcessSnapshot.failedServices.map((name) => (
-                                <li className="server-health-services__item" key={name}>
-                                  {name}
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="hint">No failed services detected.</p>
-                          )}
-                        </div>
-                        <p className="hint server-health__footnote">
-                          Updated: {serverHealthUpdatedLabel} | RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
-                          {formatTransferBytes(serverHealth.networkTxBytes)}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="hint server-health__footnote">
-                        Updated: {serverHealthUpdatedLabel}
-                      </p>
-                    )}
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <p className="hint">Open and connect a terminal tab to monitor server status.</p>
-            )}
-          </section>
-          <section className="panel__section panel__section--command-history">
-            <div className="panel__heading">
-              <h2>Command History</h2>
-              <div className="command-history-panel__heading-actions">
-                <span className="panel__badge">
-                  {visibleTerminalCommandHistoryEntries.length}/{terminalCommandHistoryEntries.length}
-                </span>
-                <button
-                  className="secondary-button secondary-button--small"
-                  onClick={() => {
-                    void openCommandSnippetManager();
-                  }}
-                  type="button"
-                >
-                  Snippets ({totalCommandSnippetCount})
-                </button>
-                <button
-                  className="secondary-button secondary-button--small"
-                  onClick={openCommandHistoryManager}
-                  type="button"
-                >
-                  Manage
-                </button>
-              </div>
-            </div>
-            <div className="command-history-panel__filters">
-              <select
-                onChange={(event) =>
-                  setTerminalCommandHistoryScope(event.target.value as TerminalCommandHistoryScope)
-                }
-                value={terminalCommandHistoryScope}
-              >
-                <option value="activeTab">Active Tab</option>
-                <option value="allTabs">All Tabs</option>
-              </select>
-              <input
-                onChange={(event) => setTerminalCommandHistoryQuery(event.target.value)}
-                placeholder="Search command"
-                value={terminalCommandHistoryQuery}
-              />
-            </div>
-            <div
-              className="command-history-panel__list-shell"
-              onContextMenu={openCommandHistoryPanelContextMenu}
-            >
-              {visibleTerminalCommandHistoryEntries.length === 0 ? (
-                <p className="hint command-history-panel__empty">No command history entries.</p>
-              ) : (
-                <ul className="command-history-panel__list">
-                  {visibleTerminalCommandHistoryEntries.map((entry) => (
-                    <li
-                      className="command-history-panel__item"
-                      key={entry.id}
-                      onDoubleClick={() => {
-                        void pasteTerminalCommandHistoryEntry(entry);
-                      }}
-                      onContextMenu={(event) => openCommandHistoryContextMenu(event, entry.id)}
-                      title={`${entry.command}\n\nDouble-click to paste into active terminal. Right-click for actions.`}
-                    >
-                      <p className="command-history-panel__command">
-                        <code>{entry.command}</code>
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
+            </section>
+          </div>
         </aside>
       </main>
 

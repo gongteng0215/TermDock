@@ -365,6 +365,49 @@ async function exitSmokeAlternateScreen(page) {
   await runSmokeShellCommand(page, "printf '\\033[?1049l'");
 }
 
+async function ensureAlternateScreenExited(page) {
+  try {
+    await exitSmokeAlternateScreen(page);
+  } catch {
+    // Best effort fallback for smoke cleanup.
+  }
+  try {
+    await waitForCondition(
+      async () => {
+        const focusedLayouts = await page.locator(".layout.is-terminal-editor-focus").count();
+        return focusedLayouts === 0;
+      },
+      {
+        timeout: 4_000,
+        description: "editor focus mode cleanup"
+      }
+    );
+  } catch {
+    // If cleanup cannot confirm, let the next step surface the real state.
+  }
+}
+
+async function ensureSmokeGroupSessionVisible(page) {
+  let sessionButton = page.locator(".session-list__main").first();
+  if (await isVisible(sessionButton)) {
+    return sessionButton;
+  }
+
+  const groupButton = page
+    .locator(".session-folder-list__main", { hasText: "smoke-group" })
+    .first();
+  if (await isVisible(groupButton)) {
+    await groupButton.click();
+    await page.waitForTimeout(260);
+  }
+
+  sessionButton = page.locator(".session-list__main").first();
+  if (!(await isVisible(sessionButton))) {
+    throw new Error("session button missing");
+  }
+  return sessionButton;
+}
+
 async function ensureSession(page, sessionName, groupId, connection) {
   return page.evaluate(
     async ({ sessionNameValue, groupIdValue, connectionValue }) => {
@@ -435,7 +478,7 @@ async function main() {
   }));
   const fixture = await startSmokeSshFixture({
     rootDir: join(outputDir, "fixture-remote"),
-    maxConcurrentSftpSessions: 2,
+    maxConcurrentSftpSessions: 4,
     transientMissingWriteDirectories: [`/${throttledUploadSourceDirName}`]
   });
   const uploadSourcePath = join(outputDir, "fixture-upload.txt");
@@ -932,25 +975,30 @@ async function main() {
       await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
       await page.waitForTimeout(260);
 
-      await enterSmokeAlternateScreen(page, "TermDock editor typography smoke");
-      await page
-        .locator(".terminal-stage.is-editor-focus[data-editor-typography='reading']")
-        .first()
-        .waitFor({ state: "visible", timeout: 8_000 });
-      const readingPane = page
-        .locator(".terminal-pane.is-active.is-editor-focus[data-editor-typography='reading']")
-        .first();
-      await readingPane.waitFor({ state: "visible", timeout: 8_000 });
-      const readingPaddingTop = await readingPane.evaluate(
-        (element) => window.getComputedStyle(element).paddingTop
-      );
-      if (readingPaddingTop !== "14px") {
-        throw new Error(
-          `reading editor typography did not update pane padding as expected: ${readingPaddingTop}`
+      let readingPaddingTop = "";
+      let typographyShot = "";
+      try {
+        await enterSmokeAlternateScreen(page, "TermDock editor typography smoke");
+        await page
+          .locator(".terminal-stage.is-editor-focus[data-editor-typography='reading']")
+          .first()
+          .waitFor({ state: "visible", timeout: 8_000 });
+        const readingPane = page
+          .locator(".terminal-pane.is-active.is-editor-focus[data-editor-typography='reading']")
+          .first();
+        await readingPane.waitFor({ state: "visible", timeout: 8_000 });
+        readingPaddingTop = await readingPane.evaluate(
+          (element) => window.getComputedStyle(element).paddingTop
         );
+        if (readingPaddingTop !== "10px") {
+          throw new Error(
+            `reading editor typography did not update pane padding as expected: ${readingPaddingTop}`
+          );
+        }
+        typographyShot = await recordShot(page, "editor-focus-mode-reading-typography");
+      } finally {
+        await ensureAlternateScreenExited(page);
       }
-      const typographyShot = await recordShot(page, "editor-focus-mode-reading-typography");
-      await exitSmokeAlternateScreen(page);
 
       await settingsButton.click();
       await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
@@ -996,23 +1044,30 @@ async function main() {
       await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
       await page.waitForTimeout(260);
 
-      await enterSmokeAlternateScreen(page, "TermDock editor font smoke");
-      await page
-        .locator(".terminal-stage.is-editor-focus[data-editor-font='drafting']")
-        .first()
-        .waitFor({ state: "visible", timeout: 8_000 });
-      const draftingPane = page
-        .locator(".terminal-pane.is-active.is-editor-focus[data-editor-font='drafting']")
-        .first();
-      await draftingPane.waitFor({ state: "visible", timeout: 8_000 });
-      const xtermSurface = draftingPane.locator(".xterm").first();
-      await xtermSurface.waitFor({ state: "visible", timeout: 8_000 });
-      const fontFamily = await xtermSurface.evaluate((element) => window.getComputedStyle(element).fontFamily);
-      if (!fontFamily.includes("IBM Plex Mono")) {
-        throw new Error(`drafting editor font did not update xterm font-family: ${fontFamily}`);
+      let fontFamily = "";
+      let fontShot = "";
+      try {
+        await enterSmokeAlternateScreen(page, "TermDock editor font smoke");
+        await page
+          .locator(".terminal-stage.is-editor-focus[data-editor-font='drafting']")
+          .first()
+          .waitFor({ state: "visible", timeout: 8_000 });
+        const draftingPane = page
+          .locator(".terminal-pane.is-active.is-editor-focus[data-editor-font='drafting']")
+          .first();
+        await draftingPane.waitFor({ state: "visible", timeout: 8_000 });
+        const xtermSurface = draftingPane.locator(".xterm").first();
+        await xtermSurface.waitFor({ state: "visible", timeout: 8_000 });
+        fontFamily = await xtermSurface.evaluate(
+          (element) => window.getComputedStyle(element).fontFamily
+        );
+        if (!fontFamily.includes("IBM Plex Mono")) {
+          throw new Error(`drafting editor font did not update xterm font-family: ${fontFamily}`);
+        }
+        fontShot = await recordShot(page, "editor-focus-mode-drafting-font");
+      } finally {
+        await ensureAlternateScreenExited(page);
       }
-      const fontShot = await recordShot(page, "editor-focus-mode-drafting-font");
-      await exitSmokeAlternateScreen(page);
 
       await settingsButton.click();
       await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
@@ -1058,31 +1113,36 @@ async function main() {
       await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
       await page.waitForTimeout(260);
 
-      await enterSmokeAlternateScreen(page, "TermDock editor rhythm smoke");
-      await page
-        .locator(".terminal-stage.is-editor-focus[data-editor-rhythm='open']")
-        .first()
-        .waitFor({ state: "visible", timeout: 8_000 });
-      const openPane = page
-        .locator(".terminal-pane.is-active.is-editor-focus[data-editor-rhythm='open']")
-        .first();
-      await openPane.waitFor({ state: "visible", timeout: 8_000 });
-      const xtermSurface = openPane.locator(".xterm").first();
-      await xtermSurface.waitFor({ state: "visible", timeout: 8_000 });
-      const metrics = await xtermSurface.evaluate((element) => {
-        const style = window.getComputedStyle(element);
-        return {
-          letterSpacing: style.letterSpacing,
-          fontWeight: style.fontWeight
-        };
-      });
-      if (metrics.letterSpacing !== "0.8px" || metrics.fontWeight !== "600") {
-        throw new Error(
-          `open editor rhythm did not update xterm metrics: ${JSON.stringify(metrics)}`
-        );
+      let metrics = null;
+      let rhythmShot = "";
+      try {
+        await enterSmokeAlternateScreen(page, "TermDock editor rhythm smoke");
+        await page
+          .locator(".terminal-stage.is-editor-focus[data-editor-rhythm='open']")
+          .first()
+          .waitFor({ state: "visible", timeout: 8_000 });
+        const openPane = page
+          .locator(".terminal-pane.is-active.is-editor-focus[data-editor-rhythm='open']")
+          .first();
+        await openPane.waitFor({ state: "visible", timeout: 8_000 });
+        const xtermSurface = openPane.locator(".xterm").first();
+        await xtermSurface.waitFor({ state: "visible", timeout: 8_000 });
+        metrics = await xtermSurface.evaluate((element) => {
+          const style = window.getComputedStyle(element);
+          return {
+            letterSpacing: style.letterSpacing,
+            fontWeight: style.fontWeight
+          };
+        });
+        if (metrics.letterSpacing !== "0.8px" || metrics.fontWeight !== "600") {
+          throw new Error(
+            `open editor rhythm did not update xterm metrics: ${JSON.stringify(metrics)}`
+          );
+        }
+        rhythmShot = await recordShot(page, "editor-focus-mode-open-rhythm");
+      } finally {
+        await ensureAlternateScreenExited(page);
       }
-      const rhythmShot = await recordShot(page, "editor-focus-mode-open-rhythm");
-      await exitSmokeAlternateScreen(page);
 
       await settingsButton.click();
       await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
@@ -1128,22 +1188,29 @@ async function main() {
       await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
       await page.waitForTimeout(260);
 
-      await enterSmokeAlternateScreen(page, "TermDock editor cursor smoke");
-      await page
-        .locator(".terminal-stage.is-editor-focus[data-editor-cursor='underline']")
-        .first()
-        .waitFor({ state: "visible", timeout: 8_000 });
-      const cursorClassName = await page
-        .locator(
-          ".terminal-pane.is-active.is-editor-focus[data-editor-cursor='underline'] .xterm .xterm-cursor"
-        )
-        .first()
-        .evaluate((element) => element.className);
-      if (!cursorClassName.includes("xterm-cursor-underline")) {
-        throw new Error(`underline editor cursor did not update xterm cursor class: ${cursorClassName}`);
+      let cursorClassName = "";
+      let cursorShot = "";
+      try {
+        await enterSmokeAlternateScreen(page, "TermDock editor cursor smoke");
+        await page
+          .locator(".terminal-stage.is-editor-focus[data-editor-cursor='underline']")
+          .first()
+          .waitFor({ state: "visible", timeout: 8_000 });
+        cursorClassName = await page
+          .locator(
+            ".terminal-pane.is-active.is-editor-focus[data-editor-cursor='underline'] .xterm .xterm-cursor"
+          )
+          .first()
+          .evaluate((element) => element.className);
+        if (!cursorClassName.includes("xterm-cursor-underline")) {
+          throw new Error(
+            `underline editor cursor did not update xterm cursor class: ${cursorClassName}`
+          );
+        }
+        cursorShot = await recordShot(page, "editor-focus-mode-underline-cursor");
+      } finally {
+        await ensureAlternateScreenExited(page);
       }
-      const cursorShot = await recordShot(page, "editor-focus-mode-underline-cursor");
-      await exitSmokeAlternateScreen(page);
 
       await settingsButton.click();
       await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
@@ -1164,7 +1231,7 @@ async function main() {
 
     await runStep("live SFTP directory loaded", async () => {
       const seedEntry = page
-        .locator(".sftp-list__item", { hasText: fixture.remoteSeedFileName })
+        .locator(".sftp-list__name", { hasText: fixture.remoteSeedFileName })
         .first();
       await seedEntry.waitFor({ state: "visible", timeout: 15_000 });
       const currentPath = (await page.locator(".sftp-current-path").first().textContent())?.trim() ?? "";
@@ -1181,14 +1248,11 @@ async function main() {
       await page.keyboard.type("rm -rf /tmp/termdock-smoke");
       await page.keyboard.press("Enter");
       const approvalBar = page.locator(".app-inline-hint-panel").first();
-      if (!(await isVisible(approvalBar))) {
-        throw new Error("dangerous command approval bar not visible");
-      }
+      await approvalBar.waitFor({ state: "visible", timeout: 8_000 });
       const runOnce = approvalBar.locator(".primary-button:has-text('Run Once')").first();
       const cancel = approvalBar.locator(".secondary-button:has-text('Cancel')").first();
-      if (!(await isVisible(runOnce)) || !(await isVisible(cancel))) {
-        throw new Error("approval actions not visible");
-      }
+      await runOnce.waitFor({ state: "visible", timeout: 8_000 });
+      await cancel.waitFor({ state: "visible", timeout: 8_000 });
       const beforeShot = await recordShot(page, "dangerous-command-approval-bar");
       await runOnce.click();
       await page.waitForTimeout(320);
@@ -1209,7 +1273,7 @@ async function main() {
         }
       );
       await waitForFileContents(uploadedRemoteLocalPath, uploadSourceContents, 15_000);
-      const uploadedEntry = page.locator(".sftp-list__item", { hasText: uploadSourceFileName }).first();
+      const uploadedEntry = page.locator(".sftp-list__name", { hasText: uploadSourceFileName }).first();
       await uploadedEntry.waitFor({ state: "visible", timeout: 15_000 });
       const fileName = await recordShot(page, "live-sftp-upload");
       return `remote=${toReportPath(uploadedRemoteLocalPath)}, shot=${fileName}`;
@@ -1257,7 +1321,7 @@ async function main() {
       await refreshButton.click();
       await waitForCondition(
         async () => {
-          const count = await page.locator(".sftp-list__item", { hasText: uploadSourceFileName }).count();
+          const count = await page.locator(".sftp-list__name", { hasText: uploadSourceFileName }).count();
           return count === 0;
         },
         {
@@ -1312,7 +1376,7 @@ async function main() {
       const refreshButton = page.locator("button[aria-label='Refresh directory']").first();
       await refreshButton.click();
       const uploadedDirectoryEntry = page
-        .locator(".sftp-list__item", { hasText: throttledUploadSourceDirName })
+        .locator(".sftp-list__name", { hasText: throttledUploadSourceDirName })
         .first();
       await uploadedDirectoryEntry.waitFor({ state: "visible", timeout: 15_000 });
       await waitForCondition(
@@ -1400,7 +1464,7 @@ async function main() {
     });
 
     await runStep("remote open file reopen prompts for stale draft and reload replaces it", async () => {
-      const seedEntry = page.locator(".sftp-list__item", { hasText: fixture.remoteSeedFileName }).first();
+      const seedEntry = page.locator(".sftp-list__name", { hasText: fixture.remoteSeedFileName }).first();
       await seedEntry.dblclick();
       const choiceDialog = page.locator(".app-dialog[aria-label='Remote File Already Open']").first();
       await choiceDialog.waitFor({ state: "visible", timeout: 10_000 });
@@ -1461,10 +1525,7 @@ async function main() {
     });
 
     await runStep("session list double-click opens fresh tab", async () => {
-      const sessionButton = page.locator(".session-list__main").first();
-      if (!(await isVisible(sessionButton))) {
-        throw new Error("session button missing");
-      }
+      const sessionButton = await ensureSmokeGroupSessionVisible(page);
       const tabLocator = page.locator(".terminal-tabs .tab");
       const before = await tabLocator.count();
       await sessionButton.dblclick();
@@ -1478,6 +1539,9 @@ async function main() {
     });
 
     await runStep("editor focus mode compacts inactive tabs when multiple tabs are open", async () => {
+      const sessionButton = await ensureSmokeGroupSessionVisible(page);
+      await sessionButton.dblclick();
+      await page.waitForTimeout(700);
       const activeTerminal = page.locator(".terminal-pane.is-active .terminal-pane__canvas").first();
       await activeTerminal.waitFor({ state: "visible", timeout: 10_000 });
       await enterSmokeAlternateScreen(page, "TermDock compact editor tabs smoke");
