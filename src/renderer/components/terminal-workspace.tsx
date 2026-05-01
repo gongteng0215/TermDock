@@ -232,6 +232,7 @@ interface TerminalInstance {
   dataDisposable: IDisposable;
   renderDisposable: IDisposable;
   removeWheelListener: () => void;
+  appliedEditorStyleSignature: string | null;
 }
 
 const WHEEL_PIXELS_PER_LINE = 40;
@@ -253,6 +254,38 @@ const DEFAULT_TERMINAL_THEME: ITheme = {
   cursor: "#8fc9ff",
   selectionBackground: "#244e7f"
 };
+
+function buildTerminalEditorStyleSignature(options: {
+  isEditorMode: boolean;
+  themeId: TerminalEditorFocusThemeId;
+  typographyId: TerminalEditorFocusTypographyId;
+  fontId: TerminalEditorFocusFontId;
+  rhythmId: TerminalEditorFocusRhythmId;
+  cursorId: TerminalEditorFocusCursorId;
+}): string {
+  if (!options.isEditorMode) {
+    return "shell";
+  }
+  return `editor|${options.themeId}|${options.typographyId}|${options.fontId}|${options.rhythmId}|${options.cursorId}`;
+}
+
+function doesTerminalStyleSignatureAffectGrid(
+  previousSignature: string | null,
+  nextSignature: string
+): boolean {
+  if (previousSignature === nextSignature) {
+    return false;
+  }
+  if (previousSignature === null) {
+    return true;
+  }
+  const previousParts = previousSignature.split("|");
+  const nextParts = nextSignature.split("|");
+  if (previousParts[0] !== nextParts[0]) {
+    return true;
+  }
+  return previousParts[2] !== nextParts[2] || previousParts[3] !== nextParts[3] || previousParts[4] !== nextParts[4];
+}
 
 const DEFAULT_TERMINAL_TYPOGRAPHY = {
   fontSize: DEFAULT_TERMINAL_FONT_SIZE,
@@ -888,8 +921,20 @@ export function TerminalWorkspace({
   );
 
   useEffect(() => {
+    let shouldRefitActiveTerminal = false;
     for (const [tabId, instance] of terminalRefs.current.entries()) {
       const isEditorMode = editorFocusModeEnabled && (tabEditorModes[tabId] ?? false);
+      const nextSignature = buildTerminalEditorStyleSignature({
+        isEditorMode,
+        themeId: editorFocusThemeId,
+        typographyId: editorFocusTypographyId,
+        fontId: editorFocusFontId,
+        rhythmId: editorFocusRhythmId,
+        cursorId: editorFocusCursorId
+      });
+      if (instance.appliedEditorStyleSignature === nextSignature) {
+        continue;
+      }
       const nextTypography = isEditorMode
         ? getTerminalEditorFocusTypography(editorFocusTypographyId)
         : DEFAULT_TERMINAL_TYPOGRAPHY;
@@ -913,8 +958,15 @@ export function TerminalWorkspace({
       instance.terminal.options.fontWeightBold = nextRhythm.fontWeightBold;
       instance.terminal.options.cursorStyle = nextCursor.cursorStyle;
       instance.terminal.options.cursorWidth = nextCursor.cursorWidth;
+      if (
+        tabId === activeTabId &&
+        doesTerminalStyleSignatureAffectGrid(instance.appliedEditorStyleSignature, nextSignature)
+      ) {
+        shouldRefitActiveTerminal = true;
+      }
+      instance.appliedEditorStyleSignature = nextSignature;
     }
-    if (activeTabId) {
+    if (activeTabId && shouldRefitActiveTerminal) {
       fitTerminal(activeTabId);
       scheduleDeferredFit(activeTabId);
     }
@@ -2165,6 +2217,7 @@ export function TerminalWorkspace({
         fitAddon,
         dataDisposable,
         renderDisposable,
+        appliedEditorStyleSignature: null,
         removeWheelListener: () => {
           for (const target of wheelTargets) {
             target.removeEventListener("wheel", onWheel, WHEEL_CAPTURE);

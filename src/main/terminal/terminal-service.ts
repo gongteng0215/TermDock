@@ -47,6 +47,11 @@ import type {
 } from "../../shared/terminal.js";
 import type { CredentialStore } from "../security/credential-store.js";
 import { SessionStore } from "../storage/session-store.js";
+import {
+  shouldReportTransferProgress,
+  TRANSFER_PROGRESS_REPORT_BYTES,
+  TRANSFER_PROGRESS_REPORT_INTERVAL_MS
+} from "./transfer-progress.js";
 
 interface BaseTerminalConnection {
   tabId: string;
@@ -85,12 +90,15 @@ interface ActiveDownloadTransfer {
   transferId: string;
   localPath: string;
   canceled: boolean;
+  sftp?: SFTPWrapper;
   readStream?: NodeJS.ReadableStream;
   writeStream?: NodeJS.WritableStream;
 }
 
-const TRANSFER_PROGRESS_REPORT_INTERVAL_MS = 125;
-const TRANSFER_PROGRESS_REPORT_BYTES = 256 * 1024;
+interface ReusableUploadSftpEntry {
+  tabId: string;
+  sftp: SFTPWrapper;
+}
 
 interface ActivePortForwardBase {
   id: string;
@@ -161,6 +169,7 @@ export class TerminalService {
   private readonly portForwardConnectionCounters = new Map<string, number>();
   private readonly activeUploadTransfers = new Map<string, ActiveUploadTransfer>();
   private readonly activeDownloadTransfers = new Map<string, ActiveDownloadTransfer>();
+  private readonly reusableUploadSftpByTab = new Map<string, ReusableUploadSftpEntry[]>();
   private readonly pendingUploadCancelKeys = new Set<string>();
   private readonly pendingUploadCancelIds = new Set<string>();
   private readonly pendingDownloadCancelKeys = new Set<string>();
@@ -324,6 +333,7 @@ export class TerminalService {
     });
     connection.shell?.end();
     connection.sftp?.end();
+    this.clearReusableUploadSftp(connection.tabId);
     connection.client.end();
 
     try {
@@ -467,6 +477,7 @@ export class TerminalService {
     if (connection.mode === "ssh2") {
       connection.shell?.end();
       connection.sftp?.end();
+      this.clearReusableUploadSftp(connection.tabId);
       connection.client.end();
     } else {
       if (!connection.process.stdin.destroyed) {
@@ -717,6 +728,10 @@ export class TerminalService {
       return true;
     }
     transfer.canceled = true;
+    if (transfer.sftp) {
+      safeEndSftp(transfer.sftp);
+      return true;
+    }
     if (transfer.readStream && transfer.writeStream) {
       this.cancelStreamPair(transfer.readStream, transfer.writeStream);
       return true;
@@ -735,7 +750,6 @@ export class TerminalService {
     options?: SftpTransferRunOptions
   ): Promise<void> {
     const connection = this.getConnectedSsh2Connection(tabId);
-    const sftp = await this.ensureSftp(connection);
     const safeTransferId = normalizeTransferId(transferId);
     const normalizedRemotePath = normalizeRemotePath(remotePath);
     const normalizedLocalPath = normalizeLocalPath(localPath, "Local download path");
@@ -743,15 +757,6 @@ export class TerminalService {
     if (!fileName) {
       throw new Error("Remote file path is invalid.");
     }
-
-    const remoteStats = await this.statRemote(sftp, normalizedRemotePath);
-    if (((remoteStats.mode ?? 0) & 0o170000) === 0o040000) {
-      throw new Error("Downloading directories is not supported yet.");
-    }
-    const totalBytes =
-      typeof remoteStats.size === "number" && remoteStats.size > 0
-        ? remoteStats.size
-        : 0;
     const transferKey = toTransferKey(tabId, safeTransferId);
     if (this.activeDownloadTransfers.has(transferKey)) {
       throw new Error("Download transfer is already running.");
@@ -770,7 +775,27 @@ export class TerminalService {
     await mkdirLocalDirectory(dirnamePath(normalizedLocalPath), { recursive: true });
 
     let transferredBytes = 0;
+    let totalBytes = 0;
+    let downloadSftp: SFTPWrapper | undefined;
+    const rateLimitBytesPerSecond = normalizeSftpTransferRateLimitBytesPerSecond(
+      options?.rateLimitBytesPerSecond
+    );
     try {
+      const statSftp =
+        rateLimitBytesPerSecond || connection.closed ? await this.ensureSftp(connection) : await this.openSftpChannel(connection);
+      if (!rateLimitBytesPerSecond) {
+        downloadSftp = statSftp;
+        activeTransfer.sftp = statSftp;
+      }
+      const remoteStats = await this.statRemote(statSftp, normalizedRemotePath);
+      if (((remoteStats.mode ?? 0) & 0o170000) === 0o040000) {
+        throw new Error("Downloading directories is not supported yet.");
+      }
+      totalBytes =
+        typeof remoteStats.size === "number" && remoteStats.size > 0
+          ? remoteStats.size
+          : 0;
+
       this.emitTransfer(
         connection,
         this.createTransferEvent({
@@ -787,7 +812,26 @@ export class TerminalService {
         })
       );
 
-      const reportProgress = () => {
+      let lastReportedBytes = -1;
+      let lastReportedAt = 0;
+      const reportProgress = (force = false) => {
+        const now = Date.now();
+        if (
+          !shouldReportTransferProgress(
+            {
+              lastReportedBytes,
+              lastReportedAt
+            },
+            transferredBytes,
+            totalBytes || transferredBytes,
+            now,
+            force
+          )
+        ) {
+          return;
+        }
+        lastReportedBytes = transferredBytes;
+        lastReportedAt = now;
         this.emitTransfer(
           connection,
           this.createTransferEvent({
@@ -804,27 +848,87 @@ export class TerminalService {
         );
       };
 
-      reportProgress();
-      const readStream = sftp.createReadStream(normalizedRemotePath);
-      const writeStream = createWriteStream(normalizedLocalPath);
-      activeTransfer.readStream = readStream;
-      activeTransfer.writeStream = writeStream;
+      reportProgress(true);
       if (activeTransfer.canceled) {
         throw new TransferCanceledError();
       }
 
-      await this.pipeWithProgress({
-        readStream,
-        writeStream,
-        isCanceled: () => activeTransfer.canceled,
-        onChunk: (chunkSize) => {
-          transferredBytes += chunkSize;
-          reportProgress();
-        },
-        rateLimitBytesPerSecond: normalizeSftpTransferRateLimitBytesPerSecond(
-          options?.rateLimitBytesPerSecond
-        )
-      });
+      if (rateLimitBytesPerSecond) {
+        const sftp = statSftp;
+        const readStream = sftp.createReadStream(normalizedRemotePath);
+        const writeStream = createWriteStream(normalizedLocalPath);
+        activeTransfer.readStream = readStream;
+        activeTransfer.writeStream = writeStream;
+        await this.pipeWithProgress({
+          readStream,
+          writeStream,
+          isCanceled: () => activeTransfer.canceled,
+          onChunk: (chunkSize) => {
+            transferredBytes += chunkSize;
+            reportProgress();
+          },
+          rateLimitBytesPerSecond
+        });
+      } else {
+        const activeSftp = statSftp;
+        if (activeTransfer.canceled) {
+          throw new TransferCanceledError();
+        }
+        await new Promise<void>((resolve, reject) => {
+          let settled = false;
+          let cancelRequested = false;
+          const requestCancel = () => {
+            if (cancelRequested) {
+              return;
+            }
+            cancelRequested = true;
+            safeEndSftp(activeSftp);
+          };
+          const finalize = (error?: Error) => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            clearInterval(cancelPollTimer);
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          };
+          const cancelPollTimer = setInterval(() => {
+            if (!activeTransfer.canceled) {
+              return;
+            }
+            requestCancel();
+          }, 80);
+          activeSftp.fastGet(
+            normalizedRemotePath,
+            normalizedLocalPath,
+            {
+              fileSize: totalBytes,
+              step: (totalTransferred) => {
+                transferredBytes = Math.max(transferredBytes, totalTransferred);
+                reportProgress();
+                if (activeTransfer.canceled) {
+                  requestCancel();
+                }
+              }
+            },
+            (error) => {
+              if (activeTransfer.canceled) {
+                finalize(new TransferCanceledError());
+                return;
+              }
+              if (error) {
+                finalize(error);
+                return;
+              }
+              finalize();
+            }
+          );
+        });
+      }
       if (activeTransfer.canceled) {
         throw new TransferCanceledError();
       }
@@ -864,11 +968,11 @@ export class TerminalService {
         return;
       }
       if (shouldResetCachedSftp(error)) {
-        if (connection.sftp === sftp) {
+        if (connection.sftp === downloadSftp) {
           connection.sftp = undefined;
         }
         try {
-          sftp.end();
+          downloadSftp?.end();
         } catch {
           // Ignore cleanup failure for an already-broken channel.
         }
@@ -890,6 +994,10 @@ export class TerminalService {
       );
       throw error;
     } finally {
+      activeTransfer.readStream = undefined;
+      activeTransfer.writeStream = undefined;
+      activeTransfer.sftp = undefined;
+      safeEndSftp(downloadSftp);
       this.activeDownloadTransfers.delete(transferKey);
     }
   }
@@ -1542,6 +1650,7 @@ export class TerminalService {
     }
     let transferredBytes = 0;
     let uploadSftp: SFTPWrapper | undefined;
+    let reusableUploadSftp = false;
 
     try {
       this.emitTransfer(
@@ -1594,7 +1703,11 @@ export class TerminalService {
       };
 
       reportProgress(true);
-      uploadSftp = await this.openSftpChannel(connection);
+      uploadSftp = this.acquireReusableUploadSftp(connection);
+      reusableUploadSftp = Boolean(uploadSftp);
+      if (!uploadSftp) {
+        uploadSftp = await this.openSftpChannel(connection);
+      }
       activeTransfer.sftp = uploadSftp;
       const activeSftp = uploadSftp;
       if (activeTransfer.canceled) {
@@ -1690,6 +1803,11 @@ export class TerminalService {
           message: "completed"
         })
       );
+      if (rateLimitBytesPerSecond === undefined) {
+        this.releaseReusableUploadSftp(connection, uploadSftp);
+        reusableUploadSftp = false;
+        uploadSftp = undefined;
+      }
     } catch (error) {
       if (activeTransfer.canceled || error instanceof TransferCanceledError) {
         const cleanupSftp =
@@ -1740,7 +1858,9 @@ export class TerminalService {
       activeTransfer.readStream = undefined;
       activeTransfer.writeStream = undefined;
       activeTransfer.sftp = undefined;
-      safeEndSftp(uploadSftp);
+      if (!reusableUploadSftp) {
+        safeEndSftp(uploadSftp);
+      }
       this.activeUploadTransfers.delete(transferKey);
     }
   }
@@ -1812,6 +1932,60 @@ export class TerminalService {
     const cachedSftp = connection.sftp;
     connection.sftp = undefined;
     safeEndSftp(cachedSftp);
+  }
+
+  private acquireReusableUploadSftp(connection: Ssh2TerminalConnection): SFTPWrapper | undefined {
+    const pool = this.reusableUploadSftpByTab.get(connection.tabId);
+    if (!pool || pool.length === 0) {
+      return undefined;
+    }
+    while (pool.length > 0) {
+      const next = pool.pop();
+      if (!next) {
+        break;
+      }
+      if (connection.closed) {
+        safeEndSftp(next.sftp);
+        continue;
+      }
+      return next.sftp;
+    }
+    if (pool.length === 0) {
+      this.reusableUploadSftpByTab.delete(connection.tabId);
+    }
+    return undefined;
+  }
+
+  private releaseReusableUploadSftp(
+    connection: Ssh2TerminalConnection,
+    sftp: SFTPWrapper | undefined
+  ): void {
+    if (!sftp) {
+      return;
+    }
+    if (connection.closed || this.connections.get(connection.tabId) !== connection) {
+      safeEndSftp(sftp);
+      return;
+    }
+    const pool = this.reusableUploadSftpByTab.get(connection.tabId) ?? [];
+    if (!this.reusableUploadSftpByTab.has(connection.tabId)) {
+      this.reusableUploadSftpByTab.set(connection.tabId, pool);
+    }
+    pool.push({
+      tabId: connection.tabId,
+      sftp
+    });
+  }
+
+  private clearReusableUploadSftp(tabId: string): void {
+    const pool = this.reusableUploadSftpByTab.get(tabId);
+    if (!pool) {
+      return;
+    }
+    this.reusableUploadSftpByTab.delete(tabId);
+    for (const entry of pool) {
+      safeEndSftp(entry.sftp);
+    }
   }
 
   private async executeRemoteCommand(
