@@ -72,10 +72,37 @@ import {
   ServerHealthInspectorSection,
   SessionsInspectorSection
 } from "./components/workbench-panels";
+import { CommandSnippetManagerModal } from "./components/command-snippet-manager-modal";
+import { SettingsModalShell } from "./components/settings-modal-shell";
+import {
+  ConnectionSettingsSection,
+  DiagnosticsSettingsSection,
+  FileOpeningSettingsSection,
+  HotkeySettingsSection,
+  PortForwardingSettingsSection,
+  ServerHealthSettingsSection,
+  SftpSettingsSection,
+  WorkspaceSettingsSection
+} from "./components/settings-sections";
+import {
+  CommandHistoryManagerModal,
+  OperationCenterModal,
+  RetryCenterModal
+} from "./components/workbench-modals";
 import {
   WorkbenchExplorerSidebar,
   WorkbenchInspectorSidebar
 } from "./components/workbench-sidebars";
+import {
+  readCommandHistoryInspectorCollapsed,
+  readInspectorSidebarTabId,
+  readSftpExplorerViewMode,
+  type InspectorSidebarTabId,
+  type SftpExplorerViewMode,
+  writeCommandHistoryInspectorCollapsed,
+  writeInspectorSidebarTabId,
+  writeSftpExplorerViewMode
+} from "./workbench-ui-preferences";
 import {
   createDefaultDangerousCommandGuardPreferences,
   findDangerousCommandGroupAssignment,
@@ -119,7 +146,6 @@ const TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY = "termdock.terminal-editor-
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const HOTKEY_CONFLICT_NAV_STORAGE_KEY = "termdock.hotkey-conflict-nav.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
-const SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY = "termdock.sftp-explorer-view-mode.v1";
 const LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
 const PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v2";
 const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v3";
@@ -144,8 +170,6 @@ const SESSION_QUICK_PROFILES_STORAGE_KEY = "termdock.session-quick-profiles.v1";
 const SESSION_TEMPLATES_STORAGE_KEY = "termdock.session-templates.v1";
 const COMMAND_SNIPPET_GROUPS_STORAGE_KEY = "termdock.command-snippet-groups.v1";
 const COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY = "termdock.command-snippet-scoped-values.v1";
-const COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY = "termdock.command-history-inspector-collapsed.v1";
-const INSPECTOR_SIDEBAR_TAB_STORAGE_KEY = "termdock.inspector-sidebar-tab.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY =
   "termdock.dangerous-command-guard-preferences.v1";
@@ -302,8 +326,6 @@ type SettingsSectionId =
   | "portForwarding"
   | "diagnostics";
 type SessionSortMode = "default" | "nameAsc" | "nameDesc" | "recent";
-type SftpExplorerViewMode = "compact" | "details";
-type InspectorSidebarTabId = "sessions" | "health" | "history";
 type TransferHistoryScope = "activeSession" | "allSessions";
 type TransferHistoryDirectionFilter = "all" | SftpTransferEvent["direction"];
 type TransferHistoryStatusFilter = "all" | SftpTransferEvent["status"];
@@ -3717,31 +3739,6 @@ function readFileOpenPreferences(): FileOpenPreferences {
   }
 }
 
-function readCommandHistoryInspectorCollapsed(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  try {
-    return window.localStorage.getItem(COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function readInspectorSidebarTabId(): InspectorSidebarTabId {
-  if (typeof window === "undefined") {
-    return "sessions";
-  }
-  try {
-    const rawValue = window.localStorage.getItem(INSPECTOR_SIDEBAR_TAB_STORAGE_KEY);
-    return rawValue === "sessions" || rawValue === "health" || rawValue === "history"
-      ? rawValue
-      : "sessions";
-  } catch {
-    return "sessions";
-  }
-}
-
 function readSftpTransferPreferences(): SftpTransferPreferences {
   if (typeof window === "undefined") {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
@@ -3774,18 +3771,6 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
       : normalized;
   } catch {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
-  }
-}
-
-function readSftpExplorerViewMode(): SftpExplorerViewMode {
-  if (typeof window === "undefined") {
-    return "details";
-  }
-  try {
-    const rawValue = window.localStorage.getItem(SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY);
-    return rawValue === "compact" || rawValue === "details" ? rawValue : "details";
-  } catch {
-    return "details";
   }
 }
 
@@ -5871,6 +5856,68 @@ export function App() {
     () => getWorkspaceProfileOption(workspaceProfilePreferences.profileId),
     [workspaceProfilePreferences.profileId]
   );
+  const workspaceProfileCardViews = useMemo(
+    () =>
+      WORKSPACE_PROFILE_OPTIONS.map((profile) => {
+        const template =
+          DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find((entry) => entry.id === profile.id) ??
+          DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0];
+        const recommendedPackLabel =
+          DANGEROUS_COMMAND_POLICY_PACKS.find(
+            (pack) => pack.id === template.recommendedPolicyPackId
+          )?.label ?? template.recommendedPolicyPackId;
+        return {
+          id: profile.id,
+          label: profile.label,
+          description: profile.description,
+          safetyDefaultLabel: `Safety default: ${template.label} / ${recommendedPackLabel}`
+        };
+      }),
+    []
+  );
+  const hotkeySettingRowViews = useMemo(
+    () =>
+      HOTKEY_ACTION_ORDER.map((action) => {
+        const binding = hotkeyPreferences[action];
+        return {
+          actionId: action,
+          description: getHotkeyActionDescription(action),
+          enabled: binding.enabled,
+          bindingLabel: formatHotkeyBindingLabel(binding, isMacPlatform),
+          isConflicting: hotkeyConflictActionSet.has(action),
+          isFocused: hotkeyFocusedAction === action,
+          conflictBindingLabel: hotkeyConflictBindingByAction.get(action) ?? "",
+          modifier: binding.modifier,
+          key: binding.key
+        };
+      }),
+    [
+      hotkeyConflictActionSet,
+      hotkeyConflictBindingByAction,
+      hotkeyFocusedAction,
+      hotkeyPreferences,
+      isMacPlatform
+    ]
+  );
+  const hotkeyConflictViews = useMemo(
+    () =>
+      hotkeyConflicts.map((conflict, index) => ({
+        signature: conflict.signature,
+        bindingLabel: formatHotkeyBindingLabel(
+          {
+            enabled: true,
+            modifier: conflict.modifier,
+            key: conflict.key
+          },
+          isMacPlatform
+        ),
+        actionSummary: conflict.actions
+          .map((action) => getHotkeyActionDescription(action))
+          .join(" / "),
+        isActive: index === hotkeyConflictCursorIndex
+      })),
+    [hotkeyConflicts, hotkeyConflictCursorIndex, isMacPlatform]
+  );
   const selectedTerminalEditorFocusTheme = useMemo(
     () =>
       TERMINAL_EDITOR_FOCUS_THEME_OPTIONS.find(
@@ -5964,6 +6011,17 @@ export function App() {
   const allVisibleCommandHistorySelected =
     visibleCommandHistoryIds.length > 0 &&
     visibleCommandHistoryIds.every((entryId) => selectedCommandHistoryIdSet.has(entryId));
+  const visibleTerminalCommandHistoryEntryViews = useMemo(
+    () =>
+      visibleTerminalCommandHistoryEntries.map((entry) => ({
+        id: entry.id,
+        command: entry.command,
+        selected: selectedCommandHistoryIdSet.has(entry.id),
+        metaLabel: `${formatHistoryTimestamp(entry.executedAt)} | ${formatTerminalCommandHistorySourceLabel(entry.source)}`,
+        title: `${entry.command}\n\nSource: ${formatTerminalCommandHistorySourceLabel(entry.source)}\n\nDouble-click command text area to paste into active terminal.`
+      })),
+    [selectedCommandHistoryIdSet, visibleTerminalCommandHistoryEntries]
+  );
   const copyTerminalCommandHistoryEntry = useCallback(
     async (entry: TerminalCommandHistoryEntry) => {
       try {
@@ -6378,6 +6436,85 @@ export function App() {
       download: strategy?.download ?? null
     };
   }, [activeSessionId, sessionTransferConflictStrategyState.bySessionId]);
+  const sftpScheduleDayViews = useMemo(
+    () =>
+      SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS.map((dayOption) => ({
+        value: dayOption.value,
+        label: dayOption.label,
+        checked: sftpTransferPreferences.scheduleWindowDays.includes(dayOption.value)
+      })),
+    [sftpTransferPreferences.scheduleWindowDays]
+  );
+  const sftpSchedulePresetViews = useMemo(
+    () =>
+      SFTP_TRANSFER_SCHEDULE_PRESETS.map((preset) => {
+        const presetPreferences = createSftpTransferSchedulePreferencesFromPreset(preset);
+        return {
+          id: preset.id,
+          label: preset.label,
+          description: preset.description,
+          summary: preset.scheduleWindowEnabled
+            ? formatSftpTransferScheduleWindowSummary(presetPreferences)
+            : "No schedule restriction",
+          isActive: preset.id === activeSftpTransferSchedulePresetId
+        };
+      }),
+    [activeSftpTransferSchedulePresetId]
+  );
+  const sftpTransferPolicyPackViews = useMemo(
+    () =>
+      sftpTransferPolicyPacks.map((pack) => ({
+        id: pack.id,
+        name: pack.name,
+        summary: formatSftpTransferPolicyPackSummary(pack.preferences),
+        updatedAtLabel: formatPortForwardTimestamp(pack.updatedAtIso),
+        description: pack.description || undefined
+      })),
+    [sftpTransferPolicyPacks]
+  );
+  const sftpTransferPolicyPackLastSyncLabel = useMemo(() => {
+    const { lastPulledAtIso, lastPushedAtIso } = sftpTransferPolicyPackSyncState;
+    if (!lastPulledAtIso && !lastPushedAtIso) {
+      return null;
+    }
+    return `Last pull: ${
+      lastPulledAtIso ? new Date(lastPulledAtIso).toLocaleString() : "never"
+    } | last push: ${lastPushedAtIso ? new Date(lastPushedAtIso).toLocaleString() : "never"}`;
+  }, [
+    sftpTransferPolicyPackSyncState.lastPulledAtIso,
+    sftpTransferPolicyPackSyncState.lastPushedAtIso
+  ]);
+  const sftpConcurrencyHint = `Controls max parallel upload/download tasks. Range: 1-${MAX_SFTP_TRANSFER_CONCURRENCY}. New installs default uploads to 4 and downloads to 2.`;
+  const sftpRateLimitHint = `Per-direction rate limit uses KiB/s. Set 0 to disable throttling. Current upload limit: ${
+    sftpTransferPreferences.uploadRateLimitKiBps > 0
+      ? `${sftpTransferPreferences.uploadRateLimitKiBps} KiB/s`
+      : "unlimited"
+  }. Current download limit: ${
+    sftpTransferPreferences.downloadRateLimitKiBps > 0
+      ? `${sftpTransferPreferences.downloadRateLimitKiBps} KiB/s`
+      : "unlimited"
+  }.`;
+  const sftpScheduleHint = `Schedule window:${
+    sftpTransferPreferences.scheduleWindowEnabled
+      ? ` ${sftpTransferScheduleSummary}. Transfers are currently ${
+          isSftpTransferWindowOpen ? "inside" : "outside"
+        } the allowed window.${
+          !isSftpTransferWindowOpen && nextSftpTransferWindowOpeningLabel
+            ? ` Next queued transfer resume: ${nextSftpTransferWindowOpeningLabel}.`
+            : ""
+        }`
+      : " disabled; queued transfers start immediately when threads are available."
+  }`;
+  const sftpRetryThresholdHint = `Large retry batches at or above this threshold require confirmation. Set to 0 to disable confirmations. Range: ${MIN_RETRY_BATCH_CONFIRM_THRESHOLD}-${MAX_RETRY_BATCH_CONFIRM_THRESHOLD}.`;
+  const sftpActiveSessionConflictHint = `Active-session conflict defaults:${
+    activeSessionId
+      ? ` Upload ${formatTransferConflictStrategyLabel(
+          activeSessionTransferConflictStrategy?.upload
+        )}, Download ${formatTransferConflictStrategyLabel(
+          activeSessionTransferConflictStrategy?.download
+        )}.`
+      : " Open a terminal tab to configure remembered conflict behavior."
+  }`;
   const visibleDisconnectReports = useMemo(() => {
     let filtered = disconnectReports;
     if (disconnectReportScope === "activeSession") {
@@ -6420,6 +6557,59 @@ export function App() {
     disconnectReportTriggerFilter,
     disconnectReports
   ]);
+  const openTerminalTabIdSet = useMemo(
+    () => new Set(terminalTabs.map((tab) => tab.id)),
+    [terminalTabs]
+  );
+  const diagnosticsLogDirectoryPath = logInfo?.logDirectoryPath ?? "Not loaded yet";
+  const diagnosticsLogFilePath = logInfo?.logFilePath ?? "Not loaded yet";
+  const diagnosticsDisconnectCaptureHint = disconnectReportCapturePreferences.enabled
+    ? "Unexpected disconnects are auto-captured with connection and transfer context. Use export when reporting random disconnect issues."
+    : "Auto capture is disabled. Re-enable it to collect future disconnect reports automatically.";
+  const diagnosticsDisconnectEmptyStateLabel =
+    disconnectReports.length === 0
+      ? "No disconnect reports captured yet."
+      : "No disconnect reports match the current filter.";
+  const diagnosticsDisconnectReportViews = useMemo(
+    () =>
+      visibleDisconnectReports.slice(0, 50).map((report) => {
+        const transferActive =
+          report.uploadRunning +
+          report.uploadQueued +
+          report.downloadRunning +
+          report.downloadQueued;
+        return {
+          id: report.id,
+          title: `${formatPortForwardTimestamp(report.createdAt)} | ${report.sessionName}`,
+          metaLines: [
+            `${report.tabTitle} | ${report.target}`,
+            `Trigger: ${
+              report.trigger === "error"
+                ? `error (${report.message})`
+                : `${report.status ?? "closed"} (${report.message})`
+            }`,
+            `Transfers active: ${transferActive} (up ${report.uploadRunning}/${report.uploadQueued}, down ${report.downloadRunning}/${report.downloadQueued}) | Port forwards: ${report.portForwardTotal} (${report.portForwardDegraded} degraded)`,
+            `Tabs: ${report.connectedTabCount}/${report.openTabCount} connected | Auto reconnect: ${
+              report.autoReconnect ? `on (${report.reconnectDelaySeconds}s)` : "off"
+            }`
+          ],
+          recentFailuresLabel:
+            report.recentFailures.length > 0
+              ? report.recentFailures
+                  .slice(0, 3)
+                  .map(
+                    (failure) =>
+                      `${failure.direction}:${failure.name} (${classifyTransferFailureReason(
+                        failure.message
+                      )})`
+                  )
+                  .join(" | ")
+              : null,
+          canFocusTab: openTerminalTabIdSet.has(report.tabId)
+        };
+      }),
+    [openTerminalTabIdSet, visibleDisconnectReports]
+  );
   const hasCustomizedDisconnectReportView =
     disconnectReportScope !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.scope ||
     disconnectReportTriggerFilter !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.trigger ||
@@ -6586,6 +6776,76 @@ export function App() {
     setPortForwardEventErrorCode(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.errorCode);
     setPortForwardEventCorrelationQuery(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.correlationQuery);
   }, []);
+  const portForwardActiveTabSummary = activeTerminalTab
+    ? `${activeTerminalTab.title} (${isActiveTabConnected ? "connected" : "disconnected"})`
+    : "None";
+  const portForwardPresetViews = useMemo(
+    () =>
+      activePortForwardPresets.map((preset) => ({
+        id: preset.id,
+        name: preset.name,
+        summary: formatPortForwardPreset(preset),
+        updatedAtLabel: new Date(preset.updatedAt).toLocaleString(),
+        autoRestore: preset.autoRestore
+      })),
+    [activePortForwardPresets]
+  );
+  const portForwardRecordViews = useMemo(
+    () =>
+      portForwards.map((forward) => ({
+        id: forward.id,
+        title: formatPortForwardRecord(forward),
+        statusLabel: getPortForwardStatusLabel(forward),
+        statusTone: (forward.status === "degraded" ? "degraded" : "active") as
+          | "active"
+          | "degraded",
+        createdAtLabel: new Date(forward.createdAt).toLocaleString(),
+        connectionsLabel: `Connections ${forward.totalConnections} (failed ${forward.failedConnections})`,
+        lastActivityLabel: forward.lastActivityAt
+          ? formatPortForwardTimestamp(forward.lastActivityAt)
+          : null,
+        lastErrorLabel: forward.lastError
+          ? `Last error (${formatPortForwardTimestamp(forward.lastErrorAt)}): ${forward.lastError}`
+          : null
+      })),
+    [portForwards]
+  );
+  const portForwardEventViews = useMemo(
+    () =>
+      visiblePortForwardEventHistory.map((event) => ({
+        id: event.id,
+        title: `${formatPortForwardEventType(event.type)} ${formatPortForwardEventSummary(event)}`,
+        meta: `${formatPortForwardTimestamp(event.createdAt)} | ${event.level.toUpperCase()}`,
+        correlation: formatPortForwardEventCorrelation(event) || null,
+        message: event.message,
+        isError: event.level === "error"
+      })),
+    [visiblePortForwardEventHistory]
+  );
+  const portForwardAnalyticsView = useMemo(
+    () => ({
+      errorRatioLabel: formatPercent(portForwardVisibleEventAnalytics.errorRatioPercent),
+      errorsLabel: `Errors ${portForwardVisibleEventAnalytics.totalErrors}/${portForwardVisibleEventAnalytics.totalVisible}`,
+      typeBreakdownPrimary: `created ${portForwardVisibleEventAnalytics.typeCounts.created} | removed ${portForwardVisibleEventAnalytics.typeCounts.removed}`,
+      typeBreakdownSecondary: `degraded ${portForwardVisibleEventAnalytics.typeCounts.statusDegraded} | recovered ${portForwardVisibleEventAnalytics.typeCounts.statusRecovered}`,
+      topErrorCodesLabel:
+        portForwardVisibleEventAnalytics.topErrorCodes.length > 0
+          ? portForwardVisibleEventAnalytics.topErrorCodes
+              .map((entry) => `${entry.code} (${entry.count})`)
+              .join(" | ")
+          : "No error code data",
+      topCorrelationsLabel:
+        portForwardVisibleEventAnalytics.topCorrelations.length > 0
+          ? portForwardVisibleEventAnalytics.topCorrelations
+              .map((entry) => `${entry.correlationKey} (${entry.count})`)
+              .join(" | ")
+          : "No correlation key data"
+    }),
+    [portForwardVisibleEventAnalytics]
+  );
+  const portForwardEventSummaryLabel = `Session history ${activePortForwardEventHistory.length}, visible ${visiblePortForwardEventHistory.length}${
+    portForwardEventTimeRange !== "all" ? `, range ${portForwardEventTimeRange}` : ""
+  }${portForwardEventErrorCode !== "all" ? `, code ${portForwardEventErrorCode}` : ""}`;
   const sessionContextTarget = useMemo(() => {
     const target = sessionContextMenu?.target;
     if (!target || target.type !== "session") {
@@ -7094,6 +7354,77 @@ export function App() {
     },
     []
   );
+  const setRetryBatchConfirmThresholdFromInput = useCallback((rawValue: string) => {
+    setRetryBatchConfirmThreshold((prev) =>
+      parseRetryBatchConfirmThreshold(Number(rawValue), prev)
+    );
+  }, []);
+  const clearActiveSessionUploadConflictDefault = useCallback(() => {
+    if (!activeSessionId) {
+      return;
+    }
+    clearSessionTransferConflictStrategy(activeSessionId, "upload");
+    showTransferDockNotice(
+      activeTabId ?? "",
+      "info",
+      "Cleared remembered upload conflict default for active session.",
+      5000
+    );
+  }, [activeSessionId, activeTabId, clearSessionTransferConflictStrategy, showTransferDockNotice]);
+  const clearActiveSessionDownloadConflictDefault = useCallback(() => {
+    if (!activeSessionId) {
+      return;
+    }
+    clearSessionTransferConflictStrategy(activeSessionId, "download");
+    showTransferDockNotice(
+      activeTabId ?? "",
+      "info",
+      "Cleared remembered download conflict default for active session.",
+      5000
+    );
+  }, [activeSessionId, activeTabId, clearSessionTransferConflictStrategy, showTransferDockNotice]);
+  const clearActiveSessionConflictDefaults = useCallback(() => {
+    if (!activeSessionId) {
+      return;
+    }
+    clearSessionTransferConflictStrategy(activeSessionId);
+    showTransferDockNotice(
+      activeTabId ?? "",
+      "info",
+      "Cleared all remembered conflict defaults for active session.",
+      5000
+    );
+  }, [activeSessionId, activeTabId, clearSessionTransferConflictStrategy, showTransferDockNotice]);
+  const setPortForwardFormType = useCallback((value: string) => {
+    setPortForwardForm((prev) => ({
+      ...prev,
+      type: value as CreatePortForwardInput["type"]
+    }));
+  }, []);
+  const setPortForwardFormBindHost = useCallback((value: string) => {
+    setPortForwardForm((prev) => ({
+      ...prev,
+      bindHost: value
+    }));
+  }, []);
+  const setPortForwardFormBindPort = useCallback((value: string) => {
+    setPortForwardForm((prev) => ({
+      ...prev,
+      bindPort: value
+    }));
+  }, []);
+  const setPortForwardFormTargetHost = useCallback((value: string) => {
+    setPortForwardForm((prev) => ({
+      ...prev,
+      targetHost: value
+    }));
+  }, []);
+  const setPortForwardFormTargetPort = useCallback((value: string) => {
+    setPortForwardForm((prev) => ({
+      ...prev,
+      targetPort: value
+    }));
+  }, []);
   useEffect(() => {
     return () => {
       if (transferDockNoticeTimerRef.current !== null) {
@@ -7580,6 +7911,13 @@ export function App() {
     const info = await systemApi.getLogInfo();
     setLogInfo(info);
   }, [systemApi]);
+  const refreshDiagnosticsLogInfo = useCallback(() => {
+    void refreshLogInfo().catch((caughtError) => {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:diagnostics", "Failed to refresh log info.", caughtError);
+    });
+  }, [refreshLogInfo, writeAppLog]);
   const setPortForwardsForTab = useCallback((tabId: string, records: PortForwardRecord[]) => {
     const normalizedTabId = tabId.trim();
     if (!normalizedTabId) {
@@ -8550,6 +8888,48 @@ export function App() {
     },
     [showAppConfirm]
   );
+  const refreshActivePortForwards = useCallback(() => {
+    if (!activeTabId) {
+      return;
+    }
+    void refreshPortForwards(activeTabId);
+  }, [activeTabId, refreshPortForwards]);
+  const refreshActivePortForwardDiagnostics = useCallback(() => {
+    if (!activeTabId) {
+      return;
+    }
+    void Promise.all([refreshPortForwards(activeTabId), refreshPortForwardEvents(activeTabId)]);
+  }, [activeTabId, refreshPortForwardEvents, refreshPortForwards]);
+  const fillPortForwardFormFromActivePreset = useCallback(
+    (presetId: string) => {
+      const preset = activePortForwardPresets.find((entry) => entry.id === presetId) ?? null;
+      if (!preset) {
+        return;
+      }
+      setPortForwardForm(toPortForwardFormFromPreset(preset));
+    },
+    [activePortForwardPresets]
+  );
+  const applyActivePortForwardPreset = useCallback(
+    (presetId: string) => {
+      const preset = activePortForwardPresets.find((entry) => entry.id === presetId) ?? null;
+      if (!preset) {
+        return;
+      }
+      void applyPortForwardPreset(preset);
+    },
+    [activePortForwardPresets, applyPortForwardPreset]
+  );
+  const deleteActivePortForwardPreset = useCallback(
+    (presetId: string) => {
+      const preset = activePortForwardPresets.find((entry) => entry.id === presetId) ?? null;
+      if (!preset) {
+        return;
+      }
+      void deletePortForwardPreset(preset);
+    },
+    [activePortForwardPresets, deletePortForwardPreset]
+  );
   const restorePortForwardPresetsForTab = useCallback(
     async (tabId: string, sessionId: string): Promise<void> => {
       if (autoRestoredPortForwardTabsRef.current.has(tabId)) {
@@ -8631,6 +9011,16 @@ export function App() {
       }
     },
     [setPortForwardStatusMessageForTab, showAppConfirm, terminalApi, writeAppLog]
+  );
+  const removeVisiblePortForward = useCallback(
+    (forwardId: string) => {
+      const forward = portForwards.find((entry) => entry.id === forwardId) ?? null;
+      if (!forward) {
+        return;
+      }
+      void removePortForward(forward);
+    },
+    [portForwards, removePortForward]
   );
   const showAppChoice = useCallback(
     async (
@@ -9297,6 +9687,21 @@ export function App() {
     () => operationCenterAppJobs.filter((entry) => entry.status === "running").length,
     [operationCenterAppJobs]
   );
+  const operationCenterRecentAppJobViews = useMemo(
+    () =>
+      operationCenterRecentAppJobs.map((job) => ({
+        id: job.id,
+        title: job.title,
+        categoryLabel: formatOperationCenterAppJobCategoryLabel(job.category),
+        startedAtLabel: formatHistoryTimestamp(job.startedAt),
+        durationLabel: formatOperationCenterAppJobDuration(job.startedAt, job.finishedAt),
+        detail: job.detail?.trim() || job.description,
+        outputPath: job.outputPath,
+        stateClassName: getOperationCenterAppJobStateClass(job.status),
+        stateLabel: formatOperationCenterAppJobStatusLabel(job.status)
+      })),
+    [operationCenterRecentAppJobs]
+  );
   const operationCenterFinishedAppJobCount = useMemo(
     () => operationCenterAppJobs.filter((entry) => entry.status !== "running").length,
     [operationCenterAppJobs]
@@ -9315,6 +9720,9 @@ export function App() {
     (portForwardBusy ? 1 : 0) +
     operationCenterRunningAppJobCount;
   const hasOperationCenterActivity = operationCenterActiveCount > 0;
+  const operationCenterDeleteProgressLabel = sftpDeleteProgress
+    ? `Deleting ${sftpDeleteProgress.kind === "directory" ? "directory" : "file"} "${sftpDeleteProgress.name}"...`
+    : null;
   const retryCenterSessionMetaById = useMemo(() => {
     const map = new Map<string, { sessionName: string; groupName: string }>();
     for (const session of sessions) {
@@ -11462,30 +11870,15 @@ export function App() {
   }, [connectionPreferences]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY, sftpExplorerViewMode);
-    } catch {
-      // Ignore storage failures; runtime settings still apply for this launch.
-    }
+    writeSftpExplorerViewMode(sftpExplorerViewMode);
   }, [sftpExplorerViewMode]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY,
-        isCommandHistoryInspectorCollapsed ? "true" : "false"
-      );
-    } catch {
-      // Ignore storage failures; runtime settings still apply for this launch.
-    }
+    writeCommandHistoryInspectorCollapsed(isCommandHistoryInspectorCollapsed);
   }, [isCommandHistoryInspectorCollapsed]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(INSPECTOR_SIDEBAR_TAB_STORAGE_KEY, activeInspectorSidebarTab);
-    } catch {
-      // Ignore storage failures; runtime settings still apply for this launch.
-    }
+    writeInspectorSidebarTabId(activeInspectorSidebarTab);
   }, [activeInspectorSidebarTab]);
 
   useEffect(() => {
@@ -15851,6 +16244,67 @@ export function App() {
     }
     setCommandSnippetScopedValues({});
   }, [commandSnippetScopedValues, showAppConfirm]);
+  const importCommandSnippetGroupsWithUiError = useCallback(() => {
+    void importCommandSnippetGroups().catch((caughtError) => {
+      setError(toLogMessage(caughtError));
+    });
+  }, [importCommandSnippetGroups]);
+  const selectCommandSnippetManagerGroup = useCallback(
+    (groupId: string) => {
+      const nextGroup = commandSnippetGroups.find((group) => group.id === groupId);
+      setCommandSnippetManagerGroupId(groupId);
+      setCommandSnippetManagerSnippetId(nextGroup?.snippets[0]?.id ?? "");
+    },
+    [commandSnippetGroups]
+  );
+  const selectCommandSnippetManagerSnippet = useCallback((snippetId: string) => {
+    setCommandSnippetManagerSnippetId(snippetId);
+  }, []);
+  const runCommandSnippetManagerSnippetById = useCallback(
+    (snippetId: string) => {
+      if (!selectedCommandSnippetManagerGroup) {
+        return;
+      }
+      const snippet =
+        selectedCommandSnippetManagerGroup.snippets.find((entry) => entry.id === snippetId) ?? null;
+      if (!snippet) {
+        return;
+      }
+      setCommandSnippetManagerSnippetId(snippetId);
+      void runCommandSnippet(snippet, selectedCommandSnippetManagerGroup.id);
+    },
+    [runCommandSnippet, selectedCommandSnippetManagerGroup]
+  );
+  const normalizeSelectedCommandSnippetManagerGroupName = useCallback(() => {
+    if (!selectedCommandSnippetManagerGroup) {
+      return;
+    }
+    if (selectedCommandSnippetManagerGroup.name.trim()) {
+      return;
+    }
+    updateCommandSnippetManagerGroupName(selectedCommandSnippetManagerGroup.id, "Unnamed Group");
+  }, [selectedCommandSnippetManagerGroup, updateCommandSnippetManagerGroupName]);
+  const normalizeSelectedCommandSnippetManagerSnippetName = useCallback(() => {
+    if (!selectedCommandSnippetManagerSnippet) {
+      return;
+    }
+    if (selectedCommandSnippetManagerSnippet.name.trim()) {
+      return;
+    }
+    updateCommandSnippetManagerSnippetName(selectedCommandSnippetManagerSnippet.id, "Unnamed Snippet");
+  }, [selectedCommandSnippetManagerSnippet, updateCommandSnippetManagerSnippetName]);
+  const normalizeSelectedCommandSnippetManagerPromptSetName = useCallback(() => {
+    if (!selectedCommandSnippetManagerPromptSet) {
+      return;
+    }
+    if (selectedCommandSnippetManagerPromptSet.name.trim()) {
+      return;
+    }
+    updateCommandSnippetManagerPromptSetName(
+      selectedCommandSnippetManagerPromptSet.id,
+      "Unnamed Prompt Set"
+    );
+  }, [selectedCommandSnippetManagerPromptSet, updateCommandSnippetManagerPromptSetName]);
 
   const closeTerminalTabs = useCallback((tabIds: string[]) => {
     const uniqueTabIds = Array.from(new Set(tabIds.filter(Boolean)));
@@ -18351,6 +18805,14 @@ export function App() {
   const exportBugReportFromError = useCallback(() => {
     void exportBugReportBundle();
   }, [exportBugReportBundle]);
+  const setDisconnectReportCaptureEnabled = useCallback((enabled: boolean) => {
+    setDisconnectReportCapturePreferences({
+      enabled
+    });
+  }, []);
+  const setDisconnectReportQueryValue = useCallback((value: string) => {
+    setDisconnectReportQuery(value.slice(0, 160));
+  }, []);
 
   const copyDisconnectReportJson = useCallback(
     async (report: DisconnectReportItem) => {
@@ -18379,6 +18841,26 @@ export function App() {
       }
     },
     [showAppAlert, writeAppLog]
+  );
+  const copyVisibleDisconnectReportJsonById = useCallback(
+    (reportId: string) => {
+      const report = visibleDisconnectReports.find((entry) => entry.id === reportId) ?? null;
+      if (!report) {
+        return;
+      }
+      void copyDisconnectReportJson(report);
+    },
+    [copyDisconnectReportJson, visibleDisconnectReports]
+  );
+  const focusVisibleDisconnectReportTab = useCallback(
+    (reportId: string) => {
+      const report = visibleDisconnectReports.find((entry) => entry.id === reportId) ?? null;
+      if (!report) {
+        return;
+      }
+      setActiveTabId(report.tabId);
+    },
+    [visibleDisconnectReports]
   );
 
   const exportDisconnectReportsJson = useCallback(async () => {
@@ -23716,1909 +24198,324 @@ export function App() {
         }}
       />
 
-      {isOperationCenterOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <div
-            className="modal modal--operation-center"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Operation Center"
-          >
-            <div className="modal__header">
-              <h3>Operation Center</h3>
-              <button className="icon-button" onClick={closeOperationCenter} type="button">
-                <UiIcon name="close" />
-              </button>
-            </div>
-            <p className="hint">
-              Consolidated view for long-running operations across open workspace tabs.
-            </p>
-            <div className="operation-center__grid">
-              <article className="operation-center__card">
-                <div className="operation-center__card-header">
-                  <p className="operation-center__title">Upload Queue</p>
-                  <span
-                    className={
-                      operationCenterUploadSummary.running + operationCenterUploadSummary.queued > 0
-                        ? "operation-center__state is-active"
-                        : "operation-center__state is-idle"
-                    }
-                  >
-                    {operationCenterUploadSummary.running + operationCenterUploadSummary.queued > 0
-                      ? "Active"
-                      : "Idle"}
-                  </span>
-                </div>
-                <p className="operation-center__meta">
-                  tabs {operationCenterUploadSummary.activeTabCount} | running{" "}
-                  {operationCenterUploadSummary.running} | queued {operationCenterUploadSummary.queued}
-                </p>
-                <p className="operation-center__meta">
-                  progress {operationCenterUploadSummary.completed}/{operationCenterUploadSummary.total} |
-                  failed {operationCenterUploadSummary.failed} | canceled{" "}
-                  {operationCenterUploadSummary.canceled}
-                </p>
-                <div className="operation-center__actions">
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={!activeTabId}
-                    onClick={() => {
-                      void cancelAllActiveUploads();
-                    }}
-                    type="button"
-                  >
-                    Cancel Active Tab
-                  </button>
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={!canRetryFailedUploads}
-                    onClick={() => {
-                      void retryFailedUploads();
-                    }}
-                    type="button"
-                  >
-                    Retry Active Tab
-                  </button>
-                </div>
-              </article>
+      <OperationCenterModal
+        canRetryAllFailedTransfers={canRetryAllFailedTransfers}
+        canRetryFailedDownloads={canRetryFailedDownloads}
+        canRetryFailedUploads={canRetryFailedUploads}
+        deleteProgressLabel={operationCenterDeleteProgressLabel}
+        downloadSummary={operationCenterDownloadSummary}
+        failedRetryCandidateTotal={failedRetryCandidateTotal}
+        finishedAppJobCount={operationCenterFinishedAppJobCount}
+        hasActiveTab={Boolean(activeTabId)}
+        hasActivity={hasOperationCenterActivity}
+        hasDiagnosticsJobs={hasOperationCenterDiagnosticsJobs}
+        hasSnippetJobs={hasOperationCenterSnippetJobs}
+        isBulkCancelingTabs={isOperationCenterBulkCanceling}
+        isReconnectingTabs={isOperationCenterReconnecting}
+        onCancelActiveDownloads={() => {
+          void cancelAllActiveDownloads();
+        }}
+        onCancelActiveUploads={() => {
+          void cancelAllActiveUploads();
+        }}
+        onCancelAllTransfersAcrossTabs={() => {
+          void cancelAllTransfersAcrossTabs();
+        }}
+        onCancelTabTasks={(tabId) => {
+          void cancelTransferTasksForTab(tabId);
+        }}
+        onClearFinishedAppJobs={clearFinishedOperationCenterAppJobs}
+        onClose={closeOperationCenter}
+        onCopyAppJobOutputPath={(jobId) => {
+          void copyOperationCenterAppJobOutputPath(jobId);
+        }}
+        onFocusTab={setActiveTabId}
+        onOpenDiagnostics={() => {
+          closeOperationCenter();
+          openSettingsPanel("diagnostics");
+        }}
+        onOpenDiagnosticsJobs={openDiagnosticsFromOperationCenter}
+        onOpenPortForward={() => {
+          closeOperationCenter();
+          openSettingsPanel("portForwarding");
+        }}
+        onOpenSnippets={openCommandSnippetManagerFromOperationCenter}
+        onReconnectDisconnectedTabs={() => {
+          void reconnectDisconnectedOperationTabs();
+        }}
+        onReconnectTab={(tabId) => {
+          void reconnectOperationTabById(tabId);
+        }}
+        onRetryActiveDownloads={() => {
+          void retryFailedDownloads();
+        }}
+        onRetryActiveUploads={() => {
+          void retryFailedUploads();
+        }}
+        onRetryAllFailedTransfers={() => {
+          void retryAllFailedTransfersWithScopeChoice();
+        }}
+        open={isOperationCenterOpen}
+        portForwardBusy={portForwardBusy}
+        portForwardSummary={operationCenterPortForwardSummary}
+        recentAppJobs={operationCenterRecentAppJobViews}
+        runningAppJobCount={operationCenterRunningAppJobCount}
+        transferTabSummaries={operationCenterTransferTabSummaries}
+        uploadSummary={operationCenterUploadSummary}
+      />
 
-              <article className="operation-center__card">
-                <div className="operation-center__card-header">
-                  <p className="operation-center__title">Download Queue</p>
-                  <span
-                    className={
-                      operationCenterDownloadSummary.running +
-                        operationCenterDownloadSummary.queued >
-                      0
-                        ? "operation-center__state is-active"
-                        : "operation-center__state is-idle"
-                    }
-                  >
-                    {operationCenterDownloadSummary.running +
-                      operationCenterDownloadSummary.queued >
-                    0
-                      ? "Active"
-                      : "Idle"}
-                  </span>
-                </div>
-                <p className="operation-center__meta">
-                  tabs {operationCenterDownloadSummary.activeTabCount} | running{" "}
-                  {operationCenterDownloadSummary.running} | queued{" "}
-                  {operationCenterDownloadSummary.queued}
-                </p>
-                <p className="operation-center__meta">
-                  progress {operationCenterDownloadSummary.completed}/
-                  {operationCenterDownloadSummary.total} | failed{" "}
-                  {operationCenterDownloadSummary.failed} | canceled{" "}
-                  {operationCenterDownloadSummary.canceled}
-                </p>
-                <div className="operation-center__actions">
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={!activeTabId}
-                    onClick={() => {
-                      void cancelAllActiveDownloads();
-                    }}
-                    type="button"
-                  >
-                    Cancel Active Tab
-                  </button>
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={!canRetryFailedDownloads}
-                    onClick={() => {
-                      void retryFailedDownloads();
-                    }}
-                    type="button"
-                  >
-                    Retry Active Tab
-                  </button>
-                </div>
-              </article>
+      <RetryCenterModal
+        analytics={retryCenterAnalytics}
+        autoUseLastRetryScope={retryCenterAutoUseLastRetryScope}
+        canClearAllEntries={canClearAllRetryCenterEntries}
+        canClearSelectedEntries={canClearSelectedRetryCenterEntries}
+        canClearVisibleEntries={canClearVisibleRetryCenterEntries}
+        canCollapseAllGroups={canCollapseAllRetryCenterGroups}
+        canExpandAllGroups={canExpandAllRetryCenterGroups}
+        canExportAnalytics={canExportRetryCenterAnalytics}
+        canRetryAllFailedTransfers={canRetryAllFailedTransfers}
+        canRetryFailedDownloads={canRetryFailedDownloads}
+        canRetryFailedUploads={canRetryFailedUploads}
+        canRetrySelectedEntries={canRetrySelectedRetryCenterEntries}
+        canRetryVisibleEntries={canRetryVisibleRetryCenterEntries}
+        collapsedGroupKeySet={retryCenterCollapsedGroupKeySet}
+        direction={retryCenterDirection}
+        entries={retryCenterEntries}
+        entryCount={retryCenterEntries.length}
+        failedDownloadCandidateCount={failedDownloadRetryCandidates.length}
+        failedRetryCandidateTotal={failedRetryCandidateTotal}
+        failedUploadCandidateCount={failedUploadRetryCandidates.length}
+        failureReasonAllValue={RETRY_CENTER_FAILURE_REASON_ALL}
+        failureReasonFilter={retryCenterResolvedFailureReasonFilter}
+        failureReasonOptions={retryCenterFailureReasonOptions}
+        failureSuggestionRows={retryCenterFailureSuggestionRows}
+        formatHistoryTimestamp={formatHistoryTimestamp}
+        formatPercent={formatPercent}
+        groupedEntries={retryCenterGroupedEntries}
+        hasActiveTab={Boolean(activeTabId)}
+        hasCustomizedView={hasCustomizedRetryCenterView}
+        isGroupedView={isRetryCenterGroupedView}
+        lastRetryScope={retryCenterLastRetryScope}
+        lastRetryScopeLabel={retryCenterLastRetryScopeLabel}
+        listMode={retryCenterListMode}
+        maxRetryBatchConfirmThreshold={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
+        minRetryBatchConfirmThreshold={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
+        onClearAllEntries={() => {
+          void clearAllRetryCenterEntries();
+        }}
+        onClearGroupEntries={(groupKey) => {
+          void clearRetryCenterGroupEntries(groupKey);
+        }}
+        onClearSelectedEntries={() => {
+          void clearSelectedRetryCenterEntries();
+        }}
+        onClearSelection={clearRetryCenterSelection}
+        onClearVisibleEntries={() => {
+          void clearVisibleRetryCenterEntries();
+        }}
+        onClearVisibleFailureReason={(reason) => {
+          void clearVisibleRetryCenterEntriesByFailureReason(reason);
+        }}
+        onClose={closeRetryCenter}
+        onCollapseAllGroups={collapseAllRetryCenterGroups}
+        onDirectionChange={setRetryCenterDirection}
+        onExpandAllGroups={expandAllRetryCenterGroups}
+        onExportAnalyticsCsv={() => {
+          void exportRetryCenterAnalyticsCsv();
+        }}
+        onExportAnalyticsJson={() => {
+          void exportRetryCenterAnalyticsJson();
+        }}
+        onExportGroupHistoryCsv={(groupKey) => {
+          void exportRetryCenterGroupHistoryCsvWithScopeChoice(groupKey);
+        }}
+        onExportGroupHistoryJson={(groupKey) => {
+          void exportRetryCenterGroupHistoryJsonWithScopeChoice(groupKey);
+        }}
+        onExportVisibleHistoryCsv={() => {
+          void exportRetryCenterVisibleHistoryCsv();
+        }}
+        onExportVisibleHistoryJson={() => {
+          void exportRetryCenterVisibleHistoryJson();
+        }}
+        onFailureReasonFilterChange={setRetryCenterFailureReasonFilter}
+        onLastRetryScopeChange={setRetryCenterLastRetryScope}
+        onListModeChange={setRetryCenterListMode}
+        onQueryChange={setRetryCenterQuery}
+        onResetFilters={resetRetryCenterViewFilters}
+        onRetryAllFailedTransfers={() => {
+          void retryAllFailedTransfersWithScopeChoice();
+        }}
+        onRetryFailedDownloads={() => {
+          void retryFailedDownloads();
+        }}
+        onRetryFailedUploads={() => {
+          void retryFailedUploads();
+        }}
+        onRetryGroupFailedEntries={(groupKey) => {
+          void retryRetryCenterGroupFailedEntries(groupKey);
+        }}
+        onRetrySelectedEntries={() => {
+          void retrySelectedRetryCenterEntriesWithScopeChoice();
+        }}
+        onRetryVisibleEntries={() => {
+          void retryVisibleRetryCenterEntriesWithScopeChoice();
+        }}
+        onRetryVisibleFailureReason={(reason) => {
+          void retryVisibleRetryCenterEntriesWithScopeChoice(reason);
+        }}
+        onScopeChange={setRetryCenterScope}
+        onSelectAllVisible={selectAllVisibleRetryCenterEntries}
+        onSelectGroupEntries={selectRetryCenterGroupEntries}
+        onStatusChange={setRetryCenterStatus}
+        onTimeRangeChange={setRetryCenterTimeRange}
+        onToggleAutoUseLastRetryScope={() => {
+          setRetryCenterAutoUseLastRetryScope((prev) => !prev);
+        }}
+        onToggleEntrySelection={toggleRetryCenterEntrySelection}
+        onToggleGroupCollapsed={toggleRetryCenterGroupCollapsed}
+        open={isRetryCenterOpen}
+        query={retryCenterQuery}
+        retryBatchConfirmThreshold={retryBatchConfirmThreshold}
+        scope={retryCenterScope}
+        selectedCount={retryCenterSelection.length}
+        selectedFailedCount={selectedRetryCenterFailedEntries.length}
+        selectedFailureReasonLabel={retryCenterSelectedFailureReasonLabel}
+        selectionSet={retryCenterSelectionSet}
+        status={retryCenterStatus}
+        timeRange={retryCenterTimeRange}
+        topFailureReasonRetryRows={retryCenterTopFailureReasonRetryRows}
+        totalHistoryCount={transferHistory.length}
+        visibleFailedCount={visibleRetryCenterFailedEntries.length}
+        onRetryBatchConfirmThresholdChange={(value) => {
+          setRetryBatchConfirmThreshold((prev) =>
+            parseRetryBatchConfirmThreshold(value, prev)
+          );
+        }}
+      />
 
-              <article className="operation-center__card">
-                <div className="operation-center__card-header">
-                  <p className="operation-center__title">Remote Delete</p>
-                  <span
-                    className={
-                      sftpDeleteProgress
-                        ? "operation-center__state is-active"
-                        : "operation-center__state is-idle"
-                    }
-                  >
-                    {sftpDeleteProgress ? "Running" : "Idle"}
-                  </span>
-                </div>
-                {sftpDeleteProgress ? (
-                  <p className="operation-center__meta operation-center__meta--wrap">
-                    Deleting {sftpDeleteProgress.kind === "directory" ? "directory" : "file"} "
-                    {sftpDeleteProgress.name}"...
-                  </p>
-                ) : (
-                  <p className="operation-center__meta">No active delete operation.</p>
-                )}
-                <p className="operation-center__meta operation-center__meta--muted">
-                  Delete cancellation is not available yet in current backend flow.
-                </p>
-              </article>
+      <CommandHistoryManagerModal
+        allVisibleSelected={allVisibleCommandHistorySelected}
+        canClearSelection={commandHistorySelection.length > 0}
+        canExport={terminalCommandHistoryEntries.length > 0}
+        canToggleSelectVisible={visibleCommandHistoryIds.length > 0}
+        entries={visibleTerminalCommandHistoryEntryViews}
+        onAdd={() => {
+          void addTerminalCommandHistoryEntry();
+        }}
+        onClearSelection={clearCommandHistorySelection}
+        onClose={closeCommandHistoryManager}
+        onDeleteAll={deleteAllCommandHistoryEntries}
+        onDeleteSelected={deleteSelectedCommandHistoryEntries}
+        onDeleteVisible={deleteVisibleCommandHistoryEntries}
+        onEditEntry={(entryId) => {
+          const entry = visibleTerminalCommandHistoryEntries.find((item) => item.id === entryId);
+          if (!entry) {
+            return;
+          }
+          void editTerminalCommandHistoryEntry(entry);
+        }}
+        onExport={() => {
+          void exportTerminalCommandHistory();
+        }}
+        onImport={() => {
+          void importTerminalCommandHistory();
+        }}
+        onPasteEntry={(entryId) => {
+          const entry = visibleTerminalCommandHistoryEntries.find((item) => item.id === entryId);
+          if (!entry) {
+            return;
+          }
+          void pasteTerminalCommandHistoryEntry(entry);
+        }}
+        onToggleEntrySelection={toggleCommandHistorySelection}
+        onToggleSelectVisible={toggleSelectAllVisibleCommandHistory}
+        open={isCommandHistoryManagerOpen}
+        selectedCount={commandHistorySelection.length}
+        totalCount={terminalCommandHistoryEntries.length}
+        visibleCount={visibleTerminalCommandHistoryEntries.length}
+      />
 
-              <article className="operation-center__card">
-                <div className="operation-center__card-header">
-                  <p className="operation-center__title">Port Forwarding Ops</p>
-                  <span
-                    className={
-                      portForwardBusy
-                        ? "operation-center__state is-active"
-                        : "operation-center__state is-idle"
-                    }
-                  >
-                    {portForwardBusy ? "Working" : "Idle"}
-                  </span>
-                </div>
-                <p className="operation-center__meta">
-                  tabs {operationCenterPortForwardSummary.activeTabCount} | active forwards{" "}
-                  {operationCenterPortForwardSummary.total} | degraded{" "}
-                  {operationCenterPortForwardSummary.degraded}
-                </p>
-                <p className="operation-center__meta">
-                  active tab status:{" "}
-                  {operationCenterPortForwardSummary.activeTabStatus?.trim() ||
-                    "No recent status message."}
-                </p>
-                <div className="operation-center__actions">
-                  <button
-                    className="secondary-button secondary-button--small"
-                    onClick={() => {
-                      closeOperationCenter();
-                      openSettingsPanel("portForwarding");
-                    }}
-                    type="button"
-                  >
-                    Open Port Fwd
-                  </button>
-                  <button
-                    className="secondary-button secondary-button--small"
-                    onClick={() => {
-                      closeOperationCenter();
-                      openSettingsPanel("diagnostics");
-                    }}
-                    type="button"
-                  >
-                    Open Diagnostics
-                  </button>
-                </div>
-              </article>
-
-              <article className="operation-center__card operation-center__card--wide">
-                <div className="operation-center__card-header">
-                  <p className="operation-center__title">Tracked App Jobs</p>
-                  <span
-                    className={
-                      operationCenterRunningAppJobCount > 0
-                        ? "operation-center__state is-active"
-                        : operationCenterRecentAppJobs.length > 0
-                          ? "operation-center__state is-success"
-                          : "operation-center__state is-idle"
-                    }
-                  >
-                    {operationCenterRunningAppJobCount > 0
-                      ? `${operationCenterRunningAppJobCount} running`
-                      : operationCenterRecentAppJobs.length > 0
-                        ? `${operationCenterRecentAppJobs.length} recent`
-                        : "Idle"}
-                  </span>
-                </div>
-                {operationCenterRecentAppJobs.length > 0 ? (
-                  <ul className="operation-center__tab-list">
-                    {operationCenterRecentAppJobs.map((job) => (
-                      <li className="operation-center__tab-item" key={job.id}>
-                        <div className="operation-center__tab-main">
-                          <p className="operation-center__tab-title">{job.title}</p>
-                          <p className="operation-center__meta">
-                            {formatOperationCenterAppJobCategoryLabel(job.category)} | started{" "}
-                            {formatHistoryTimestamp(job.startedAt)} | duration{" "}
-                            {formatOperationCenterAppJobDuration(job.startedAt, job.finishedAt)}
-                          </p>
-                          <p className="operation-center__meta operation-center__meta--wrap">
-                            {job.detail?.trim() || job.description}
-                          </p>
-                          {job.outputPath ? (
-                            <p className="operation-center__meta operation-center__meta--wrap">
-                              output: {job.outputPath}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="operation-center__tab-actions">
-                          <span className={getOperationCenterAppJobStateClass(job.status)}>
-                            {formatOperationCenterAppJobStatusLabel(job.status)}
-                          </span>
-                          {job.outputPath ? (
-                            <button
-                              className="secondary-button secondary-button--small"
-                              onClick={() => {
-                                void copyOperationCenterAppJobOutputPath(job.id);
-                              }}
-                              type="button"
-                            >
-                              Copy Path
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="operation-center__meta">
-                    No tracked session/snippet/diagnostics jobs yet.
-                  </p>
-                )}
-                <div className="operation-center__actions">
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={operationCenterFinishedAppJobCount === 0}
-                    onClick={clearFinishedOperationCenterAppJobs}
-                    type="button"
-                  >
-                    Clear Finished
-                  </button>
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={!hasOperationCenterSnippetJobs}
-                    onClick={openCommandSnippetManagerFromOperationCenter}
-                    type="button"
-                  >
-                    Open Snippets
-                  </button>
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={!hasOperationCenterDiagnosticsJobs}
-                    onClick={openDiagnosticsFromOperationCenter}
-                    type="button"
-                  >
-                    Open Diagnostics
-                  </button>
-                </div>
-              </article>
-
-              <article className="operation-center__card operation-center__card--wide">
-                <div className="operation-center__card-header">
-                  <p className="operation-center__title">All Tabs Transfer Activity</p>
-                  <span
-                    className={
-                      operationCenterTransferTabSummaries.length > 0
-                        ? "operation-center__state is-active"
-                        : "operation-center__state is-idle"
-                    }
-                  >
-                    {operationCenterTransferTabSummaries.length > 0
-                      ? `${operationCenterTransferTabSummaries.length} tab(s)`
-                      : "Idle"}
-                  </span>
-                </div>
-                {operationCenterTransferTabSummaries.length > 0 ? (
-                  <ul className="operation-center__tab-list">
-                    {operationCenterTransferTabSummaries.map((summary) => (
-                      <li className="operation-center__tab-item" key={summary.tabId}>
-                        <div className="operation-center__tab-main">
-                          <p className="operation-center__tab-title">{summary.title}</p>
-                          <p className="operation-center__meta">
-                            U(r{summary.uploadRunning}/q{summary.uploadQueued}) | D(r
-                            {summary.downloadRunning}/q{summary.downloadQueued}) | total{" "}
-                            {summary.totalActive}
-                          </p>
-                        </div>
-                        <div className="operation-center__tab-actions">
-                          <span
-                            className={
-                              summary.connected
-                                ? "operation-center__state is-active"
-                                : "operation-center__state is-idle"
-                            }
-                          >
-                            {summary.connected ? "Connected" : "Disconnected"}
-                          </span>
-                          <button
-                            className="secondary-button secondary-button--small"
-                            onClick={() => {
-                              setActiveTabId(summary.tabId);
-                            }}
-                            type="button"
-                          >
-                            Focus Tab
-                          </button>
-                          <button
-                            className="secondary-button secondary-button--small"
-                            disabled={summary.connected || isOperationCenterReconnecting}
-                            onClick={() => {
-                              void reconnectOperationTabById(summary.tabId);
-                            }}
-                            type="button"
-                          >
-                            Reconnect Tab
-                          </button>
-                          <button
-                            className="secondary-button secondary-button--small"
-                            disabled={isOperationCenterBulkCanceling}
-                            onClick={() => {
-                              void cancelTransferTasksForTab(summary.tabId);
-                            }}
-                            type="button"
-                          >
-                            Cancel Tab Tasks
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="operation-center__meta">No queued/running transfer activity across tabs.</p>
-                )}
-                <div className="operation-center__actions">
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={
-                      operationCenterTransferTabSummaries.filter((entry) => !entry.connected)
-                        .length === 0 || isOperationCenterReconnecting
-                    }
-                    onClick={() => {
-                      void reconnectDisconnectedOperationTabs();
-                    }}
-                    type="button"
-                  >
-                    {isOperationCenterReconnecting
-                      ? "Reconnecting..."
-                      : "Reconnect Disconnected Tabs"}
-                  </button>
-                  <button
-                    className="secondary-button secondary-button--small"
-                    disabled={
-                      operationCenterTransferTabSummaries.length === 0 ||
-                      isOperationCenterBulkCanceling
-                    }
-                    onClick={() => {
-                      void cancelAllTransfersAcrossTabs();
-                    }}
-                    type="button"
-                  >
-                    {isOperationCenterBulkCanceling
-                      ? "Canceling..."
-                      : "Cancel All Transfers (All Tabs)"}
-                  </button>
-                </div>
-              </article>
-            </div>
-            {!hasOperationCenterActivity ? (
-              <p className="hint operation-center__idle-note">
-                No high-latency operation is active right now. Queues and long jobs are idle.
-              </p>
-            ) : null}
-            <div className="modal__actions">
-              <button
-                className="secondary-button"
-                disabled={!canRetryAllFailedTransfers}
-                onClick={() => {
-                  void retryAllFailedTransfersWithScopeChoice();
-                }}
-                title="Retry all failed upload/download candidates with retry-scope strategy"
-                type="button"
-              >
-                Retry All Failed ({failedRetryCandidateTotal})
-              </button>
-              <button className="primary-button" onClick={closeOperationCenter} type="button">
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isRetryCenterOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <div
-            className="modal modal--retry-center"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Transfer Retry Center"
-          >
-            <div className="modal__header">
-              <h3>Transfer Retry Center</h3>
-              <button className="icon-button" onClick={closeRetryCenter} type="button">
-                <UiIcon name="close" />
-              </button>
-            </div>
-            <p className="hint">
-              Persistent transfer history across restarts. Retry works for failed entries bound to
-              the active session tab.
-            </p>
-            <div className="retry-center__filters">
-              <label>
-                Scope
-                <select
-                  onChange={(event) =>
-                    setRetryCenterScope(event.target.value as TransferHistoryScope)
-                  }
-                  value={retryCenterScope}
-                >
-                  <option value="activeSession">Active Session</option>
-                  <option value="allSessions">All Sessions</option>
-                </select>
-              </label>
-              <label>
-                Direction
-                <select
-                  onChange={(event) =>
-                    setRetryCenterDirection(event.target.value as TransferHistoryDirectionFilter)
-                  }
-                  value={retryCenterDirection}
-                >
-                  <option value="all">All</option>
-                  <option value="upload">Upload</option>
-                  <option value="download">Download</option>
-                </select>
-              </label>
-              <label>
-                Status
-                <select
-                  onChange={(event) =>
-                    setRetryCenterStatus(event.target.value as TransferHistoryStatusFilter)
-                  }
-                  value={retryCenterStatus}
-                >
-                  <option value="all">All</option>
-                  <option value="failed">Failed</option>
-                  <option value="completed">Completed</option>
-                  <option value="canceled">Canceled</option>
-                  <option value="queued">Queued</option>
-                  <option value="running">Running</option>
-                </select>
-              </label>
-              <label>
-                Time Range
-                <select
-                  onChange={(event) =>
-                    setRetryCenterTimeRange(event.target.value as TransferHistoryTimeRange)
-                  }
-                  value={retryCenterTimeRange}
-                >
-                  <option value="all">All</option>
-                  <option value="5m">Last 5m</option>
-                  <option value="30m">Last 30m</option>
-                  <option value="1h">Last 1h</option>
-                  <option value="24h">Last 24h</option>
-                </select>
-              </label>
-              <label>
-                View
-                <select
-                  onChange={(event) => setRetryCenterListMode(event.target.value as RetryCenterListMode)}
-                  value={retryCenterListMode}
-                >
-                  <option value="flat">Flat List</option>
-                  <option value="groupedByReason">Grouped by Failure</option>
-                </select>
-              </label>
-              <label>
-                Failure Reason
-                <select
-                  onChange={(event) => setRetryCenterFailureReasonFilter(event.target.value)}
-                  value={retryCenterResolvedFailureReasonFilter}
-                >
-                  <option value={RETRY_CENTER_FAILURE_REASON_ALL}>
-                    All ({retryCenterFailureReasonOptions.reduce((total, entry) => total + entry.total, 0)})
-                  </option>
-                  {retryCenterFailureReasonOptions.map((entry) => (
-                    <option key={entry.reason} value={entry.reason}>
-                      {`${entry.reason} (${entry.total})`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Default Retry Scope
-                <select
-                  onChange={(event) =>
-                    setRetryCenterLastRetryScope(event.target.value as RetryCenterRetryScope)
-                  }
-                  value={retryCenterLastRetryScope}
-                >
-                  <option value="all">All Retryable</option>
-                  <option value="upload">Upload Only</option>
-                  <option value="download">Download Only</option>
-                </select>
-              </label>
-              <label>
-                Retry Confirm Threshold
-                <input
-                  max={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
-                  min={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
-                  onChange={(event) => {
-                    setRetryBatchConfirmThreshold((prev) =>
-                      parseRetryBatchConfirmThreshold(Number(event.target.value), prev)
-                    );
-                  }}
-                  type="number"
-                  value={retryBatchConfirmThreshold}
-                />
-              </label>
-              <p className="hint">
-                Set <code>0</code> to disable large-batch retry confirmations.
-              </p>
-              <label className="retry-center__search">
-                Search
-                <input
-                  onChange={(event) => setRetryCenterQuery(event.target.value)}
-                  placeholder="name/local/remote/message"
-                  value={retryCenterQuery}
-                />
-              </label>
-              <button
-                className="secondary-button secondary-button--small retry-center__filter-reset"
-                disabled={!hasCustomizedRetryCenterView}
-                onClick={resetRetryCenterViewFilters}
-                type="button"
-              >
-                Reset Filters
-              </button>
-              <button
-                aria-pressed={retryCenterAutoUseLastRetryScope}
-                className="secondary-button secondary-button--small retry-center__filter-reset"
-                onClick={() => {
-                  setRetryCenterAutoUseLastRetryScope((prev) => !prev);
-                }}
-                title="Automatically use last retry scope and skip retry-scope chooser"
-                type="button"
-              >
-                {retryCenterAutoUseLastRetryScope ? "Auto Retry Scope: On" : "Auto Retry Scope: Off"}
-              </button>
-            </div>
-            <p className="hint retry-center__summary">
-              Visible {retryCenterEntries.length} / Total {transferHistory.length}, Selected{" "}
-              {selectedRetryCenterEntries.length}, Selected failed (active session){" "}
-              {selectedRetryCenterFailedEntries.length}, Visible failed (active session){" "}
-              {visibleRetryCenterFailedEntries.length}, Dock failed candidates U{" "}
-              {failedUploadRetryCandidates.length} / D {failedDownloadRetryCandidates.length},
-              Failure reason {retryCenterSelectedFailureReasonLabel},
-              Default scope {retryCenterLastRetryScopeLabel}
-              {retryCenterAutoUseLastRetryScope ? " (auto)" : ""}, Large retry confirm{" "}
-              {retryBatchConfirmThreshold <= 0
-                ? "off"
-                : `>=${retryBatchConfirmThreshold}`}
-              {isRetryCenterGroupedView
-                ? `, Groups ${retryCenterGroupedEntries.length}, Collapsed ${retryCenterCollapsedGroupKeySet.size}`
-                : ""}
-            </p>
-            <div className="retry-center__analytics">
-              <article className="retry-center__metric">
-                <p className="retry-center__metric-label">Failure Ratio</p>
-                <p className="retry-center__metric-value">
-                  {formatPercent(retryCenterAnalytics.failedRatioPercent)}
-                </p>
-                <p className="retry-center__metric-meta">
-                  Failed {retryCenterAnalytics.failedCount}/{retryCenterAnalytics.totalCount}
-                </p>
-              </article>
-              <article className="retry-center__metric">
-                <p className="retry-center__metric-label">Direction Breakdown</p>
-                <p className="retry-center__metric-value">
-                  U {retryCenterAnalytics.directionCounts.upload} | D{" "}
-                  {retryCenterAnalytics.directionCounts.download}
-                </p>
-                <p className="retry-center__metric-meta">
-                  completed {retryCenterAnalytics.statusCounts.completed} | failed{" "}
-                  {retryCenterAnalytics.statusCounts.failed} | canceled{" "}
-                  {retryCenterAnalytics.statusCounts.canceled}
-                </p>
-              </article>
-              <article className="retry-center__metric">
-                <p className="retry-center__metric-label">Top Sessions / Groups</p>
-                <p className="retry-center__metric-meta">
-                  {retryCenterAnalytics.topSessions.length > 0
-                    ? retryCenterAnalytics.topSessions
-                        .map((entry) => `${entry.sessionName} (${entry.total})`)
-                        .join(" | ")
-                    : "No visible records"}
-                </p>
-                <p className="retry-center__metric-meta">
-                  {retryCenterAnalytics.topGroups.length > 0
-                    ? retryCenterAnalytics.topGroups
-                        .map((entry) => `${entry.groupName} (${entry.total})`)
-                        .join(" | ")
-                    : "No group data"}
-                </p>
-              </article>
-              <article className="retry-center__metric">
-                <p className="retry-center__metric-label">Top Failure Reasons</p>
-                <p className="retry-center__metric-meta retry-center__metric-meta--wrap">
-                  {retryCenterAnalytics.topFailureReasons.length > 0
-                    ? retryCenterAnalytics.topFailureReasons
-                        .map((entry) => `${entry.reason} (${entry.total})`)
-                        .join(" | ")
-                    : "No failed records"}
-                </p>
-                {retryCenterFailureSuggestionRows.length > 0 ? (
-                  <ul className="retry-center__reason-suggestions">
-                    {retryCenterFailureSuggestionRows.map((entry) => (
-                      <li className="retry-center__reason-suggestion" key={entry.reason}>
-                        <strong>{entry.reason}:</strong> {entry.suggestion}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {retryCenterTopFailureReasonRetryRows.length > 0 ? (
-                  <div className="retry-center__reason-actions">
-                    {retryCenterTopFailureReasonRetryRows.map((entry) => (
-                      <div className="retry-center__reason-row" key={entry.reason}>
-                        <button
-                          className={
-                            entry.isCurrentFilter
-                              ? "secondary-button secondary-button--small is-active"
-                              : "secondary-button secondary-button--small"
-                          }
-                          onClick={() => setRetryCenterFailureReasonFilter(entry.reason)}
-                          title={`Filter by failure reason "${entry.reason}"`}
-                          type="button"
-                        >
-                          {`${entry.reason} (${entry.totalVisible})`}
-                        </button>
-                        <button
-                          className="secondary-button secondary-button--small"
-                          disabled={!activeTabId || entry.activeSessionVisibleFailed <= 0}
-                          onClick={() => {
-                            void retryVisibleRetryCenterEntriesWithScopeChoice(entry.reason);
-                          }}
-                          title={`Retry "${entry.reason}" failed transfers in active session with scope strategy`}
-                          type="button"
-                        >
-                          {`Retry (${entry.activeSessionVisibleFailed})`}
-                        </button>
-                        <button
-                          className="secondary-button secondary-button--small"
-                          disabled={entry.totalVisible <= 0}
-                          onClick={() => {
-                            void clearVisibleRetryCenterEntriesByFailureReason(entry.reason);
-                          }}
-                          title={`Delete visible failed history records with reason "${entry.reason}"`}
-                          type="button"
-                        >
-                          {`Delete (${entry.totalVisible})`}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                <p className="retry-center__metric-meta">
-                  Visible failed history only. Quick retry targets active-session entries and
-                  follows retry-scope strategy (chooser or auto last scope); delete removes visible
-                  failed history by reason.
-                </p>
-              </article>
-            </div>
-            {isRetryCenterGroupedView && retryCenterGroupedEntries.length > 0 ? (
-              <div className="retry-center__group-actions">
-                <button
-                  className="secondary-button secondary-button--small"
-                  disabled={!canExpandAllRetryCenterGroups}
-                  onClick={expandAllRetryCenterGroups}
-                  type="button"
-                >
-                  Expand All Groups
-                </button>
-                <button
-                  className="secondary-button secondary-button--small"
-                  disabled={!canCollapseAllRetryCenterGroups}
-                  onClick={collapseAllRetryCenterGroups}
-                  type="button"
-                >
-                  Collapse All Groups
-                </button>
-              </div>
-            ) : null}
-            <div className="retry-center__list-shell">
-              {retryCenterEntries.length > 0 ? (
-                isRetryCenterGroupedView ? (
-                  <ul className="retry-center__group-list">
-                    {retryCenterGroupedEntries.map((group) => {
-                      const collapsed = retryCenterCollapsedGroupKeySet.has(group.key);
-                      return (
-                        <li className="retry-center__group-item" key={group.key}>
-                          <div className="retry-center__group-header">
-                            <button
-                              aria-label={collapsed ? "Expand group" : "Collapse group"}
-                              className="secondary-button secondary-button--small"
-                              onClick={() => toggleRetryCenterGroupCollapsed(group.key)}
-                              type="button"
-                            >
-                              {collapsed ? "Expand" : "Collapse"}
-                            </button>
-                            <div className="retry-center__group-info">
-                              <p className="retry-center__group-title" title={group.label}>
-                                {group.label}
-                              </p>
-                              <p className="retry-center__group-meta">
-                                {group.total} item(s), failed {group.failedCount}, retryable{" "}
-                                {group.activeSessionFailedCount}
-                              </p>
-                            </div>
-                            <div className="retry-center__group-header-actions">
-                              <button
-                                className="secondary-button secondary-button--small"
-                                onClick={() => selectRetryCenterGroupEntries(group.key)}
-                                type="button"
-                              >
-                                {`Select (${group.total})`}
-                              </button>
-                              <button
-                                className="secondary-button secondary-button--small"
-                                disabled={!activeTabId || group.activeSessionFailedCount <= 0}
-                                onClick={() => {
-                                  void retryRetryCenterGroupFailedEntries(group.key);
-                                }}
-                                title="Retry failed active-session records in this group (scope selectable)"
-                                type="button"
-                              >
-                                {`Retry Failed (${group.activeSessionFailedCount})`}
-                              </button>
-                              <button
-                                className="secondary-button secondary-button--small"
-                                onClick={() => {
-                                  void clearRetryCenterGroupEntries(group.key);
-                                }}
-                                type="button"
-                              >
-                                {`Delete (${group.total})`}
-                              </button>
-                              <button
-                                className="secondary-button secondary-button--small"
-                                onClick={() => {
-                                  void exportRetryCenterGroupHistoryJsonWithScopeChoice(group.key);
-                                }}
-                                type="button"
-                              >
-                                Export JSON
-                              </button>
-                              <button
-                                className="secondary-button secondary-button--small"
-                                onClick={() => {
-                                  void exportRetryCenterGroupHistoryCsvWithScopeChoice(group.key);
-                                }}
-                                type="button"
-                              >
-                                Export CSV
-                              </button>
-                            </div>
-                          </div>
-                          {collapsed ? null : (
-                            <ul className="retry-center__list">
-                              {group.entries.map((entry) => {
-                                const selected = retryCenterSelectionSet.has(entry.key);
-                                return (
-                                  <li
-                                    className={
-                                      selected
-                                        ? "retry-center__item is-selected"
-                                        : "retry-center__item"
-                                    }
-                                    key={entry.key}
-                                  >
-                                    <label className="retry-center__checkbox">
-                                      <input
-                                        checked={selected}
-                                        onChange={() => toggleRetryCenterEntrySelection(entry.key)}
-                                        type="checkbox"
-                                      />
-                                    </label>
-                                    <span
-                                      className={`retry-center__status retry-center__status--${entry.status}`}
-                                    >
-                                      {entry.status}
-                                    </span>
-                                    <div className="retry-center__body">
-                                      <p className="retry-center__name">{entry.name}</p>
-                                      <p
-                                        className="retry-center__path"
-                                        title={`${entry.localPath} -> ${entry.remotePath}`}
-                                      >
-                                        {`${entry.localPath} -> ${entry.remotePath}`}
-                                      </p>
-                                      <p className="retry-center__meta">
-                                        {formatHistoryTimestamp(entry.updatedAt)} | {entry.direction} |
-                                        attempts {entry.attemptCount}
-                                        {entry.message ? ` | ${entry.message}` : ""}
-                                      </p>
-                                    </div>
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <ul className="retry-center__list">
-                    {retryCenterEntries.map((entry) => {
-                      const selected = retryCenterSelectionSet.has(entry.key);
-                      return (
-                        <li
-                          className={selected ? "retry-center__item is-selected" : "retry-center__item"}
-                          key={entry.key}
-                        >
-                          <label className="retry-center__checkbox">
-                            <input
-                              checked={selected}
-                              onChange={() => toggleRetryCenterEntrySelection(entry.key)}
-                              type="checkbox"
-                            />
-                          </label>
-                          <span className={`retry-center__status retry-center__status--${entry.status}`}>
-                            {entry.status}
-                          </span>
-                          <div className="retry-center__body">
-                            <p className="retry-center__name">{entry.name}</p>
-                            <p
-                              className="retry-center__path"
-                              title={`${entry.localPath} -> ${entry.remotePath}`}
-                            >
-                              {`${entry.localPath} -> ${entry.remotePath}`}
-                            </p>
-                            <p className="retry-center__meta">
-                              {formatHistoryTimestamp(entry.updatedAt)} | {entry.direction} | attempts{" "}
-                              {entry.attemptCount}
-                              {entry.message ? ` | ${entry.message}` : ""}
-                            </p>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )
-              ) : (
-                <p className="hint">No transfer history records match the current filters.</p>
-              )}
-            </div>
-            <div className="modal__actions retry-center__actions">
-              <button
-                className="secondary-button"
-                disabled={retryCenterEntries.length === 0}
-                onClick={selectAllVisibleRetryCenterEntries}
-                type="button"
-              >
-                Select Visible
-              </button>
-              <button
-                className="secondary-button"
-                disabled={retryCenterSelection.length === 0}
-                onClick={clearRetryCenterSelection}
-                type="button"
-              >
-                Clear Selection
-              </button>
-              <button
-                className="secondary-button"
-                disabled={retryCenterEntries.length === 0}
-                onClick={() => {
-                  void exportRetryCenterVisibleHistoryJson();
-                }}
-                type="button"
-              >
-                Export Visible JSON
-              </button>
-              <button
-                className="secondary-button"
-                disabled={retryCenterEntries.length === 0}
-                onClick={() => {
-                  void exportRetryCenterVisibleHistoryCsv();
-                }}
-                type="button"
-              >
-                Export Visible CSV
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canExportRetryCenterAnalytics}
-                onClick={() => {
-                  void exportRetryCenterAnalyticsJson();
-                }}
-                type="button"
-              >
-                Export Analytics JSON
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canExportRetryCenterAnalytics}
-                onClick={() => {
-                  void exportRetryCenterAnalyticsCsv();
-                }}
-                type="button"
-              >
-                Export Analytics CSV
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canRetryFailedUploads}
-                onClick={() => {
-                  void retryFailedUploads();
-                }}
-                title="Retry failed upload candidates for the active tab/session"
-                type="button"
-              >
-                Retry Failed Uploads ({failedUploadRetryCandidates.length})
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canRetryFailedDownloads}
-                onClick={() => {
-                  void retryFailedDownloads();
-                }}
-                title="Retry failed download candidates for the active tab/session"
-                type="button"
-              >
-                Retry Failed Downloads ({failedDownloadRetryCandidates.length})
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canRetryAllFailedTransfers}
-                onClick={() => {
-                  void retryAllFailedTransfersWithScopeChoice();
-                }}
-                title="Retry all failed upload/download candidates with retry-scope strategy"
-                type="button"
-              >
-                Retry All Failed ({failedRetryCandidateTotal})
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canRetryVisibleRetryCenterEntries}
-                onClick={() => {
-                  void retryVisibleRetryCenterEntriesWithScopeChoice();
-                }}
-                title="Retry visible failed records with scope selection"
-                type="button"
-              >
-                Retry Visible Failed
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canRetrySelectedRetryCenterEntries}
-                onClick={() => {
-                  void retrySelectedRetryCenterEntriesWithScopeChoice();
-                }}
-                title="Retry selected failed records with scope selection"
-                type="button"
-              >
-                Retry Selected Failed
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canClearSelectedRetryCenterEntries}
-                onClick={() => {
-                  void clearSelectedRetryCenterEntries();
-                }}
-                type="button"
-              >
-                Delete Selected
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canClearVisibleRetryCenterEntries}
-                onClick={() => {
-                  void clearVisibleRetryCenterEntries();
-                }}
-                type="button"
-              >
-                Delete Visible
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canClearAllRetryCenterEntries}
-                onClick={() => {
-                  void clearAllRetryCenterEntries();
-                }}
-                type="button"
-              >
-                Delete All
-              </button>
-              <button className="primary-button" onClick={closeRetryCenter} type="button">
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isCommandHistoryManagerOpen ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-        >
-          <div
-            className="modal modal--command-history-manager"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command History Manager"
-          >
-            <div className="modal__header">
-              <h3>Command History Manager</h3>
-              <button className="icon-button" onClick={closeCommandHistoryManager} type="button">
-                <UiIcon name="close" />
-              </button>
-            </div>
-            <p className="hint">
-              Batch manage command records from current filter result.
-            </p>
-            <p className="hint command-history-manager__summary">
-              Visible {visibleTerminalCommandHistoryEntries.length} | Selected{" "}
-              {commandHistorySelection.length} | Total {terminalCommandHistoryEntries.length}
-            </p>
-            <div className="command-history-manager__toolbar">
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={() => {
-                  void addTerminalCommandHistoryEntry();
-                }}
-                type="button"
-              >
-                Add
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={() => {
-                  void importTerminalCommandHistory();
-                }}
-                type="button"
-              >
-                Import
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={terminalCommandHistoryEntries.length === 0}
-                onClick={() => {
-                  void exportTerminalCommandHistory();
-                }}
-                type="button"
-              >
-                Export
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={visibleCommandHistoryIds.length === 0}
-                onClick={toggleSelectAllVisibleCommandHistory}
-                type="button"
-              >
-                {allVisibleCommandHistorySelected ? "Unselect Visible" : "Select Visible"}
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={commandHistorySelection.length === 0}
-                onClick={clearCommandHistorySelection}
-                type="button"
-              >
-                Clear Selection
-              </button>
-            </div>
-            <div className="command-history-manager__list-shell">
-              {visibleTerminalCommandHistoryEntries.length === 0 ? (
-                <p className="hint command-history-manager__empty">No command history entries.</p>
-              ) : (
-                <ul className="command-history-manager__list">
-                  {visibleTerminalCommandHistoryEntries.map((entry) => (
-                    <li className="command-history-manager__item" key={entry.id}>
-                      <div
-                        className="command-history-manager__row"
-                        onDoubleClick={(event) => {
-                          const target = event.target as HTMLElement;
-                          if (target.closest("button, input")) {
-                            return;
-                          }
-                          void pasteTerminalCommandHistoryEntry(entry);
-                        }}
-                        title={`${entry.command}\n\nSource: ${formatTerminalCommandHistorySourceLabel(entry.source)}\n\nDouble-click command text area to paste into active terminal.`}
-                      >
-                        <label className="command-history-manager__checkbox">
-                          <input
-                            checked={selectedCommandHistoryIdSet.has(entry.id)}
-                            onChange={() => toggleCommandHistorySelection(entry.id)}
-                            type="checkbox"
-                          />
-                          <span className="command-history-manager__command">
-                            <code>{entry.command}</code>
-                          </span>
-                        </label>
-                        <button
-                          className="secondary-button secondary-button--small command-history-manager__edit"
-                          onClick={() => {
-                            void editTerminalCommandHistoryEntry(entry);
-                          }}
-                          type="button"
-                        >
-                          Edit
-                        </button>
-                      </div>
-                      <p className="hint command-history-manager__meta">
-                        {formatHistoryTimestamp(entry.executedAt)} |{" "}
-                        {formatTerminalCommandHistorySourceLabel(entry.source)}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="modal__actions">
-              <button
-                className="secondary-button"
-                disabled={commandHistorySelection.length === 0}
-                onClick={deleteSelectedCommandHistoryEntries}
-                type="button"
-              >
-                Delete Selected ({commandHistorySelection.length})
-              </button>
-              <button
-                className="secondary-button"
-                disabled={visibleTerminalCommandHistoryEntries.length === 0}
-                onClick={deleteVisibleCommandHistoryEntries}
-                type="button"
-              >
-                Delete Visible ({visibleTerminalCommandHistoryEntries.length})
-              </button>
-              <button
-                className="secondary-button"
-                disabled={terminalCommandHistoryEntries.length === 0}
-                onClick={deleteAllCommandHistoryEntries}
-                type="button"
-              >
-                Delete All ({terminalCommandHistoryEntries.length})
-              </button>
-              <button className="primary-button" onClick={closeCommandHistoryManager} type="button">
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isCommandSnippetManagerOpen ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-        >
-          <div
-            className="modal modal--snippet-manager"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command Snippet Manager"
-          >
-            <div className="modal__header">
-              <h3>Command Snippet Manager</h3>
-              <button className="icon-button" onClick={closeCommandSnippetManager} type="button">
-                <UiIcon name="close" />
-              </button>
-            </div>
-            <p className="hint snippet-manager__summary">
-              Groups {commandSnippetGroups.length}/{MAX_COMMAND_SNIPPET_GROUPS} | Snippets{" "}
-              {totalCommandSnippetCount} | Prompt Sets {totalCommandSnippetPromptSetCount} |
-              Remembered Scoped Values {commandSnippetScopedValueCount}
-            </p>
-            <div className="snippet-manager__toolbar">
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={addCommandSnippetManagerGroup}
-                type="button"
-              >
-                New Group
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={!selectedCommandSnippetManagerGroup}
-                onClick={() => {
-                  void deleteCommandSnippetManagerGroup();
-                }}
-                type="button"
-              >
-                Delete Group
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={addCommandSnippetManagerSnippet}
-                type="button"
-              >
-                New Snippet
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={!selectedCommandSnippetManagerSnippet || selectedCommandSnippetHasInvalidPattern}
-                onClick={() => {
-                  void runSelectedCommandSnippetManagerSnippet();
-                }}
-                type="button"
-              >
-                Run Selected
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={!selectedCommandSnippetManagerSnippet}
-                onClick={() => {
-                  void deleteCommandSnippetManagerSnippet();
-                }}
-                type="button"
-              >
-                Delete Snippet
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={() => {
-                  void importCommandSnippetGroups().catch((caughtError) => {
-                    setError(toLogMessage(caughtError));
-                  });
-                }}
-                type="button"
-              >
-                Import JSON
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={commandSnippetGroups.length === 0}
-                onClick={() => {
-                  void exportCommandSnippetGroups();
-                }}
-                type="button"
-              >
-                Export JSON
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={commandSnippetScopedValueCount === 0}
-                onClick={() => {
-                  void clearCommandSnippetScopedValues();
-                }}
-                type="button"
-              >
-                Clear Scoped Values
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                disabled={commandSnippetGroups.length === 0}
-                onClick={() => {
-                  void clearAllCommandSnippetGroups();
-                }}
-                type="button"
-              >
-                Clear All
-              </button>
-            </div>
-            <div className="snippet-manager__layout">
-              <section className="snippet-manager__column">
-                <h4 className="snippet-manager__title">Groups</h4>
-                <label className="snippet-manager__field">
-                  Group Name
-                  <input
-                    disabled={!selectedCommandSnippetManagerGroup}
-                    onChange={(event) => {
-                      if (!selectedCommandSnippetManagerGroup) {
-                        return;
-                      }
-                      updateCommandSnippetManagerGroupName(
-                        selectedCommandSnippetManagerGroup.id,
-                        event.target.value
-                      );
-                    }}
-                    onBlur={() => {
-                      if (!selectedCommandSnippetManagerGroup) {
-                        return;
-                      }
-                      if (selectedCommandSnippetManagerGroup.name.trim()) {
-                        return;
-                      }
-                      updateCommandSnippetManagerGroupName(
-                        selectedCommandSnippetManagerGroup.id,
-                        "Unnamed Group"
-                      );
-                    }}
-                    type="text"
-                    value={selectedCommandSnippetManagerGroup?.name ?? ""}
-                  />
-                </label>
-                <div className="snippet-manager__list-shell">
-                  {commandSnippetGroups.length === 0 ? (
-                    <p className="hint snippet-manager__empty">No snippet groups.</p>
-                  ) : (
-                    <ul className="snippet-manager__list">
-                      {commandSnippetGroups.map((group) => (
-                        <li key={group.id}>
-                          <button
-                            className={
-                              group.id === selectedCommandSnippetManagerGroup?.id
-                                ? "snippet-manager__list-button is-active"
-                                : "snippet-manager__list-button"
-                            }
-                            onClick={() => {
-                              setCommandSnippetManagerGroupId(group.id);
-                              setCommandSnippetManagerSnippetId(group.snippets[0]?.id ?? "");
-                            }}
-                            type="button"
-                          >
-                            <span>{group.name.trim() || "Unnamed Group"}</span>
-                            <span className="snippet-manager__count">{group.snippets.length}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </section>
-              <section className="snippet-manager__column">
-                <h4 className="snippet-manager__title">
-                  Snippets ({selectedCommandSnippetManagerGroup?.snippets.length ?? 0}/
-                  {MAX_COMMAND_SNIPPETS_PER_GROUP})
-                </h4>
-                <p className="hint snippet-manager__meta">
-                  Double-click to run snippet directly.
-                </p>
-                <div className="snippet-manager__list-shell">
-                  {!selectedCommandSnippetManagerGroup ? (
-                    <p className="hint snippet-manager__empty">Select a group first.</p>
-                  ) : selectedCommandSnippetManagerGroup.snippets.length === 0 ? (
-                    <p className="hint snippet-manager__empty">No snippets in selected group.</p>
-                  ) : (
-                    <ul className="snippet-manager__list">
-                      {selectedCommandSnippetManagerGroup.snippets.map((snippet) => (
-                        <li key={snippet.id}>
-                          <button
-                            className={
-                              snippet.id === selectedCommandSnippetManagerSnippet?.id
-                                ? "snippet-manager__list-button is-active"
-                                : "snippet-manager__list-button"
-                            }
-                            onClick={() => {
-                              setCommandSnippetManagerSnippetId(snippet.id);
-                            }}
-                            onDoubleClick={() => {
-                              setCommandSnippetManagerSnippetId(snippet.id);
-                              void runCommandSnippet(
-                                snippet,
-                                selectedCommandSnippetManagerGroup?.id ?? ""
-                              );
-                            }}
-                            type="button"
-                          >
-                            <span>{snippet.name.trim() || "Unnamed Snippet"}</span>
-                            <span className="snippet-manager__count">
-                              {[
-                                snippet.parameters.length > 0 ? `V${snippet.parameters.length}` : "",
-                                snippet.promptSetId ? "PS" : "",
-                                snippet.previewBeforeRun ? "P" : "",
-                                snippet.confirmBeforeRun ? "C" : ""
-                              ]
-                                .filter(Boolean)
-                                .join(" ")}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </section>
-              <section className="snippet-manager__editor">
-                <h4 className="snippet-manager__title">Editor</h4>
-                {selectedCommandSnippetManagerSnippet ? (
-                  <>
-                    <label className="snippet-manager__field">
-                      Snippet Name
-                      <input
-                        onChange={(event) => {
-                          updateCommandSnippetManagerSnippetName(
-                            selectedCommandSnippetManagerSnippet.id,
-                            event.target.value
-                          );
-                        }}
-                        onBlur={() => {
-                          if (selectedCommandSnippetManagerSnippet.name.trim()) {
-                            return;
-                          }
-                          updateCommandSnippetManagerSnippetName(
-                            selectedCommandSnippetManagerSnippet.id,
-                            "Unnamed Snippet"
-                          );
-                        }}
-                        type="text"
-                        value={selectedCommandSnippetManagerSnippet.name}
-                      />
-                    </label>
-                    <label className="snippet-manager__field">
-                      Command Template
-                      <textarea
-                        className="snippet-manager__textarea"
-                        onChange={(event) => {
-                          updateCommandSnippetManagerSnippetTemplate(
-                            selectedCommandSnippetManagerSnippet.id,
-                            event.target.value
-                          );
-                        }}
-                        value={selectedCommandSnippetManagerSnippet.template}
-                      />
-                    </label>
-                    <label className="settings-checkbox">
-                      <input
-                        checked={selectedCommandSnippetManagerSnippet.confirmBeforeRun}
-                        onChange={(event) => {
-                          updateCommandSnippetManagerSnippetConfirm(
-                            selectedCommandSnippetManagerSnippet.id,
-                            event.target.checked
-                          );
-                        }}
-                        type="checkbox"
-                      />
-                      <span>Require confirmation before run</span>
-                    </label>
-                    <label className="settings-checkbox">
-                      <input
-                        checked={selectedCommandSnippetManagerSnippet.previewBeforeRun}
-                        onChange={(event) => {
-                          updateCommandSnippetManagerSnippetPreview(
-                            selectedCommandSnippetManagerSnippet.id,
-                            event.target.checked
-                          );
-                        }}
-                        type="checkbox"
-                      />
-                      <span>Always preview resolved command before run</span>
-                    </label>
-                    <div className="snippet-manager__parameter-header">
-                      <h5 className="snippet-manager__subtitle">
-                        Prompt Set ({selectedCommandSnippetManagerGroup?.promptSets.length ?? 0}/
-                        {MAX_COMMAND_SNIPPET_PROMPT_SETS})
-                      </h5>
-                      <div className="snippet-manager__parameter-actions">
-                        <button
-                          className="secondary-button secondary-button--small"
-                          disabled={
-                            !selectedCommandSnippetManagerGroup ||
-                            selectedCommandSnippetManagerGroup.promptSets.length >=
-                              MAX_COMMAND_SNIPPET_PROMPT_SETS
-                          }
-                          onClick={addCommandSnippetManagerPromptSet}
-                          type="button"
-                        >
-                          New Prompt Set
-                        </button>
-                        <button
-                          className="secondary-button secondary-button--small"
-                          disabled={!selectedCommandSnippetManagerPromptSet}
-                          onClick={() => {
-                            void deleteSelectedCommandSnippetManagerPromptSet();
-                          }}
-                          type="button"
-                        >
-                          Delete Prompt Set
-                        </button>
-                      </div>
-                    </div>
-                    <label className="snippet-manager__field">
-                      Reusable Prompt Set
-                      <select
-                        onChange={(event) => {
-                          updateCommandSnippetManagerSnippetPromptSet(
-                            selectedCommandSnippetManagerSnippet.id,
-                            event.target.value
-                          );
-                        }}
-                        value={selectedCommandSnippetManagerSnippet.promptSetId}
-                      >
-                        <option value="">None</option>
-                        {(selectedCommandSnippetManagerGroup?.promptSets ?? []).map((promptSet) => (
-                          <option key={promptSet.id} value={promptSet.id}>
-                            {promptSet.name.trim() || "Unnamed Prompt Set"}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <p className="hint snippet-manager__meta">
-                      Prompt sets are shared within the selected group. Snippet variables can still
-                      override prompt-set keys for one-off cases.
-                    </p>
-                    {selectedCommandSnippetManagerPromptSet ? (
-                      <>
-                        <label className="snippet-manager__field">
-                          Prompt Set Name
-                          <input
-                            onChange={(event) => {
-                              updateCommandSnippetManagerPromptSetName(
-                                selectedCommandSnippetManagerPromptSet.id,
-                                event.target.value
-                              );
-                            }}
-                            onBlur={() => {
-                              if (selectedCommandSnippetManagerPromptSet.name.trim()) {
-                                return;
-                              }
-                              updateCommandSnippetManagerPromptSetName(
-                                selectedCommandSnippetManagerPromptSet.id,
-                                "Unnamed Prompt Set"
-                              );
-                            }}
-                            type="text"
-                            value={selectedCommandSnippetManagerPromptSet.name}
-                          />
-                        </label>
-                        <div className="snippet-manager__parameter-header">
-                          <h5 className="snippet-manager__subtitle">
-                            Prompt Set Variables (
-                            {selectedCommandSnippetManagerPromptSet.parameters.length}/
-                            {MAX_COMMAND_SNIPPET_PARAMETERS})
-                          </h5>
-                          <button
-                            className="secondary-button secondary-button--small"
-                            disabled={
-                              selectedCommandSnippetManagerPromptSet.parameters.length >=
-                              MAX_COMMAND_SNIPPET_PARAMETERS
-                            }
-                            onClick={addCommandSnippetManagerPromptSetParameter}
-                            type="button"
-                          >
-                            Add Variable
-                          </button>
-                        </div>
-                        {selectedCommandSnippetManagerPromptSet.parameters.length === 0 ? (
-                          <p className="hint snippet-manager__meta">
-                            Use prompt sets for values reused by multiple snippets in this group.
-                            Group scope is the default, but you can widen it to session/global.
-                          </p>
-                        ) : (
-                          <div className="snippet-manager__parameter-list">
-                            {selectedCommandSnippetManagerPromptSet.parameters.map((parameter) => {
-                              const patternError = getCommandSnippetParameterPatternError(
-                                parameter.pattern
-                              );
-                              return (
-                                <div className="snippet-manager__parameter-card" key={parameter.id}>
-                                  <div className="snippet-manager__parameter-grid">
-                                    <label className="snippet-manager__field">
-                                      Key
-                                      <input
-                                        onChange={(event) => {
-                                          updateCommandSnippetManagerPromptSetParameterKey(
-                                            selectedCommandSnippetManagerPromptSet.id,
-                                            parameter.id,
-                                            event.target.value
-                                          );
-                                        }}
-                                        type="text"
-                                        value={parameter.key}
-                                      />
-                                    </label>
-                                    <label className="snippet-manager__field">
-                                      Label
-                                      <input
-                                        onChange={(event) => {
-                                          updateCommandSnippetManagerPromptSetParameterLabel(
-                                            selectedCommandSnippetManagerPromptSet.id,
-                                            parameter.id,
-                                            event.target.value
-                                          );
-                                        }}
-                                        type="text"
-                                        value={parameter.label}
-                                      />
-                                    </label>
-                                    <label className="snippet-manager__field">
-                                      Default Value
-                                      <input
-                                        onChange={(event) => {
-                                          updateCommandSnippetManagerPromptSetParameterDefault(
-                                            selectedCommandSnippetManagerPromptSet.id,
-                                            parameter.id,
-                                            event.target.value
-                                          );
-                                        }}
-                                        type="text"
-                                        value={parameter.defaultValue}
-                                      />
-                                    </label>
-                                    <label className="snippet-manager__field">
-                                      Regex Pattern
-                                      <input
-                                        onChange={(event) => {
-                                          updateCommandSnippetManagerPromptSetParameterPattern(
-                                            selectedCommandSnippetManagerPromptSet.id,
-                                            parameter.id,
-                                            event.target.value
-                                          );
-                                        }}
-                                        placeholder="^[a-z0-9_-]+$"
-                                        type="text"
-                                        value={parameter.pattern}
-                                      />
-                                    </label>
-                                    <label className="snippet-manager__field">
-                                      Variable Scope
-                                      <select
-                                        onChange={(event) => {
-                                          updateCommandSnippetManagerPromptSetParameterScope(
-                                            selectedCommandSnippetManagerPromptSet.id,
-                                            parameter.id,
-                                            event.target.value as CommandSnippetVariableScopeId
-                                          );
-                                        }}
-                                        value={parameter.scope}
-                                      >
-                                        {COMMAND_SNIPPET_VARIABLE_SCOPES.map((scope) => (
-                                          <option key={scope.id} value={scope.id}>
-                                            {scope.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                  </div>
-                                  <div className="snippet-manager__parameter-actions">
-                                    <label className="settings-checkbox">
-                                      <input
-                                        checked={parameter.required}
-                                        onChange={(event) => {
-                                          updateCommandSnippetManagerPromptSetParameterRequired(
-                                            selectedCommandSnippetManagerPromptSet.id,
-                                            parameter.id,
-                                            event.target.checked
-                                          );
-                                        }}
-                                        type="checkbox"
-                                      />
-                                      <span>Required</span>
-                                    </label>
-                                    <button
-                                      className="secondary-button secondary-button--small"
-                                      onClick={() => {
-                                        insertCommandSnippetManagerPromptSetParameterToken(
-                                          selectedCommandSnippetManagerSnippet.id,
-                                          parameter.key
-                                        );
-                                      }}
-                                      type="button"
-                                    >
-                                      Insert {buildCommandSnippetParameterToken(parameter.key)}
-                                    </button>
-                                    <button
-                                      className="secondary-button secondary-button--small"
-                                      onClick={() => {
-                                        deleteCommandSnippetManagerPromptSetParameter(
-                                          selectedCommandSnippetManagerPromptSet.id,
-                                          parameter.id
-                                        );
-                                      }}
-                                      type="button"
-                                    >
-                                      Delete Variable
-                                    </button>
-                                  </div>
-                                  <p className="hint snippet-manager__meta">
-                                    Token: {buildCommandSnippetParameterToken(parameter.key)} | Scope:{" "}
-                                    {formatCommandSnippetVariableScopeLabel(parameter.scope)}
-                                    {patternError ? ` | Invalid regex: ${patternError}` : ""}
-                                  </p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </>
-                    ) : null}
-                    <div className="snippet-manager__parameter-header">
-                      <h5 className="snippet-manager__subtitle">
-                        Snippet Variables ({selectedCommandSnippetManagerSnippet.parameters.length}/
-                        {MAX_COMMAND_SNIPPET_PARAMETERS})
-                      </h5>
-                      <button
-                        className="secondary-button secondary-button--small"
-                        disabled={
-                          selectedCommandSnippetManagerSnippet.parameters.length >=
-                          MAX_COMMAND_SNIPPET_PARAMETERS
-                        }
-                        onClick={addCommandSnippetManagerSnippetParameter}
-                        type="button"
-                      >
-                        Add Parameter
-                      </button>
-                    </div>
-                    {selectedCommandSnippetManagerSnippet.parameters.length === 0 ? (
-                      <p className="hint snippet-manager__meta">
-                        Add parameters and reference them in the template with tokens like{" "}
-                        {buildCommandSnippetParameterToken("target")}. Snippet-scoped variables are
-                        best for one-off overrides on top of any selected prompt set.
-                      </p>
-                    ) : (
-                      <div className="snippet-manager__parameter-list">
-                        {selectedCommandSnippetManagerSnippet.parameters.map((parameter) => {
-                          const patternError = getCommandSnippetParameterPatternError(parameter.pattern);
-                          return (
-                            <div className="snippet-manager__parameter-card" key={parameter.id}>
-                              <div className="snippet-manager__parameter-grid">
-                                <label className="snippet-manager__field">
-                                  Key
-                                  <input
-                                    onChange={(event) => {
-                                      updateCommandSnippetManagerSnippetParameterKey(
-                                        selectedCommandSnippetManagerSnippet.id,
-                                        parameter.id,
-                                        event.target.value
-                                      );
-                                    }}
-                                    type="text"
-                                    value={parameter.key}
-                                  />
-                                </label>
-                                <label className="snippet-manager__field">
-                                  Label
-                                  <input
-                                    onChange={(event) => {
-                                      updateCommandSnippetManagerSnippetParameterLabel(
-                                        selectedCommandSnippetManagerSnippet.id,
-                                        parameter.id,
-                                        event.target.value
-                                      );
-                                    }}
-                                    type="text"
-                                    value={parameter.label}
-                                  />
-                                </label>
-                                <label className="snippet-manager__field">
-                                  Default Value
-                                  <input
-                                    onChange={(event) => {
-                                      updateCommandSnippetManagerSnippetParameterDefault(
-                                        selectedCommandSnippetManagerSnippet.id,
-                                        parameter.id,
-                                        event.target.value
-                                      );
-                                    }}
-                                    type="text"
-                                    value={parameter.defaultValue}
-                                  />
-                                </label>
-                                <label className="snippet-manager__field">
-                                  Regex Pattern
-                                  <input
-                                    onChange={(event) => {
-                                      updateCommandSnippetManagerSnippetParameterPattern(
-                                        selectedCommandSnippetManagerSnippet.id,
-                                        parameter.id,
-                                        event.target.value
-                                      );
-                                    }}
-                                    placeholder="^[a-z0-9_-]+$"
-                                    type="text"
-                                    value={parameter.pattern}
-                                  />
-                                </label>
-                                <label className="snippet-manager__field">
-                                  Variable Scope
-                                  <select
-                                    onChange={(event) => {
-                                      updateCommandSnippetManagerSnippetParameterScope(
-                                        selectedCommandSnippetManagerSnippet.id,
-                                        parameter.id,
-                                        event.target.value as CommandSnippetVariableScopeId
-                                      );
-                                    }}
-                                    value={parameter.scope}
-                                  >
-                                    {COMMAND_SNIPPET_VARIABLE_SCOPES.map((scope) => (
-                                      <option key={scope.id} value={scope.id}>
-                                        {scope.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                              </div>
-                              <div className="snippet-manager__parameter-actions">
-                                <label className="settings-checkbox">
-                                  <input
-                                    checked={parameter.required}
-                                    onChange={(event) => {
-                                      updateCommandSnippetManagerSnippetParameterRequired(
-                                        selectedCommandSnippetManagerSnippet.id,
-                                        parameter.id,
-                                        event.target.checked
-                                      );
-                                    }}
-                                    type="checkbox"
-                                  />
-                                  <span>Required</span>
-                                </label>
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  onClick={() => {
-                                    insertCommandSnippetManagerSnippetParameterToken(
-                                      selectedCommandSnippetManagerSnippet.id,
-                                      parameter.key
-                                    );
-                                  }}
-                                  type="button"
-                                >
-                                  Insert {buildCommandSnippetParameterToken(parameter.key)}
-                                </button>
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  onClick={() => {
-                                    deleteCommandSnippetManagerSnippetParameter(
-                                      selectedCommandSnippetManagerSnippet.id,
-                                      parameter.id
-                                    );
-                                  }}
-                                  type="button"
-                                >
-                                  Delete Parameter
-                                </button>
-                              </div>
-                              <p className="hint snippet-manager__meta">
-                                Token: {buildCommandSnippetParameterToken(parameter.key)} | Scope:{" "}
-                                {formatCommandSnippetVariableScopeLabel(parameter.scope)}
-                                {patternError ? ` | Invalid regex: ${patternError}` : ""}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <p className="hint snippet-manager__meta">
-                      Placeholders: {"${clipboard}"} {"${date}"} {"${time}"} {"${datetime}"}{" "}
-                      {"${sessionName}"} {"${host}"} {"${username}"} {"${tabTitle}"}{" "}
-                      {buildCommandSnippetParameterToken("name")}
-                    </p>
-                    {selectedCommandSnippetMissingParameterKeys.length > 0 ? (
-                      <p className="hint snippet-manager__meta">
-                        Missing parameter definitions: {selectedCommandSnippetMissingParameterKeys.join(", ")}
-                      </p>
-                    ) : null}
-                    {selectedCommandSnippetShadowedPromptSetKeys.length > 0 ? (
-                      <p className="hint snippet-manager__meta">
-                        Snippet variables override prompt-set keys:{" "}
-                        {selectedCommandSnippetShadowedPromptSetKeys.join(", ")}
-                      </p>
-                    ) : null}
-                    {selectedCommandSnippetUnusedParameterKeys.length > 0 ? (
-                      <p className="hint snippet-manager__meta">
-                        Unused effective variables for this snippet:{" "}
-                        {selectedCommandSnippetUnusedParameterKeys.join(", ")}
-                      </p>
-                    ) : null}
-                  </>
-                ) : (
-                  <p className="hint snippet-manager__empty">Select or create a snippet to edit.</p>
-                )}
-              </section>
-            </div>
-            <div className="modal__actions">
-              <button className="primary-button" onClick={closeCommandSnippetManager} type="button">
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <CommandSnippetManagerModal
+        buildParameterToken={buildCommandSnippetParameterToken}
+        formatScopeLabel={formatCommandSnippetVariableScopeLabel}
+        getPatternError={getCommandSnippetParameterPatternError}
+        groupCount={commandSnippetGroups.length}
+        groups={commandSnippetGroups}
+        maxGroupCount={MAX_COMMAND_SNIPPET_GROUPS}
+        maxParameters={MAX_COMMAND_SNIPPET_PARAMETERS}
+        maxPromptSets={MAX_COMMAND_SNIPPET_PROMPT_SETS}
+        maxSnippetsPerGroup={MAX_COMMAND_SNIPPETS_PER_GROUP}
+        missingParameterKeys={selectedCommandSnippetMissingParameterKeys}
+        onAddGroup={addCommandSnippetManagerGroup}
+        onAddPromptSet={addCommandSnippetManagerPromptSet}
+        onAddPromptSetParameter={addCommandSnippetManagerPromptSetParameter}
+        onAddSnippet={addCommandSnippetManagerSnippet}
+        onAddSnippetParameter={addCommandSnippetManagerSnippetParameter}
+        onClearAll={() => {
+          void clearAllCommandSnippetGroups();
+        }}
+        onClearScopedValues={() => {
+          void clearCommandSnippetScopedValues();
+        }}
+        onClose={closeCommandSnippetManager}
+        onDeleteGroup={() => {
+          void deleteCommandSnippetManagerGroup();
+        }}
+        onDeletePromptSetParameter={deleteCommandSnippetManagerPromptSetParameter}
+        onDeleteSelectedPromptSet={() => {
+          void deleteSelectedCommandSnippetManagerPromptSet();
+        }}
+        onDeleteSnippet={() => {
+          void deleteCommandSnippetManagerSnippet();
+        }}
+        onDeleteSnippetParameter={deleteCommandSnippetManagerSnippetParameter}
+        onExportJson={() => {
+          void exportCommandSnippetGroups();
+        }}
+        onGroupNameChange={updateCommandSnippetManagerGroupName}
+        onImportJson={importCommandSnippetGroupsWithUiError}
+        onInsertPromptSetParameterToken={insertCommandSnippetManagerPromptSetParameterToken}
+        onInsertSnippetParameterToken={insertCommandSnippetManagerSnippetParameterToken}
+        onPromptSetNameChange={updateCommandSnippetManagerPromptSetName}
+        onPromptSetParameterDefaultChange={updateCommandSnippetManagerPromptSetParameterDefault}
+        onPromptSetParameterKeyChange={updateCommandSnippetManagerPromptSetParameterKey}
+        onPromptSetParameterLabelChange={updateCommandSnippetManagerPromptSetParameterLabel}
+        onPromptSetParameterPatternChange={updateCommandSnippetManagerPromptSetParameterPattern}
+        onPromptSetParameterRequiredChange={updateCommandSnippetManagerPromptSetParameterRequired}
+        onPromptSetParameterScopeChange={updateCommandSnippetManagerPromptSetParameterScope}
+        onRunSelectedSnippet={() => {
+          void runSelectedCommandSnippetManagerSnippet();
+        }}
+        onRunSnippet={runCommandSnippetManagerSnippetById}
+        onSelectGroup={selectCommandSnippetManagerGroup}
+        onSelectedGroupNameBlur={normalizeSelectedCommandSnippetManagerGroupName}
+        onSelectedPromptSetNameBlur={normalizeSelectedCommandSnippetManagerPromptSetName}
+        onSelectedSnippetNameBlur={normalizeSelectedCommandSnippetManagerSnippetName}
+        onSelectSnippet={selectCommandSnippetManagerSnippet}
+        onSnippetConfirmChange={updateCommandSnippetManagerSnippetConfirm}
+        onSnippetNameChange={updateCommandSnippetManagerSnippetName}
+        onSnippetParameterDefaultChange={updateCommandSnippetManagerSnippetParameterDefault}
+        onSnippetParameterKeyChange={updateCommandSnippetManagerSnippetParameterKey}
+        onSnippetParameterLabelChange={updateCommandSnippetManagerSnippetParameterLabel}
+        onSnippetParameterPatternChange={updateCommandSnippetManagerSnippetParameterPattern}
+        onSnippetParameterRequiredChange={updateCommandSnippetManagerSnippetParameterRequired}
+        onSnippetParameterScopeChange={updateCommandSnippetManagerSnippetParameterScope}
+        onSnippetPreviewChange={updateCommandSnippetManagerSnippetPreview}
+        onSnippetPromptSetChange={updateCommandSnippetManagerSnippetPromptSet}
+        onSnippetTemplateChange={updateCommandSnippetManagerSnippetTemplate}
+        open={isCommandSnippetManagerOpen}
+        scopedValueCount={commandSnippetScopedValueCount}
+        scopeOptions={COMMAND_SNIPPET_VARIABLE_SCOPES}
+        selectedGroup={selectedCommandSnippetManagerGroup}
+        selectedPromptSet={selectedCommandSnippetManagerPromptSet}
+        selectedSnippet={selectedCommandSnippetManagerSnippet}
+        selectedSnippetHasInvalidPattern={selectedCommandSnippetHasInvalidPattern}
+        shadowedPromptSetKeys={selectedCommandSnippetShadowedPromptSetKeys}
+        totalPromptSetCount={totalCommandSnippetPromptSetCount}
+        totalSnippetCount={totalCommandSnippetCount}
+        unusedParameterKeys={selectedCommandSnippetUnusedParameterKeys}
+      />
 
       {commandHistoryContextMenu ? (
         <div
@@ -25827,327 +24724,71 @@ export function App() {
         </div>
       ) : null}
 
-      {isSettingsOpen ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-        >
-          <div
-            className="modal modal--settings"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Settings"
-          >
-            <div className="modal__header">
-              <h3>Settings</h3>
-              <button
-                className="icon-button"
-                onClick={closeSettingsPanel}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            <div className="settings-layout">
-              <div className="settings-nav" aria-label="Settings sections" role="tablist">
-                {settingsSections.map((section) => (
-                  <button
-                    key={section.id}
-                    className={
-                      activeSettingsSection === section.id
-                        ? "settings-nav__button is-active"
-                        : "settings-nav__button"
-                    }
-                    onClick={() => setActiveSettingsSection(section.id)}
-                    role="tab"
-                    type="button"
-                  >
-                    {section.label}
-                  </button>
-                ))}
-              </div>
-              <div className="session-form settings-panel">
-                <div className="settings-panel__header">
-                  <h4 className="settings-group__title">
-                    {getSettingsSectionTitle(activeSettingsSection)}
-                  </h4>
-                  <p className="hint settings-panel__version">Version {APP_VERSION}</p>
-                </div>
-
+      <SettingsModalShell
+        activeSectionId={activeSettingsSection}
+        onClose={closeSettingsPanel}
+        onSelectSection={(sectionId) => setActiveSettingsSection(sectionId as SettingsSectionId)}
+        open={isSettingsOpen}
+        sectionTitle={getSettingsSectionTitle(activeSettingsSection)}
+        sections={settingsSections}
+        versionLabel={`Version ${APP_VERSION}`}
+      >
                 {activeSettingsSection === "connection" ? (
-                  <>
-                    <label className="settings-checkbox">
-                      <input
-                        checked={connectionPreferences.autoReconnect}
-                        onChange={(event) => setAutoReconnect(event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>Auto reconnect disconnected tabs</span>
-                    </label>
-                    <label>
-                      Reconnect Delay (seconds)
-                      <input
-                        max={60}
-                        min={1}
-                        onChange={(event) => setReconnectDelaySeconds(event.target.value)}
-                        type="number"
-                        value={connectionPreferences.reconnectDelaySeconds}
-                      />
-                    </label>
-                    <p className="hint">
-                      Applies when a terminal tab closes unexpectedly. Delay range: 1-60 seconds.
-                    </p>
-                  </>
+                  <ConnectionSettingsSection
+                    autoReconnect={connectionPreferences.autoReconnect}
+                    onAutoReconnectChange={setAutoReconnect}
+                    onReconnectDelayChange={setReconnectDelaySeconds}
+                    reconnectDelaySeconds={connectionPreferences.reconnectDelaySeconds}
+                  />
                 ) : null}
 
                 {activeSettingsSection === "workspace" ? (
-                  <>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Workspace Profile</h4>
-                        <p className="hint">
-                          Set an environment-wide risk cue for this app instance. This profile is
-                          shown in the UI and can also drive the global Safety pack/template
-                          defaults.
-                        </p>
-                      </div>
-                      <div className="settings-safety-preset-grid">
-                        {WORKSPACE_PROFILE_OPTIONS.map((profile) => {
-                          const template =
-                            DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
-                              (entry) => entry.id === profile.id
-                            ) ?? DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0];
-                          const recommendedPackLabel =
-                            DANGEROUS_COMMAND_POLICY_PACKS.find(
-                              (pack) => pack.id === template.recommendedPolicyPackId
-                            )?.label ?? template.recommendedPolicyPackId;
-                          return (
-                            <button
-                              className={
-                                profile.id === workspaceProfilePreferences.profileId
-                                  ? "settings-safety-preset is-active"
-                                  : "settings-safety-preset"
-                              }
-                              key={profile.id}
-                              onClick={() => setWorkspaceProfileId(profile.id)}
-                              type="button"
-                            >
-                              <span className="settings-safety-preset__title">
-                                {profile.label}
-                              </span>
-                              <span className="hint settings-safety-preset__meta">
-                                {profile.description}
-                              </span>
-                              <span className="settings-safety-preset__count">
-                                Safety default: {template.label} / {recommendedPackLabel}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <label className="settings-checkbox">
-                      <input
-                        checked={workspaceProfilePreferences.syncDangerousCommandSafety}
-                        onChange={(event) =>
-                          setWorkspaceProfileDangerousCommandSync(event.target.checked)
-                        }
-                        type="checkbox"
-                      />
-                      <span>Sync global Safety pack/template to workspace profile</span>
-                    </label>
-                    <p className="hint">
-                      Current profile: {selectedWorkspaceProfile.label}
-                      {" | "}Safety sync{" "}
-                      {workspaceProfilePreferences.syncDangerousCommandSafety ? "on" : "off"}
-                      {" | "}group overrides still win for matching session groups
-                    </p>
-                    <p className="hint">
-                      When sync is enabled, the global Safety environment template and recommended
-                      policy pack follow the selected workspace profile. Custom patterns,
-                      persistent approvals, and session-group overrides stay untouched.
-                    </p>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Terminal Editor Focus</h4>
-                        <p className="hint">
-                          Automatically tighten the main layout when the active terminal tab enters
-                          an alternate-screen editor such as `nano` or `vim`.
-                        </p>
-                      </div>
-                    </div>
-                    <label className="settings-checkbox">
-                      <input
-                        checked={terminalEditorFocusPreferences.autoLayoutEnabled}
-                        onChange={(event) =>
-                          setTerminalEditorAutoLayoutEnabled(event.target.checked)
-                        }
-                        type="checkbox"
-                      />
-                      <span>Auto-focus alternate-screen terminal editors</span>
-                    </label>
-                    <div className="settings-safety-preset-grid">
-                      {TERMINAL_EDITOR_FOCUS_THEME_OPTIONS.map((theme) => (
-                        <button
-                          className={
-                            theme.id === terminalEditorFocusPreferences.themeId
-                              ? "settings-safety-preset settings-terminal-theme-preset is-active"
-                              : "settings-safety-preset settings-terminal-theme-preset"
-                          }
-                          data-editor-theme={theme.id}
-                          key={theme.id}
-                          onClick={() => setTerminalEditorFocusThemeId(theme.id)}
-                          type="button"
-                        >
-                          <div className="settings-safety-preset__title">{theme.label}</div>
-                          <div
-                            className="settings-terminal-theme-preview"
-                            data-editor-theme={theme.id}
-                          >
-                            <span />
-                            <span />
-                            <span />
-                          </div>
-                          <div className="settings-safety-preset__meta">{theme.description}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Editor Typography</h4>
-                        <p className="hint">
-                          Adjust editor-mode font size and row height without changing normal shell
-                          density.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="settings-safety-preset-grid">
-                      {TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS.map((preset) => (
-                        <button
-                          className={
-                            preset.id === terminalEditorFocusPreferences.typographyId
-                              ? "settings-safety-preset settings-terminal-typography-preset is-active"
-                              : "settings-safety-preset settings-terminal-typography-preset"
-                          }
-                          data-editor-typography={preset.id}
-                          key={preset.id}
-                          onClick={() => setTerminalEditorFocusTypographyId(preset.id)}
-                          type="button"
-                        >
-                          <div className="settings-safety-preset__title">{preset.label}</div>
-                          <div
-                            className="settings-terminal-typography-preview"
-                            data-editor-typography={preset.id}
-                          >
-                            <span />
-                            <span />
-                            <span />
-                          </div>
-                          <div className="settings-safety-preset__meta">{preset.description}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Editor Font</h4>
-                        <p className="hint">
-                          Swap the editor-mode mono stack without changing the normal terminal font.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="settings-safety-preset-grid">
-                      {TERMINAL_EDITOR_FOCUS_FONT_OPTIONS.map((preset) => (
-                        <button
-                          className={
-                            preset.id === terminalEditorFocusPreferences.fontId
-                              ? "settings-safety-preset settings-terminal-font-preset is-active"
-                              : "settings-safety-preset settings-terminal-font-preset"
-                          }
-                          data-editor-font={preset.id}
-                          key={preset.id}
-                          onClick={() => setTerminalEditorFocusFontId(preset.id)}
-                          type="button"
-                        >
-                          <div className="settings-safety-preset__title">{preset.label}</div>
-                          <div className="settings-terminal-font-preview" data-editor-font={preset.id}>
-                            <span>sudo vim /etc/nginx/nginx.conf</span>
-                            <span>server_name example.internal;</span>
-                          </div>
-                          <div className="settings-safety-preset__meta">{preset.description}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Editor Text Rhythm</h4>
-                        <p className="hint">
-                          Adjust editor-mode stroke weight and glyph spacing without changing the regular shell.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="settings-safety-preset-grid">
-                      {TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS.map((preset) => (
-                        <button
-                          className={
-                            preset.id === terminalEditorFocusPreferences.rhythmId
-                              ? "settings-safety-preset settings-terminal-rhythm-preset is-active"
-                              : "settings-safety-preset settings-terminal-rhythm-preset"
-                          }
-                          data-editor-rhythm={preset.id}
-                          key={preset.id}
-                          onClick={() => setTerminalEditorFocusRhythmId(preset.id)}
-                          type="button"
-                        >
-                          <div className="settings-safety-preset__title">{preset.label}</div>
-                          <div className="settings-terminal-rhythm-preview" data-editor-rhythm={preset.id}>
-                            <span>sudo systemctl restart nginx</span>
-                            <span>server_name example.internal;</span>
-                          </div>
-                          <div className="settings-safety-preset__meta">{preset.description}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Editor Cursor</h4>
-                        <p className="hint">
-                          Pick a distinct cursor shape for editor mode without changing the regular shell cursor.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="settings-safety-preset-grid">
-                      {TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS.map((preset) => (
-                        <button
-                          className={
-                            preset.id === terminalEditorFocusPreferences.cursorId
-                              ? "settings-safety-preset settings-terminal-cursor-preset is-active"
-                              : "settings-safety-preset settings-terminal-cursor-preset"
-                          }
-                          data-editor-cursor={preset.id}
-                          key={preset.id}
-                          onClick={() => setTerminalEditorFocusCursorId(preset.id)}
-                          type="button"
-                        >
-                          <div className="settings-safety-preset__title">{preset.label}</div>
-                          <div className="settings-terminal-cursor-preview" data-editor-cursor={preset.id}>
-                            <span />
-                          </div>
-                          <div className="settings-safety-preset__meta">{preset.description}</div>
-                        </button>
-                      ))}
-                    </div>
-                    <p className="hint">
-                      Current editor focus mode:{" "}
-                      {terminalEditorFocusPreferences.autoLayoutEnabled ? "on" : "off"}
-                      {" | "}Theme {selectedTerminalEditorFocusTheme.label}
-                      {" | "}Typography {selectedTerminalEditorFocusTypography.label}
-                      {" | "}Font {selectedTerminalEditorFocusFont.label}
-                      {" | "}Rhythm {selectedTerminalEditorFocusRhythm.label}
-                      {" | "}Cursor {selectedTerminalEditorFocusCursor.label}
-                      {" | "}Only affects the active tab and never rewrites terminal editor content
-                    </p>
-                  </>
+                  <WorkspaceSettingsSection
+                    cursorOptions={TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS}
+                    editorFocusAutoLayoutEnabled={terminalEditorFocusPreferences.autoLayoutEnabled}
+                    fontOptions={TERMINAL_EDITOR_FOCUS_FONT_OPTIONS}
+                    onCursorSelect={(cursorId) =>
+                      setTerminalEditorFocusCursorId(cursorId as TerminalEditorFocusCursorId)
+                    }
+                    onEditorFocusAutoLayoutEnabledChange={setTerminalEditorAutoLayoutEnabled}
+                    onFontSelect={(fontId) =>
+                      setTerminalEditorFocusFontId(fontId as TerminalEditorFocusFontId)
+                    }
+                    onRhythmSelect={(rhythmId) =>
+                      setTerminalEditorFocusRhythmId(rhythmId as TerminalEditorFocusRhythmId)
+                    }
+                    onSyncDangerousCommandSafetyChange={setWorkspaceProfileDangerousCommandSync}
+                    onThemeSelect={(themeId) =>
+                      setTerminalEditorFocusThemeId(themeId as TerminalEditorFocusThemeId)
+                    }
+                    onTypographySelect={(typographyId) =>
+                      setTerminalEditorFocusTypographyId(
+                        typographyId as TerminalEditorFocusTypographyId
+                      )
+                    }
+                    onWorkspaceProfileSelect={(profileId) =>
+                      setWorkspaceProfileId(profileId as WorkspaceProfileId)
+                    }
+                    rhythmOptions={TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS}
+                    selectedCursorId={terminalEditorFocusPreferences.cursorId}
+                    selectedCursorLabel={selectedTerminalEditorFocusCursor.label}
+                    selectedFontId={terminalEditorFocusPreferences.fontId}
+                    selectedFontLabel={selectedTerminalEditorFocusFont.label}
+                    selectedRhythmId={terminalEditorFocusPreferences.rhythmId}
+                    selectedRhythmLabel={selectedTerminalEditorFocusRhythm.label}
+                    selectedThemeId={terminalEditorFocusPreferences.themeId}
+                    selectedThemeLabel={selectedTerminalEditorFocusTheme.label}
+                    selectedTypographyId={terminalEditorFocusPreferences.typographyId}
+                    selectedTypographyLabel={selectedTerminalEditorFocusTypography.label}
+                    selectedWorkspaceProfileId={workspaceProfilePreferences.profileId}
+                    selectedWorkspaceProfileLabel={selectedWorkspaceProfile.label}
+                    syncDangerousCommandSafety={
+                      workspaceProfilePreferences.syncDangerousCommandSafety
+                    }
+                    themeOptions={TERMINAL_EDITOR_FOCUS_THEME_OPTIONS}
+                    typographyOptions={TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS}
+                    workspaceProfileCards={workspaceProfileCardViews}
+                  />
                 ) : null}
 
                 {activeSettingsSection === "safety" ? (
@@ -26878,1578 +25519,281 @@ export function App() {
                 ) : null}
 
                 {activeSettingsSection === "hotkeys" ? (
-                  <>
-                    <div className="settings-hotkey-list">
-                      {HOTKEY_ACTION_ORDER.map((action) => {
-                        const binding = hotkeyPreferences[action];
-                        const isConflicting = hotkeyConflictActionSet.has(action);
-                        const isFocused = hotkeyFocusedAction === action;
-                        const conflictBindingLabel =
-                          hotkeyConflictBindingByAction.get(action) ?? "";
-                        const rowClassName = [
-                          "settings-hotkey-row",
-                          isConflicting ? "is-conflict" : "",
-                          isFocused ? "is-focused-conflict" : ""
-                        ]
-                          .filter(Boolean)
-                          .join(" ");
-                        return (
-                          <div
-                            className={rowClassName}
-                            key={action}
-                            ref={(element) => {
-                              registerHotkeyRowRef(action, element);
-                            }}
-                          >
-                            <label className="settings-checkbox settings-hotkey-row__toggle">
-                              <input
-                                checked={binding.enabled}
-                                onChange={(event) =>
-                                  setHotkeyBindingEnabled(action, event.target.checked)
-                                }
-                                type="checkbox"
-                              />
-                              <span className="settings-hotkey-row__label">
-                                <span>{getHotkeyActionDescription(action)}</span>
-                                <span className="settings-hotkey-row__binding-inline hint">
-                                  {binding.enabled
-                                    ? formatHotkeyBindingLabel(binding, isMacPlatform)
-                                    : "Disabled"}
-                                </span>
-                                {isConflicting ? (
-                                  <span className="settings-hotkey-row__conflict-badge">
-                                    Conflict
-                                  </span>
-                                ) : null}
-                              </span>
-                            </label>
-                            <div className="settings-hotkey-row__controls">
-                              <label>
-                                Modifier
-                                <select
-                                  disabled={!binding.enabled}
-                                  onChange={(event) =>
-                                    setHotkeyBindingModifier(
-                                      action,
-                                      event.target.value as HotkeyModifier
-                                    )
-                                  }
-                                  value={binding.modifier}
-                                >
-                                  {hotkeyModifierOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label>
-                                Key
-                                <input
-                                  className="settings-hotkey-row__key"
-                                  disabled={!binding.enabled}
-                                  maxLength={1}
-                                  onChange={(event) =>
-                                    setHotkeyBindingKey(action, event.target.value)
-                                  }
-                                  placeholder={HOTKEY_KEY_PLACEHOLDER}
-                                  value={binding.key.toUpperCase()}
-                                />
-                              </label>
-                            </div>
-                            {isConflicting ? (
-                              <p className="settings-hotkey-row__conflict-hint hint">
-                                Conflicts on <code>{conflictBindingLabel}</code>.
-                              </p>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {hotkeyConflicts.length > 0 ? (
-                      <div className="settings-hotkey-conflicts" role="alert">
-                        <p className="settings-hotkey-conflicts__title">
-                          Hotkey conflicts detected ({hotkeyConflicts.length})
-                        </p>
-                        <div className="settings-hotkey-conflicts__toolbar">
-                          <button
-                            className="secondary-button secondary-button--small"
-                            onClick={focusPreviousHotkeyConflict}
-                            type="button"
-                          >
-                            Prev
-                          </button>
-                          <span className="hint settings-hotkey-conflicts__cursor">
-                            {hotkeyConflictCursorIndex + 1} / {hotkeyConflicts.length}
-                          </span>
-                          <button
-                            className="secondary-button secondary-button--small"
-                            onClick={focusNextHotkeyConflict}
-                            type="button"
-                          >
-                            Next
-                          </button>
-                        </div>
-                        <ul className="settings-hotkey-conflicts__list">
-                          {hotkeyConflicts.map((conflict, index) => (
-                            <li
-                              className={
-                                index === hotkeyConflictCursorIndex
-                                  ? "settings-hotkey-conflicts__item is-active"
-                                  : "settings-hotkey-conflicts__item"
-                              }
-                              key={conflict.signature}
-                            >
-                              <span className="settings-hotkey-conflicts__summary">
-                                <code>
-                                  {formatHotkeyBindingLabel(
-                                    {
-                                      enabled: true,
-                                      modifier: conflict.modifier,
-                                      key: conflict.key
-                                    },
-                                    isMacPlatform
-                                  )}
-                                </code>
-                                <span>
-                                  {conflict.actions
-                                    .map((action) => getHotkeyActionDescription(action))
-                                    .join(" / ")}
-                                </span>
-                              </span>
-                              <button
-                                className="secondary-button secondary-button--small settings-hotkey-conflicts__locate"
-                                onClick={() => focusHotkeyConflictAtIndex(index)}
-                                type="button"
-                              >
-                                Locate
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                        <p className="hint">
-                          Conflicts may trigger only the first matching action. Auto resolve
-                          keeps the first action and disables the rest.
-                        </p>
-                        <p className="hint">
-                          Keyboard navigation: <code>Alt + [</code> previous, <code>Alt + ]</code>{" "}
-                          next.
-                        </p>
-                        <div className="modal__actions">
-                          <button
-                            className="secondary-button"
-                            onClick={() => focusHotkeyConflictAtIndex(0)}
-                            type="button"
-                          >
-                            Focus First Conflict
-                          </button>
-                          <button
-                            className="secondary-button"
-                            onClick={resolveHotkeyConflicts}
-                            type="button"
-                          >
-                            Auto Resolve Conflicts
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                    <p className="hint">
-                      Windows defaults use <code>Ctrl + Shift + C</code> /{" "}
-                      <code>Ctrl + Shift + V</code> for terminal copy/paste, and keeps
-                      Alt-based keys for tab and search actions. macOS keeps the existing
-                      Cmd-based behavior.
-                    </p>
-                    <div className="modal__actions">
-                      <button
-                        className="secondary-button"
-                        onClick={() => {
-                          void importHotkeyPreferences();
-                        }}
-                        type="button"
-                      >
-                        Import Hotkeys...
-                      </button>
-                      <button
-                        className="secondary-button"
-                        onClick={() => {
-                          void exportHotkeyPreferences();
-                        }}
-                        type="button"
-                      >
-                        Export Hotkeys...
-                      </button>
-                      <button
-                        className="secondary-button"
-                        onClick={() => setHotkeyPreferences(createDefaultHotkeyPreferences())}
-                        type="button"
-                      >
-                        Reset Hotkeys
-                      </button>
-                    </div>
-                  </>
+                  <HotkeySettingsSection
+                    hotkeyConflictCursorIndex={hotkeyConflictCursorIndex}
+                    hotkeyConflicts={hotkeyConflictViews}
+                    hotkeyKeyPlaceholder={HOTKEY_KEY_PLACEHOLDER}
+                    hotkeyModifierOptions={hotkeyModifierOptions}
+                    hotkeyRows={hotkeySettingRowViews}
+                    onBindingEnabledChange={(actionId, value) =>
+                      setHotkeyBindingEnabled(actionId as HotkeyActionId, value)
+                    }
+                    onBindingKeyChange={(actionId, value) =>
+                      setHotkeyBindingKey(actionId as HotkeyActionId, value)
+                    }
+                    onBindingModifierChange={(actionId, modifier) =>
+                      setHotkeyBindingModifier(actionId as HotkeyActionId, modifier as HotkeyModifier)
+                    }
+                    onExportHotkeys={() => {
+                      void exportHotkeyPreferences();
+                    }}
+                    onFocusConflictAtIndex={focusHotkeyConflictAtIndex}
+                    onFocusNextConflict={focusNextHotkeyConflict}
+                    onFocusPreviousConflict={focusPreviousHotkeyConflict}
+                    onImportHotkeys={() => {
+                      void importHotkeyPreferences();
+                    }}
+                    onRegisterRowRef={(actionId, element) => {
+                      registerHotkeyRowRef(actionId as HotkeyActionId, element);
+                    }}
+                    onResetHotkeys={() => setHotkeyPreferences(createDefaultHotkeyPreferences())}
+                    onResolveConflicts={resolveHotkeyConflicts}
+                  />
                 ) : null}
 
                 {activeSettingsSection === "serverHealth" ? (
-                  <>
-                    <label className="settings-checkbox">
-                      <input
-                        checked={serverHealthAlertPreferences.enabled}
-                        onChange={(event) => setServerHealthAlertEnabled(event.target.checked)}
-                        type="checkbox"
-                      />
-                      <span>Enable threshold alerts in monitor panel</span>
-                    </label>
-                    <div className="settings-threshold-grid">
-                      <label>
-                        CPU Alert (%)
-                        <input
-                          disabled={!serverHealthAlertPreferences.enabled}
-                          max={100}
-                          min={50}
-                          onChange={(event) =>
-                            setServerHealthAlertThreshold("cpuWarnPercent", event.target.value)
-                          }
-                          type="number"
-                          value={serverHealthAlertPreferences.cpuWarnPercent}
-                        />
-                      </label>
-                      <label>
-                        Memory Alert (%)
-                        <input
-                          disabled={!serverHealthAlertPreferences.enabled}
-                          max={100}
-                          min={50}
-                          onChange={(event) =>
-                            setServerHealthAlertThreshold("memoryWarnPercent", event.target.value)
-                          }
-                          type="number"
-                          value={serverHealthAlertPreferences.memoryWarnPercent}
-                        />
-                      </label>
-                      <label>
-                        Disk Alert (%)
-                        <input
-                          disabled={!serverHealthAlertPreferences.enabled}
-                          max={100}
-                          min={50}
-                          onChange={(event) =>
-                            setServerHealthAlertThreshold("diskWarnPercent", event.target.value)
-                          }
-                          type="number"
-                          value={serverHealthAlertPreferences.diskWarnPercent}
-                        />
-                      </label>
-                    </div>
-                    <p className="hint">
-                      Threshold range is 50-100. Alerts are evaluated on each monitor refresh.
-                    </p>
-                  </>
+                  <ServerHealthSettingsSection
+                    cpuWarnPercent={serverHealthAlertPreferences.cpuWarnPercent}
+                    diskWarnPercent={serverHealthAlertPreferences.diskWarnPercent}
+                    enabled={serverHealthAlertPreferences.enabled}
+                    memoryWarnPercent={serverHealthAlertPreferences.memoryWarnPercent}
+                    onEnabledChange={setServerHealthAlertEnabled}
+                    onThresholdChange={setServerHealthAlertThreshold}
+                  />
                 ) : null}
 
                 {activeSettingsSection === "fileOpening" ? (
-                  <>
-                    <label>
-                      Open Program or Command (optional)
-                      <div className="field-row">
-                        <input
-                          onChange={(event) => setPreferredOpenProgramPath(event.target.value)}
-                          placeholder={
-                            isMacPlatform
-                              ? "/Applications/TextEdit.app"
-                              : "code --reuse-window"
-                          }
-                          value={fileOpenPreferences.preferredProgramPath}
-                        />
-                        <button
-                          className="field-row__action"
-                          onClick={() => {
-                            void pickPreferredOpenProgram();
-                          }}
-                          type="button"
-                        >
-                          Browse
-                        </button>
-                      </div>
-                    </label>
-                    <p className="hint">
-                      Leave empty to use system default app. Used by SFTP "Open File" and file
-                      double-click.
-                    </p>
-                    <p className="hint">
-                      Windows accepts either a program path or a command like <code>code</code>,{" "}
-                      <code>cursor</code>, or <code>"C:\\Program Files\\Microsoft VS Code\\Code.exe" --reuse-window</code>.
-                    </p>
-                  </>
+                  <FileOpeningSettingsSection
+                    isMacPlatform={isMacPlatform}
+                    onBrowseProgram={() => {
+                      void pickPreferredOpenProgram();
+                    }}
+                    onPreferredProgramPathChange={setPreferredOpenProgramPath}
+                    preferredProgramPath={fileOpenPreferences.preferredProgramPath}
+                  />
                 ) : null}
 
                 {activeSettingsSection === "sftp" ? (
-                  <>
-                    <label>
-                      Upload Threads
-                      <input
-                        max={MAX_SFTP_TRANSFER_CONCURRENCY}
-                        min={1}
-                        onChange={(event) => setUploadConcurrency(event.target.value)}
-                        type="number"
-                        value={sftpTransferPreferences.uploadConcurrency}
-                      />
-                    </label>
-                    <label>
-                      Download Threads
-                      <input
-                        max={MAX_SFTP_TRANSFER_CONCURRENCY}
-                        min={1}
-                        onChange={(event) => setDownloadConcurrency(event.target.value)}
-                        type="number"
-                        value={sftpTransferPreferences.downloadConcurrency}
-                      />
-                    </label>
-                    <div className="field-grid settings-sftp-rate-grid">
-                      <label>
-                        Upload Limit (KiB/s)
-                        <input
-                          max={MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS}
-                          min={0}
-                          onChange={(event) => setUploadRateLimitKiBps(event.target.value)}
-                          type="number"
-                          value={sftpTransferPreferences.uploadRateLimitKiBps}
-                        />
-                      </label>
-                      <label>
-                        Download Limit (KiB/s)
-                        <input
-                          max={MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS}
-                          min={0}
-                          onChange={(event) => setDownloadRateLimitKiBps(event.target.value)}
-                          type="number"
-                          value={sftpTransferPreferences.downloadRateLimitKiBps}
-                        />
-                      </label>
-                    </div>
-                    <label className="settings-checkbox settings-checkbox--inline">
-                      <input
-                        checked={sftpTransferPreferences.scheduleWindowEnabled}
-                        onChange={(event) =>
-                          setSftpTransferScheduleWindowEnabled(event.target.checked)
-                        }
-                        type="checkbox"
-                      />
-                      Restrict queued transfers to a schedule window
-                    </label>
-                    <div className="field-grid settings-sftp-schedule-grid">
-                      <label>
-                        Window Start
-                        <input
-                          disabled={!sftpTransferPreferences.scheduleWindowEnabled}
-                          onChange={(event) =>
-                            setSftpTransferScheduleWindowStart(event.target.value)
-                          }
-                          step={60}
-                          type="time"
-                          value={formatSftpScheduleTimeInputValue(
-                            sftpTransferPreferences.scheduleWindowStartMinutes
-                          )}
-                        />
-                      </label>
-                      <label>
-                        Window End
-                        <input
-                          disabled={!sftpTransferPreferences.scheduleWindowEnabled}
-                          onChange={(event) => setSftpTransferScheduleWindowEnd(event.target.value)}
-                          step={60}
-                          type="time"
-                          value={formatSftpScheduleTimeInputValue(
-                            sftpTransferPreferences.scheduleWindowEndMinutes
-                          )}
-                        />
-                      </label>
-                    </div>
-                    <div className="settings-sftp-schedule-days">
-                      {SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS.map((dayOption) => (
-                        <label
-                          className="settings-checkbox settings-checkbox--inline"
-                          key={dayOption.value}
-                        >
-                          <input
-                            checked={sftpTransferPreferences.scheduleWindowDays.includes(
-                              dayOption.value
-                            )}
-                            onChange={() => toggleSftpTransferScheduleWindowDay(dayOption.value)}
-                            type="checkbox"
-                          />
-                          {dayOption.label}
-                        </label>
-                      ))}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Schedule Presets</h4>
-                        <p className="hint">
-                          Apply a ready-made weekday/time template, then fine-tune the exact window
-                          if needed.
-                        </p>
-                      </div>
-                      <div className="settings-safety-preset-grid">
-                        {SFTP_TRANSFER_SCHEDULE_PRESETS.map((preset) => {
-                          const presetPreferences =
-                            createSftpTransferSchedulePreferencesFromPreset(preset);
-                          return (
-                            <button
-                              className={
-                                preset.id === activeSftpTransferSchedulePresetId
-                                  ? "settings-safety-preset is-active"
-                                  : "settings-safety-preset"
-                              }
-                              key={preset.id}
-                              onClick={() => applySftpTransferSchedulePreset(preset.id)}
-                              type="button"
-                            >
-                              <span className="settings-safety-preset__title">{preset.label}</span>
-                              <span className="hint settings-safety-preset__meta">
-                                {preset.description}
-                              </span>
-                              <span className="settings-safety-preset__count">
-                                {preset.scheduleWindowEnabled
-                                  ? formatSftpTransferScheduleWindowSummary(presetPreferences)
-                                  : "No schedule restriction"}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <label>
-                      Retry Confirm Threshold
-                      <input
-                        max={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
-                        min={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
-                        onChange={(event) =>
-                          setRetryBatchConfirmThreshold((prev) =>
-                            parseRetryBatchConfirmThreshold(Number(event.target.value), prev)
-                          )
-                        }
-                        type="number"
-                        value={retryBatchConfirmThreshold}
-                      />
-                    </label>
-                    <p className="hint">
-                      Controls max parallel upload/download tasks. Range: 1-
-                      {MAX_SFTP_TRANSFER_CONCURRENCY}. New installs
-                      default uploads to <code>4</code> and downloads to <code>2</code>.
-                    </p>
-                    <p className="hint">
-                      Per-direction rate limit uses KiB/s. Set <code>0</code> to disable throttling.
-                      Current upload limit:{" "}
-                      {sftpTransferPreferences.uploadRateLimitKiBps > 0
-                        ? `${sftpTransferPreferences.uploadRateLimitKiBps} KiB/s`
-                        : "unlimited"}
-                      . Current download limit:{" "}
-                      {sftpTransferPreferences.downloadRateLimitKiBps > 0
-                        ? `${sftpTransferPreferences.downloadRateLimitKiBps} KiB/s`
-                        : "unlimited"}
-                      .
-                    </p>
-                    <p className="hint">
-                      Schedule window:
-                      {sftpTransferPreferences.scheduleWindowEnabled
-                        ? ` ${sftpTransferScheduleSummary}. Transfers are currently ${
-                            isSftpTransferWindowOpen ? "inside" : "outside"
-                          } the allowed window.${
-                            !isSftpTransferWindowOpen && nextSftpTransferWindowOpeningLabel
-                              ? ` Next queued transfer resume: ${nextSftpTransferWindowOpeningLabel}.`
-                              : ""
-                          }`
-                        : " disabled; queued transfers start immediately when threads are available."}
-                    </p>
-                    <p className="hint">
-                      Large retry batches at or above this threshold require confirmation. Set to{" "}
-                      <code>0</code> to disable confirmations. Range:{" "}
-                      {MIN_RETRY_BATCH_CONFIRM_THRESHOLD}-{MAX_RETRY_BATCH_CONFIRM_THRESHOLD}.
-                    </p>
-                    <p className="hint">
-                      Active-session conflict defaults:
-                      {activeSessionId
-                        ? ` Upload ${formatTransferConflictStrategyLabel(
-                            activeSessionTransferConflictStrategy?.upload
-                          )}, Download ${formatTransferConflictStrategyLabel(
-                            activeSessionTransferConflictStrategy?.download
-                          )}.`
-                        : " Open a terminal tab to configure remembered conflict behavior."}
-                    </p>
-                    {activeSessionId ? (
-                      <div className="field-row">
-                        <button
-                          className="field-row__action"
-                          disabled={!activeSessionTransferConflictStrategy?.upload}
-                          onClick={() => {
-                            clearSessionTransferConflictStrategy(activeSessionId, "upload");
-                            showTransferDockNotice(
-                              activeTabId ?? "",
-                              "info",
-                              "Cleared remembered upload conflict default for active session.",
-                              5000
-                            );
-                          }}
-                          type="button"
-                        >
-                          Clear Upload Default
-                        </button>
-                        <button
-                          className="field-row__action"
-                          disabled={!activeSessionTransferConflictStrategy?.download}
-                          onClick={() => {
-                            clearSessionTransferConflictStrategy(activeSessionId, "download");
-                            showTransferDockNotice(
-                              activeTabId ?? "",
-                              "info",
-                              "Cleared remembered download conflict default for active session.",
-                              5000
-                            );
-                          }}
-                          type="button"
-                        >
-                          Clear Download Default
-                        </button>
-                        <button
-                          className="field-row__action"
-                          disabled={
-                            !activeSessionTransferConflictStrategy?.upload &&
-                            !activeSessionTransferConflictStrategy?.download
-                          }
-                          onClick={() => {
-                            clearSessionTransferConflictStrategy(activeSessionId);
-                            showTransferDockNotice(
-                              activeTabId ?? "",
-                              "info",
-                              "Cleared all remembered conflict defaults for active session.",
-                              5000
-                            );
-                          }}
-                          type="button"
-                        >
-                          Clear All
-                        </button>
-                      </div>
-                    ) : null}
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Transfer Policy Packs</h4>
-                        <p className="hint">
-                          Save reusable SFTP transfer defaults for rate limits, concurrency, and
-                          schedule windows, then import, export, apply, or sync them through a
-                          shared JSON file. Optional auto-pull and auto-push can keep the linked
-                          sync file aligned without a manual button press each time.
-                        </p>
-                      </div>
-                      <p className="hint">
-                        Stored packs {sftpTransferPolicyPacks.length}/
-                        {MAX_SFTP_TRANSFER_POLICY_PACKS}
-                      </p>
-                      <p className="hint">
-                        Sync file:{" "}
-                        {sftpTransferPolicyPackSyncState.filePath ? (
-                          <code>{sftpTransferPolicyPackSyncState.filePath}</code>
-                        ) : (
-                          "Not linked yet."
-                        )}
-                      </p>
-                      {(sftpTransferPolicyPackSyncState.lastPulledAtIso ||
-                        sftpTransferPolicyPackSyncState.lastPushedAtIso) && (
-                        <p className="hint">
-                          Last pull:{" "}
-                          {sftpTransferPolicyPackSyncState.lastPulledAtIso
-                            ? new Date(
-                                sftpTransferPolicyPackSyncState.lastPulledAtIso
-                              ).toLocaleString()
-                            : "never"}
-                          {" | "}last push:{" "}
-                          {sftpTransferPolicyPackSyncState.lastPushedAtIso
-                            ? new Date(
-                                sftpTransferPolicyPackSyncState.lastPushedAtIso
-                              ).toLocaleString()
-                            : "never"}
-                        </p>
-                      )}
-                      <label className="settings-checkbox">
-                        <input
-                          checked={sftpTransferPolicyPackSyncState.autoPullOnLaunch}
-                          onChange={(event) =>
-                            setSftpTransferPolicyPackAutoPullOnLaunch(event.target.checked)
-                          }
-                          type="checkbox"
-                        />
-                        <span>Auto-pull linked sync file on launch</span>
-                      </label>
-                      <label className="settings-checkbox">
-                        <input
-                          checked={sftpTransferPolicyPackSyncState.autoPushOnChange}
-                          onChange={(event) =>
-                            setSftpTransferPolicyPackAutoPushOnChange(event.target.checked)
-                          }
-                          type="checkbox"
-                        />
-                        <span>Auto-push local pack changes to the linked sync file</span>
-                      </label>
-                      <p className="hint">
-                        Auto sync stays off by default. It only runs when a sync file is linked and
-                        does not re-push immediately after a pull/merge.
-                      </p>
-                      <div className="modal__actions">
-                        <button
-                          className="secondary-button"
-                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
-                          onClick={() => {
-                            void saveCurrentSftpTransferPolicyPack();
-                          }}
-                          type="button"
-                        >
-                          Save Current...
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
-                          onClick={() => {
-                            void importSftpTransferPolicyPacks();
-                          }}
-                          type="button"
-                        >
-                          Import...
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={
-                            sftpTransferPolicyPacks.length === 0 ||
-                            sftpTransferPolicyPackSyncBusyAction !== null
-                          }
-                          onClick={() => {
-                            void exportSftpTransferPolicyPacks();
-                          }}
-                          type="button"
-                        >
-                          Export All...
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
-                          onClick={() => {
-                            void pullSftpTransferPolicyPacksFromSync();
-                          }}
-                          type="button"
-                        >
-                          {sftpTransferPolicyPackSyncBusyAction === "pull"
-                            ? "Pulling..."
-                            : sftpTransferPolicyPackSyncState.filePath
-                              ? "Pull Sync"
-                              : "Pull Sync..."}
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
-                          onClick={() => {
-                            void pushSftpTransferPolicyPacksToSync();
-                          }}
-                          type="button"
-                        >
-                          {sftpTransferPolicyPackSyncBusyAction === "push"
-                            ? "Pushing..."
-                            : sftpTransferPolicyPackSyncState.filePath
-                              ? "Push Sync"
-                              : "Push Sync..."}
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={sftpTransferPolicyPackSyncBusyAction !== null}
-                          onClick={() => {
-                            void changeSftpTransferPolicyPackSyncTarget();
-                          }}
-                          type="button"
-                        >
-                          {sftpTransferPolicyPackSyncBusyAction === "change"
-                            ? "Choosing..."
-                            : sftpTransferPolicyPackSyncState.filePath
-                              ? "Change Sync File..."
-                              : "Choose Sync File..."}
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={
-                            !sftpTransferPolicyPackSyncState.filePath ||
-                            sftpTransferPolicyPackSyncBusyAction !== null
-                          }
-                          onClick={() => {
-                            void clearSftpTransferPolicyPackSyncTarget();
-                          }}
-                          type="button"
-                        >
-                          Clear Sync File
-                        </button>
-                      </div>
-                      {sftpTransferPolicyPacks.length > 0 ? (
-                        <div className="settings-safety-preset-grid">
-                          {sftpTransferPolicyPacks.map((pack) => (
-                            <div className="settings-safety-preset" key={pack.id}>
-                              <div className="settings-safety-preset__title">{pack.name}</div>
-                              <div className="settings-safety-preset__meta">
-                                {formatSftpTransferPolicyPackSummary(pack.preferences)}
-                              </div>
-                              <div className="settings-safety-preset__count">
-                                Updated {formatPortForwardTimestamp(pack.updatedAtIso)}
-                              </div>
-                              {pack.description ? (
-                                <div className="settings-safety-preset__meta">{pack.description}</div>
-                              ) : null}
-                              <div className="modal__actions">
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  onClick={() => {
-                                    void applySftpTransferPolicyPack(pack.id);
-                                  }}
-                                  type="button"
-                                >
-                                  Apply
-                                </button>
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  onClick={() => {
-                                    void exportSftpTransferPolicyPack(pack.id);
-                                  }}
-                                  type="button"
-                                >
-                                  Export
-                                </button>
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  onClick={() => {
-                                    void deleteSftpTransferPolicyPack(pack.id);
-                                  }}
-                                  type="button"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="hint">
-                          No transfer policy packs saved yet. Save the current SFTP settings to
-                          reuse them later.
-                        </p>
-                      )}
-                    </div>
-                  </>
+                  <SftpSettingsSection
+                    activeSessionConflictHint={sftpActiveSessionConflictHint}
+                    canClearAllDefaults={
+                      !!activeSessionTransferConflictStrategy?.upload ||
+                      !!activeSessionTransferConflictStrategy?.download
+                    }
+                    canClearDownloadDefault={!!activeSessionTransferConflictStrategy?.download}
+                    canClearUploadDefault={!!activeSessionTransferConflictStrategy?.upload}
+                    concurrencyHint={sftpConcurrencyHint}
+                    downloadConcurrency={sftpTransferPreferences.downloadConcurrency}
+                    downloadRateLimitKiBps={sftpTransferPreferences.downloadRateLimitKiBps}
+                    hasActiveSessionConflictControls={!!activeSessionId}
+                    maxConcurrency={MAX_SFTP_TRANSFER_CONCURRENCY}
+                    maxPolicyPackCount={MAX_SFTP_TRANSFER_POLICY_PACKS}
+                    maxRateLimitKiBps={MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS}
+                    maxRetryBatchConfirmThreshold={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
+                    minRetryBatchConfirmThreshold={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
+                    onApplyPolicyPack={(packId) => {
+                      void applySftpTransferPolicyPack(packId);
+                    }}
+                    onApplySchedulePreset={applySftpTransferSchedulePreset}
+                    onChangePolicyPackSyncTarget={() => {
+                      void changeSftpTransferPolicyPackSyncTarget();
+                    }}
+                    onClearAllDefaults={clearActiveSessionConflictDefaults}
+                    onClearDownloadDefault={clearActiveSessionDownloadConflictDefault}
+                    onClearPolicyPackSyncTarget={() => {
+                      void clearSftpTransferPolicyPackSyncTarget();
+                    }}
+                    onClearUploadDefault={clearActiveSessionUploadConflictDefault}
+                    onDeletePolicyPack={(packId) => {
+                      void deleteSftpTransferPolicyPack(packId);
+                    }}
+                    onDownloadConcurrencyChange={setDownloadConcurrency}
+                    onDownloadRateLimitChange={setDownloadRateLimitKiBps}
+                    onExportAllPolicyPacks={() => {
+                      void exportSftpTransferPolicyPacks();
+                    }}
+                    onExportPolicyPack={(packId) => {
+                      void exportSftpTransferPolicyPack(packId);
+                    }}
+                    onImportPolicyPacks={() => {
+                      void importSftpTransferPolicyPacks();
+                    }}
+                    onPolicyPackAutoPullOnLaunchChange={setSftpTransferPolicyPackAutoPullOnLaunch}
+                    onPolicyPackAutoPushOnChangeChange={setSftpTransferPolicyPackAutoPushOnChange}
+                    onPullPolicyPacksFromSync={() => {
+                      void pullSftpTransferPolicyPacksFromSync();
+                    }}
+                    onPushPolicyPacksToSync={() => {
+                      void pushSftpTransferPolicyPacksToSync();
+                    }}
+                    onRetryBatchConfirmThresholdChange={setRetryBatchConfirmThresholdFromInput}
+                    onSaveCurrentPolicyPack={() => {
+                      void saveCurrentSftpTransferPolicyPack();
+                    }}
+                    onScheduleWindowEnabledChange={setSftpTransferScheduleWindowEnabled}
+                    onScheduleWindowEndChange={setSftpTransferScheduleWindowEnd}
+                    onScheduleWindowStartChange={setSftpTransferScheduleWindowStart}
+                    onToggleScheduleDay={toggleSftpTransferScheduleWindowDay}
+                    onUploadConcurrencyChange={setUploadConcurrency}
+                    onUploadRateLimitChange={setUploadRateLimitKiBps}
+                    policyPackAutoPullOnLaunch={sftpTransferPolicyPackSyncState.autoPullOnLaunch}
+                    policyPackAutoPushOnChange={sftpTransferPolicyPackSyncState.autoPushOnChange}
+                    policyPackLastSyncLabel={sftpTransferPolicyPackLastSyncLabel}
+                    policyPackSyncBusyAction={sftpTransferPolicyPackSyncBusyAction}
+                    policyPackSyncFilePath={sftpTransferPolicyPackSyncState.filePath}
+                    policyPackViews={sftpTransferPolicyPackViews}
+                    rateLimitHint={sftpRateLimitHint}
+                    retryBatchConfirmThreshold={retryBatchConfirmThreshold}
+                    retryThresholdHint={sftpRetryThresholdHint}
+                    scheduleDayOptions={sftpScheduleDayViews}
+                    scheduleHint={sftpScheduleHint}
+                    schedulePresetViews={sftpSchedulePresetViews}
+                    scheduleWindowEnabled={sftpTransferPreferences.scheduleWindowEnabled}
+                    scheduleWindowEndValue={formatSftpScheduleTimeInputValue(
+                      sftpTransferPreferences.scheduleWindowEndMinutes
+                    )}
+                    scheduleWindowStartValue={formatSftpScheduleTimeInputValue(
+                      sftpTransferPreferences.scheduleWindowStartMinutes
+                    )}
+                    storedPolicyPackCount={sftpTransferPolicyPacks.length}
+                    uploadConcurrency={sftpTransferPreferences.uploadConcurrency}
+                    uploadRateLimitKiBps={sftpTransferPreferences.uploadRateLimitKiBps}
+                  />
                 ) : null}
 
                 {activeSettingsSection === "portForwarding" ? (
-                  <>
-                    <p className="hint">
-                      Port forwarding is bound to the active terminal tab and removed when that tab
-                      disconnects/closes.
-                    </p>
-                    <p className="hint">
-                      Active tab:{" "}
-                      {activeTerminalTab
-                        ? `${activeTerminalTab.title} (${isActiveTabConnected ? "connected" : "disconnected"})`
-                        : "None"}
-                    </p>
-                    <div className="settings-port-forward-grid">
-                      <label>
-                        Type
-                        <select
-                          disabled={portForwardBusy}
-                          onChange={(event) =>
-                            setPortForwardForm((prev) => ({
-                              ...prev,
-                              type: event.target.value as CreatePortForwardInput["type"]
-                            }))
-                          }
-                          value={portForwardForm.type}
-                        >
-                          <option value="local">Local (L)</option>
-                          <option value="remote">Remote (R)</option>
-                          <option value="dynamic">Dynamic SOCKS5 (D)</option>
-                        </select>
-                      </label>
-                      <label>
-                        Listen Host
-                        <input
-                          disabled={portForwardBusy}
-                          onChange={(event) =>
-                            setPortForwardForm((prev) => ({
-                              ...prev,
-                              bindHost: event.target.value
-                            }))
-                          }
-                          placeholder="127.0.0.1"
-                          value={portForwardForm.bindHost}
-                        />
-                      </label>
-                      <label>
-                        Listen Port
-                        <input
-                          disabled={portForwardBusy}
-                          max={65535}
-                          min={1}
-                          onChange={(event) =>
-                            setPortForwardForm((prev) => ({
-                              ...prev,
-                              bindPort: event.target.value
-                            }))
-                          }
-                          type="number"
-                          value={portForwardForm.bindPort}
-                        />
-                      </label>
-                      {portForwardForm.type !== "dynamic" ? (
-                        <>
-                          <label>
-                            {portForwardForm.type === "local"
-                              ? "Remote Target Host"
-                              : "Local Target Host"}
-                            <input
-                              disabled={portForwardBusy}
-                              onChange={(event) =>
-                                setPortForwardForm((prev) => ({
-                                  ...prev,
-                                  targetHost: event.target.value
-                                }))
-                              }
-                              placeholder="127.0.0.1"
-                              value={portForwardForm.targetHost}
-                            />
-                          </label>
-                          <label>
-                            {portForwardForm.type === "local"
-                              ? "Remote Target Port"
-                              : "Local Target Port"}
-                            <input
-                              disabled={portForwardBusy}
-                              max={65535}
-                              min={1}
-                              onChange={(event) =>
-                                setPortForwardForm((prev) => ({
-                                  ...prev,
-                                  targetPort: event.target.value
-                                }))
-                              }
-                              type="number"
-                              value={portForwardForm.targetPort}
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                    </div>
-                    <div className="modal__actions">
-                      <button
-                        className="secondary-button"
-                        disabled={portForwardBusy || !activeTabId}
-                        onClick={() => {
-                          void refreshPortForwards(activeTabId);
-                        }}
-                        type="button"
-                      >
-                        Refresh
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={portForwardBusy || !activeSessionId}
-                        onClick={() => {
-                          void savePortForwardPreset();
-                        }}
-                        type="button"
-                      >
-                        Save as Preset
-                      </button>
-                      <button
-                        className="primary-button"
-                        disabled={portForwardBusy || !activeTabId || !isActiveTabConnected}
-                        onClick={() => {
-                          void createPortForward();
-                        }}
-                        type="button"
-                      >
-                        {portForwardBusy ? "Working..." : "Create Forward"}
-                      </button>
-                    </div>
-                    <p className="settings-port-forward-section__title">Saved Presets</p>
-                    <div className="settings-port-forward-list-shell settings-port-forward-list-shell--presets">
-                      {activeSessionId ? (
-                        activePortForwardPresets.length > 0 ? (
-                          <ul className="settings-port-forward-list settings-port-forward-list--presets">
-                            {activePortForwardPresets.map((preset) => (
-                              <li className="settings-port-forward-item" key={preset.id}>
-                                <div className="settings-port-forward-item__header">
-                                  <p className="settings-port-forward-item__title">
-                                    {preset.name}
-                                  </p>
-                                  <p className="settings-port-forward-item__meta">
-                                    {formatPortForwardPreset(preset)}
-                                  </p>
-                                  <p className="settings-port-forward-item__meta">
-                                    Updated {new Date(preset.updatedAt).toLocaleString()}
-                                  </p>
-                                </div>
-                                <label className="settings-checkbox settings-port-forward-item__toggle">
-                                  <input
-                                    checked={preset.autoRestore}
-                                    disabled={portForwardBusy}
-                                    onChange={(event) =>
-                                      setPortForwardPresetAutoRestore(
-                                        preset.id,
-                                        event.target.checked
-                                      )
-                                    }
-                                    type="checkbox"
-                                  />
-                                  <span>Auto restore on connect</span>
-                                </label>
-                                <div className="modal__actions settings-port-forward-item__actions">
-                                  <button
-                                    className="secondary-button"
-                                    disabled={portForwardBusy}
-                                    onClick={() => {
-                                      setPortForwardForm(toPortForwardFormFromPreset(preset));
-                                    }}
-                                    type="button"
-                                  >
-                                    Fill Form
-                                  </button>
-                                  <button
-                                    className="secondary-button"
-                                    disabled={
-                                      portForwardBusy || !activeTabId || !isActiveTabConnected
-                                    }
-                                    onClick={() => {
-                                      void applyPortForwardPreset(preset);
-                                    }}
-                                    type="button"
-                                  >
-                                    Apply
-                                  </button>
-                                  <button
-                                    className="secondary-button"
-                                    disabled={portForwardBusy}
-                                    onClick={() => {
-                                      void deletePortForwardPreset(preset);
-                                    }}
-                                    type="button"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="hint">
-                            No saved presets for this session yet. Fill the form above and save one.
-                          </p>
-                        )
-                      ) : (
-                        <p className="hint">
-                          Open a session tab to manage presets for that session.
-                        </p>
-                      )}
-                    </div>
-                    <p className="settings-port-forward-section__title">Active Forwards</p>
-                    {portForwardStatusMessage ? (
-                      <p className="hint settings-port-forward-status-message">
-                        {portForwardStatusMessage}
-                      </p>
-                    ) : null}
-                    <div className="modal__actions settings-port-forward-diagnostics-actions">
-                      <button
-                        className="secondary-button"
-                        disabled={portForwardBusy || !activeTabId}
-                        onClick={() => {
-                          void Promise.all([
-                            refreshPortForwards(activeTabId),
-                            refreshPortForwardEvents(activeTabId)
-                          ]);
-                        }}
-                        type="button"
-                      >
-                        Refresh Diagnostics
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={!activeTabId}
-                        onClick={() => {
-                          void exportPortForwardSnapshot();
-                        }}
-                        type="button"
-                      >
-                        Export Snapshot
-                      </button>
-                    </div>
-                    <div className="settings-port-forward-list-shell">
-                      {portForwards.length > 0 ? (
-                        <ul className="settings-port-forward-list">
-                          {portForwards.map((forward) => (
-                            <li className="settings-port-forward-item" key={forward.id}>
-                              <div className="settings-port-forward-item__header">
-                                <div className="settings-port-forward-item__title-row">
-                                  <p className="settings-port-forward-item__title">
-                                    {formatPortForwardRecord(forward)}
-                                  </p>
-                                  <span
-                                    className={
-                                      forward.status === "degraded"
-                                        ? "settings-port-forward-status-badge is-degraded"
-                                        : "settings-port-forward-status-badge is-active"
-                                    }
-                                  >
-                                    {getPortForwardStatusLabel(forward)}
-                                  </span>
-                                </div>
-                              </div>
-                              <p className="settings-port-forward-item__meta">
-                                Created {new Date(forward.createdAt).toLocaleString()}
-                              </p>
-                              <p className="settings-port-forward-item__meta">
-                                Connections {forward.totalConnections} (failed {forward.failedConnections})
-                              </p>
-                              {forward.lastActivityAt ? (
-                                <p className="settings-port-forward-item__meta">
-                                  Last activity {formatPortForwardTimestamp(forward.lastActivityAt)}
-                                </p>
-                              ) : null}
-                              {forward.lastError ? (
-                                <p className="hint settings-port-forward-item__error">
-                                  Last error ({formatPortForwardTimestamp(forward.lastErrorAt)}):{" "}
-                                  {forward.lastError}
-                                </p>
-                              ) : null}
-                              <button
-                                className="secondary-button"
-                                disabled={portForwardBusy || !activeTabId}
-                                onClick={() => {
-                                  void removePortForward(forward);
-                                }}
-                                type="button"
-                              >
-                                Remove
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="hint">
-                          No active port forwards for the current tab.
-                        </p>
-                      )}
-                    </div>
-                    <p className="settings-port-forward-section__title">Recent Events</p>
-                    <div className="settings-port-forward-events-toolbar">
-                      <label>
-                        Filter
-                        <select
-                          onChange={(event) =>
-                            setPortForwardEventFilter(event.target.value as PortForwardEventFilter)
-                          }
-                          value={portForwardEventFilter}
-                        >
-                          <option value="all">All</option>
-                          <option value="errors">Errors Only</option>
-                          <option value="lifecycle">Create/Remove</option>
-                          <option value="status">Degraded/Recovered</option>
-                        </select>
-                      </label>
-                      <label>
-                        Time
-                        <select
-                          onChange={(event) =>
-                            setPortForwardEventTimeRange(
-                              event.target.value as PortForwardEventTimeRange
-                            )
-                          }
-                          value={portForwardEventTimeRange}
-                        >
-                          <option value="all">All</option>
-                          <option value="5m">Last 5m</option>
-                          <option value="30m">Last 30m</option>
-                          <option value="1h">Last 1h</option>
-                          <option value="24h">Last 24h</option>
-                        </select>
-                      </label>
-                      <label>
-                        Error Code
-                        <select
-                          onChange={(event) => setPortForwardEventErrorCode(event.target.value)}
-                          value={portForwardEventErrorCode}
-                        >
-                          {portForwardEventErrorCodeOptions.map((code) => (
-                            <option key={code} value={code}>
-                              {code === "all" ? "All" : code}
-                            </option>
-                          ))}
-                          {portForwardEventErrorCode !== "all" &&
-                          !portForwardEventErrorCodeOptions.includes(portForwardEventErrorCode) ? (
-                            <option value={portForwardEventErrorCode}>
-                              {portForwardEventErrorCode}
-                            </option>
-                          ) : null}
-                        </select>
-                      </label>
-                      <label>
-                        Correlation
-                        <input
-                          onChange={(event) =>
-                            setPortForwardEventCorrelationQuery(event.target.value)
-                          }
-                          placeholder="correlationKey / connectionId"
-                          value={portForwardEventCorrelationQuery}
-                        />
-                      </label>
-                      <button
-                        className="secondary-button"
-                        disabled={!hasCustomizedPortForwardEventView}
-                        onClick={resetPortForwardEventViewFilters}
-                        type="button"
-                      >
-                        Reset Filters
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={visiblePortForwardEventHistory.length === 0}
-                        onClick={() => {
-                          void exportVisiblePortForwardEventsJson();
-                        }}
-                        type="button"
-                      >
-                        Export Visible JSON
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={visiblePortForwardEventHistory.length === 0}
-                        onClick={() => {
-                          void exportVisiblePortForwardEventsCsv();
-                        }}
-                        type="button"
-                      >
-                        Export Visible CSV
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={!activeSessionId}
-                        onClick={() => {
-                          void exportPortForwardEventAnalyticsJson();
-                        }}
-                        type="button"
-                      >
-                        Export Analytics JSON
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={!activeSessionId}
-                        onClick={() => {
-                          void exportPortForwardEventAnalyticsCsv();
-                        }}
-                        type="button"
-                      >
-                        Export Analytics CSV
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={visiblePortForwardEventHistory.length === 0}
-                        onClick={() => {
-                          void clearVisiblePortForwardHistory();
-                        }}
-                        type="button"
-                      >
-                        Clear Visible
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={activePortForwardEventHistory.length === 0}
-                        onClick={() => {
-                          void clearSessionPortForwardHistory();
-                        }}
-                        type="button"
-                      >
-                        Clear Session
-                      </button>
-                    </div>
-                    <p className="hint settings-port-forward-events-summary">
-                      Session history {activePortForwardEventHistory.length}, visible{" "}
-                      {visiblePortForwardEventHistory.length}
-                      {portForwardEventTimeRange !== "all"
-                        ? `, range ${portForwardEventTimeRange}`
-                        : ""}
-                      {portForwardEventErrorCode !== "all"
-                        ? `, code ${portForwardEventErrorCode}`
-                        : ""}
-                    </p>
-                    <div className="settings-port-forward-events-analytics">
-                      <article className="settings-port-forward-events-metric">
-                        <p className="settings-port-forward-events-metric__label">Error Ratio</p>
-                        <p className="settings-port-forward-events-metric__value">
-                          {formatPercent(portForwardVisibleEventAnalytics.errorRatioPercent)}
-                        </p>
-                        <p className="settings-port-forward-events-metric__meta">
-                          Errors {portForwardVisibleEventAnalytics.totalErrors}/
-                          {portForwardVisibleEventAnalytics.totalVisible}
-                        </p>
-                      </article>
-                      <article className="settings-port-forward-events-metric">
-                        <p className="settings-port-forward-events-metric__label">Type Breakdown</p>
-                        <p className="settings-port-forward-events-metric__meta">
-                          created {portForwardVisibleEventAnalytics.typeCounts.created} | removed{" "}
-                          {portForwardVisibleEventAnalytics.typeCounts.removed}
-                        </p>
-                        <p className="settings-port-forward-events-metric__meta">
-                          degraded {portForwardVisibleEventAnalytics.typeCounts.statusDegraded} |
-                          recovered {portForwardVisibleEventAnalytics.typeCounts.statusRecovered}
-                        </p>
-                      </article>
-                      <article className="settings-port-forward-events-metric">
-                        <p className="settings-port-forward-events-metric__label">Top Error Codes</p>
-                        <p className="settings-port-forward-events-metric__meta settings-port-forward-events-metric__meta--wrap">
-                          {portForwardVisibleEventAnalytics.topErrorCodes.length > 0
-                            ? portForwardVisibleEventAnalytics.topErrorCodes
-                                .map((entry) => `${entry.code} (${entry.count})`)
-                                .join(" | ")
-                            : "No error code data"}
-                        </p>
-                      </article>
-                      <article className="settings-port-forward-events-metric">
-                        <p className="settings-port-forward-events-metric__label">Top Correlation</p>
-                        <p className="settings-port-forward-events-metric__meta settings-port-forward-events-metric__meta--wrap">
-                          {portForwardVisibleEventAnalytics.topCorrelations.length > 0
-                            ? portForwardVisibleEventAnalytics.topCorrelations
-                                .map((entry) => `${entry.correlationKey} (${entry.count})`)
-                                .join(" | ")
-                            : "No correlation key data"}
-                        </p>
-                      </article>
-                    </div>
-                    <div className="settings-port-forward-list-shell settings-port-forward-list-shell--events">
-                      {visiblePortForwardEventHistory.length > 0 ? (
-                        <ul className="settings-port-forward-events-list">
-                          {visiblePortForwardEventHistory.map((event) => {
-                            const correlation = formatPortForwardEventCorrelation(event);
-                            return (
-                              <li
-                                className={
-                                  event.level === "error"
-                                    ? "settings-port-forward-event-item is-error"
-                                    : "settings-port-forward-event-item"
-                                }
-                                key={event.id}
-                              >
-                                <p className="settings-port-forward-event-item__title">
-                                  {formatPortForwardEventType(event.type)}{" "}
-                                  {formatPortForwardEventSummary(event)}
-                                </p>
-                                <p className="settings-port-forward-event-item__meta">
-                                  {formatPortForwardTimestamp(event.createdAt)} |{" "}
-                                  {event.level.toUpperCase()}
-                                </p>
-                                {correlation ? (
-                                  <p className="settings-port-forward-event-item__correlation">
-                                    {correlation}
-                                  </p>
-                                ) : null}
-                                <p className="settings-port-forward-event-item__message">
-                                  {event.message}
-                                </p>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      ) : (
-                        <p className="hint">
-                          {activeSessionId
-                            ? "No matching port forwarding events for the current filter."
-                            : "Open a session tab to view port forwarding event history."}
-                        </p>
-                      )}
-                    </div>
-                  </>
+                  <PortForwardingSettingsSection
+                    activeEventHistoryCount={activePortForwardEventHistory.length}
+                    activeTabSummary={portForwardActiveTabSummary}
+                    analyticsView={portForwardAnalyticsView}
+                    eventCorrelationQuery={portForwardEventCorrelationQuery}
+                    eventErrorCode={portForwardEventErrorCode}
+                    eventErrorCodeOptions={portForwardEventErrorCodeOptions}
+                    eventFilter={portForwardEventFilter}
+                    eventSummaryLabel={portForwardEventSummaryLabel}
+                    eventTimeRange={portForwardEventTimeRange}
+                    eventViews={portForwardEventViews}
+                    formBindHost={portForwardForm.bindHost}
+                    formBindPort={portForwardForm.bindPort}
+                    formTargetHost={portForwardForm.targetHost}
+                    formTargetPort={portForwardForm.targetPort}
+                    formType={portForwardForm.type}
+                    forwardViews={portForwardRecordViews}
+                    hasActiveSession={!!activeSessionId}
+                    hasActiveTab={!!activeTabId}
+                    hasCustomizedEventView={hasCustomizedPortForwardEventView}
+                    isActiveTabConnected={isActiveTabConnected}
+                    onClearSessionHistory={() => {
+                      void clearSessionPortForwardHistory();
+                    }}
+                    onClearVisibleHistory={() => {
+                      void clearVisiblePortForwardHistory();
+                    }}
+                    onCreateForward={() => {
+                      void createPortForward();
+                    }}
+                    onEventCorrelationQueryChange={setPortForwardEventCorrelationQuery}
+                    onEventErrorCodeChange={setPortForwardEventErrorCode}
+                    onEventFilterChange={(value) =>
+                      setPortForwardEventFilter(value as PortForwardEventFilter)
+                    }
+                    onEventTimeRangeChange={(value) =>
+                      setPortForwardEventTimeRange(value as PortForwardEventTimeRange)
+                    }
+                    onExportAnalyticsCsv={() => {
+                      void exportPortForwardEventAnalyticsCsv();
+                    }}
+                    onExportAnalyticsJson={() => {
+                      void exportPortForwardEventAnalyticsJson();
+                    }}
+                    onExportSnapshot={() => {
+                      void exportPortForwardSnapshot();
+                    }}
+                    onExportVisibleCsv={() => {
+                      void exportVisiblePortForwardEventsCsv();
+                    }}
+                    onExportVisibleJson={() => {
+                      void exportVisiblePortForwardEventsJson();
+                    }}
+                    onFormBindHostChange={setPortForwardFormBindHost}
+                    onFormBindPortChange={setPortForwardFormBindPort}
+                    onFormTargetHostChange={setPortForwardFormTargetHost}
+                    onFormTargetPortChange={setPortForwardFormTargetPort}
+                    onFormTypeChange={setPortForwardFormType}
+                    onPresetApply={applyActivePortForwardPreset}
+                    onPresetAutoRestoreChange={setPortForwardPresetAutoRestore}
+                    onPresetDelete={deleteActivePortForwardPreset}
+                    onPresetFillForm={fillPortForwardFormFromActivePreset}
+                    onRefresh={refreshActivePortForwards}
+                    onRefreshDiagnostics={refreshActivePortForwardDiagnostics}
+                    onRemoveForward={removeVisiblePortForward}
+                    onResetEventFilters={resetPortForwardEventViewFilters}
+                    onSavePreset={() => {
+                      void savePortForwardPreset();
+                    }}
+                    portForwardBusy={portForwardBusy}
+                    portForwardStatusMessage={portForwardStatusMessage}
+                    presetViews={portForwardPresetViews}
+                    visibleEventHistoryCount={visiblePortForwardEventHistory.length}
+                  />
                 ) : null}
 
                 {activeSettingsSection === "diagnostics" ? (
-                  <>
-                    <p className="hint">
-                      TermDock writes runtime diagnostics to local log files. Share these files
-                      when reporting bugs.
-                    </p>
-                    <p className="hint">
-                      Export Bug Report bundles logs, runtime metadata, and a safe settings
-                      snapshot into one zip package.
-                    </p>
-                    <label>
-                      Log Directory
-                      <input readOnly value={logInfo?.logDirectoryPath ?? "Not loaded yet"} />
-                    </label>
-                    <label>
-                      Log File
-                      <input readOnly value={logInfo?.logFilePath ?? "Not loaded yet"} />
-                    </label>
-                    <div className="modal__actions">
-                      <button
-                        className="secondary-button"
-                        onClick={() => {
-                          void refreshLogInfo().catch((caughtError) => {
-                            const message = toLogMessage(caughtError);
-                            setError(message);
-                            writeAppLog(
-                              "error",
-                              "renderer:diagnostics",
-                              "Failed to refresh log info.",
-                              caughtError
-                            );
-                          });
-                        }}
-                        type="button"
-                      >
-                        Refresh
-                      </button>
-                      <button className="secondary-button" onClick={() => {
-                        void openLogDirectory();
-                      }} type="button">
-                        Open Folder
-                      </button>
-                      <button className="secondary-button" onClick={() => {
-                        void copyLogFilePath();
-                      }} type="button">
-                        Copy Log File Path
-                      </button>
-                      <button
-                        className="primary-button"
-                        disabled={isExportingBugReport}
-                        onClick={() => {
-                          void exportBugReportBundle();
-                        }}
-                        type="button"
-                      >
-                        {isExportingBugReport ? "Exporting..." : "Export Bug Report"}
-                      </button>
-                    </div>
-
-                    <p className="settings-port-forward-section__title">
-                      Disconnect Reports ({visibleDisconnectReports.length}/{disconnectReports.length})
-                    </p>
-                    <label className="settings-checkbox settings-checkbox--inline">
-                      <input
-                        checked={disconnectReportCapturePreferences.enabled}
-                        onChange={(event) => {
-                          setDisconnectReportCapturePreferences({
-                            enabled: event.target.checked
-                          });
-                        }}
-                        type="checkbox"
-                      />
-                      <span>Auto capture unexpected disconnect reports</span>
-                    </label>
-                    <div className="settings-disconnect-reports-toolbar">
-                      <label>
-                        Scope
-                        <select
-                          onChange={(event) => {
-                            setDisconnectReportScope(event.target.value as DisconnectReportScope);
-                          }}
-                          value={disconnectReportScope}
-                        >
-                          <option value="allSessions">All Sessions</option>
-                          <option value="activeSession">Active Session</option>
-                        </select>
-                      </label>
-                      <label>
-                        Trigger
-                        <select
-                          onChange={(event) => {
-                            setDisconnectReportTriggerFilter(
-                              event.target.value as DisconnectReportTriggerFilter
-                            );
-                          }}
-                          value={disconnectReportTriggerFilter}
-                        >
-                          <option value="all">All</option>
-                          <option value="status">Status</option>
-                          <option value="error">Error</option>
-                        </select>
-                      </label>
-                      <label>
-                        Time
-                        <select
-                          onChange={(event) => {
-                            setDisconnectReportTimeRange(
-                              event.target.value as DisconnectReportTimeRange
-                            );
-                          }}
-                          value={disconnectReportTimeRange}
-                        >
-                          <option value="all">All</option>
-                          <option value="5m">Last 5m</option>
-                          <option value="30m">Last 30m</option>
-                          <option value="1h">Last 1h</option>
-                          <option value="24h">Last 24h</option>
-                        </select>
-                      </label>
-                      <label className="settings-disconnect-reports-toolbar__query">
-                        Search
-                        <input
-                          onChange={(event) => {
-                            setDisconnectReportQuery(event.target.value.slice(0, 160));
-                          }}
-                          placeholder="session/target/message"
-                          value={disconnectReportQuery}
-                        />
-                      </label>
-                      <button
-                        className="secondary-button secondary-button--small"
-                        disabled={!hasCustomizedDisconnectReportView}
-                        onClick={resetDisconnectReportViewFilters}
-                        type="button"
-                      >
-                        Reset Filters
-                      </button>
-                    </div>
-                    <p className="hint">
-                      {disconnectReportCapturePreferences.enabled
-                        ? "Unexpected disconnects are auto-captured with connection and transfer context. Use export when reporting random disconnect issues."
-                        : "Auto capture is disabled. Re-enable it to collect future disconnect reports automatically."}
-                    </p>
-                    <div className="modal__actions settings-disconnect-reports__actions">
-                      <button
-                        className="secondary-button"
-                        disabled={visibleDisconnectReports.length === 0}
-                        onClick={() => {
-                          void exportDisconnectReportsJson();
-                        }}
-                        type="button"
-                      >
-                        Export Visible JSON
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={visibleDisconnectReports.length === 0}
-                        onClick={() => {
-                          void exportDisconnectReportsCsv();
-                        }}
-                        type="button"
-                      >
-                        Export Visible CSV
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={visibleDisconnectReports.length === 0}
-                        onClick={() => {
-                          void copyLatestVisibleDisconnectReport();
-                        }}
-                        type="button"
-                      >
-                        Copy Latest Visible
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={visibleDisconnectReports.length === 0}
-                        onClick={() => {
-                          void clearVisibleDisconnectReportsHistory();
-                        }}
-                        type="button"
-                      >
-                        Clear Visible
-                      </button>
-                      <button
-                        className="secondary-button"
-                        disabled={disconnectReports.length === 0}
-                        onClick={() => {
-                          void clearDisconnectReportsHistory();
-                        }}
-                        type="button"
-                      >
-                        Clear All
-                      </button>
-                    </div>
-                    <div className="settings-disconnect-reports-shell">
-                      {visibleDisconnectReports.length > 0 ? (
-                        <ul className="settings-disconnect-reports-list">
-                          {visibleDisconnectReports.slice(0, 50).map((report) => {
-                            const transferActive =
-                              report.uploadRunning +
-                              report.uploadQueued +
-                              report.downloadRunning +
-                              report.downloadQueued;
-                            const isTabOpen = terminalTabs.some((tab) => tab.id === report.tabId);
-                            return (
-                              <li className="settings-disconnect-report-item" key={report.id}>
-                                <div className="settings-disconnect-report-item__header">
-                                  <p className="settings-disconnect-report-item__title">
-                                    {formatPortForwardTimestamp(report.createdAt)} |{" "}
-                                    {report.sessionName}
-                                  </p>
-                                  <p className="settings-disconnect-report-item__meta">
-                                    {report.tabTitle} | {report.target}
-                                  </p>
-                                  <p className="settings-disconnect-report-item__meta">
-                                    Trigger:{" "}
-                                    {report.trigger === "error"
-                                      ? `error (${report.message})`
-                                      : `${report.status ?? "closed"} (${report.message})`}
-                                  </p>
-                                  <p className="settings-disconnect-report-item__meta">
-                                    Transfers active: {transferActive} (up {report.uploadRunning}
-                                    /{report.uploadQueued}, down {report.downloadRunning}/
-                                    {report.downloadQueued}) | Port forwards:{" "}
-                                    {report.portForwardTotal} ({report.portForwardDegraded} degraded)
-                                  </p>
-                                  <p className="settings-disconnect-report-item__meta">
-                                    Tabs: {report.connectedTabCount}/{report.openTabCount} connected
-                                    | Auto reconnect:{" "}
-                                    {report.autoReconnect
-                                      ? `on (${report.reconnectDelaySeconds}s)`
-                                      : "off"}
-                                  </p>
-                                  {report.recentFailures.length > 0 ? (
-                                    <p className="settings-disconnect-report-item__message">
-                                      Recent failures:{" "}
-                                      {report.recentFailures
-                                        .slice(0, 3)
-                                        .map(
-                                          (failure) =>
-                                            `${failure.direction}:${failure.name} (${classifyTransferFailureReason(failure.message)})`
-                                        )
-                                        .join(" | ")}
-                                    </p>
-                                  ) : null}
-                                </div>
-                                <div className="modal__actions settings-disconnect-report-item__actions">
-                                  <button
-                                    className="secondary-button"
-                                    onClick={() => {
-                                      void copyDisconnectReportJson(report);
-                                    }}
-                                    type="button"
-                                  >
-                                    Copy JSON
-                                  </button>
-                                  {isTabOpen ? (
-                                    <button
-                                      className="secondary-button"
-                                      onClick={() => {
-                                        setActiveTabId(report.tabId);
-                                      }}
-                                      type="button"
-                                    >
-                                      Focus Tab
-                                    </button>
-                                  ) : null}
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      ) : (
-                        <p className="hint">
-                          {disconnectReports.length === 0
-                            ? "No disconnect reports captured yet."
-                            : "No disconnect reports match the current filter."}
-                        </p>
-                      )}
-                    </div>
-                  </>
+                  <DiagnosticsSettingsSection
+                    disconnectCaptureEnabled={disconnectReportCapturePreferences.enabled}
+                    disconnectCaptureHint={diagnosticsDisconnectCaptureHint}
+                    disconnectEmptyStateLabel={diagnosticsDisconnectEmptyStateLabel}
+                    disconnectQuery={disconnectReportQuery}
+                    disconnectReportViews={diagnosticsDisconnectReportViews}
+                    disconnectScope={disconnectReportScope}
+                    disconnectTimeRange={disconnectReportTimeRange}
+                    disconnectTotalCount={disconnectReports.length}
+                    disconnectTrigger={disconnectReportTriggerFilter}
+                    disconnectVisibleCount={visibleDisconnectReports.length}
+                    hasCustomizedDisconnectView={hasCustomizedDisconnectReportView}
+                    isExportingBugReport={isExportingBugReport}
+                    logDirectoryPath={diagnosticsLogDirectoryPath}
+                    logFilePath={diagnosticsLogFilePath}
+                    onClearAllDisconnects={() => {
+                      void clearDisconnectReportsHistory();
+                    }}
+                    onClearVisibleDisconnects={() => {
+                      void clearVisibleDisconnectReportsHistory();
+                    }}
+                    onCopyDisconnectReportJson={copyVisibleDisconnectReportJsonById}
+                    onCopyLatestVisibleDisconnect={() => {
+                      void copyLatestVisibleDisconnectReport();
+                    }}
+                    onCopyLogFilePath={() => {
+                      void copyLogFilePath();
+                    }}
+                    onDisconnectCaptureEnabledChange={setDisconnectReportCaptureEnabled}
+                    onDisconnectQueryChange={setDisconnectReportQueryValue}
+                    onDisconnectScopeChange={(value) => {
+                      setDisconnectReportScope(value as DisconnectReportScope);
+                    }}
+                    onDisconnectTimeRangeChange={(value) => {
+                      setDisconnectReportTimeRange(value as DisconnectReportTimeRange);
+                    }}
+                    onDisconnectTriggerChange={(value) => {
+                      setDisconnectReportTriggerFilter(value as DisconnectReportTriggerFilter);
+                    }}
+                    onExportBugReport={() => {
+                      void exportBugReportBundle();
+                    }}
+                    onExportDisconnectCsv={() => {
+                      void exportDisconnectReportsCsv();
+                    }}
+                    onExportDisconnectJson={() => {
+                      void exportDisconnectReportsJson();
+                    }}
+                    onFocusDisconnectTab={focusVisibleDisconnectReportTab}
+                    onOpenLogDirectory={() => {
+                      void openLogDirectory();
+                    }}
+                    onRefreshLogInfo={refreshDiagnosticsLogInfo}
+                    onResetDisconnectFilters={resetDisconnectReportViewFilters}
+                  />
                 ) : null}
 
                 <div className="modal__actions settings-panel__footer">
@@ -28461,11 +25805,7 @@ export function App() {
                     Done
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      </SettingsModalShell>
 
       {isCreateModalOpen ? (
         <div
