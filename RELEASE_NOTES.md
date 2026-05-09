@@ -24,7 +24,7 @@ Release type: In development
 - Post-refactor type check passed: `pnpm run typecheck`
 - Post-refactor build passed: `pnpm run build`
 - Post-refactor workspace smoke passed: `PASS 45 / FAIL 0 / SKIP 0`
-- Latest smoke artifact: `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json`
+- Latest smoke artifact: `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
 
 ## v0.1.22 (2026-04-12)
 

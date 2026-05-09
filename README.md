@@ -13,7 +13,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Current master addition: recoverable global error UX now also routes hotkey and port-forward failures into `Hotkeys` / `Port Fwd`, and transfer-style failures can jump straight into `Retry Center` in addition to the existing settings, `Operation Center`, and bug-report actions
 - Current branch addition: the main renderer now reads as a code-editor-style workbench with a flatter shell, left Explorer rail, right Inspector rail, stronger terminal stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` view persistence, collapsible command history, and narrow-width inspector tabs
 - Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
-- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json`
+- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -329,7 +329,7 @@ This wrapper now runs `pnpm run pack` first so the packaged smoke flow does not 
 
 Latest full local workspace smoke artifact for the UI refresh: `PASS 45 / FAIL 0 / SKIP 0`
 
-Latest post-refactor checks after the renderer module split: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
+Latest post-refactor checks after the renderer module split: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
 
 ## Release
 

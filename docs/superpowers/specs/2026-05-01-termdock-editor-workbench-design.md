@@ -17,7 +17,7 @@ The redesign should shift the product away from a "stacked operations dashboard"
 - The SFTP Explorer includes persisted `Compact` / `Details` view mode.
 - Settings and manager modal chrome now follows the same compact workbench language.
 - The large renderer surface was split into focused modules for settings sections, workbench modals, command snippets, UI preferences, and separated workbench/terminal CSS.
-- Latest post-refactor verification: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
+- Latest post-refactor verification: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
 
 ## Design Direction
 

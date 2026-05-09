@@ -28,7 +28,7 @@ Last updated: 2026-05-09
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
-- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest smoke artifact is `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`)
+- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`)
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -82,7 +82,7 @@ Last updated: 2026-05-09
   - full UI refresh smoke artifact: `PASS 45 / FAIL 0 / SKIP 0`
   - post-refactor `pnpm run typecheck`: passed
   - post-refactor `pnpm run build`: passed
-  - post-refactor `pnpm run smoke:ui`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json`
+  - post-refactor `pnpm run smoke:ui`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
 
 ## Completed in v0.1.18
 

@@ -41,7 +41,7 @@ Last updated: 2026-05-09
 - Latest smoke artifact on 2026-05-09: `artifacts/smoke/2026-05-09T02-44-14-552Z/summary.json` (`pass=45, fail=0, skip=0`)
 - Post-refactor `pnpm run typecheck` passed after commit `refactor: split editor workbench renderer modules`
 - Post-refactor `pnpm run build` passed
-- Post-refactor `pnpm run smoke:ui` passed at `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`pass=45, fail=0, skip=0`)
+- Post-refactor `pnpm run smoke:ui` passed at `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`pass=45, fail=0, skip=0`)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -784,7 +784,7 @@ Result:
 
 ```text
 Build passed. Workspace smoke passed: PASS 45 / FAIL 0 / SKIP 0.
-Artifact: artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json
+Artifact: artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json
 ```
 
 ---

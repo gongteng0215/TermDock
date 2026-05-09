@@ -196,7 +196,7 @@ Target platforms:
 - Release signing/notarization preflight baseline (`scripts/release-preflight.mjs`)
 - Release artifact verification baseline with report output (`scripts/verify-release-artifacts.mjs`, `artifacts/release-verify/<timestamp>`)
 - Self-use Windows release helper path (`scripts/create-self-use-windows-cert.ps1`, `scripts/build-self-use-windows-release.mjs`)
-- Current editor-workbench branch verification state: post-refactor `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`)
+- Current editor-workbench branch verification state: post-refactor `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`)
 
 ## 6. Security Requirements
 
