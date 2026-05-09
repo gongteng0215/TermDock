@@ -2367,7 +2367,7 @@ export function TerminalWorkspace({
               }}
               type="button"
             >
-              <span>{tab.title}</span>
+              <span className="tab__label">{tab.title}</span>
               <span
                 className="tab__close"
                 onClick={(event) => {
@@ -2854,4 +2854,3 @@ function prepareClipboardTextForTerminalPaste(terminal: Terminal, text: string):
   }
   return normalizedText;
 }
-

@@ -9,19 +9,6 @@ import {
   useState
 } from "react";
 
-import {
-  ArrowUp,
-  ChevronLeft,
-  Download,
-  Menu,
-  Minus,
-  Plus,
-  RefreshCw,
-  Settings,
-  Upload,
-  X
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import packageJson from "../../package.json";
 
 import type {
@@ -58,6 +45,7 @@ import {
   TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
   TerminalWorkspace
 } from "./components/terminal-workspace";
+import { UiIcon } from "./components/ui-icon";
 import type {
   ConnectionPreferences,
   HotkeyBindingPreference,
@@ -72,6 +60,22 @@ import type {
   TerminalEditorFocusTypographyId,
   TerminalTab
 } from "./components/terminal-workspace";
+import {
+  AppInlineHintPanel,
+  TransferDock,
+  WorkbenchLayout,
+  WorkbenchTopbar
+} from "./components/workbench-shell";
+import {
+  CommandHistoryInspectorSection,
+  SftpExplorerSection,
+  ServerHealthInspectorSection,
+  SessionsInspectorSection
+} from "./components/workbench-panels";
+import {
+  WorkbenchExplorerSidebar,
+  WorkbenchInspectorSidebar
+} from "./components/workbench-sidebars";
 import {
   createDefaultDangerousCommandGuardPreferences,
   findDangerousCommandGroupAssignment,
@@ -115,6 +119,7 @@ const TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY = "termdock.terminal-editor-
 const HOTKEY_PREFERENCES_STORAGE_KEY = "termdock.hotkey-preferences.v1";
 const HOTKEY_CONFLICT_NAV_STORAGE_KEY = "termdock.hotkey-conflict-nav.v1";
 const FILE_OPEN_PREFERENCES_STORAGE_KEY = "termdock.file-open-preferences.v1";
+const SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY = "termdock.sftp-explorer-view-mode.v1";
 const LEGACY_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v1";
 const PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v2";
 const SFTP_TRANSFER_PREFERENCES_STORAGE_KEY = "termdock.sftp-transfer-preferences.v3";
@@ -139,6 +144,8 @@ const SESSION_QUICK_PROFILES_STORAGE_KEY = "termdock.session-quick-profiles.v1";
 const SESSION_TEMPLATES_STORAGE_KEY = "termdock.session-templates.v1";
 const COMMAND_SNIPPET_GROUPS_STORAGE_KEY = "termdock.command-snippet-groups.v1";
 const COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY = "termdock.command-snippet-scoped-values.v1";
+const COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY = "termdock.command-history-inspector-collapsed.v1";
+const INSPECTOR_SIDEBAR_TAB_STORAGE_KEY = "termdock.inspector-sidebar-tab.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY =
   "termdock.dangerous-command-guard-preferences.v1";
@@ -295,6 +302,8 @@ type SettingsSectionId =
   | "portForwarding"
   | "diagnostics";
 type SessionSortMode = "default" | "nameAsc" | "nameDesc" | "recent";
+type SftpExplorerViewMode = "compact" | "details";
+type InspectorSidebarTabId = "sessions" | "health" | "history";
 type TransferHistoryScope = "activeSession" | "allSessions";
 type TransferHistoryDirectionFilter = "all" | SftpTransferEvent["direction"];
 type TransferHistoryStatusFilter = "all" | SftpTransferEvent["status"];
@@ -1012,36 +1021,6 @@ interface AppChoiceDialogOptions {
   title?: string;
   cancelLabel?: string;
   detailText?: string;
-}
-
-type UiIconName =
-  | "settings"
-  | "refresh"
-  | "chevronLeft"
-  | "arrowUp"
-  | "upload"
-  | "download"
-  | "menu"
-  | "close"
-  | "plus"
-  | "minus";
-
-const UI_ICONS: Record<UiIconName, LucideIcon> = {
-  settings: Settings,
-  refresh: RefreshCw,
-  chevronLeft: ChevronLeft,
-  arrowUp: ArrowUp,
-  upload: Upload,
-  download: Download,
-  menu: Menu,
-  close: X,
-  plus: Plus,
-  minus: Minus
-};
-
-function UiIcon({ name }: { name: UiIconName }) {
-  const Icon = UI_ICONS[name];
-  return <Icon aria-hidden="true" className="ui-icon" strokeWidth={1.9} />;
 }
 
 function getSafeTabInstance(value: unknown): number {
@@ -3738,6 +3717,31 @@ function readFileOpenPreferences(): FileOpenPreferences {
   }
 }
 
+function readCommandHistoryInspectorCollapsed(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function readInspectorSidebarTabId(): InspectorSidebarTabId {
+  if (typeof window === "undefined") {
+    return "sessions";
+  }
+  try {
+    const rawValue = window.localStorage.getItem(INSPECTOR_SIDEBAR_TAB_STORAGE_KEY);
+    return rawValue === "sessions" || rawValue === "health" || rawValue === "history"
+      ? rawValue
+      : "sessions";
+  } catch {
+    return "sessions";
+  }
+}
+
 function readSftpTransferPreferences(): SftpTransferPreferences {
   if (typeof window === "undefined") {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
@@ -3770,6 +3774,18 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
       : normalized;
   } catch {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
+  }
+}
+
+function readSftpExplorerViewMode(): SftpExplorerViewMode {
+  if (typeof window === "undefined") {
+    return "details";
+  }
+  try {
+    const rawValue = window.localStorage.getItem(SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY);
+    return rawValue === "compact" || rawValue === "details" ? rawValue : "details";
+  } catch {
+    return "details";
   }
 }
 
@@ -5429,11 +5445,20 @@ export function App() {
   const [serverHealthAlertPreferences, setServerHealthAlertPreferences] = useState<ServerHealthAlertPreferences>(
     () => readServerHealthAlertPreferences()
   );
+  const [isCommandHistoryInspectorCollapsed, setIsCommandHistoryInspectorCollapsed] = useState(
+    () => readCommandHistoryInspectorCollapsed()
+  );
+  const [activeInspectorSidebarTab, setActiveInspectorSidebarTab] = useState<InspectorSidebarTabId>(
+    () => readInspectorSidebarTabId()
+  );
   const [testConnectionResult, setTestConnectionResult] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
   const [sftpDirectory, setSftpDirectory] = useState<SftpDirectoryListResult | null>(null);
+  const [sftpExplorerViewMode, setSftpExplorerViewMode] = useState<SftpExplorerViewMode>(
+    () => readSftpExplorerViewMode()
+  );
   const [sftpPath, setSftpPath] = useState(".");
   const [sftpLoading, setSftpLoading] = useState(false);
   const [sftpActionLoading, setSftpActionLoading] = useState(false);
@@ -11438,6 +11463,33 @@ export function App() {
 
   useEffect(() => {
     try {
+      window.localStorage.setItem(SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY, sftpExplorerViewMode);
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [sftpExplorerViewMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY,
+        isCommandHistoryInspectorCollapsed ? "true" : "false"
+      );
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [isCommandHistoryInspectorCollapsed]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(INSPECTOR_SIDEBAR_TAB_STORAGE_KEY, activeInspectorSidebarTab);
+    } catch {
+      // Ignore storage failures; runtime settings still apply for this launch.
+    }
+  }, [activeInspectorSidebarTab]);
+
+  useEffect(() => {
+    try {
       window.localStorage.setItem(
         TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY,
         JSON.stringify(terminalEditorFocusPreferences)
@@ -11819,7 +11871,7 @@ export function App() {
   }, [appApi]);
 
   useEffect(() => {
-    if (!systemApi) {
+    if (!systemApi?.onRemoteOpenFileEvent) {
       return;
     }
     const stopListening = systemApi.onRemoteOpenFileEvent((event: RemoteOpenFileAutoSyncEvent) => {
@@ -22980,204 +23032,110 @@ export function App() {
 
   return (
     <div className={isMacPlatform ? "app app--mac" : "app app--windows"}>
-      {isMacPlatform ? (
-        <header className="topbar">
-          <div className="topbar__brand">
-            <strong>TermDock</strong>
-            <span>SSH + SFTP Workbench</span>
-          </div>
-          <div className="topbar__meta">
-            <span className="topbar__meta-dot" />
-            <span>
-              {connectionPreferences.autoReconnect
-                ? `Auto Reconnect ${connectionPreferences.reconnectDelaySeconds}s`
-                : "Auto Reconnect Off"}
-            </span>
-            {workspaceProfilePreferences.profileId !== "none" ? (
-              <span
-                className={`workspace-profile-badge workspace-profile-badge--${workspaceProfilePreferences.profileId}`}
-              >
-                {selectedWorkspaceProfile.shortLabel}
-              </span>
-            ) : null}
-          </div>
-        </header>
-      ) : null}
+      <WorkbenchTopbar
+        autoReconnectLabel={
+          connectionPreferences.autoReconnect
+            ? `Auto Reconnect ${connectionPreferences.reconnectDelaySeconds}s`
+            : "Auto Reconnect Off"
+        }
+        isMacPlatform={isMacPlatform}
+        workspaceProfile={
+          workspaceProfilePreferences.profileId !== "none"
+            ? {
+                id: workspaceProfilePreferences.profileId,
+                shortLabel: selectedWorkspaceProfile.shortLabel
+              }
+            : null
+        }
+      />
 
-      <main className={isTerminalEditorFocusMode ? "layout is-terminal-editor-focus" : "layout"}>
-        <aside className="panel panel--left">
-          <div className="workbench-sidebar workbench-sidebar--explorer">
-            <section className="panel__section panel__section--sftp">
-              <div className="panel__heading">
-                <h2>SFTP</h2>
-              </div>
-              {activeTerminalTab ? (
-                <>
-                  <p className="hint sftp-binding">
-                    Bound to tab: <strong>{activeTerminalTab.title}</strong>
-                  </p>
-                  <div className="sftp-toolbar">
-                    <input
-                      className="sftp-path-input"
-                      onChange={(event) => setSftpPath(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") {
-                          return;
-                        }
-                        event.preventDefault();
-                        void loadSftpDirectory(sftpPath);
-                      }}
-                      placeholder="/var/log"
-                      value={sftpPath}
-                    />
-                    <button
-                      aria-label="Go to parent directory"
-                      className="icon-button sftp-toolbar__button"
-                      disabled={sftpLoading || sftpActionLoading || !sftpDirectory?.parent}
-                      onClick={() => {
-                        if (!sftpDirectory?.parent) {
-                          return;
-                        }
-                        void loadSftpDirectory(sftpDirectory.parent);
-                      }}
-                      title="Go Up"
-                      type="button"
-                    >
-                      <UiIcon name="arrowUp" />
-                    </button>
-                    <button
-                      aria-label="Refresh directory"
-                      className="icon-button sftp-toolbar__button"
-                      disabled={sftpLoading || sftpActionLoading}
-                      onClick={() => {
-                        void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
-                      }}
-                      title="Refresh"
-                      type="button"
-                    >
-                      <UiIcon name="refresh" />
-                    </button>
-                    <button
-                      aria-label="SFTP actions"
-                      className="icon-button sftp-toolbar__button sftp-toolbar__button--menu"
-                      onClick={toggleSftpToolbarMenu}
-                      title="SFTP actions"
-                      type="button"
-                    >
-                      <UiIcon name="menu" />
-                    </button>
-                  </div>
-                  <p className="hint sftp-current-path">
-                    Current: {sftpDirectory?.cwd ?? "(not loaded)"}
-                  </p>
-                  {sftpError ? <p className="hint sftp-error">{sftpError}</p> : null}
-                  {sftpDeleteProgress ? (
-                    <div className="sftp-delete-progress" role="status" aria-live="polite">
-                      <p className="hint sftp-delete-progress__label">
-                        Deleting{" "}
-                        {sftpDeleteProgress.kind === "directory" ? "directory" : "file"}{" "}
-                        "{sftpDeleteProgress.name}"...
-                      </p>
-                      <div className="sftp-delete-progress__track">
-                        <span className="sftp-delete-progress__bar" />
-                      </div>
-                    </div>
-                  ) : null}
-                  <div
-                    className={sftpDropActive ? "sftp-drop-zone is-active" : "sftp-drop-zone"}
-                    onDragLeave={onSftpDragLeave}
-                    onDragOver={onSftpDragOver}
-                    onDrop={onSftpDrop}
-                  >
-                    <p className="hint sftp-drop-hint">
-                      Drop files or folders into this box to upload to current directory.
-                    </p>
-                    <div
-                      className="sftp-drop-zone__body"
-                      onContextMenu={(event) => openSftpContextMenu(event)}
-                    >
-                      <ul className="sftp-list">
-                        {(sftpDirectory?.entries ?? []).map((entry) => (
-                          <li
-                            className={
-                              selectedSftpPath === entry.path
-                                ? "sftp-list__item is-selected"
-                                : "sftp-list__item"
-                            }
-                            key={`${entry.path}-${entry.modifiedAt ?? ""}`}
-                            onClick={() => {
-                              setSelectedSftpPath(entry.path);
-                            }}
-                            onDoubleClick={() => {
-                              if (entry.kind === "directory") {
-                                return;
-                              }
-                              void openSftpEntryFile(entry);
-                            }}
-                            onContextMenu={(event) => openSftpContextMenu(event, entry)}
-                          >
-                            {entry.kind === "directory" ? (
-                              <button
-                                className="sftp-list__name sftp-list__name--directory"
-                                onClick={() => {
-                                  void loadSftpDirectory(entry.path);
-                                }}
-                                title={entry.path}
-                                type="button"
-                              >
-                                {entry.name}/
-                              </button>
-                            ) : (
-                              <span
-                                className="sftp-list__name sftp-list__name--plain"
-                                title={entry.path}
-                              >
-                                {entry.name}
-                              </span>
-                            )}
-                            <span className="sftp-list__mtime">
-                              {formatSftpMtimeForLs(entry.modifiedAt)}
-                            </span>
-                            <span className={`sftp-list__mode sftp-list__mode--${entry.kind}`}>
-                              {entry.permissions}
-                            </span>
-                            <span className="sftp-list__links">
-                              {formatSftpLinksForLs(entry.links)}
-                            </span>
-                            <span className="sftp-list__owner">{entry.owner}</span>
-                            <span className="sftp-list__group">{entry.group}</span>
-                            <span className="sftp-list__meta">
-                              {formatSftpSizeForLs(entry.size)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                  {sftpLoading ? (
-                    <p className="hint sftp-loading-indicator" role="status" aria-live="polite">
-                      Loading remote directory...
-                    </p>
-                  ) : null}
-                  <div className="sftp-summary">
-                    <p className="hint sftp-summary__item">
-                      Entries: {sftpSummary.entryCount} (Files: {sftpSummary.fileCount}, Dirs:{" "}
-                      {sftpSummary.directoryCount})
-                    </p>
-                    <p className="hint sftp-summary__item">
-                      Current directory size: {formatExactByteCount(sftpSummary.totalSize)} (
-                      {formatTransferBytes(sftpSummary.totalSize)})
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <p className="hint">
-                  Open a terminal tab first. SFTP panel reuses the active tab SSH connection.
-                </p>
-              )}
-            </section>
-          </div>
-        </aside>
+      <WorkbenchLayout
+        isEditorFocusMode={isTerminalEditorFocusMode}
+        leftSidebar={(
+          <WorkbenchExplorerSidebar>
+            <SftpExplorerSection
+              bindingTabTitle={activeTerminalTab?.title ?? null}
+              currentPathLabel={sftpDirectory?.cwd ?? "(not loaded)"}
+              deleteProgressLabel={
+                sftpDeleteProgress
+                  ? `Deleting ${
+                      sftpDeleteProgress.kind === "directory" ? "directory" : "file"
+                    } "${sftpDeleteProgress.name}"...`
+                  : null
+              }
+              directorySizeLabel={`Current directory size: ${formatExactByteCount(sftpSummary.totalSize)} (${formatTransferBytes(sftpSummary.totalSize)})`}
+              dropActive={sftpDropActive}
+              entries={(sftpDirectory?.entries ?? []).map((entry) => ({
+                compactMetaLabel: [
+                  entry.permissions,
+                  `${entry.owner}:${entry.group}`,
+                  entry.links > 1 ? `${formatSftpLinksForLs(entry.links)} links` : null
+                ]
+                  .filter((part): part is string => !!part)
+                  .join(" · "),
+                compactSizeLabel: formatTransferBytes(entry.size),
+                group: entry.group,
+                id: `${entry.path}-${entry.modifiedAt ?? ""}`,
+                isSelected: selectedSftpPath === entry.path,
+                kind: entry.kind,
+                linksLabel: formatSftpLinksForLs(entry.links),
+                modifiedAtLabel: formatSftpMtimeForLs(entry.modifiedAt),
+                name: entry.name,
+                onClick: () => {
+                  setSelectedSftpPath(entry.path);
+                },
+                onContextMenu: (event) => openSftpContextMenu(event, entry),
+                onDoubleClick: () => {
+                  if (entry.kind === "directory") {
+                    return;
+                  }
+                  void openSftpEntryFile(entry);
+                },
+                onOpenDirectory:
+                  entry.kind === "directory"
+                    ? () => {
+                        void loadSftpDirectory(entry.path);
+                      }
+                    : undefined,
+                owner: entry.owner,
+                path: entry.path,
+                permissions: entry.permissions,
+                sizeLabel: formatSftpSizeForLs(entry.size)
+              }))}
+              entrySummaryLabel={`Entries: ${sftpSummary.entryCount} (Files: ${sftpSummary.fileCount}, Dirs: ${sftpSummary.directoryCount})`}
+              errorMessage={sftpError}
+              loading={sftpLoading}
+              onActionsMenu={toggleSftpToolbarMenu}
+              onBodyContextMenu={(event) => openSftpContextMenu(event)}
+              onDragLeave={onSftpDragLeave}
+              onDragOver={onSftpDragOver}
+              onDrop={onSftpDrop}
+              onGoUp={() => {
+                if (!sftpDirectory?.parent) {
+                  return;
+                }
+                void loadSftpDirectory(sftpDirectory.parent);
+              }}
+              onPathChange={(event) => setSftpPath(event.target.value)}
+              onPathKeyDown={(event) => {
+                if (event.key !== "Enter") {
+                  return;
+                }
+                event.preventDefault();
+                void loadSftpDirectory(sftpPath);
+              }}
+              onRefresh={() => {
+                void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
+              }}
+              onViewModeChange={setSftpExplorerViewMode}
+              pathUpDisabled={sftpLoading || sftpActionLoading || !sftpDirectory?.parent}
+              pathValue={sftpPath}
+              refreshDisabled={sftpLoading || sftpActionLoading}
+              viewMode={sftpExplorerViewMode}
+            />
+          </WorkbenchExplorerSidebar>
+        )}
+        centerPane={(
 
         <section className="panel panel--center">
           <TerminalWorkspace
@@ -23207,864 +23165,556 @@ export function App() {
             tabs={terminalTabs}
           />
         </section>
-
-        <aside className="panel panel--right">
-          <div className="workbench-sidebar workbench-sidebar--inspector">
-            <section className="panel__section" onContextMenu={openSessionBlankContextMenu}>
-              <div className="panel__heading panel__heading--inspector">
-                <div className="panel__heading-main">
-                  <div className="panel__title-group">
-                    <h2>Sessions</h2>
-                    <span className="panel__badge">{sessionBadgeText}</span>
-                    {workspaceProfilePreferences.profileId !== "none" ? (
-                      <span
-                        className={`panel__badge workspace-profile-badge workspace-profile-badge--${workspaceProfilePreferences.profileId}`}
-                      >
-                        {selectedWorkspaceProfile.shortLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="session-panel__heading-actions">
-                    <button
-                      aria-label="Open settings"
-                      className="icon-button session-panel__settings-button"
-                      onClick={() => openSettingsPanel("connection")}
-                      title="Settings"
-                      type="button"
-                    >
-                      <UiIcon name="settings" />
-                    </button>
-                  </div>
-                </div>
-                <div className="panel__subheading">
-                  <span className="hint session-explorer__location">
-                    {activeSessionGroup ? `Group: ${activeSessionGroup.label}` : "Groups"}
-                  </span>
-                </div>
-              </div>
-              {loading ? <p className="hint">Loading sessions...</p> : null}
-              <div className="session-explorer">
-                <div className="session-filter-bar">
-                  <input
-                    className="session-filter-input"
-                    onChange={(event) => setSessionFilterQuery(event.target.value)}
-                    placeholder="Filter name/host/user/group"
-                    value={sessionFilterQuery}
-                  />
-                  <button
-                    aria-label={sessionFavoritesOnly ? "Show all sessions" : "Show favorite sessions only"}
-                    className={sessionFavoritesOnly ? "session-filter-toggle is-active" : "session-filter-toggle"}
-                    onClick={() => setSessionFavoritesOnly((prev) => !prev)}
-                    title={sessionFavoritesOnly ? "Show all" : "Favorites only"}
-                    type="button"
-                  >
-                    {sessionFavoritesOnly ? "Favorites" : "All"}
-                  </button>
-                </div>
-                {!activeSessionGroup ? (
-                  <>
-                    {!loading && filteredSessions.length === 0 ? (
-                      <p className="hint">
-                        {sessions.length === 0
-                          ? "No sessions yet."
-                          : "No sessions match current filters."}
-                      </p>
-                    ) : null}
-                    <ul className="session-folder-list">
-                      {groupedSessions.map((group) => (
-                        <li
-                          className={
-                            selectedGroupKeySet.has(group.key)
-                              ? "session-folder-list__item is-selected"
-                              : "session-folder-list__item"
-                          }
-                          key={group.key}
-                          onContextMenu={(event) =>
-                            openSessionContextMenu(event, {
-                              type: "group",
-                              groupKey: group.key,
-                              groupName: group.groupName,
-                              label: group.label
-                            })
-                          }
-                        >
-                          <button
-                            className="session-folder-list__main"
-                            onClick={(event) => {
-                              const isMultiSelect = event.ctrlKey || event.metaKey;
-                              if (isMultiSelect) {
-                                setSelectedGroupKeys((prev) =>
-                                  prev.includes(group.key)
-                                    ? prev.filter((groupKey) => groupKey !== group.key)
-                                    : [...prev, group.key]
-                                );
-                                return;
-                              }
-                              setSelectedGroupKeys([group.key]);
-                              setActiveSessionGroupKey(group.key);
-                            }}
-                            title={`${group.label} (${group.sessions.length})`}
-                            type="button"
-                          >
-                            <span className="session-folder-list__name">{group.label}</span>
-                            <span className="session-folder-list__count">{group.sessions.length}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      aria-label="Back to groups"
-                      className="icon-button session-explorer__back"
-                      onClick={() => setActiveSessionGroupKey(null)}
-                      title="Back to groups"
-                      type="button"
-                    >
-                      <UiIcon name="chevronLeft" />
-                    </button>
-                    {!loading && activeGroupSessions.length === 0 ? (
-                      <p className="hint">No sessions in this group.</p>
-                    ) : null}
-                    <ul className="session-list">
-                      {activeGroupSessions.map((session) => (
-                        <li
-                          key={session.id}
-                          className={
-                            selectedSessionIdSet.has(session.id)
-                              ? "session-list__item is-selected"
-                              : "session-list__item"
-                          }
-                          onContextMenu={(event) =>
-                            openSessionContextMenu(event, {
-                              type: "session",
-                              sessionId: session.id
-                            })
-                          }
-                        >
-                          <button
-                            className="session-list__main"
-                            onClick={(event) => {
-                              const isMultiSelect = event.ctrlKey || event.metaKey;
-                              if (isMultiSelect) {
-                                setSelectedSessionIds((prev) => {
-                                  if (prev.includes(session.id)) {
-                                    const next = prev.filter((sessionId) => sessionId !== session.id);
-                                    setSelectedSessionId(next[0] ?? null);
-                                    return next;
-                                  }
-                                  setSelectedSessionId(session.id);
-                                  return [...prev, session.id];
-                                });
-                                return;
-                              }
-                              setSelectedSessionId(session.id);
-                              setSelectedSessionIds([session.id]);
-                            }}
-                            onKeyDown={(event) => {
-                              if (
-                                event.key !== "Enter" ||
-                                event.altKey ||
-                                event.ctrlKey ||
-                                event.metaKey ||
-                                event.shiftKey
-                              ) {
-                                return;
-                              }
-                              event.preventDefault();
-                              openTerminalTab(session);
-                            }}
-                            onDoubleClick={() =>
-                              openTerminalTab(session, {
-                                forceNewTab: true
-                              })
-                            }
-                            title={`${session.username}@${session.host}:${session.port}`}
-                            type="button"
-                          >
-                            <span className="session-list__name">{session.name}</span>
-                            <span className="session-list__host">{session.host}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-              </div>
-            </section>
-            <section className="panel__section panel__section--server-health">
-              <div className="panel__heading panel__heading--inspector">
-                <div className="panel__heading-main">
-                  <h2>Server Health</h2>
-                  <div className="server-health__actions">
-                    <button
-                      aria-label="Toggle server health details"
-                      className={
-                        isServerHealthDetailOpen
-                          ? "icon-button server-health__detail-toggle is-active"
-                          : "icon-button server-health__detail-toggle"
-                      }
-                      disabled={!activeTerminalTab}
-                      onClick={() => setIsServerHealthDetailOpen((prev) => !prev)}
-                      title={isServerHealthDetailOpen ? "Hide details" : "Show details"}
-                      type="button"
-                    >
-                      <UiIcon name={isServerHealthDetailOpen ? "minus" : "plus"} />
-                    </button>
-                    <button
-                      aria-label="Refresh server metrics"
-                      className="icon-button"
-                      disabled={
-                        !activeTerminalTab ||
-                        !isActiveTabConnected ||
-                        serverHealthLoading ||
-                        (isServerHealthDetailOpen && serverProcessLoading)
-                      }
-                      onClick={() => {
-                        void refreshServerHealth();
-                        if (isServerHealthDetailOpen) {
-                          void refreshServerProcesses();
-                        }
-                      }}
-                      title="Refresh"
-                      type="button"
-                    >
-                      <UiIcon name="refresh" />
-                    </button>
-                    <span
-                      className={
-                        serverHealthAlertStatus.hasAny
-                          ? "server-health__state server-health__state--alert"
-                          : "server-health__state"
-                      }
-                      title={
-                        serverHealthAlertStatus.hasAny
-                          ? "One or more metrics exceeded alert threshold."
-                          : "No alert triggered."
-                      }
-                    >
-                      {serverHealthAlertStatus.hasAny ? "ALERT" : "OK"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              {activeTerminalTab ? (
-                <>
-                  <p className="hint server-health__binding">
-                    Monitoring tab: <strong>{activeTerminalTab.title}</strong>
-                  </p>
-                  {!isActiveTabConnected ? (
-                    <p className="hint">Connect the active terminal tab to collect metrics.</p>
-                  ) : null}
-                  {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
-                  {serverHealthAlertStatus.hasAny ? (
-                    <p className="hint server-health__alert-text">
-                      Threshold reached:
-                      {serverHealthAlertStatus.cpuHigh ? " CPU" : ""}
-                      {serverHealthAlertStatus.memoryHigh ? " Memory" : ""}
-                      {serverHealthAlertStatus.diskHigh ? " Disk" : ""}
-                    </p>
-                  ) : null}
-                  {serverHealthLoading ? (
-                    <p className="hint" role="status" aria-live="polite">
-                      Collecting server metrics...
-                    </p>
-                  ) : null}
-                  {serverHealth ? (
-                    <>
-                      <div className="server-health-grid">
-                        <div
-                          className={
-                            serverHealthAlertStatus.cpuHigh
-                              ? "server-health-card server-health-card--cpu is-alert"
-                              : "server-health-card server-health-card--cpu"
-                          }
-                        >
-                          <span className="server-health-card__label">CPU</span>
-                          <strong className="server-health-card__value">
-                            {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
-                          </strong>
-                        </div>
-                        <div
-                          className={
-                            serverHealthAlertStatus.memoryHigh
-                              ? "server-health-card server-health-card--memory is-alert"
-                              : "server-health-card server-health-card--memory"
-                          }
-                        >
-                          <span className="server-health-card__label">Memory</span>
-                          <strong className="server-health-card__value">
-                            {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
-                          </strong>
-                          <span className="server-health-card__meta">
-                            {formatTransferBytes(serverHealth.memoryUsedBytes)}/
-                            {formatTransferBytes(serverHealth.memoryTotalBytes)}
-                          </span>
-                        </div>
-                        <div
-                          className={
-                            serverHealthAlertStatus.diskHigh
-                              ? "server-health-card server-health-card--disk is-alert"
-                              : "server-health-card server-health-card--disk"
-                          }
-                        >
-                          <span className="server-health-card__label">Disk</span>
-                          <strong className="server-health-card__value">
-                            {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
-                          </strong>
-                          <span className="server-health-card__meta">
-                            {serverHealth.diskPath} | {formatTransferBytes(serverHealth.diskUsedBytes)}/
-                            {formatTransferBytes(serverHealth.diskTotalBytes)}
-                          </span>
-                        </div>
-                        <div className="server-health-card server-health-card--network">
-                          <span className="server-health-card__label">Network</span>
-                          <strong className="server-health-card__value">
-                            RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
-                          </strong>
-                          <span className="server-health-card__meta">
-                            TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
-                          </span>
-                        </div>
-                        <div className="server-health-card server-health-card--load">
-                          <span className="server-health-card__label">Load</span>
-                          <strong className="server-health-card__value">
-                            {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
-                            {serverHealth.load15.toFixed(2)}
-                          </strong>
-                        </div>
-                        <div className="server-health-card server-health-card--uptime">
-                          <span className="server-health-card__label">Uptime</span>
-                          <strong className="server-health-card__value">
-                            {formatServerUptime(serverHealth.uptimeSeconds)}
-                          </strong>
-                          <span className="server-health-card__meta">{serverHealth.hostname}</span>
-                        </div>
-                      </div>
-                      {isServerHealthDetailOpen ? (
-                        <div className="server-health-details">
-                          {recentServerHealthPoints.length > 0 ? (
-                            <div className="server-health-trend">
-                              <p className="hint server-health-trend__title">
-                                Recent trend (last {recentServerHealthPoints.length} samples)
-                              </p>
-                              <div className="server-health-trend__bars" aria-hidden="true">
-                                {recentServerHealthPoints.map((point, index) => (
-                                  <div className="server-health-trend__sample" key={`${point.at}-${index}`}>
-                                    <span
-                                      className="server-health-trend__bar server-health-trend__bar--cpu"
-                                      style={{ height: `${Math.max(4, point.cpuUsagePercent)}%` }}
-                                      title={`CPU ${formatPercent(point.cpuUsagePercent)}`}
-                                    />
-                                    <span
-                                      className="server-health-trend__bar server-health-trend__bar--memory"
-                                      style={{ height: `${Math.max(4, point.memoryUsagePercent)}%` }}
-                                      title={`Memory ${formatPercent(point.memoryUsagePercent)}`}
-                                    />
-                                    <span
-                                      className="server-health-trend__bar server-health-trend__bar--disk"
-                                      style={{ height: `${Math.max(4, point.diskUsagePercent)}%` }}
-                                      title={`Disk ${formatPercent(point.diskUsagePercent)}`}
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                          {serverProcessError ? (
-                            <p className="hint sftp-error">{serverProcessError}</p>
-                          ) : null}
-                          {serverProcessLoading ? (
-                            <p className="hint" role="status" aria-live="polite">
-                              Collecting process details...
-                            </p>
-                          ) : null}
-                          <div className="server-health-processes">
-                            <p className="hint server-health-processes__title">Top processes (CPU)</p>
-                            {serverProcessSnapshot?.processes?.length ? (
-                              <ul className="server-health-processes__list">
-                                {serverProcessSnapshot.processes.map((entry) => (
-                                  <li
-                                    className="server-health-processes__item"
-                                    key={`${entry.pid}-${entry.command}`}
-                                  >
-                                    <span className="server-health-processes__pid">{entry.pid}</span>
-                                    <span className="server-health-processes__command" title={entry.command}>
-                                      {entry.command}
-                                    </span>
-                                    <span className="server-health-processes__cpu">
-                                      {formatProcessPercent(entry.cpuPercent)}
-                                    </span>
-                                    <span className="server-health-processes__mem">
-                                      {formatProcessPercent(entry.memoryPercent)}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="hint">No process data yet.</p>
-                            )}
-                          </div>
-                          <div className="server-health-services">
-                            <p className="hint server-health-processes__title">Failed services</p>
-                            {serverProcessSnapshot?.failedServices?.length ? (
-                              <ul className="server-health-services__list">
-                                {serverProcessSnapshot.failedServices.map((name) => (
-                                  <li className="server-health-services__item" key={name}>
-                                    {name}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="hint">No failed services detected.</p>
-                            )}
-                          </div>
-                          <p className="hint server-health__footnote">
-                            Updated: {serverHealthUpdatedLabel} | RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
-                            {formatTransferBytes(serverHealth.networkTxBytes)}
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="hint server-health__footnote">
-                          Updated: {serverHealthUpdatedLabel}
-                        </p>
-                      )}
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                <p className="hint">Open and connect a terminal tab to monitor server status.</p>
-              )}
-            </section>
-            <section className="panel__section panel__section--command-history">
-              <div className="panel__heading panel__heading--inspector">
-                <div className="panel__heading-main">
-                  <div className="panel__title-group">
-                    <h2>Command History</h2>
-                    <span className="panel__badge">
-                      {visibleTerminalCommandHistoryEntries.length}/{terminalCommandHistoryEntries.length}
-                    </span>
-                  </div>
-                  <div className="command-history-panel__heading-actions">
-                    <button
-                      className="secondary-button secondary-button--small command-history-panel__snippet-button"
-                      onClick={() => {
-                        void openCommandSnippetManager();
-                      }}
-                      type="button"
-                    >
-                      Snippets ({totalCommandSnippetCount})
-                    </button>
-                    <button
-                      className="secondary-button secondary-button--small"
-                      onClick={openCommandHistoryManager}
-                      type="button"
-                    >
-                      Manage
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="command-history-panel__filters">
-                <select
-                  onChange={(event) =>
-                    setTerminalCommandHistoryScope(event.target.value as TerminalCommandHistoryScope)
-                  }
-                  value={terminalCommandHistoryScope}
-                >
-                  <option value="activeTab">Active Tab</option>
-                  <option value="allTabs">All Tabs</option>
-                </select>
-                <input
-                  onChange={(event) => setTerminalCommandHistoryQuery(event.target.value)}
-                  placeholder="Search command"
-                  value={terminalCommandHistoryQuery}
-                />
-              </div>
-              <div
-                className="command-history-panel__list-shell"
-                onContextMenu={openCommandHistoryPanelContextMenu}
-              >
-                {visibleTerminalCommandHistoryEntries.length === 0 ? (
-                  <p className="hint command-history-panel__empty">No command history entries.</p>
-                ) : (
-                  <ul className="command-history-panel__list">
-                    {visibleTerminalCommandHistoryEntries.map((entry) => (
-                      <li
-                        className="command-history-panel__item"
-                        key={entry.id}
-                        onDoubleClick={() => {
-                          void pasteTerminalCommandHistoryEntry(entry);
-                        }}
-                        onContextMenu={(event) => openCommandHistoryContextMenu(event, entry.id)}
-                        title={`${entry.command}\n\nDouble-click to paste into active terminal. Right-click for actions.`}
-                      >
-                        <p className="command-history-panel__command">
-                          <code>{entry.command}</code>
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </section>
-          </div>
-        </aside>
-      </main>
-
-      <section className="transfer-dock">
-        <div className="transfer-dock__heading">
-          <h3>Transfers</h3>
-          <div className="transfer-dock__heading-actions">
-            <div className="transfer-dock__heading-meta">
-              <span className="hint transfer-dock__binding">
-                {activeTerminalTab
-                  ? `Bound to ${activeTerminalTab.title}`
-                  : "Open a terminal tab to manage transfers"}
-              </span>
-              <span
-                className={
-                  activeTransferDockNotice
-                    ? `hint transfer-dock__notice transfer-dock__notice--${activeTransferDockNotice.level}`
-                    : "hint transfer-dock__notice transfer-dock__notice--placeholder"
-                }
-              >
-                {activeTransferDockNotice?.message ?? "\u00A0"}
-              </span>
-            </div>
-            <button
-              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
-              disabled={pendingTransferRestoreCount === 0}
-              onClick={() => {
-                void restorePendingTransferRestoreQueue();
-              }}
-              type="button"
-            >
-              Restore Pending <span className="transfer-dock__count">({pendingTransferRestoreCount})</span>
-            </button>
-            <button
-              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
-              disabled={pendingTransferRestoreCount === 0}
-              onClick={() => {
-                void discardPendingTransferRestoreQueue();
-              }}
-              type="button"
-            >
-              Discard Pending
-            </button>
-            <button
-              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
-              disabled={!canRetryAllFailedTransfers}
-              onClick={() => {
-                void retryAllFailedTransfersWithScopeChoice();
-              }}
-              title="Retry all failed upload/download candidates with retry-scope strategy"
-              type="button"
-            >
-              Retry All Failed{" "}
-              <span className="transfer-dock__count">({failedRetryCandidateTotal})</span>
-            </button>
-            <button
-              className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
-              onClick={openRetryCenter}
-              type="button"
-            >
-              Retry Center
-            </button>
-            <button
-              className={
-                hasOperationCenterActivity
-                  ? "secondary-button sftp-transfer-panel__clear transfer-dock__action-button operation-center__trigger is-active"
-                  : "secondary-button sftp-transfer-panel__clear transfer-dock__action-button operation-center__trigger"
-              }
-              onClick={openOperationCenter}
-              type="button"
-            >
-              Operation Center <span className="transfer-dock__count">({operationCenterActiveCount})</span>
-            </button>
-          </div>
-        </div>
-        <div className="transfer-dock__grid">
-          <section className="transfer-dock__panel">
-            <div className="sftp-transfer-panel__header">
-              <p className="hint sftp-transfer-panel__title">
-                Uploads (running {activeUploadQueueStats.running}, queued{" "}
-                {activeUploadQueueStats.queued}, threads{" "}
-                {sftpTransferPreferences.uploadConcurrency})
-              </p>
-              <div className="sftp-transfer-panel__actions">
-                <button
-                  className="secondary-button sftp-transfer-panel__clear"
-                  disabled={!canRetryFailedUploads}
-                  onClick={() => {
-                    void retryFailedUploads();
-                  }}
-                  type="button"
-                >
-                  Retry Failed ({failedUploadRetryCandidates.length})
-                </button>
-                <button
-                  className="secondary-button sftp-transfer-panel__clear"
-                  disabled={!canClearFinishedUploads}
-                  onClick={() => {
-                    clearFinishedTransfers("upload");
-                  }}
-                  type="button"
-                >
-                  Clear Finished
-                </button>
-                <button
-                  aria-label="Cancel all upload tasks"
-                  className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
-                  disabled={!activeTabId}
-                  onClick={() => {
-                    void cancelAllActiveUploads();
-                  }}
-                  title="Cancel all upload tasks in this tab"
-                  type="button"
-                >
-                  <UiIcon name="close" />
-                </button>
-              </div>
-            </div>
-            <p className="hint sftp-transfer-panel__batch-progress">
-              Progress: {activeUploadProgressStats.completed}/{activeUploadProgressStats.total} completed
-              (failed {activeUploadProgressStats.failed}, canceled {activeUploadProgressStats.canceled},
-              running {activeUploadProgressStats.running}, queued {activeUploadProgressStats.queued})
-            </p>
-            {isActiveUploadQueuePaused ? (
-              <p className="hint sftp-transfer-panel__batch-progress">
-                {activeUploadPauseReason === "schedule-window"
-                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Uploads will resume automatically${
-                      nextSftpTransferWindowOpeningLabel
-                        ? ` at ${nextSftpTransferWindowOpeningLabel}.`
-                        : " when the window opens."
-                    }`
-                  : "Queue paused: terminal disconnected. Reconnect this tab to resume uploads."}
-              </p>
-            ) : null}
-            {failedUploadHistory.length > 0 ? (
-              <p className="hint sftp-transfer-panel__batch-progress">
-                Stored failed retries for this session: {failedUploadHistory.length}
-              </p>
-            ) : null}
-            {activeUploadTransfers.length > 0 ? (
-              <ul className="sftp-transfer-list transfer-dock__list">
-                {activeUploadTransfers.map((transfer) => {
-                  const canCancelTransfer =
-                    transfer.status === "queued" || transfer.status === "running";
-                  return (
-                    <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
-                      <span className="sftp-transfer__icon">
-                        <UiIcon name="upload" />
-                      </span>
-                      <span className="sftp-transfer__name">{transfer.name}</span>
-                      <span className="sftp-transfer__progress">{formatTransferProgress(transfer)}</span>
-                      {canCancelTransfer ? (
-                        <button
-                          aria-label="Cancel upload"
-                          className="icon-button sftp-transfer__cancel"
-                          onClick={() => {
-                            void cancelSftpUpload(transfer);
-                          }}
-                          title="Cancel upload"
-                          type="button"
-                        >
-                          <UiIcon name="close" />
-                        </button>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="hint transfer-dock__empty">No upload transfers.</p>
-            )}
-          </section>
-          <section className="transfer-dock__panel">
-            <div className="sftp-transfer-panel__header">
-              <p className="hint sftp-transfer-panel__title">
-                Downloads (running {activeDownloadQueueStats.running}, queued{" "}
-                {activeDownloadQueueStats.queued}, threads{" "}
-                {sftpTransferPreferences.downloadConcurrency})
-              </p>
-              <div className="sftp-transfer-panel__actions">
-                <button
-                  className="secondary-button sftp-transfer-panel__clear"
-                  disabled={!canRetryFailedDownloads}
-                  onClick={() => {
-                    void retryFailedDownloads();
-                  }}
-                  type="button"
-                >
-                  Retry Failed ({failedDownloadRetryCandidates.length})
-                </button>
-                <button
-                  className="secondary-button sftp-transfer-panel__clear"
-                  disabled={!canClearFinishedDownloads}
-                  onClick={() => {
-                    clearFinishedTransfers("download");
-                  }}
-                  type="button"
-                >
-                  Clear Finished
-                </button>
-                <button
-                  aria-label="Cancel all download tasks"
-                  className="icon-button icon-button--danger sftp-transfer-panel__bulk-cancel"
-                  disabled={!activeTabId}
-                  onClick={() => {
-                    void cancelAllActiveDownloads();
-                  }}
-                  title="Cancel all download tasks in this tab"
-                  type="button"
-                >
-                  <UiIcon name="close" />
-                </button>
-              </div>
-            </div>
-            <p className="hint sftp-transfer-panel__batch-progress">
-              Progress: {activeDownloadProgressStats.completed}/{activeDownloadProgressStats.total} completed
-              (failed {activeDownloadProgressStats.failed}, canceled {activeDownloadProgressStats.canceled},
-              running {activeDownloadProgressStats.running}, queued {activeDownloadProgressStats.queued})
-            </p>
-            {isActiveDownloadQueuePaused ? (
-              <p className="hint sftp-transfer-panel__batch-progress">
-                {activeDownloadPauseReason === "schedule-window"
-                  ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Downloads will resume automatically${
-                      nextSftpTransferWindowOpeningLabel
-                        ? ` at ${nextSftpTransferWindowOpeningLabel}.`
-                        : " when the window opens."
-                    }`
-                  : "Queue paused: terminal disconnected. Reconnect this tab to resume downloads."}
-              </p>
-            ) : null}
-            {failedDownloadHistory.length > 0 ? (
-              <p className="hint sftp-transfer-panel__batch-progress">
-                Stored failed retries for this session: {failedDownloadHistory.length}
-              </p>
-            ) : null}
-            {activeDownloadTransfers.length > 0 ? (
-              <ul className="sftp-transfer-list transfer-dock__list">
-                {activeDownloadTransfers.map((transfer) => {
-                  const canCancelTransfer =
-                    transfer.status === "queued" || transfer.status === "running";
-                  return (
-                    <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
-                      <span className="sftp-transfer__icon">
-                        <UiIcon name="download" />
-                      </span>
-                      <span className="sftp-transfer__name">{transfer.name}</span>
-                      <span className="sftp-transfer__progress">{formatTransferProgress(transfer)}</span>
-                      {canCancelTransfer ? (
-                        <button
-                          aria-label="Cancel download"
-                          className="icon-button sftp-transfer__cancel"
-                          onClick={() => {
-                            void cancelSftpDownload(transfer);
-                          }}
-                          title="Cancel download"
-                          type="button"
-                        >
-                          <UiIcon name="close" />
-                        </button>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="hint transfer-dock__empty">No download transfers.</p>
-            )}
-          </section>
-        </div>
-      </section>
-      <section
-        className={
-          dangerousCommandApproval
-            ? "app-inline-hint-panel is-actionable"
-            : "app-inline-hint-panel"
-        }
-        aria-live={dangerousCommandApproval ? "assertive" : "polite"}
-        aria-atomic="true"
-      >
-        <p
-          className={
-            dangerousCommandApproval
-              ? dangerousCommandApproval.request.result.severity === "critical"
-                ? "app-inline-hint-panel__text is-warn"
-                : "app-inline-hint-panel__text is-info"
-              : appHintMessage
-                ? appHintMessage.level === "warn"
-                  ? "app-inline-hint-panel__text is-warn"
-                  : "app-inline-hint-panel__text is-info"
-                : "app-inline-hint-panel__text is-placeholder"
-          }
-          title={
-            dangerousCommandApproval
-              ? `${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.commandText}${
-                  dangerousCommandApproval.contextSummary
-                    ? ` | ${dangerousCommandApproval.contextSummary}`
-                    : ""
-                }`
-              : appHintMessage?.message ?? ""
-          }
-        >
-          {dangerousCommandApproval
-            ? `${dangerousCommandApproval.request.result.severity === "critical" ? "Critical" : "Risk"} command from ${dangerousCommandApproval.sourceLabel}: ${dangerousCommandApproval.request.result.preview} | ${dangerousCommandApproval.contextSummary} | ${dangerousCommandApproval.ruleSummary}`
-            : appHintMessage?.message ?? "\u00A0"}
-        </p>
-        {dangerousCommandApproval ? (
-          <div className="app-inline-hint-panel__actions">
-            <button
-              className="secondary-button secondary-button--small"
-              onClick={() => resolveDangerousCommandApproval(false)}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="secondary-button secondary-button--small"
-              onClick={() => approveDangerousCommandWithScope("tab")}
-              type="button"
-            >
-              Allow In Tab
-            </button>
-            {dangerousCommandApproval.request.result.sessionGroupName ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={() => approveDangerousCommandWithScope("sessionGroup")}
-                type="button"
-              >
-                Allow In Group
-              </button>
-            ) : null}
-            <button
-              className="secondary-button secondary-button--small"
-              onClick={() => {
-                void saveDangerousCommandPersistentApproval();
-              }}
-              type="button"
-            >
-              Save Policy...
-            </button>
-            <button
-              className="primary-button primary-button--small"
-              onClick={() => resolveDangerousCommandApproval(true)}
-              type="button"
-            >
-              Run Once
-            </button>
-          </div>
-        ) : appHintMessage ? (
-          <button className="icon-button app-inline-hint-panel__close" onClick={clearAppHintMessage} type="button">
-            <UiIcon name="close" />
-          </button>
-        ) : (
-          <span className="app-inline-hint-panel__spacer" aria-hidden="true" />
         )}
-      </section>
+        rightSidebar={(
+          <WorkbenchInspectorSidebar
+            activeTabId={activeInspectorSidebarTab}
+            onSelectTab={(tabId) => setActiveInspectorSidebarTab(tabId as InspectorSidebarTabId)}
+            tabs={[
+              { badge: sessionBadgeText, id: "sessions", label: "Sessions" },
+              { id: "health", label: "Health" },
+              { badge: `${visibleTerminalCommandHistoryEntries.length}`, id: "history", label: "History" }
+            ]}
+          >
+            <div
+              className={
+                activeInspectorSidebarTab === "sessions"
+                  ? "workbench-inspector-panel is-active"
+                  : "workbench-inspector-panel"
+              }
+              data-inspector-tab="sessions"
+            >
+              <SessionsInspectorSection
+              activeGroupLabel={activeSessionGroup?.label ?? null}
+              activeContext={
+                selectedSession
+                  ? {
+                      detail: `${selectedSession.username}@${selectedSession.host}:${selectedSession.port}`,
+                      stateLabel:
+                        activeSessionId === selectedSession.id
+                          ? isActiveTabConnected
+                            ? "Live Tab"
+                            : "Tab Open"
+                          : selectedSession.favorite
+                            ? "Favorite"
+                            : "Saved",
+                      stateTone:
+                        activeSessionId === selectedSession.id
+                          ? isActiveTabConnected
+                            ? "ok"
+                            : "warn"
+                          : "neutral",
+                      title: selectedSession.name
+                    }
+                  : activeTerminalTab
+                    ? {
+                        detail: activeTerminalTab.sessionId
+                          ? `Active terminal tab for session ${activeTerminalTab.sessionId}`
+                          : "Active terminal tab",
+                        stateLabel: isActiveTabConnected ? "Live Tab" : "Offline",
+                        stateTone: isActiveTabConnected ? "ok" : "warn",
+                        title: activeTerminalTab.title
+                      }
+                    : null
+              }
+              activeSelectionDetails={
+                activeSessionGroup && selectedSession && activeGroupSessions.some((session) => session.id === selectedSession.id)
+                  ? {
+                      authLabel:
+                        selectedSession.authType === "privateKey"
+                          ? selectedSession.privateKeyPath?.trim()
+                            ? `Private Key · ${selectedSession.privateKeyPath.trim()}`
+                            : "Private Key"
+                          : selectedSession.hasSecret
+                            ? "Password · Secret Stored"
+                            : "Password",
+                      groupLabel: selectedSession.groupId?.trim() || "Ungrouped",
+                      lastConnectedLabel: formatSessionLastConnected(selectedSession.lastConnectedAt),
+                      remark: selectedSession.remark?.trim() || null
+                    }
+                  : null
+              }
+              emptyStateLabel={
+                !activeSessionGroup
+                  ? !loading && filteredSessions.length === 0
+                    ? sessions.length === 0
+                      ? "No sessions yet."
+                      : "No sessions match current filters."
+                    : null
+                  : !loading && activeGroupSessions.length === 0
+                    ? "No sessions in this group."
+                    : null
+              }
+              favoritesOnly={sessionFavoritesOnly}
+              filterQuery={sessionFilterQuery}
+              groups={groupedSessions.map((group) => ({
+                count: group.sessions.length,
+                isSelected: selectedGroupKeySet.has(group.key),
+                key: group.key,
+                label: group.label,
+                onClick: (event) => {
+                  const isMultiSelect = event.ctrlKey || event.metaKey;
+                  if (isMultiSelect) {
+                    setSelectedGroupKeys((prev) =>
+                      prev.includes(group.key)
+                        ? prev.filter((groupKey) => groupKey !== group.key)
+                        : [...prev, group.key]
+                    );
+                    return;
+                  }
+                  setSelectedGroupKeys([group.key]);
+                  setActiveSessionGroupKey(group.key);
+                },
+                onContextMenu: (event) =>
+                  openSessionContextMenu(event, {
+                    type: "group",
+                    groupKey: group.key,
+                    groupName: group.groupName,
+                    label: group.label
+                  })
+              }))}
+              isGroupView={Boolean(activeSessionGroup)}
+              loading={loading}
+              onBackToGroups={() => setActiveSessionGroupKey(null)}
+              onFilterQueryChange={(event) => setSessionFilterQuery(event.target.value)}
+              onOpenSettings={() => openSettingsPanel("connection")}
+              onRootContextMenu={openSessionBlankContextMenu}
+              onToggleFavoritesOnly={() => setSessionFavoritesOnly((prev) => !prev)}
+              sessionBadgeText={sessionBadgeText}
+              sessions={activeGroupSessions.map((session) => ({
+                host: session.host,
+                id: session.id,
+                isSelected: selectedSessionIdSet.has(session.id),
+                name: session.name,
+                onClick: (event) => {
+                  const isMultiSelect = event.ctrlKey || event.metaKey;
+                  if (isMultiSelect) {
+                    setSelectedSessionIds((prev) => {
+                      if (prev.includes(session.id)) {
+                        const next = prev.filter((sessionId) => sessionId !== session.id);
+                        setSelectedSessionId(next[0] ?? null);
+                        return next;
+                      }
+                      setSelectedSessionId(session.id);
+                      return [...prev, session.id];
+                    });
+                    return;
+                  }
+                  setSelectedSessionId(session.id);
+                  setSelectedSessionIds([session.id]);
+                },
+                onContextMenu: (event) =>
+                  openSessionContextMenu(event, {
+                    type: "session",
+                    sessionId: session.id
+                  }),
+                onDoubleClick: () =>
+                  openTerminalTab(session, {
+                    forceNewTab: true
+                  }),
+                onKeyDown: (event) => {
+                  if (
+                    event.key !== "Enter" ||
+                    event.altKey ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    event.shiftKey
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  openTerminalTab(session);
+                },
+                title: `${session.username}@${session.host}:${session.port}`
+              }))}
+              workspaceProfile={
+                workspaceProfilePreferences.profileId !== "none"
+                  ? {
+                      id: workspaceProfilePreferences.profileId,
+                      shortLabel: selectedWorkspaceProfile.shortLabel
+                    }
+                  : null
+              }
+              />
+            </div>
+            <div
+              className={
+                activeInspectorSidebarTab === "health"
+                  ? "workbench-inspector-panel is-active"
+                  : "workbench-inspector-panel"
+              }
+              data-inspector-tab="health"
+            >
+              <ServerHealthInspectorSection
+              activeTabTitle={activeTerminalTab?.title ?? null}
+              hasAlert={serverHealthAlertStatus.hasAny}
+              isConnected={isActiveTabConnected}
+              isDetailOpen={isServerHealthDetailOpen}
+              onRefresh={() => {
+                void refreshServerHealth();
+                if (isServerHealthDetailOpen) {
+                  void refreshServerProcesses();
+                }
+              }}
+              onToggleDetail={() => setIsServerHealthDetailOpen((prev) => !prev)}
+              refreshDisabled={
+                !activeTerminalTab ||
+                !isActiveTabConnected ||
+                serverHealthLoading ||
+                (isServerHealthDetailOpen && serverProcessLoading)
+              }
+              toggleDisabled={!activeTerminalTab}
+            >
+              {!isActiveTabConnected ? (
+                <p className="hint">Connect the active terminal tab to collect metrics.</p>
+              ) : null}
+              {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
+              {serverHealthAlertStatus.hasAny ? (
+                <p className="hint server-health__alert-text">
+                  Threshold reached:
+                  {serverHealthAlertStatus.cpuHigh ? " CPU" : ""}
+                  {serverHealthAlertStatus.memoryHigh ? " Memory" : ""}
+                  {serverHealthAlertStatus.diskHigh ? " Disk" : ""}
+                </p>
+              ) : null}
+              {serverHealthLoading ? (
+                <p className="hint" role="status" aria-live="polite">
+                  Collecting server metrics...
+                </p>
+              ) : null}
+              {serverHealth ? (
+                <>
+                  <div className="server-health-grid">
+                    <div
+                      className={
+                        serverHealthAlertStatus.cpuHigh
+                          ? "server-health-card server-health-card--cpu is-alert"
+                          : "server-health-card server-health-card--cpu"
+                      }
+                    >
+                      <span className="server-health-card__label">CPU</span>
+                      <strong className="server-health-card__value">
+                        {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
+                      </strong>
+                    </div>
+                    <div
+                      className={
+                        serverHealthAlertStatus.memoryHigh
+                          ? "server-health-card server-health-card--memory is-alert"
+                          : "server-health-card server-health-card--memory"
+                      }
+                    >
+                      <span className="server-health-card__label">Memory</span>
+                      <strong className="server-health-card__value">
+                        {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
+                      </strong>
+                      <span className="server-health-card__meta">
+                        {formatTransferBytes(serverHealth.memoryUsedBytes)}/
+                        {formatTransferBytes(serverHealth.memoryTotalBytes)}
+                      </span>
+                    </div>
+                    <div
+                      className={
+                        serverHealthAlertStatus.diskHigh
+                          ? "server-health-card server-health-card--disk is-alert"
+                          : "server-health-card server-health-card--disk"
+                      }
+                    >
+                      <span className="server-health-card__label">Disk</span>
+                      <strong className="server-health-card__value">
+                        {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
+                      </strong>
+                      <span className="server-health-card__meta">
+                        {serverHealth.diskPath} | {formatTransferBytes(serverHealth.diskUsedBytes)}/
+                        {formatTransferBytes(serverHealth.diskTotalBytes)}
+                      </span>
+                    </div>
+                    <div className="server-health-card server-health-card--network">
+                      <span className="server-health-card__label">Network</span>
+                      <strong className="server-health-card__value">
+                        RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
+                      </strong>
+                      <span className="server-health-card__meta">
+                        TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
+                      </span>
+                    </div>
+                    <div className="server-health-card server-health-card--load">
+                      <span className="server-health-card__label">Load</span>
+                      <strong className="server-health-card__value">
+                        {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
+                        {serverHealth.load15.toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="server-health-card server-health-card--uptime">
+                      <span className="server-health-card__label">Uptime</span>
+                      <strong className="server-health-card__value">
+                        {formatServerUptime(serverHealth.uptimeSeconds)}
+                      </strong>
+                      <span className="server-health-card__meta">{serverHealth.hostname}</span>
+                    </div>
+                  </div>
+                  {isServerHealthDetailOpen ? (
+                    <div className="server-health-details">
+                      {recentServerHealthPoints.length > 0 ? (
+                        <div className="server-health-trend">
+                          <p className="hint server-health-trend__title">
+                            Recent trend (last {recentServerHealthPoints.length} samples)
+                          </p>
+                          <div className="server-health-trend__bars" aria-hidden="true">
+                            {recentServerHealthPoints.map((point, index) => (
+                              <div className="server-health-trend__sample" key={`${point.at}-${index}`}>
+                                <span
+                                  className="server-health-trend__bar server-health-trend__bar--cpu"
+                                  style={{ height: `${Math.max(4, point.cpuUsagePercent)}%` }}
+                                  title={`CPU ${formatPercent(point.cpuUsagePercent)}`}
+                                />
+                                <span
+                                  className="server-health-trend__bar server-health-trend__bar--memory"
+                                  style={{ height: `${Math.max(4, point.memoryUsagePercent)}%` }}
+                                  title={`Memory ${formatPercent(point.memoryUsagePercent)}`}
+                                />
+                                <span
+                                  className="server-health-trend__bar server-health-trend__bar--disk"
+                                  style={{ height: `${Math.max(4, point.diskUsagePercent)}%` }}
+                                  title={`Disk ${formatPercent(point.diskUsagePercent)}`}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {serverProcessError ? <p className="hint sftp-error">{serverProcessError}</p> : null}
+                      {serverProcessLoading ? (
+                        <p className="hint" role="status" aria-live="polite">
+                          Collecting process details...
+                        </p>
+                      ) : null}
+                      <div className="server-health-processes">
+                        <p className="hint server-health-processes__title">Top processes (CPU)</p>
+                        {serverProcessSnapshot?.processes?.length ? (
+                          <ul className="server-health-processes__list">
+                            {serverProcessSnapshot.processes.map((entry) => (
+                              <li className="server-health-processes__item" key={`${entry.pid}-${entry.command}`}>
+                                <span className="server-health-processes__pid">{entry.pid}</span>
+                                <span className="server-health-processes__command" title={entry.command}>
+                                  {entry.command}
+                                </span>
+                                <span className="server-health-processes__cpu">
+                                  {formatProcessPercent(entry.cpuPercent)}
+                                </span>
+                                <span className="server-health-processes__mem">
+                                  {formatProcessPercent(entry.memoryPercent)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="hint">No process data yet.</p>
+                        )}
+                      </div>
+                      <div className="server-health-services">
+                        <p className="hint server-health-processes__title">Failed services</p>
+                        {serverProcessSnapshot?.failedServices?.length ? (
+                          <ul className="server-health-services__list">
+                            {serverProcessSnapshot.failedServices.map((name) => (
+                              <li className="server-health-services__item" key={name}>
+                                {name}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="hint">No failed services detected.</p>
+                        )}
+                      </div>
+                      <p className="hint server-health__footnote">
+                        Updated: {serverHealthUpdatedLabel} | RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
+                        {formatTransferBytes(serverHealth.networkTxBytes)}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="hint server-health__footnote">Updated: {serverHealthUpdatedLabel}</p>
+                  )}
+                </>
+              ) : null}
+              </ServerHealthInspectorSection>
+            </div>
+            <div
+              className={
+                activeInspectorSidebarTab === "history"
+                  ? "workbench-inspector-panel is-active"
+                  : "workbench-inspector-panel"
+              }
+              data-inspector-tab="history"
+            >
+              <CommandHistoryInspectorSection
+              activeTabConnected={isActiveTabConnected}
+              activeTabTitle={activeTerminalTab?.title ?? null}
+              entries={visibleTerminalCommandHistoryEntries.map((entry) => ({
+                command: entry.command,
+                id: entry.id,
+                onContextMenu: (event) => openCommandHistoryContextMenu(event, entry.id),
+                onDoubleClick: () => {
+                  void pasteTerminalCommandHistoryEntry(entry);
+                },
+                title: `${entry.command}\n\nDouble-click to paste into active terminal. Right-click for actions.`
+              }))}
+              isCollapsed={isCommandHistoryInspectorCollapsed}
+              onOpenContextMenu={openCommandHistoryPanelContextMenu}
+              onOpenManager={openCommandHistoryManager}
+              onOpenSnippets={() => {
+                void openCommandSnippetManager();
+              }}
+              onQueryChange={(event) => setTerminalCommandHistoryQuery(event.target.value)}
+              onScopeChange={(event) =>
+                setTerminalCommandHistoryScope(event.target.value as TerminalCommandHistoryScope)
+              }
+              onToggleCollapsed={() => setIsCommandHistoryInspectorCollapsed((prev) => !prev)}
+              query={terminalCommandHistoryQuery}
+              scope={terminalCommandHistoryScope}
+              totalCommandSnippetCount={totalCommandSnippetCount}
+              visibleCountLabel={`${visibleTerminalCommandHistoryEntries.length}/${terminalCommandHistoryEntries.length}`}
+              />
+            </div>
+          </WorkbenchInspectorSidebar>
+        )}
+      />
+
+      <TransferDock
+        bindingLabel={
+          activeTerminalTab
+            ? `Bound to ${activeTerminalTab.title}`
+            : "Open a terminal tab to manage transfers"
+        }
+        canRetryAllFailed={canRetryAllFailedTransfers}
+        downloadPanel={{
+          cancelAllDisabled: !activeTabId,
+          cancelAllLabel: "Cancel all download tasks",
+          cancelAllTitle: "Cancel all download tasks in this tab",
+          clearFinishedDisabled: !canClearFinishedDownloads,
+          emptyLabel: "No download transfers.",
+          historyMessage:
+            failedDownloadHistory.length > 0
+              ? `Stored failed retries for this session: ${failedDownloadHistory.length}`
+              : null,
+          onCancelAll: () => {
+            void cancelAllActiveDownloads();
+          },
+          onClearFinished: () => {
+            clearFinishedTransfers("download");
+          },
+          onRetryFailed: () => {
+            void retryFailedDownloads();
+          },
+          pauseMessage: isActiveDownloadQueuePaused
+            ? activeDownloadPauseReason === "schedule-window"
+              ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Downloads will resume automatically${
+                  nextSftpTransferWindowOpeningLabel
+                    ? ` at ${nextSftpTransferWindowOpeningLabel}.`
+                    : " when the window opens."
+                }`
+              : "Queue paused: terminal disconnected. Reconnect this tab to resume downloads."
+            : null,
+          progressSummary: `Progress: ${activeDownloadProgressStats.completed}/${activeDownloadProgressStats.total} completed (failed ${activeDownloadProgressStats.failed}, canceled ${activeDownloadProgressStats.canceled}, running ${activeDownloadProgressStats.running}, queued ${activeDownloadProgressStats.queued})`,
+          retryFailedCount: failedDownloadRetryCandidates.length,
+          retryFailedDisabled: !canRetryFailedDownloads,
+          title: `Downloads (running ${activeDownloadQueueStats.running}, queued ${activeDownloadQueueStats.queued}, threads ${sftpTransferPreferences.downloadConcurrency})`,
+          transfers: activeDownloadTransfers.map((transfer) => ({
+            canCancel: transfer.status === "queued" || transfer.status === "running",
+            direction: "download" as const,
+            name: transfer.name,
+            onCancel: () => {
+              void cancelSftpDownload(transfer);
+            },
+            progressLabel: formatTransferProgress(transfer),
+            status: transfer.status,
+            transferId: transfer.transferId
+          }))
+        }}
+        failedRetryCandidateTotal={failedRetryCandidateTotal}
+        hasOperationCenterActivity={hasOperationCenterActivity}
+        notice={activeTransferDockNotice}
+        onDiscardPending={() => {
+          void discardPendingTransferRestoreQueue();
+        }}
+        onOpenOperationCenter={openOperationCenter}
+        onOpenRetryCenter={openRetryCenter}
+        onRestorePending={() => {
+          void restorePendingTransferRestoreQueue();
+        }}
+        onRetryAllFailed={() => {
+          void retryAllFailedTransfersWithScopeChoice();
+        }}
+        operationCenterActiveCount={operationCenterActiveCount}
+        pendingRestoreCount={pendingTransferRestoreCount}
+        uploadPanel={{
+          cancelAllDisabled: !activeTabId,
+          cancelAllLabel: "Cancel all upload tasks",
+          cancelAllTitle: "Cancel all upload tasks in this tab",
+          clearFinishedDisabled: !canClearFinishedUploads,
+          emptyLabel: "No upload transfers.",
+          historyMessage:
+            failedUploadHistory.length > 0
+              ? `Stored failed retries for this session: ${failedUploadHistory.length}`
+              : null,
+          onCancelAll: () => {
+            void cancelAllActiveUploads();
+          },
+          onClearFinished: () => {
+            clearFinishedTransfers("upload");
+          },
+          onRetryFailed: () => {
+            void retryFailedUploads();
+          },
+          pauseMessage: isActiveUploadQueuePaused
+            ? activeUploadPauseReason === "schedule-window"
+              ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Uploads will resume automatically${
+                  nextSftpTransferWindowOpeningLabel
+                    ? ` at ${nextSftpTransferWindowOpeningLabel}.`
+                    : " when the window opens."
+                }`
+              : "Queue paused: terminal disconnected. Reconnect this tab to resume uploads."
+            : null,
+          progressSummary: `Progress: ${activeUploadProgressStats.completed}/${activeUploadProgressStats.total} completed (failed ${activeUploadProgressStats.failed}, canceled ${activeUploadProgressStats.canceled}, running ${activeUploadProgressStats.running}, queued ${activeUploadProgressStats.queued})`,
+          retryFailedCount: failedUploadRetryCandidates.length,
+          retryFailedDisabled: !canRetryFailedUploads,
+          title: `Uploads (running ${activeUploadQueueStats.running}, queued ${activeUploadQueueStats.queued}, threads ${sftpTransferPreferences.uploadConcurrency})`,
+          transfers: activeUploadTransfers.map((transfer) => ({
+            canCancel: transfer.status === "queued" || transfer.status === "running",
+            direction: "upload" as const,
+            name: transfer.name,
+            onCancel: () => {
+              void cancelSftpUpload(transfer);
+            },
+            progressLabel: formatTransferProgress(transfer),
+            status: transfer.status,
+            transferId: transfer.transferId
+          }))
+        }}
+      />
+      <AppInlineHintPanel
+        approval={
+          dangerousCommandApproval
+            ? {
+                allowInGroup: Boolean(dangerousCommandApproval.request.result.sessionGroupName),
+                commandText: dangerousCommandApproval.request.result.commandText,
+                contextSummary: dangerousCommandApproval.contextSummary,
+                preview: dangerousCommandApproval.request.result.preview,
+                ruleSummary: dangerousCommandApproval.ruleSummary,
+                severity: dangerousCommandApproval.request.result.severity,
+                sourceLabel: dangerousCommandApproval.sourceLabel
+              }
+            : null
+        }
+        hintMessage={appHintMessage}
+        onAllowInGroup={() => approveDangerousCommandWithScope("sessionGroup")}
+        onAllowInTab={() => approveDangerousCommandWithScope("tab")}
+        onCancelApproval={() => resolveDangerousCommandApproval(false)}
+        onDismissHint={clearAppHintMessage}
+        onRunOnce={() => resolveDangerousCommandApproval(true)}
+        onSavePolicy={() => {
+          void saveDangerousCommandPersistentApproval();
+        }}
+      />
 
       {isOperationCenterOpen ? (
         <div className="modal-backdrop" role="presentation">
@@ -29711,5 +29361,3 @@ export function App() {
     </div>
   );
 }
-
-

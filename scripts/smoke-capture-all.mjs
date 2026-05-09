@@ -990,7 +990,7 @@ async function main() {
         readingPaddingTop = await readingPane.evaluate(
           (element) => window.getComputedStyle(element).paddingTop
         );
-        if (readingPaddingTop !== "10px") {
+        if (readingPaddingTop !== "12px") {
           throw new Error(
             `reading editor typography did not update pane padding as expected: ${readingPaddingTop}`
           );
