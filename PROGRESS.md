@@ -28,7 +28,7 @@ Last updated: 2026-05-09
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
-- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`)
+- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -83,6 +83,7 @@ Last updated: 2026-05-09
   - post-refactor `pnpm run typecheck`: passed
   - post-refactor `pnpm run build`: passed
   - post-refactor `pnpm run smoke:ui`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
+  - post-refactor `pnpm run smoke:ui:packaged`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 
 ## Completed in v0.1.18
 
@@ -455,17 +456,17 @@ Last updated: 2026-05-09
 
 ## Next Focus
 
-1. Do a manual editor-workbench design-nit pass after live usage, especially the inspector tabs, bottom transfer panel density, and settings/modal chrome
-2. Run packaged smoke if release confidence or broad handoff requires it
-3. Push or PR the editor-workbench branch with current build/smoke evidence
+1. Push or PR the editor-workbench branch with current workspace and packaged smoke evidence
+2. Review feedback from real usage of the refreshed workbench shell
+3. Resume recoverable global error actions and guidance coverage (`P0-E3`)
 4. Resume recoverable global error actions and guidance coverage (`P0-E3`)
 5. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
 6. Continue persistence hardening and startup/large-transfer performance follow-up
 
 ## Remaining Work Snapshot
 
-1. Manual editor-workbench polish pass after live usage feedback
-2. Optional packaged smoke for `feature/editor-workbench-ui` before release/broad handoff
+1. Optional editor-workbench polish after live usage feedback
+2. Remaining macOS/external-host packaged evidence for broader release confidence
 3. Expand global error recovery actions beyond current baseline (`P0-E3`)
 4. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
 5. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)

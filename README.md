@@ -13,7 +13,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Current master addition: recoverable global error UX now also routes hotkey and port-forward failures into `Hotkeys` / `Port Fwd`, and transfer-style failures can jump straight into `Retry Center` in addition to the existing settings, `Operation Center`, and bug-report actions
 - Current branch addition: the main renderer now reads as a code-editor-style workbench with a flatter shell, left Explorer rail, right Inspector rail, stronger terminal stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` view persistence, collapsible command history, and narrow-width inspector tabs
 - Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
-- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
+- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`, and latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -331,6 +331,8 @@ Latest full local workspace smoke artifact for the UI refresh: `PASS 45 / FAIL 0
 
 Latest post-refactor checks after the renderer module split: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
 
+Latest packaged smoke after the Settings footer polish: `pnpm run smoke:ui:packaged` passed. Latest packaged smoke artifact: `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
+
 ## Release
 
 Workflow: `.github/workflows/release.yml`
@@ -378,16 +380,15 @@ Tag rules:
 
 ## Near-Term Execution Focus
 
-1. Do a live design-nit pass on the editor workbench shell, especially narrow-width inspector tabs, transfer bottom panel density, and settings/modal chrome
-2. Run packaged smoke if this branch is headed toward release or broad handoff
-3. Push or PR the branch with current build/smoke evidence
-4. Resume self-use hardening backlog: recoverable global error coverage, Operation Center timeline/grouped controls, persistence hardening, and startup/large-transfer performance
-5. Keep signing/notarization and broader release/test evidence in the low-priority self-use backlog
+1. Push or PR `feature/editor-workbench-ui` with current workspace and packaged smoke evidence
+2. Review any feedback from real usage of the refreshed workbench shell
+3. Continue the self-use hardening backlog: recoverable global error coverage, Operation Center timeline/grouped controls, persistence hardening, and startup/large-transfer performance
+4. Keep signing/notarization and broader release/test evidence in the low-priority self-use backlog
 
 ## Remaining Work (Not Done Yet)
 
-1. Manual workbench polish: verify explorer/inspector/bottom-panel density in real use and patch any visual regressions
-2. Optional packaged smoke before release or broad handoff
+1. Optional workbench polish after real usage feedback
+2. Remaining macOS/external-host packaged evidence for broader release confidence
 3. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
 4. `F8`: extend Operation Center beyond the current tracked jobs with richer timeline and cancellation controls
 5. `P0-A3` + `F9` follow-up: SQLite migration and credential-safe encrypted backup/restore

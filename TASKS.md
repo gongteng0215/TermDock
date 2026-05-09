@@ -57,7 +57,7 @@ Last updated: 2026-05-09
    - post-refactor `pnpm run typecheck` passed
    - post-refactor `pnpm run build` passed
    - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
-   - optional packaged smoke remains available if release confidence or broad handoff requires it
+   - post-refactor `pnpm run smoke:ui:packaged` passed with `PASS 45 / FAIL 0 / SKIP 0`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling
@@ -223,9 +223,9 @@ Last updated: 2026-05-09
 
 ## Immediate Next Target
 
-1. `UI-WB-POLISH`: do a live design-nit pass for inspector tabs, transfer bottom-panel density, and settings/modal chrome
-2. `UI-WB-HANDOFF`: push or PR `feature/editor-workbench-ui` with current build/smoke evidence
-3. Optional: run packaged smoke if this branch is headed toward release or broad handoff
+1. `UI-WB-HANDOFF`: push or PR `feature/editor-workbench-ui` with current workspace and packaged smoke evidence
+2. `UI-WB-FEEDBACK`: collect real-usage feedback on the refreshed workbench shell
+3. `P0-E3`: global error recovery follow-up (broader action coverage + guidance)
 4. `P0-E3`: global error recovery follow-up (broader action coverage + guidance)
 5. `F8`: Operation Center follow-up (richer timeline + grouped controls)
 6. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
@@ -233,8 +233,8 @@ Last updated: 2026-05-09
 
 ## Not Done Yet (Top Blocking Items)
 
-1. `UI-WB-POLISH`: final live design-nit pass on the refreshed workbench
-2. Optional packaged smoke for release/broad handoff confidence
+1. `UI-WB-FEEDBACK`: optional polish after real usage feedback
+2. Remaining macOS/external-host packaged smoke evidence for broader release confidence
 3. `P0-E3`: recoverable global error action coverage expansion beyond current baseline
 4. `F8`: richer timeline and grouped controls for Operation Center
 5. `P0-A3`: JSON-to-SQLite migration planning and execution

@@ -196,7 +196,7 @@ Target platforms:
 - Release signing/notarization preflight baseline (`scripts/release-preflight.mjs`)
 - Release artifact verification baseline with report output (`scripts/verify-release-artifacts.mjs`, `artifacts/release-verify/<timestamp>`)
 - Self-use Windows release helper path (`scripts/create-self-use-windows-cert.ps1`, `scripts/build-self-use-windows-release.mjs`)
-- Current editor-workbench branch verification state: post-refactor `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`)
+- Current editor-workbench branch verification state: post-refactor `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 
 ## 6. Security Requirements
 
@@ -215,7 +215,7 @@ Target platforms:
 
 ## 8. Current Limitations
 
-- `feature/editor-workbench-ui` has passed post-refactor typecheck, build, and workspace smoke; optional packaged smoke is still recommended before release or broad handoff
+- `feature/editor-workbench-ui` has passed post-refactor typecheck, build, workspace smoke, and packaged smoke; remaining external-host/macOS release evidence stays in the broader rollout backlog
 - SQLite migration not complete
 - Automated unit/integration coverage is incomplete, but that is currently low priority for the self-use workflow
 - External-host smoke evidence is still partial, but that is currently low priority for the self-use workflow
@@ -239,7 +239,7 @@ These broader rollout gates still apply for public distribution, but they are no
 ## 10. Version Plan
 
 - `v0.1.22` (current stable): global error recovery routing, error-bar wrapping, and idempotent SFTP create-directory handling
-- `feature/editor-workbench-ui` (active): code-editor-style workbench refresh plus renderer module split; post-refactor typecheck/build/workspace smoke passed
+- `feature/editor-workbench-ui` (active): code-editor-style workbench refresh plus renderer module split; post-refactor typecheck/build/workspace smoke/packaged smoke passed
 - `master` (baseline): self-use runtime hardening and transfer/workspace follow-up
 - `v0.1.21`: alternate-screen terminal editor focus mode with workspace toggle, editor theme/typography/font/rhythm/cursor presets, and inactive-tab compaction
 - `v0.1.20`: alternate-screen terminal editor focus mode with workspace toggle plus `Midnight` / `Graphite` / `Paper` editor-theme presets

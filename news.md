@@ -23,7 +23,7 @@ Last updated: 2026-05-09
 - feature/editor-workbench-ui: SFTP Explorer view mode now persists as `Compact` / `Details`
 - feature/editor-workbench-ui: settings/modal chrome and high-frequency compact controls now align with the refreshed workbench language
 - feature/editor-workbench-ui: renderer UI regions were split out of `App.tsx` into focused settings, snippet, workbench-modal, UI-preference, and CSS modules
-- feature/editor-workbench-ui: post-refactor `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` pass; latest workspace smoke is `PASS 45 / FAIL 0 / SKIP 0`
+- feature/editor-workbench-ui: post-refactor `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` pass; latest workspace and packaged smoke are both `PASS 45 / FAIL 0 / SKIP 0`
 - v0.1.22: global error recovery now routes hotkey/port-forward failures into `Hotkeys` / `Port Fwd`, and transfer failures can jump straight into `Retry Center` when history exists
 - v0.1.22: error bar long messages now wrap instead of forcing horizontal scrolling
 - v0.1.22: SFTP create-directory now treats "already exists" as success and gives clearer permission/path guidance on true failures

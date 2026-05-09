@@ -28,8 +28,7 @@ Last updated: 2026-05-09
 
 ### Remaining follow-ups
 
-- Optional: run packaged smoke before release handoff
-- Optional: do a manual design-nit pass after live usage feedback
+- Optional: do additional polish after live usage feedback
 
 ### Latest verification
 
@@ -42,6 +41,7 @@ Last updated: 2026-05-09
 - Post-refactor `pnpm run typecheck` passed after commit `refactor: split editor workbench renderer modules`
 - Post-refactor `pnpm run build` passed
 - Post-refactor `pnpm run smoke:ui` passed at `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json` (`pass=45, fail=0, skip=0`)
+- Post-refactor `pnpm run smoke:ui:packaged` passed at `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json` (`pass=45, fail=0, skip=0`)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -710,7 +710,7 @@ Created the final implementation commit for the editor-workbench UI refresh.
 
 ### Task 5: Split high-frequency renderer modules after the UI refresh
 
-**Status:** Complete and committed as `refactor: split editor workbench renderer modules`. Post-refactor typecheck, build, and workspace smoke passed.
+**Status:** Complete and committed as `refactor: split editor workbench renderer modules`. Post-refactor typecheck, build, workspace smoke, and packaged smoke passed.
 
 **Files:**
 - Modified: `src/renderer/App.tsx`
@@ -785,6 +785,27 @@ Result:
 ```text
 Build passed. Workspace smoke passed: PASS 45 / FAIL 0 / SKIP 0.
 Artifact: artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json
+```
+
+- [x] **Step 7: Refresh packaged smoke evidence**
+
+Run:
+
+```powershell
+pnpm run smoke:ui:packaged
+```
+
+Expected:
+
+```text
+Packaged smoke passes with PASS 45 / FAIL 0 / SKIP 0.
+```
+
+Result:
+
+```text
+Packaged smoke passed: PASS 45 / FAIL 0 / SKIP 0.
+Artifact: artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json
 ```
 
 ---

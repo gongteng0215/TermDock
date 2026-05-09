@@ -15,7 +15,7 @@ For local/private Windows use, a self-signed path is also available.
 Current branch note:
 
 - `feature/editor-workbench-ui` does not change the signing or notarization flow.
-- Before any release handoff from that branch, run packaged smoke if broader confidence is needed; post-refactor `pnpm run build` and workspace `pnpm run smoke:ui` already pass.
+- Post-refactor `pnpm run build`, workspace `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` pass for this branch. Public-trust signing/notarization evidence remains a separate broader-rollout gate.
 - Public-trust signing/notarization evidence remains a lower-priority self-use backlog item.
 
 ## CI Secrets
