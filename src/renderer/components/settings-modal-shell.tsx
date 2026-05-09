@@ -73,6 +73,11 @@ export function SettingsModalShell({
             {children}
           </div>
         </div>
+        <div className="modal__actions settings-panel__footer">
+          <button className="primary-button" onClick={onClose} type="button">
+            Done
+          </button>
+        </div>
       </div>
     </div>
   );

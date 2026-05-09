@@ -25795,16 +25795,6 @@ export function App() {
                     onResetDisconnectFilters={resetDisconnectReportViewFilters}
                   />
                 ) : null}
-
-                <div className="modal__actions settings-panel__footer">
-                  <button
-                    className="primary-button"
-                    onClick={closeSettingsPanel}
-                    type="button"
-                  >
-                    Done
-                  </button>
-                </div>
       </SettingsModalShell>
 
       {isCreateModalOpen ? (

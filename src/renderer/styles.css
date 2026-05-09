@@ -545,7 +545,7 @@ body::before {
   grid-template-columns: 148px minmax(0, 1fr);
   gap: 8px;
   align-items: stretch;
-  height: min(408px, calc(100vh - 148px));
+  height: min(384px, calc(100vh - 180px));
   min-height: 0;
 }
 
@@ -591,7 +591,6 @@ body::before {
   align-content: start;
   overflow: auto;
   padding-right: 2px;
-  padding-bottom: 44px;
   box-sizing: border-box;
 }
 
@@ -607,18 +606,9 @@ body::before {
 }
 
 .settings-panel__footer {
-  margin-top: 6px;
-  padding-top: 4px;
-  padding-bottom: 1px;
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  margin-top: 8px;
+  padding-top: 6px;
   border-top: 1px solid rgba(79, 128, 172, 0.26);
-  background: linear-gradient(
-    180deg,
-    rgba(15, 29, 42, 0) 0%,
-    rgba(15, 29, 42, 0.96) 36%
-  );
 }
 
 .settings-sftp-rate-grid,
