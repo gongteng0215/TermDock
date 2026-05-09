@@ -6,10 +6,11 @@ Last updated: 2026-05-09
 
 ### Current status
 
-- `Task 1`: Complete in workspace
-- `Task 2`: Complete in workspace
-- `Task 3`: Complete in workspace
-- `Task 4`: Complete in workspace
+- `Task 1`: Complete and committed
+- `Task 2`: Complete and committed
+- `Task 3`: Complete and committed
+- `Task 4`: Complete and committed
+- `Task 5`: Renderer module split complete and committed
 
 ### Completed so far
 
@@ -22,10 +23,12 @@ Last updated: 2026-05-09
 - Reframed the transfer dock as a clearer bottom panel and aligned modal chrome with the workbench shell
 - Unified high-frequency button states, focus rings, and workbench chrome polish across topbar, toggles, and compact inspector controls
 - Restored stable UI validation, including smoke coverage
+- Split high-frequency renderer UI out of `App.tsx` into dedicated settings, command snippet, workbench-modal, UI-preference, and CSS modules
+- Created final refactor commit: `refactor: split editor workbench renderer modules`
 
 ### Remaining follow-ups
 
-- Optional: create final commit(s) for the UI refresh
+- Optional: run packaged smoke before release handoff
 - Optional: do a manual design-nit pass after live usage feedback
 
 ### Latest verification
@@ -36,6 +39,9 @@ Last updated: 2026-05-09
 - `pnpm run bench:transfer:local`
 - `pnpm run smoke:ui`
 - Latest smoke artifact on 2026-05-09: `artifacts/smoke/2026-05-09T02-44-14-552Z/summary.json` (`pass=45, fail=0, skip=0`)
+- Post-refactor `pnpm run typecheck` passed after commit `refactor: split editor workbench renderer modules`
+- Post-refactor `pnpm run build` passed
+- Post-refactor `pnpm run smoke:ui` passed at `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`pass=45, fail=0, skip=0`)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -51,14 +57,21 @@ Last updated: 2026-05-09
 
 ### Core renderer files to modify
 
-- Modify: `src/renderer/App.tsx`
+- Modified: `src/renderer/App.tsx`
   - Main shell, left SFTP region, right utility region, bottom transfer panel, settings modal entry points
-- Modify: `src/renderer/styles.css`
+- Modified: `src/renderer/styles.css`
   - Global tokens, shell chrome, panel hierarchy, sidebar language, transfer panel language, modal language
-- Modify: `src/renderer/components/terminal-workspace.tsx`
+- Modified: `src/renderer/components/terminal-workspace.tsx`
   - Terminal tab/header markup only if needed for workbench semantics
-- Modify: `src/renderer/styles.css` terminal sections
+- Added/modified: `src/renderer/styles/workbench-shell.css`
+  - Workbench shell, sidebar, modal, and bottom panel styles split from the root stylesheet
+- Added/modified: `src/renderer/styles/terminal.css`
   - Terminal tabs, terminal stage, editor-focus treatment, status pill styling
+- Added: `src/renderer/components/settings-modal-shell.tsx`
+- Added: `src/renderer/components/settings-sections.tsx`
+- Added: `src/renderer/components/command-snippet-manager-modal.tsx`
+- Added: `src/renderer/components/workbench-modals.tsx`
+- Added: `src/renderer/workbench-ui-preferences.ts`
 
 ### Design and tracking docs
 
@@ -77,7 +90,7 @@ Last updated: 2026-05-09
 
 ### Task 1: Rebuild the workbench shell and shared visual tokens
 
-**Status:** Complete in workspace. Shell extraction, shared surface tokens, topbar grouping, and safety verification are in place. The only unchecked step below is the commit step because this progress tracker is documenting workspace state, not a commit history.
+**Status:** Complete and committed. Shell extraction, shared surface tokens, topbar grouping, and safety verification are in place.
 
 **Files:**
 - Modify: `src/renderer/styles.css:1`
@@ -232,7 +245,7 @@ Expected:
 Typecheck passes. Renderer build passes; Vite chunk-size warning is acceptable if unchanged.
 ```
 
-- [ ] **Step 7: Commit the shell pass**
+- [x] **Step 7: Commit the shell pass**
 
 Run:
 
@@ -244,14 +257,14 @@ git commit -m "feat: restyle renderer shell as editor workbench"
 Expected:
 
 ```text
-Creates a commit containing the token, shell, and shared panel-language refresh.
+Created as part of the final editor-workbench UI refresh commit sequence.
 ```
 
 ---
 
 ### Task 2: Reshape the left explorer and right inspector sidebars
 
-**Status:** Complete in workspace. The explorer/inspector split is live, shared sidebar language is in place, the SFTP dual-view shipped, the sessions inspector now exposes detail/context layers, command history is collapsible, and narrow-width tabbed inspector behavior is implemented. The commit step remains intentionally unchecked.
+**Status:** Complete and committed. The explorer/inspector split is live, shared sidebar language is in place, the SFTP dual-view shipped, the sessions inspector now exposes detail/context layers, command history is collapsible, and narrow-width tabbed inspector behavior is implemented.
 
 **Files:**
 - Modify: `src/renderer/App.tsx:23008`
@@ -389,7 +402,7 @@ Manual check at `http://localhost:5273`:
 Left side reads as an explorer, right side reads as a coordinated utility rail, and selection states remain obvious.
 ```
 
-- [ ] **Step 7: Commit the sidebar reshape**
+- [x] **Step 7: Commit the sidebar reshape**
 
 Run:
 
@@ -401,14 +414,14 @@ git commit -m "feat: reshape sidebars into explorer and inspector rails"
 Expected:
 
 ```text
-Creates a commit containing the left/right structural and list-surface refresh.
+Created as part of the final editor-workbench UI refresh commit sequence.
 ```
 
 ---
 
 ### Task 3: Strengthen the terminal as the main stage
 
-**Status:** Complete in workspace. Terminal tabs, the stage surface, and editor-focus treatment have been tightened to read more like the main editor stage. The commit step remains intentionally unchecked.
+**Status:** Complete and committed. Terminal tabs, the stage surface, and editor-focus treatment have been tightened to read more like the main editor stage.
 
 **Files:**
 - Modify: `src/renderer/components/terminal-workspace.tsx:2335`
@@ -537,7 +550,7 @@ Manual check at `http://localhost:5273`:
 Terminal remains the dominant surface, tab switching still works, and editor focus mode still tightens the layout correctly.
 ```
 
-- [ ] **Step 7: Commit the terminal stage refresh**
+- [x] **Step 7: Commit the terminal stage refresh**
 
 Run:
 
@@ -549,14 +562,14 @@ git commit -m "feat: refresh terminal stage as editor workspace"
 Expected:
 
 ```text
-Creates a commit containing the tab, terminal, and editor-focus visual refresh.
+Created as part of the final editor-workbench UI refresh commit sequence.
 ```
 
 ---
 
 ### Task 4: Convert the transfer dock into a bottom workbench panel and finish verification
 
-**Status:** Complete in workspace. The transfer dock now reads like a bottom workbench panel, the modal shell is aligned to the shared workbench chrome, and transfer-focused verification has passed. The commit step remains intentionally unchecked.
+**Status:** Complete and committed. The transfer dock now reads like a bottom workbench panel, the modal shell is aligned to the shared workbench chrome, and transfer-focused verification has passed.
 
 **Files:**
 - Modify: `src/renderer/App.tsx:23695`
@@ -678,7 +691,7 @@ Manual check at `http://localhost:5273`:
 The first impression is "editor workbench", the bottom area reads as a panel, the center terminal stays dominant, and the sidebars feel coordinated rather than card-stacked.
 ```
 
-- [ ] **Step 7: Commit the bottom-panel pass and final work**
+- [x] **Step 7: Commit the bottom-panel pass and final work**
 
 Run:
 
@@ -690,7 +703,88 @@ git commit -m "feat: restyle transfer dock as bottom workbench panel"
 Expected:
 
 ```text
-Creates the final implementation commit for the editor-workbench UI refresh.
+Created the final implementation commit for the editor-workbench UI refresh.
+```
+
+---
+
+### Task 5: Split high-frequency renderer modules after the UI refresh
+
+**Status:** Complete and committed as `refactor: split editor workbench renderer modules`. Post-refactor typecheck, build, and workspace smoke passed.
+
+**Files:**
+- Modified: `src/renderer/App.tsx`
+- Modified: `src/renderer/main.tsx`
+- Modified: `src/renderer/styles.css`
+- Added: `src/renderer/components/command-snippet-manager-modal.tsx`
+- Added: `src/renderer/components/settings-modal-shell.tsx`
+- Added: `src/renderer/components/settings-sections.tsx`
+- Added: `src/renderer/components/workbench-modals.tsx`
+- Added: `src/renderer/styles/terminal.css`
+- Added: `src/renderer/styles/workbench-shell.css`
+- Added: `src/renderer/workbench-ui-preferences.ts`
+
+- [x] **Step 1: Move modal-heavy JSX out of `App.tsx`**
+
+Settings shell/sections, command snippet manager, retry/operation/history modals now live in dedicated component files.
+
+- [x] **Step 2: Move persisted workbench UI preferences into a helper module**
+
+Inspector selected tab, command-history collapse state, and SFTP explorer view mode now use `workbench-ui-preferences.ts`.
+
+- [x] **Step 3: Split workbench and terminal CSS from the root stylesheet**
+
+`main.tsx` imports `styles/workbench-shell.css` and `styles/terminal.css` after the global stylesheet.
+
+- [x] **Step 4: Verify type safety after the split**
+
+Run:
+
+```powershell
+pnpm run typecheck
+```
+
+Expected:
+
+```text
+Typecheck passes after the refactor.
+```
+
+- [x] **Step 5: Commit the module split**
+
+Run:
+
+```powershell
+git add -A
+git commit -m "refactor: split editor workbench renderer modules"
+```
+
+Expected:
+
+```text
+Creates the renderer module split commit.
+```
+
+- [x] **Step 6: Refresh post-refactor build and smoke evidence**
+
+Run:
+
+```powershell
+pnpm run build
+pnpm run smoke:ui
+```
+
+Expected:
+
+```text
+Build passes and smoke remains green after the module split.
+```
+
+Result:
+
+```text
+Build passed. Workspace smoke passed: PASS 45 / FAIL 0 / SKIP 0.
+Artifact: artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json
 ```
 
 ---

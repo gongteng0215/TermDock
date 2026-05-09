@@ -6,11 +6,25 @@ Release type: In development
 
 ### Highlights
 
-No changes yet.
+- Editor workbench UI refresh on `feature/editor-workbench-ui`:
+  - main shell now reads more like a dark code-editor workbench instead of a stacked operations dashboard
+  - SFTP moved visually into an Explorer-style rail, while sessions, server health, and command history read as a coordinated Inspector rail
+  - terminal tabs/stage and the transfer dock were restyled so the terminal remains primary and transfers read as a bottom workbench panel
+  - settings and manager modal chrome now follows the same compact workbench language
+- Renderer module split:
+  - settings modal shell/sections, command snippet manager, workbench modals, and persisted workbench UI preferences were split out of `App.tsx`
+  - workbench shell and terminal CSS were separated from the root stylesheet
+- Sidebar usability polish:
+  - SFTP Explorer view mode now persists as `Compact` or `Details`
+  - command history can collapse inside the right Inspector
+  - narrow widths expose `Sessions` / `Health` / `History` Inspector tabs
 
 ### Validation
 
-- Not run yet for this cycle.
+- Post-refactor type check passed: `pnpm run typecheck`
+- Post-refactor build passed: `pnpm run build`
+- Post-refactor workspace smoke passed: `PASS 45 / FAIL 0 / SKIP 0`
+- Latest smoke artifact: `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json`
 
 ## v0.1.22 (2026-04-12)
 
@@ -643,5 +657,3 @@ Release type: Stable
 ### Validation
 
 - Build verification completed: `pnpm run build` (renderer + main passed)
-
-

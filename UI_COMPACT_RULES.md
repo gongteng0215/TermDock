@@ -1,6 +1,6 @@
 ﻿# TermDock UI Compact Rules
 
-Last updated: 2026-03-19
+Last updated: 2026-05-09
 
 ## Objective
 
@@ -13,6 +13,7 @@ No page should expand/collapse based on list item count during runtime.
 2. Prefer smaller spacing, tighter headers, and compact button/input heights.
 3. Do not introduce oversized action rows or large empty vertical gaps.
 4. Keep modal actions compact and wrapped when width is limited.
+5. Preserve the editor-workbench hierarchy: Explorer rail, terminal stage, Inspector rail, and transfer bottom panel should remain visually distinct without becoming nested card stacks.
 
 ## No Layout Shift Rule (Mandatory)
 
@@ -45,10 +46,12 @@ No page should expand/collapse based on list item count during runtime.
 - Retry Center list shell and grouped/flat lists
 - Operation Center tab activity list
 - Terminal command history list shell
+- Editor-workbench Inspector tabs at narrow widths
+- Workbench modal section lists and manager lists
 
 ## Implementation Baseline
 
-Use shared compact tokens in `src/renderer/styles.css`:
+Use shared compact tokens in `src/renderer/styles.css` and the split workbench styles in `src/renderer/styles/workbench-shell.css` / `src/renderer/styles/terminal.css`:
 
 - `--ui-control-height`
 - `--ui-control-height-small`
@@ -72,5 +75,6 @@ When adding a new list:
 4. Are dynamic counters and optional status messages rendered in reserved/fixed slots?
 5. Are action rows compact and readable in narrow widths?
 6. Are all list surfaces internally scrollable with fixed-height shells?
-7. Verify both `pnpm run typecheck` and `pnpm run build:renderer`.
-
+7. Do Explorer, terminal stage, Inspector, and bottom panel still read as one workbench rather than unrelated cards?
+8. Verify both `pnpm run typecheck` and `pnpm run build:renderer`.
+9. For broad shell changes, also run `pnpm run smoke:ui` before merge.

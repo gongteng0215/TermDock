@@ -1,6 +1,6 @@
 ﻿# TermDock Product Notes
 
-Last updated: 2026-04-12
+Last updated: 2026-05-09
 
 ## Confirmed Direction
 
@@ -13,9 +13,17 @@ Last updated: 2026-04-12
 ## Release Baseline
 
 - Current stable release: `v0.1.22` (2026-04-12)
+- Active branch: `feature/editor-workbench-ui`
+- Active branch focus: editor-workbench UI refresh and post-refactor validation
 
 ## Shipped in Recent Cycles
 
+- feature/editor-workbench-ui: the main renderer now reads as a dark code-editor workbench with a flatter shell, SFTP Explorer rail, right Inspector rail, terminal-dominant center stage, and bottom transfer panel
+- feature/editor-workbench-ui: the right Inspector now supports collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs
+- feature/editor-workbench-ui: SFTP Explorer view mode now persists as `Compact` / `Details`
+- feature/editor-workbench-ui: settings/modal chrome and high-frequency compact controls now align with the refreshed workbench language
+- feature/editor-workbench-ui: renderer UI regions were split out of `App.tsx` into focused settings, snippet, workbench-modal, UI-preference, and CSS modules
+- feature/editor-workbench-ui: post-refactor `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` pass; latest workspace smoke is `PASS 45 / FAIL 0 / SKIP 0`
 - v0.1.22: global error recovery now routes hotkey/port-forward failures into `Hotkeys` / `Port Fwd`, and transfer failures can jump straight into `Retry Center` when history exists
 - v0.1.22: error bar long messages now wrap instead of forcing horizontal scrolling
 - v0.1.22: SFTP create-directory now treats "already exists" as success and gives clearer permission/path guidance on true failures
@@ -144,16 +152,19 @@ Last updated: 2026-04-12
 
 ## Current Top Problems to Solve
 
-1. Global recoverable error UX still needs broader action coverage/guidance
-2. Operation center now tracks more app jobs, but richer timeline and grouped controls are still limited
-3. Large transfer/folder edge cases still need hardening
-4. SQLite migration and credential-safe encrypted backup/restore are not complete
-5. Cross-platform smoke test coverage is still incomplete, but that is currently low priority for this self-use workflow
-6. Public-trust installer signing/notarization workflow is not finalized, but that is currently low priority for this self-use workflow
-7. Automated unit/integration regression coverage is still weak, but that is currently low priority for this self-use workflow
+1. The refreshed workbench needs a final live design-nit pass for inspector tabs, bottom transfer density, and modal chrome
+2. Packaged smoke remains optional before release or broad handoff
+3. Global recoverable error UX still needs broader action coverage/guidance
+4. Operation center now tracks more app jobs, but richer timeline and grouped controls are still limited
+5. Large transfer/folder edge cases still need hardening
+6. SQLite migration and credential-safe encrypted backup/restore are not complete
+7. Cross-platform smoke test coverage is still incomplete, but that is currently low priority for this self-use workflow
+8. Public-trust installer signing/notarization workflow is not finalized, but that is currently low priority for this self-use workflow
+9. Automated unit/integration regression coverage is still weak, but that is currently low priority for this self-use workflow
 
 ## Next Candidate Features
 
+- Editor-workbench follow-up after verification: command palette, split panes, and richer editor-style layout affordances
 - Session templates v2 (runtime prompts, import/export, layered presets)
 - Command snippets/playbooks v2 follow-up with richer playbook workflows and validation packs
 - Dangerous-command follow-up with workspace-scoped defaults and richer shared distribution
@@ -183,5 +194,3 @@ Last updated: 2026-04-12
 - Accessibility and hotkey conflict checker
 - Plugin extension hooks for external ops integrations
 - Built-in command allowlist/denylist policy packs
-
-

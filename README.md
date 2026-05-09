@@ -6,10 +6,14 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 ## Current Status
 
 - Current stable release: `v0.1.22` (2026-04-12)
-- Current branch focus: post-`v0.1.22` hardening and transport/workspace follow-up on `master`
+- Current active branch: `feature/editor-workbench-ui`
+- Current branch focus: editor-workbench UI refresh, renderer module split, and post-refactor validation
 - Current stable release includes alternate-screen editor focus mode with selectable `Midnight` / `Graphite` / `Paper` themes in `Settings > Workspace`
 - Current stable release also includes `Compact` / `Balanced` / `Reading` typography presets, `System Mono` / `Coding Mono` / `Drafting Mono` font presets, `Crisp` / `Steady` / `Open` text-rhythm presets, `Beam` / `Underline` / `Block` cursor presets, and inactive-tab compaction for editor-only focus mode
 - Current master addition: recoverable global error UX now also routes hotkey and port-forward failures into `Hotkeys` / `Port Fwd`, and transfer-style failures can jump straight into `Retry Center` in addition to the existing settings, `Operation Center`, and bug-report actions
+- Current branch addition: the main renderer now reads as a code-editor-style workbench with a flatter shell, left Explorer rail, right Inspector rail, stronger terminal stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` view persistence, collapsible command history, and narrow-width inspector tabs
+- Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
+- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
 - Packaging: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`)
@@ -323,7 +327,9 @@ pnpm run smoke:ui:packaged
 
 This wrapper now runs `pnpm run pack` first so the packaged smoke flow does not reuse stale `release/*` output.
 
-Latest local workspace smoke run: `PASS 45 / FAIL 0 / SKIP 0`
+Latest full local workspace smoke artifact for the UI refresh: `PASS 45 / FAIL 0 / SKIP 0`
+
+Latest post-refactor checks after the renderer module split: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
 
 ## Release
 
@@ -343,21 +349,21 @@ pnpm run release:self-use:win
 Stable release:
 
 ```bash
-git tag v0.1.21
-git push origin v0.1.21
+git tag v0.1.22
+git push origin v0.1.22
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.21-test.1
-git push origin v0.1.21-test.1
+git tag v0.1.23-test.1
+git push origin v0.1.23-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.21`) => stable release
-- Tag with `-` (for example `v0.1.21-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.22`) => stable release
+- Tag with `-` (for example `v0.1.23-test.1`) => prerelease
 
 ## Known Limitations
 
@@ -372,25 +378,27 @@ Tag rules:
 
 ## Near-Term Execution Focus
 
-1. Recoverable global error UX follow-up (broader action coverage and contextual guidance)
-2. Operation center follow-up for richer progress timeline and grouped cancel/retry controls
-3. Persistence hardening (`SQLite` migration planning plus credential-safe backup/restore follow-up)
-4. Startup and large-transfer performance follow-up
+1. Do a live design-nit pass on the editor workbench shell, especially narrow-width inspector tabs, transfer bottom panel density, and settings/modal chrome
+2. Run packaged smoke if this branch is headed toward release or broad handoff
+3. Push or PR the branch with current build/smoke evidence
+4. Resume self-use hardening backlog: recoverable global error coverage, Operation Center timeline/grouped controls, persistence hardening, and startup/large-transfer performance
 5. Keep signing/notarization and broader release/test evidence in the low-priority self-use backlog
 
 ## Remaining Work (Not Done Yet)
 
-1. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
-2. `F8`: extend Operation Center beyond the current tracked jobs with richer timeline and cancellation controls
-3. `P0-A3` + `F9` follow-up: SQLite migration and credential-safe encrypted backup/restore
-4. `P0-E1` + `P0-E2`: startup and large-transfer performance follow-up
-5. `P0-F3`: remaining macOS/external-host packaged validation, now low priority for self-use
-6. `P0-F4`: public-trust signing/notarization evidence, now low priority for self-use
-7. `P0-F1` + `P0-F2`: unit/integration test baseline, now low priority for self-use
+1. Manual workbench polish: verify explorer/inspector/bottom-panel density in real use and patch any visual regressions
+2. Optional packaged smoke before release or broad handoff
+3. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
+4. `F8`: extend Operation Center beyond the current tracked jobs with richer timeline and cancellation controls
+5. `P0-A3` + `F9` follow-up: SQLite migration and credential-safe encrypted backup/restore
+6. `P0-E1` + `P0-E2`: startup and large-transfer performance follow-up
+7. `P0-F3`: remaining macOS/external-host packaged validation, now low priority for self-use
+8. `P0-F4`: public-trust signing/notarization evidence, now low priority for self-use
+9. `P0-F1` + `P0-F2`: unit/integration test baseline, now low priority for self-use
 
 ## Candidate Features (Prioritized)
 
-Current next-wave emphasis: operation center timeline/control follow-up, session templates v2, and dangerous-command/workspace follow-up. Additional ideas are listed below.
+Current next-wave emphasis after the editor-workbench branch is verified: operation center timeline/control follow-up, session templates v2, and dangerous-command/workspace follow-up. Additional ideas are listed below.
 
 1. Advanced retry-center analytics and history export
 2. Session templates v2 (runtime prompts, import/export, layered presets)
@@ -453,9 +461,9 @@ src/shared    # Shared contracts and types
 - `SOAK_TEST.md`: long-duration transfer stress test guide
 - `news.md`: product notes and directional summary
 - `UI_COMPACT_RULES.md`: compact-density and fixed-height list-shell rules
+- `docs/superpowers/specs/2026-05-01-termdock-editor-workbench-design.md`: editor-workbench UI design spec
+- `docs/superpowers/plans/2026-05-01-editor-workbench-ui.md`: editor-workbench UI implementation plan and verification tracker
 
 ## License
 
 MIT
-
-

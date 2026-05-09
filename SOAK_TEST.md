@@ -2,12 +2,13 @@
 
 This document describes how to run long-duration transfer stress tests against a real SSH/SFTP server.
 
-Last updated: 2026-03-19
+Last updated: 2026-05-09
 
 ## Goal
 
 - Reproduce and measure random disconnect issues during heavy upload workloads.
-- Validate monitor-polling and terminal stability hardening on `master`.
+- Validate monitor-polling and terminal stability hardening on the current branch baseline.
+- For `feature/editor-workbench-ui`, this soak runbook is unchanged; use it only if transfer regressions are suspected after the now-passing post-refactor build and workspace smoke.
 
 ## Script
 
@@ -139,4 +140,3 @@ After each script run, validate packaged UI (`release` build):
    - risky commands are blocked by the fixed bottom approval bar
    - `Run Once` allows a one-time execution
    - `Cancel` keeps the command blocked
-

@@ -1,6 +1,6 @@
 # TermDock Packaged Smoke
 
-Last updated: 2026-04-12
+Last updated: 2026-05-09
 
 ## Goal
 
@@ -119,6 +119,7 @@ This adds a `Real SSH extension` section into `full-test-matrix.md`.
 
 ## Current Automated Coverage
 
+- Editor-workbench shell smoke coverage from the latest UI refresh artifact: main workspace renders with refreshed shell, Explorer/Inspector sidebars, terminal stage, and bottom transfer panel
 - Embedded live SSH auth/connect lifecycle
 - Alternate-screen editor focus mode enter/exit
 - Editor focus `Paper` theme selection and visual application

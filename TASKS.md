@@ -1,12 +1,13 @@
 ﻿# TermDock Task Board
 
-Last updated: 2026-04-02
+Last updated: 2026-05-09
 
 ## Current Release State
 
-- Stable release: `v0.1.21`
-- Branch baseline: `master`
-- Priority direction: self-use runtime hardening and workflow quality, not public-release signing/testing work
+- Stable release: `v0.1.22`
+- Active branch: `feature/editor-workbench-ui`
+- Branch baseline: `origin/feature/editor-workbench-ui`
+- Priority direction: finish editor-workbench UI verification and polish, then resume self-use runtime hardening and workflow quality
 
 ## P0 Matrix
 
@@ -48,6 +49,15 @@ Last updated: 2026-04-02
 
 ## In Progress Track (v0.1.3+)
 
+0. Active editor-workbench UI branch:
+   - shell, sidebars, terminal stage, transfer dock, and modal chrome have been refreshed into a flatter code-editor workbench language
+   - SFTP explorer now has persisted `Compact` / `Details` view modes
+   - right inspector now supports collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs
+   - large renderer UI regions were split into focused modules for settings, workbench modals, command snippets, UI preferences, and separated workbench/terminal CSS
+   - post-refactor `pnpm run typecheck` passed
+   - post-refactor `pnpm run build` passed
+   - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
+   - optional packaged smoke remains available if release confidence or broad handoff requires it
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling
@@ -213,20 +223,25 @@ Last updated: 2026-04-02
 
 ## Immediate Next Target
 
-1. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
-2. `F8` Operation center follow-up (richer timeline + grouped controls)
-3. `P0-A3`/`F9` Persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
-4. `P0-E1`/`P0-E2` Startup and large-transfer performance follow-up
+1. `UI-WB-POLISH`: do a live design-nit pass for inspector tabs, transfer bottom-panel density, and settings/modal chrome
+2. `UI-WB-HANDOFF`: push or PR `feature/editor-workbench-ui` with current build/smoke evidence
+3. Optional: run packaged smoke if this branch is headed toward release or broad handoff
+4. `P0-E3`: global error recovery follow-up (broader action coverage + guidance)
+5. `F8`: Operation Center follow-up (richer timeline + grouped controls)
+6. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
+7. `P0-E1`/`P0-E2`: startup and large-transfer performance follow-up
 
 ## Not Done Yet (Top Blocking Items)
 
-1. `P0-E3`: recoverable global error action coverage expansion (beyond current baseline)
-2. `F8`: richer timeline and grouped controls for Operation Center
-3. `P0-A3`: JSON-to-SQLite migration planning and execution
-4. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
-5. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
-6. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
-7. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
+1. `UI-WB-POLISH`: final live design-nit pass on the refreshed workbench
+2. Optional packaged smoke for release/broad handoff confidence
+3. `P0-E3`: recoverable global error action coverage expansion beyond current baseline
+4. `F8`: richer timeline and grouped controls for Operation Center
+5. `P0-A3`: JSON-to-SQLite migration planning and execution
+6. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
+7. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
+8. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
+9. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
 
 ## Backlog Candidates
 
@@ -249,6 +264,7 @@ Last updated: 2026-04-02
 - Recurring folder sync profiles
 - Connection quality timeline dashboard
 - Workspace profile follow-up (broader automation and shared defaults)
+- Editor-workbench follow-up: command palette, split panes, and richer editor-style layout affordances
 
 ## Exploration Pool (Unprioritized)
 

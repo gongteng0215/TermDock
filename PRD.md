@@ -1,7 +1,7 @@
 ﻿# TermDock PRD
 
-Version: v1.21
-Last updated: 2026-04-02
+Version: v1.23
+Last updated: 2026-05-09
 
 ## 1. Product Positioning
 
@@ -38,6 +38,7 @@ Target platforms:
 
 - Compact-first layout
 - Information density over decorative spacing
+- Editor-workbench hierarchy: terminal as center stage, SFTP as Explorer, sessions/health/history as Inspector, transfers as bottom panel
 - Context-menu-first operation for list/tree actions
 - Strong safeguards for destructive operations
 - Platform-native keyboard behavior
@@ -66,6 +67,8 @@ Target platforms:
 
 - xterm-based terminal rendering
 - Multi-tab with single-tab-per-session behavior (open existing session => focus existing tab)
+- Editor-workbench tab/stage presentation that keeps the terminal visually dominant inside the main workspace
+- Alternate-screen editor focus mode with workspace toggle, editor theme/typography/font/rhythm/cursor presets, and inactive-tab compaction
 - Reconnect and context actions
 - Configurable hotkeys
   - conflict detection with inline row highlight badges
@@ -105,6 +108,8 @@ Target platforms:
 ### 5.3 SFTP
 
 - Browse/open/refresh/path jump
+- Remote-file Explorer rail presentation
+- Persisted SFTP explorer view mode (`Compact` / `Details`)
 - Create folder, rename, delete
 - Upload/download with queue and progress
 - Cancel single task and cancel all
@@ -144,6 +149,7 @@ Target platforms:
 ### 5.6 Settings
 
 - Connection preferences
+- Workbench-aligned settings modal shell with compact section navigation
 - Hotkey bindings
   - conflict diagnostics and navigation
   - import/export and restore workflow
@@ -176,6 +182,7 @@ Target platforms:
 - Keep terminal viewport sizing stable on small windows and packaged startup
 - Keep session-open behavior deterministic across keyboard-open dedupe and explicit double-click new-tab actions
 - Enforce compact UI + fixed-height list-shell rulebook (`UI_COMPACT_RULES.md`) to prevent layout jitter
+- Keep editor-workbench shell regions visually stable across sidebar/inspector changes and narrow-width tab switching
 - Require fixed-height bottom approval bars for high-risk command execution prompts so layout does not shift when approval is needed
 
 ### 5.9 Quality Automation
@@ -189,6 +196,7 @@ Target platforms:
 - Release signing/notarization preflight baseline (`scripts/release-preflight.mjs`)
 - Release artifact verification baseline with report output (`scripts/verify-release-artifacts.mjs`, `artifacts/release-verify/<timestamp>`)
 - Self-use Windows release helper path (`scripts/create-self-use-windows-cert.ps1`, `scripts/build-self-use-windows-release.mjs`)
+- Current editor-workbench branch verification state: post-refactor `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`)
 
 ## 6. Security Requirements
 
@@ -207,6 +215,7 @@ Target platforms:
 
 ## 8. Current Limitations
 
+- `feature/editor-workbench-ui` has passed post-refactor typecheck, build, and workspace smoke; optional packaged smoke is still recommended before release or broad handoff
 - SQLite migration not complete
 - Automated unit/integration coverage is incomplete, but that is currently low priority for the self-use workflow
 - External-host smoke evidence is still partial, but that is currently low priority for the self-use workflow
@@ -229,8 +238,10 @@ These broader rollout gates still apply for public distribution, but they are no
 
 ## 10. Version Plan
 
-- `v0.1.21` (current stable): alternate-screen terminal editor focus mode with workspace toggle, editor theme/typography/font/rhythm/cursor presets, and inactive-tab compaction
-- `master` (in progress): self-use runtime hardening and transfer/workspace follow-up
+- `v0.1.22` (current stable): global error recovery routing, error-bar wrapping, and idempotent SFTP create-directory handling
+- `feature/editor-workbench-ui` (active): code-editor-style workbench refresh plus renderer module split; post-refactor typecheck/build/workspace smoke passed
+- `master` (baseline): self-use runtime hardening and transfer/workspace follow-up
+- `v0.1.21`: alternate-screen terminal editor focus mode with workspace toggle, editor theme/typography/font/rhythm/cursor presets, and inactive-tab compaction
 - `v0.1.20`: alternate-screen terminal editor focus mode with workspace toggle plus `Midnight` / `Graphite` / `Paper` editor-theme presets
 - `v0.1.19`: transfer upload reliability hardening plus transfer-pack sync automation follow-up
 - `v0.1.13`: packaged smoke baseline, release tooling, and session templates baseline
@@ -373,5 +384,3 @@ Potential additions to discuss next (ordered by value-to-effort):
 17. Shared encrypted team vault / workspace sync
     - Keep hosts, snippets, and port-forward presets synchronized across a team
     - Support granular access control and encrypted storage for shared items
-
-

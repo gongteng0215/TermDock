@@ -1,12 +1,23 @@
 # TermDock Editor Workbench UI Design
 
 Date: 2026-05-01
+Last updated: 2026-05-09
 
 ## Goal
 
 Refresh the TermDock desktop UI so it feels closer to a modern code editor workbench, specifically a VS Code-like dark workspace, while preserving the existing SSH, SFTP, transfer, and diagnostics capabilities.
 
 The redesign should shift the product away from a "stacked operations dashboard" feel and toward a "developer workbench" feel. The terminal remains the primary stage. Side areas should read as editor sidebars and bottom panels rather than independent product cards.
+
+## Current Implementation Status
+
+- Status: implemented on `feature/editor-workbench-ui`
+- The shell now uses a flatter editor-workbench hierarchy with SFTP as the Explorer rail, terminal as the center stage, sessions/health/history as the Inspector rail, and transfers as a bottom panel.
+- The right Inspector includes collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs.
+- The SFTP Explorer includes persisted `Compact` / `Details` view mode.
+- Settings and manager modal chrome now follows the same compact workbench language.
+- The large renderer surface was split into focused modules for settings sections, workbench modals, command snippets, UI preferences, and separated workbench/terminal CSS.
+- Latest post-refactor verification: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-20-56-774Z/summary.json` (`PASS 45 / FAIL 0 / SKIP 0`).
 
 ## Design Direction
 
@@ -22,7 +33,22 @@ The UI should communicate that TermDock is a focused developer tool for working 
 
 ## Existing UI Summary
 
-The current renderer is a custom Electron + React + CSS interface. The main UI is assembled in [App.tsx](/E:/AI/TermDock/src/renderer/App.tsx:22984), with terminal-specific behavior in [terminal-workspace.tsx](/E:/AI/TermDock/src/renderer/components/terminal-workspace.tsx:640), and the visual system concentrated in [styles.css](/E:/AI/TermDock/src/renderer/styles.css:1).
+The renderer is a custom Electron + React + CSS interface. The main state orchestration remains in `src/renderer/App.tsx`, with terminal-specific behavior in `src/renderer/components/terminal-workspace.tsx`.
+
+After the implementation pass, high-frequency UI surfaces are split into focused renderer modules:
+
+- `src/renderer/components/workbench-shell.tsx`
+- `src/renderer/components/workbench-sidebars.tsx`
+- `src/renderer/components/workbench-panels.tsx`
+- `src/renderer/components/workbench-modals.tsx`
+- `src/renderer/components/settings-modal-shell.tsx`
+- `src/renderer/components/settings-sections.tsx`
+- `src/renderer/components/command-snippet-manager-modal.tsx`
+- `src/renderer/workbench-ui-preferences.ts`
+- `src/renderer/styles/workbench-shell.css`
+- `src/renderer/styles/terminal.css`
+
+The remaining root stylesheet keeps shared/global UI styles.
 
 The current high-level structure is:
 
@@ -257,6 +283,14 @@ The redesign succeeds when:
 - the left and right regions feel like sidebars, not separate product slabs
 - the bottom transfer area feels like a panel, not a second application band
 - functional behavior remains intact and current verification still passes
+
+Current acceptance status:
+
+- Workbench first impression: met
+- Terminal primary stage: met
+- Explorer/Inspector sidebars: met
+- Bottom transfer panel: met
+- Functional regression safety: met for typecheck, build, and workspace smoke after the module split; packaged smoke remains optional for release handoff
 
 ## Implementation Recommendation
 
