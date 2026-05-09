@@ -1,5 +1,42 @@
 # Editor Workbench UI Implementation Plan
 
+## Progress Snapshot
+
+Last updated: 2026-05-09
+
+### Current status
+
+- `Task 1`: Complete in workspace
+- `Task 2`: Complete in workspace
+- `Task 3`: Complete in workspace
+- `Task 4`: Complete in workspace
+
+### Completed so far
+
+- Split the renderer shell out of the large `App.tsx` body into reusable workbench components
+- Added shared workbench shell, sidebar, panel, and icon components
+- Unified panel/list-shell/status surface language across the left explorer and right inspector
+- Reshaped the right rail into a clearer inspector with context cards, session details, and collapsible command history
+- Added SFTP `Compact / Details` dual-view mode with local persistence
+- Added narrow-width tabbed inspector behavior for `Sessions / Health / History`
+- Reframed the transfer dock as a clearer bottom panel and aligned modal chrome with the workbench shell
+- Unified high-frequency button states, focus rings, and workbench chrome polish across topbar, toggles, and compact inspector controls
+- Restored stable UI validation, including smoke coverage
+
+### Remaining follow-ups
+
+- Optional: create final commit(s) for the UI refresh
+- Optional: do a manual design-nit pass after live usage feedback
+
+### Latest verification
+
+- `pnpm run typecheck`
+- `pnpm run build`
+- `node scripts/test-transfer-progress.mjs`
+- `pnpm run bench:transfer:local`
+- `pnpm run smoke:ui`
+- Latest smoke artifact on 2026-05-09: `artifacts/smoke/2026-05-09T02-44-14-552Z/summary.json` (`pass=45, fail=0, skip=0`)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Rework the renderer UI so TermDock reads like a modern dark code-editor workbench while preserving existing SSH, SFTP, transfer, and diagnostics behavior.
@@ -40,6 +77,8 @@
 
 ### Task 1: Rebuild the workbench shell and shared visual tokens
 
+**Status:** Complete in workspace. Shell extraction, shared surface tokens, topbar grouping, and safety verification are in place. The only unchecked step below is the commit step because this progress tracker is documenting workspace state, not a commit history.
+
 **Files:**
 - Modify: `src/renderer/styles.css:1`
 - Modify: `src/renderer/styles.css:69`
@@ -49,7 +88,7 @@
 - Modify: `src/renderer/styles.css:3625`
 - Modify: `src/renderer/App.tsx:22984`
 
-- [ ] **Step 1: Capture the exact shell areas to change before editing**
+- [x] **Step 1: Capture the exact shell areas to change before editing**
 
 Run:
 
@@ -64,7 +103,7 @@ Expected:
 Shows :root tokens, .app/.topbar/.layout blocks, and the App shell JSX around the header and main layout.
 ```
 
-- [ ] **Step 2: Replace the global token set with flatter workbench-oriented surfaces**
+- [x] **Step 2: Replace the global token set with flatter workbench-oriented surfaces**
 
 Update the root token block so the shell shifts from glass-heavy blue panels to a steadier workbench palette:
 
@@ -94,7 +133,7 @@ Update the root token block so the shell shifts from glass-heavy blue panels to 
 }
 ```
 
-- [ ] **Step 3: Rework the app background, topbar, and panel shell to read like editor chrome**
+- [x] **Step 3: Rework the app background, topbar, and panel shell to read like editor chrome**
 
 Implement the shell treatment with flatter surfaces and clearer separators:
 
@@ -133,7 +172,7 @@ body::before {
 }
 ```
 
-- [ ] **Step 4: Tighten shared heading and section rhythm so all regions use the same language**
+- [x] **Step 4: Tighten shared heading and section rhythm so all regions use the same language**
 
 Normalize headings and section spacing:
 
@@ -156,7 +195,7 @@ Normalize headings and section spacing:
 }
 ```
 
-- [ ] **Step 5: Adjust the topbar JSX only if needed to support cleaner workbench metadata grouping**
+- [x] **Step 5: Adjust the topbar JSX only if needed to support cleaner workbench metadata grouping**
 
 Keep the existing metadata but simplify the markup if the current shell needs one extra wrapper:
 
@@ -178,7 +217,7 @@ Keep the existing metadata but simplify the markup if the current shell needs on
 </header>
 ```
 
-- [ ] **Step 6: Run renderer safety checks after the shell pass**
+- [x] **Step 6: Run renderer safety checks after the shell pass**
 
 Run:
 
@@ -212,6 +251,8 @@ Creates a commit containing the token, shell, and shared panel-language refresh.
 
 ### Task 2: Reshape the left explorer and right inspector sidebars
 
+**Status:** Complete in workspace. The explorer/inspector split is live, shared sidebar language is in place, the SFTP dual-view shipped, the sessions inspector now exposes detail/context layers, command history is collapsible, and narrow-width tabbed inspector behavior is implemented. The commit step remains intentionally unchecked.
+
 **Files:**
 - Modify: `src/renderer/App.tsx:23008`
 - Modify: `src/renderer/App.tsx:23202`
@@ -221,7 +262,7 @@ Creates a commit containing the token, shell, and shared panel-language refresh.
 - Modify: `src/renderer/styles.css:2953`
 - Modify: `src/renderer/styles.css:3186`
 
-- [ ] **Step 1: Capture the sidebar JSX and CSS before restructuring**
+- [x] **Step 1: Capture the sidebar JSX and CSS before restructuring**
 
 Run:
 
@@ -237,7 +278,7 @@ Expected:
 Shows the left SFTP panel, right utility sections, list styles, and server-health/command-history blocks that need to be unified.
 ```
 
-- [ ] **Step 2: Introduce explicit explorer and inspector wrappers in App.tsx**
+- [x] **Step 2: Introduce explicit explorer and inspector wrappers in App.tsx**
 
 Wrap the existing content so the left and right areas can be styled as coordinated sidebars:
 
@@ -259,7 +300,7 @@ Wrap the existing content so the left and right areas can be styled as coordinat
 </aside>
 ```
 
-- [ ] **Step 3: Replace the current sidebar surfaces with editor-style list and rail styling**
+- [x] **Step 3: Replace the current sidebar surfaces with editor-style list and rail styling**
 
 Add shared sidebar language:
 
@@ -286,7 +327,7 @@ Add shared sidebar language:
 }
 ```
 
-- [ ] **Step 4: Update session and SFTP row styling to feel more like an editor explorer**
+- [x] **Step 4: Update session and SFTP row styling to feel more like an editor explorer**
 
 Convert rows away from card feeling and toward workbench list states:
 
@@ -315,7 +356,7 @@ Convert rows away from card feeling and toward workbench list states:
 }
 ```
 
-- [ ] **Step 5: Unify right-rail section headers and list shells**
+- [x] **Step 5: Unify right-rail section headers and list shells**
 
 Apply one inspector rhythm across sessions, health, and history:
 
@@ -334,7 +375,7 @@ Apply one inspector rhythm across sessions, health, and history:
 }
 ```
 
-- [ ] **Step 6: Verify the sidebar reshape in the browser and with typecheck**
+- [x] **Step 6: Verify the sidebar reshape in the browser and with typecheck**
 
 Run:
 
@@ -367,13 +408,15 @@ Creates a commit containing the left/right structural and list-surface refresh.
 
 ### Task 3: Strengthen the terminal as the main stage
 
+**Status:** Complete in workspace. Terminal tabs, the stage surface, and editor-focus treatment have been tightened to read more like the main editor stage. The commit step remains intentionally unchecked.
+
 **Files:**
 - Modify: `src/renderer/components/terminal-workspace.tsx:2335`
 - Modify: `src/renderer/styles.css:2094`
 - Modify: `src/renderer/styles.css:2265`
 - Modify: `src/renderer/styles.css:2383`
 
-- [ ] **Step 1: Capture the terminal workspace markup and active styles**
+- [x] **Step 1: Capture the terminal workspace markup and active styles**
 
 Run:
 
@@ -388,7 +431,7 @@ Expected:
 Shows the terminal tab markup, tab action area, stage, pane, and editor-focus styling blocks.
 ```
 
-- [ ] **Step 2: Simplify terminal tab styling toward editor tabs**
+- [x] **Step 2: Simplify terminal tab styling toward editor tabs**
 
 Apply flatter, editor-like tabs:
 
@@ -416,7 +459,7 @@ Apply flatter, editor-like tabs:
 }
 ```
 
-- [ ] **Step 3: Give the terminal stage a cleaner editor main area**
+- [x] **Step 3: Give the terminal stage a cleaner editor main area**
 
 Reduce ornate framing and make the terminal the dominant surface:
 
@@ -439,7 +482,7 @@ Reduce ornate framing and make the terminal the dominant surface:
 }
 ```
 
-- [ ] **Step 4: Restyle editor-focus mode so it still feels distinct without looking like a separate product**
+- [x] **Step 4: Restyle editor-focus mode so it still feels distinct without looking like a separate product**
 
 Keep the editor-focus behavior, but harmonize the surface:
 
@@ -456,7 +499,7 @@ Keep the editor-focus behavior, but harmonize the surface:
 }
 ```
 
-- [ ] **Step 5: Only adjust terminal-workspace JSX if the tabs need a dedicated workbench action region**
+- [x] **Step 5: Only adjust terminal-workspace JSX if the tabs need a dedicated workbench action region**
 
 If current markup prevents the desired alignment, keep the same behavior and only rebalance the wrapper:
 
@@ -478,7 +521,7 @@ If current markup prevents the desired alignment, keep the same behavior and onl
 </div>
 ```
 
-- [ ] **Step 6: Validate terminal behavior and build safety**
+- [x] **Step 6: Validate terminal behavior and build safety**
 
 Run:
 
@@ -513,6 +556,8 @@ Creates a commit containing the tab, terminal, and editor-focus visual refresh.
 
 ### Task 4: Convert the transfer dock into a bottom workbench panel and finish verification
 
+**Status:** Complete in workspace. The transfer dock now reads like a bottom workbench panel, the modal shell is aligned to the shared workbench chrome, and transfer-focused verification has passed. The commit step remains intentionally unchecked.
+
 **Files:**
 - Modify: `src/renderer/App.tsx:23695`
 - Modify: `src/renderer/styles.css:155`
@@ -520,7 +565,7 @@ Creates a commit containing the tab, terminal, and editor-focus visual refresh.
 - Modify: `src/renderer/styles.css:279`
 - Modify: `src/renderer/styles.css:3654`
 
-- [ ] **Step 1: Capture the transfer dock markup and existing styles**
+- [x] **Step 1: Capture the transfer dock markup and existing styles**
 
 Run:
 
@@ -536,7 +581,7 @@ Expected:
 Shows the transfer dock header, queue panels, action buttons, and modal-settings shell blocks that need to align with the new panel language.
 ```
 
-- [ ] **Step 2: Reframe the transfer dock as a bottom panel with a toolbar-like header**
+- [x] **Step 2: Reframe the transfer dock as a bottom panel with a toolbar-like header**
 
 Adjust the dock shell and action area:
 
@@ -562,7 +607,7 @@ Adjust the dock shell and action area:
 }
 ```
 
-- [ ] **Step 3: Make upload/download areas read as bottom-panel panes rather than boxed cards**
+- [x] **Step 3: Make upload/download areas read as bottom-panel panes rather than boxed cards**
 
 Flatten the queue panes:
 
@@ -587,7 +632,7 @@ Flatten the queue panes:
 }
 ```
 
-- [ ] **Step 4: Bring the settings modal shell into the same workbench system**
+- [x] **Step 4: Bring the settings modal shell into the same workbench system**
 
 Keep the same modal behavior but align its frame with the new shell:
 
@@ -607,7 +652,7 @@ Keep the same modal behavior but align its frame with the new shell:
 }
 ```
 
-- [ ] **Step 5: Run full verification including transfer regression checks**
+- [x] **Step 5: Run full verification including transfer regression checks**
 
 Run:
 
@@ -625,7 +670,7 @@ Expected:
 All commands pass. Transfer benchmark still completes successfully, with no regression in the existing optimized upload/download paths.
 ```
 
-- [ ] **Step 6: Perform final UI acceptance pass**
+- [x] **Step 6: Perform final UI acceptance pass**
 
 Manual check at `http://localhost:5273`:
 
