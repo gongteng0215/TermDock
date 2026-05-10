@@ -104,6 +104,15 @@ import {
   writeSftpExplorerViewMode
 } from "./workbench-ui-preferences";
 import {
+  APP_LANGUAGE_OPTIONS,
+  getI18n,
+  readAppLanguagePreference,
+  writeAppLanguagePreference,
+  type AppLanguage,
+  type SettingsSectionI18nKey,
+  type WorkspaceProfileI18nKey
+} from "./i18n";
+import {
   createDefaultDangerousCommandGuardPreferences,
   findDangerousCommandGroupAssignment,
   formatDangerousCommandSourceLabel,
@@ -278,33 +287,18 @@ const DEFAULT_WORKSPACE_PROFILE_PREFERENCES: WorkspaceProfilePreferences = {
 };
 const WORKSPACE_PROFILE_OPTIONS: Array<{
   id: WorkspaceProfileId;
-  label: string;
-  shortLabel: string;
-  description: string;
 }> = [
   {
-    id: "none",
-    label: "No Profile",
-    shortLabel: "No Profile",
-    description: "Do not apply a shared workspace environment profile."
+    id: "none"
   },
   {
-    id: "dev",
-    label: "Development",
-    shortLabel: "Dev",
-    description: "Use lower-friction defaults for local or sandbox workflows."
+    id: "dev"
   },
   {
-    id: "staging",
-    label: "Staging",
-    shortLabel: "Staging",
-    description: "Use shared-validation defaults and medium risk cues."
+    id: "staging"
   },
   {
-    id: "prod",
-    label: "Production",
-    shortLabel: "Prod",
-    description: "Use highest-risk cues and stricter safety defaults."
+    id: "prod"
   }
 ];
 
@@ -1511,29 +1505,8 @@ function getHotkeyActionDescription(action: HotkeyActionId): string {
   }
 }
 
-function getSettingsSectionTitle(section: SettingsSectionId): string {
-  switch (section) {
-    case "connection":
-      return "Connection";
-    case "workspace":
-      return "Workspace Profile";
-    case "safety":
-      return "Safety Guardrails";
-    case "hotkeys":
-      return "Hotkeys";
-    case "serverHealth":
-      return "Server Health Alerts";
-    case "fileOpening":
-      return "File Opening";
-    case "sftp":
-      return "SFTP Transfers";
-    case "portForwarding":
-      return "Port Forwarding";
-    case "diagnostics":
-      return "Diagnostics";
-    default:
-      return "Settings";
-  }
+function getSettingsSectionI18nKey(section: SettingsSectionId): SettingsSectionI18nKey {
+  return section;
 }
 
 function formatPortForwardRecord(record: PortForwardRecord): string {
@@ -5377,6 +5350,12 @@ export function App() {
   const terminalApi = bridge?.terminal ?? null;
   const sftpApi = bridge?.sftp ?? null;
   const isMacPlatform = /mac/i.test(navigator.platform);
+  const [appLanguage, setAppLanguage] = useState<AppLanguage>(() => readAppLanguagePreference());
+  const i18n = useMemo(() => getI18n(appLanguage), [appLanguage]);
+  const selectedLanguageOption = useMemo(
+    () => APP_LANGUAGE_OPTIONS.find((option) => option.id === appLanguage) ?? APP_LANGUAGE_OPTIONS[0],
+    [appLanguage]
+  );
   const hotkeyModifierOptions = useMemo(
     () => getHotkeyModifierOptions(isMacPlatform),
     [isMacPlatform]
@@ -5384,18 +5363,22 @@ export function App() {
   const settingsSections = useMemo(
     () =>
       [
-        { id: "connection", label: "Connection" },
-        { id: "workspace", label: "Workspace" },
-        { id: "safety", label: "Safety" },
-        { id: "hotkeys", label: "Hotkeys" },
-        { id: "serverHealth", label: "Monitor" },
-        { id: "fileOpening", label: "File Open" },
-        { id: "sftp", label: "SFTP" },
-        { id: "portForwarding", label: "Port Fwd" },
-        { id: "diagnostics", label: "Diagnostics" }
+        { id: "connection", label: i18n.settings.sections.connection.nav },
+        { id: "workspace", label: i18n.settings.sections.workspace.nav },
+        { id: "safety", label: i18n.settings.sections.safety.nav },
+        { id: "hotkeys", label: i18n.settings.sections.hotkeys.nav },
+        { id: "serverHealth", label: i18n.settings.sections.serverHealth.nav },
+        { id: "fileOpening", label: i18n.settings.sections.fileOpening.nav },
+        { id: "sftp", label: i18n.settings.sections.sftp.nav },
+        { id: "portForwarding", label: i18n.settings.sections.portForwarding.nav },
+        { id: "diagnostics", label: i18n.settings.sections.diagnostics.nav }
       ] as Array<{ id: SettingsSectionId; label: string }>,
-    []
+    [i18n]
   );
+
+  useEffect(() => {
+    writeAppLanguagePreference(appLanguage);
+  }, [appLanguage]);
 
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [form, setForm] = useState<SessionCreateInput>(EMPTY_FORM);
@@ -5918,13 +5901,24 @@ export function App() {
       ) ?? DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0],
     [dangerousCommandGuardPreferences.environmentTemplateId]
   );
+  const workspaceProfileLabels = i18n.settings.workspace.profileOptions;
   const selectedWorkspaceProfile = useMemo(
-    () => getWorkspaceProfileOption(workspaceProfilePreferences.profileId),
-    [workspaceProfilePreferences.profileId]
+    () => {
+      const profile = getWorkspaceProfileOption(workspaceProfilePreferences.profileId);
+      const labels = workspaceProfileLabels[profile.id as WorkspaceProfileI18nKey];
+      return {
+        ...profile,
+        label: labels.label,
+        shortLabel: labels.shortLabel,
+        description: labels.description
+      };
+    },
+    [workspaceProfileLabels, workspaceProfilePreferences.profileId]
   );
   const workspaceProfileCardViews = useMemo(
     () =>
       WORKSPACE_PROFILE_OPTIONS.map((profile) => {
+        const labels = workspaceProfileLabels[profile.id as WorkspaceProfileI18nKey];
         const template =
           DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find((entry) => entry.id === profile.id) ??
           DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0];
@@ -5934,12 +5928,12 @@ export function App() {
           )?.label ?? template.recommendedPolicyPackId;
         return {
           id: profile.id,
-          label: profile.label,
-          description: profile.description,
-          safetyDefaultLabel: `Safety default: ${template.label} / ${recommendedPackLabel}`
+          label: labels.label,
+          description: labels.description,
+          safetyDefaultLabel: i18n.settings.workspace.safetyDefault(template.label, recommendedPackLabel)
         };
       }),
-    []
+    [i18n, workspaceProfileLabels]
   );
   const hotkeySettingRowViews = useMemo(
     () =>
@@ -7701,7 +7695,11 @@ export function App() {
       );
       const contextSummary = [
         workspaceProfilePreferencesRef.current.profileId !== "none"
-          ? `workspace ${activeWorkspaceProfile.shortLabel}`
+          ? `workspace ${
+              getI18n(readAppLanguagePreference()).settings.workspace.profileOptions[
+                activeWorkspaceProfile.id as WorkspaceProfileI18nKey
+              ].shortLabel
+            }`
           : null,
         request.result.sessionGroupName ? `group ${request.result.sessionGroupName}` : null,
         `pack ${request.result.appliedPolicyPackLabel}`,
@@ -16964,12 +16962,12 @@ export function App() {
       if (workspaceProfilePreferencesRef.current.syncDangerousCommandSafety) {
         applyWorkspaceProfileToDangerousCommandGuard(profileId);
       }
-      pushAppHintMessage(`Workspace profile switched to ${getWorkspaceProfileOption(profileId).label}.`, {
+      pushAppHintMessage(`Workspace profile switched to ${workspaceProfileLabels[profileId].label}.`, {
         level: profileId === "prod" ? "warn" : "info",
         durationMs: 4200
       });
     },
-    [applyWorkspaceProfileToDangerousCommandGuard, pushAppHintMessage]
+    [applyWorkspaceProfileToDangerousCommandGuard, pushAppHintMessage, workspaceProfileLabels]
   );
 
   const setWorkspaceProfileDangerousCommandSync = useCallback(
@@ -23742,10 +23740,11 @@ export function App() {
       <WorkbenchTopbar
         autoReconnectLabel={
           connectionPreferences.autoReconnect
-            ? `Auto Reconnect ${connectionPreferences.reconnectDelaySeconds}s`
-            : "Auto Reconnect Off"
+            ? i18n.topbar.autoReconnect(connectionPreferences.reconnectDelaySeconds)
+            : i18n.topbar.autoReconnectOff
         }
         isMacPlatform={isMacPlatform}
+        labels={i18n.topbar}
         workspaceProfile={
           workspaceProfilePreferences.profileId !== "none"
             ? {
@@ -24289,19 +24288,19 @@ export function App() {
       <TransferDock
         bindingLabel={
           activeTerminalTab
-            ? `Bound to ${activeTerminalTab.title}`
-            : "Open a terminal tab to manage transfers"
+            ? i18n.transfer.boundTo(activeTerminalTab.title)
+            : i18n.transfer.emptyBinding
         }
         canRetryAllFailed={canRetryAllFailedTransfers}
         downloadPanel={{
           cancelAllDisabled: !activeTabId,
-          cancelAllLabel: "Cancel all download tasks",
-          cancelAllTitle: "Cancel all download tasks in this tab",
+          cancelAllLabel: i18n.transfer.cancelAllDownloadsLabel,
+          cancelAllTitle: i18n.transfer.cancelAllDownloadsTitle,
           clearFinishedDisabled: !canClearFinishedDownloads,
-          emptyLabel: "No download transfers.",
+          emptyLabel: i18n.transfer.downloadEmpty,
           historyMessage:
             failedDownloadHistory.length > 0
-              ? `Stored failed retries for this session: ${failedDownloadHistory.length}`
+              ? i18n.transfer.storedFailedRetries(failedDownloadHistory.length)
               : null,
           onCancelAll: () => {
             void cancelAllActiveDownloads();
@@ -24314,17 +24313,27 @@ export function App() {
           },
           pauseMessage: isActiveDownloadQueuePaused
             ? activeDownloadPauseReason === "schedule-window"
-              ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Downloads will resume automatically${
+              ? i18n.transfer.schedulePaused(
+                  sftpTransferScheduleSummary,
                   nextSftpTransferWindowOpeningLabel
-                    ? ` at ${nextSftpTransferWindowOpeningLabel}.`
-                    : " when the window opens."
-                }`
-              : "Queue paused: terminal disconnected. Reconnect this tab to resume downloads."
+                )
+              : i18n.transfer.downloadDisconnectedPaused
             : null,
-          progressSummary: `Progress: ${activeDownloadProgressStats.completed}/${activeDownloadProgressStats.total} completed (failed ${activeDownloadProgressStats.failed}, canceled ${activeDownloadProgressStats.canceled}, running ${activeDownloadProgressStats.running}, queued ${activeDownloadProgressStats.queued})`,
+          progressSummary: i18n.transfer.progressSummary(
+            activeDownloadProgressStats.completed,
+            activeDownloadProgressStats.total,
+            activeDownloadProgressStats.failed,
+            activeDownloadProgressStats.canceled,
+            activeDownloadProgressStats.running,
+            activeDownloadProgressStats.queued
+          ),
           retryFailedCount: failedDownloadRetryCandidates.length,
           retryFailedDisabled: !canRetryFailedDownloads,
-          title: `Downloads (running ${activeDownloadQueueStats.running}, queued ${activeDownloadQueueStats.queued}, threads ${sftpTransferPreferences.downloadConcurrency})`,
+          title: i18n.transfer.downloadsTitle(
+            activeDownloadQueueStats.running,
+            activeDownloadQueueStats.queued,
+            sftpTransferPreferences.downloadConcurrency
+          ),
           transfers: activeDownloadTransfers.map((transfer) => ({
             canCancel: transfer.status === "queued" || transfer.status === "running",
             direction: "download" as const,
@@ -24339,6 +24348,7 @@ export function App() {
         }}
         failedRetryCandidateTotal={failedRetryCandidateTotal}
         hasOperationCenterActivity={hasOperationCenterActivity}
+        labels={i18n.transfer}
         notice={activeTransferDockNotice}
         onDiscardPending={() => {
           void discardPendingTransferRestoreQueue();
@@ -24355,13 +24365,13 @@ export function App() {
         pendingRestoreCount={pendingTransferRestoreCount}
         uploadPanel={{
           cancelAllDisabled: !activeTabId,
-          cancelAllLabel: "Cancel all upload tasks",
-          cancelAllTitle: "Cancel all upload tasks in this tab",
+          cancelAllLabel: i18n.transfer.cancelAllUploadsLabel,
+          cancelAllTitle: i18n.transfer.cancelAllUploadsTitle,
           clearFinishedDisabled: !canClearFinishedUploads,
-          emptyLabel: "No upload transfers.",
+          emptyLabel: i18n.transfer.uploadEmpty,
           historyMessage:
             failedUploadHistory.length > 0
-              ? `Stored failed retries for this session: ${failedUploadHistory.length}`
+              ? i18n.transfer.storedFailedRetries(failedUploadHistory.length)
               : null,
           onCancelAll: () => {
             void cancelAllActiveUploads();
@@ -24374,17 +24384,27 @@ export function App() {
           },
           pauseMessage: isActiveUploadQueuePaused
             ? activeUploadPauseReason === "schedule-window"
-              ? `Queue paused: outside the configured transfer window (${sftpTransferScheduleSummary}). Uploads will resume automatically${
+              ? i18n.transfer.schedulePaused(
+                  sftpTransferScheduleSummary,
                   nextSftpTransferWindowOpeningLabel
-                    ? ` at ${nextSftpTransferWindowOpeningLabel}.`
-                    : " when the window opens."
-                }`
-              : "Queue paused: terminal disconnected. Reconnect this tab to resume uploads."
+                )
+              : i18n.transfer.uploadDisconnectedPaused
             : null,
-          progressSummary: `Progress: ${activeUploadProgressStats.completed}/${activeUploadProgressStats.total} completed (failed ${activeUploadProgressStats.failed}, canceled ${activeUploadProgressStats.canceled}, running ${activeUploadProgressStats.running}, queued ${activeUploadProgressStats.queued})`,
+          progressSummary: i18n.transfer.progressSummary(
+            activeUploadProgressStats.completed,
+            activeUploadProgressStats.total,
+            activeUploadProgressStats.failed,
+            activeUploadProgressStats.canceled,
+            activeUploadProgressStats.running,
+            activeUploadProgressStats.queued
+          ),
           retryFailedCount: failedUploadRetryCandidates.length,
           retryFailedDisabled: !canRetryFailedUploads,
-          title: `Uploads (running ${activeUploadQueueStats.running}, queued ${activeUploadQueueStats.queued}, threads ${sftpTransferPreferences.uploadConcurrency})`,
+          title: i18n.transfer.uploadsTitle(
+            activeUploadQueueStats.running,
+            activeUploadQueueStats.queued,
+            sftpTransferPreferences.uploadConcurrency
+          ),
           transfers: activeUploadTransfers.map((transfer) => ({
             canCancel: transfer.status === "queued" || transfer.status === "running",
             direction: "upload" as const,
@@ -24437,6 +24457,7 @@ export function App() {
         hasSnippetJobs={hasOperationCenterSnippetJobs}
         isBulkCancelingTabs={isOperationCenterBulkCanceling}
         isReconnectingTabs={isOperationCenterReconnecting}
+        labels={i18n.operationCenter}
         onCancelActiveDownloads={() => {
           void cancelAllActiveDownloads();
         }}
@@ -24952,12 +24973,15 @@ export function App() {
 
       <SettingsModalShell
         activeSectionId={activeSettingsSection}
+        doneLabel={i18n.settings.done}
         onClose={closeSettingsPanel}
         onSelectSection={(sectionId) => setActiveSettingsSection(sectionId as SettingsSectionId)}
         open={isSettingsOpen}
-        sectionTitle={getSettingsSectionTitle(activeSettingsSection)}
+        sectionTitle={i18n.settings.sections[getSettingsSectionI18nKey(activeSettingsSection)].title}
+        sectionsAriaLabel={i18n.settings.sectionsAriaLabel}
         sections={settingsSections}
-        versionLabel={`Version ${APP_VERSION}`}
+        titleLabel={i18n.settings.title}
+        versionLabel={i18n.settings.version(APP_VERSION)}
       >
                 {activeSettingsSection === "connection" ? (
                   <ConnectionSettingsSection
@@ -24973,6 +24997,8 @@ export function App() {
                     cursorOptions={TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS}
                     editorFocusAutoLayoutEnabled={terminalEditorFocusPreferences.autoLayoutEnabled}
                     fontOptions={TERMINAL_EDITOR_FOCUS_FONT_OPTIONS}
+                    labels={i18n.settings.workspace}
+                    languageOptions={APP_LANGUAGE_OPTIONS}
                     onCursorSelect={(cursorId) =>
                       setTerminalEditorFocusCursorId(cursorId as TerminalEditorFocusCursorId)
                     }
@@ -24995,11 +25021,14 @@ export function App() {
                     onWorkspaceProfileSelect={(profileId) =>
                       setWorkspaceProfileId(profileId as WorkspaceProfileId)
                     }
+                    onLanguageSelect={setAppLanguage}
                     rhythmOptions={TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS}
                     selectedCursorId={terminalEditorFocusPreferences.cursorId}
                     selectedCursorLabel={selectedTerminalEditorFocusCursor.label}
                     selectedFontId={terminalEditorFocusPreferences.fontId}
                     selectedFontLabel={selectedTerminalEditorFocusFont.label}
+                    selectedLanguage={appLanguage}
+                    selectedLanguageLabel={selectedLanguageOption.label}
                     selectedRhythmId={terminalEditorFocusPreferences.rhythmId}
                     selectedRhythmLabel={selectedTerminalEditorFocusRhythm.label}
                     selectedThemeId={terminalEditorFocusPreferences.themeId}

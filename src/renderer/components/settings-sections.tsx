@@ -1,3 +1,9 @@
+import type {
+  AppLanguage,
+  AppLanguageOption,
+  WorkspaceSettingsLabels
+} from "../i18n";
+
 interface ConnectionSettingsSectionProps {
   autoReconnect: boolean;
   reconnectDelaySeconds: number;
@@ -19,6 +25,11 @@ interface EditorFocusOptionView {
 }
 
 interface WorkspaceSettingsSectionProps {
+  labels: WorkspaceSettingsLabels;
+  languageOptions: AppLanguageOption[];
+  selectedLanguage: AppLanguage;
+  selectedLanguageLabel: string;
+  onLanguageSelect: (language: AppLanguage) => void;
   workspaceProfileCards: WorkspaceProfileCardView[];
   selectedWorkspaceProfileId: string;
   onWorkspaceProfileSelect: (profileId: string) => void;
@@ -356,6 +367,11 @@ export function ConnectionSettingsSection({
 }
 
 export function WorkspaceSettingsSection({
+  labels,
+  languageOptions,
+  selectedLanguage,
+  selectedLanguageLabel,
+  onLanguageSelect,
   workspaceProfileCards,
   selectedWorkspaceProfileId,
   onWorkspaceProfileSelect,
@@ -389,11 +405,28 @@ export function WorkspaceSettingsSection({
     <>
       <div className="settings-safety-preset-section">
         <div className="settings-safety-preset-header">
-          <h4 className="settings-group__title">Workspace Profile</h4>
-          <p className="hint">
-            Set an environment-wide risk cue for this app instance. This profile is shown in the UI
-            and can also drive the global Safety pack/template defaults.
-          </p>
+          <h4 className="settings-group__title">{labels.languageTitle}</h4>
+          <p className="hint">{labels.languageDescription}</p>
+        </div>
+        <label>
+          {labels.languageLabel}
+          <select
+            onChange={(event) => onLanguageSelect(event.target.value as AppLanguage)}
+            value={selectedLanguage}
+          >
+            {languageOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="hint">{labels.currentLanguage(selectedLanguageLabel)}</p>
+      </div>
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">{labels.workspaceProfileTitle}</h4>
+          <p className="hint">{labels.workspaceProfileDescription}</p>
         </div>
         <div className="settings-safety-preset-grid">
           {workspaceProfileCards.map((profile) => (
@@ -420,25 +453,19 @@ export function WorkspaceSettingsSection({
           onChange={(event) => onSyncDangerousCommandSafetyChange(event.target.checked)}
           type="checkbox"
         />
-        <span>Sync global Safety pack/template to workspace profile</span>
+        <span>{labels.syncSafetyLabel}</span>
       </label>
       <p className="hint">
-        Current profile: {selectedWorkspaceProfileLabel}
-        {" | "}Safety sync {syncDangerousCommandSafety ? "on" : "off"}
-        {" | "}group overrides still win for matching session groups
+        {labels.currentProfile(
+          selectedWorkspaceProfileLabel,
+          syncDangerousCommandSafety ? labels.syncOn : labels.syncOff
+        )}
       </p>
-      <p className="hint">
-        When sync is enabled, the global Safety environment template and recommended policy pack
-        follow the selected workspace profile. Custom patterns, persistent approvals, and
-        session-group overrides stay untouched.
-      </p>
+      <p className="hint">{labels.syncDescription}</p>
       <div className="settings-safety-preset-section">
         <div className="settings-safety-preset-header">
-          <h4 className="settings-group__title">Terminal Editor Focus</h4>
-          <p className="hint">
-            Automatically tighten the main layout when the active terminal tab enters an
-            alternate-screen editor such as `nano` or `vim`.
-          </p>
+          <h4 className="settings-group__title">{labels.terminalEditorFocusTitle}</h4>
+          <p className="hint">{labels.terminalEditorFocusDescription}</p>
         </div>
       </div>
       <label className="settings-checkbox">
@@ -447,8 +474,12 @@ export function WorkspaceSettingsSection({
           onChange={(event) => onEditorFocusAutoLayoutEnabledChange(event.target.checked)}
           type="checkbox"
         />
-        <span>Auto-focus alternate-screen terminal editors</span>
+        <span>{labels.autoFocusLabel}</span>
       </label>
+      <SectionHeading
+        description={labels.editorThemeDescription}
+        title={labels.editorThemeTitle}
+      />
       <PresetOptionGrid
         activeId={selectedThemeId}
         options={themeOptions}
@@ -459,8 +490,8 @@ export function WorkspaceSettingsSection({
         onSelect={onThemeSelect}
       />
       <SectionHeading
-        description="Adjust editor-mode font size and row height without changing normal shell density."
-        title="Editor Typography"
+        description={labels.editorTypographyDescription}
+        title={labels.editorTypographyTitle}
       />
       <PresetOptionGrid
         activeId={selectedTypographyId}
@@ -472,8 +503,8 @@ export function WorkspaceSettingsSection({
         onSelect={onTypographySelect}
       />
       <SectionHeading
-        description="Swap the editor-mode mono stack without changing the normal terminal font."
-        title="Editor Font"
+        description={labels.editorFontDescription}
+        title={labels.editorFontTitle}
       />
       <PresetOptionGrid
         activeId={selectedFontId}
@@ -486,8 +517,8 @@ export function WorkspaceSettingsSection({
         onSelect={onFontSelect}
       />
       <SectionHeading
-        description="Adjust editor-mode stroke weight and glyph spacing without changing the regular shell."
-        title="Editor Text Rhythm"
+        description={labels.editorRhythmDescription}
+        title={labels.editorRhythmTitle}
       />
       <PresetOptionGrid
         activeId={selectedRhythmId}
@@ -500,8 +531,8 @@ export function WorkspaceSettingsSection({
         onSelect={onRhythmSelect}
       />
       <SectionHeading
-        description="Pick a distinct cursor shape for editor mode without changing the regular shell cursor."
-        title="Editor Cursor"
+        description={labels.editorCursorDescription}
+        title={labels.editorCursorTitle}
       />
       <PresetOptionGrid
         activeId={selectedCursorId}
@@ -514,13 +545,14 @@ export function WorkspaceSettingsSection({
         onSelect={onCursorSelect}
       />
       <p className="hint">
-        Current editor focus mode: {editorFocusAutoLayoutEnabled ? "on" : "off"}
-        {" | "}Theme {selectedThemeLabel}
-        {" | "}Typography {selectedTypographyLabel}
-        {" | "}Font {selectedFontLabel}
-        {" | "}Rhythm {selectedRhythmLabel}
-        {" | "}Cursor {selectedCursorLabel}
-        {" | "}Only affects the active tab and never rewrites terminal editor content
+        {labels.currentEditorFocus(
+          editorFocusAutoLayoutEnabled ? labels.enabled : labels.disabled,
+          selectedThemeLabel,
+          selectedTypographyLabel,
+          selectedFontLabel,
+          selectedRhythmLabel,
+          selectedCursorLabel
+        )}
       </p>
     </>
   );

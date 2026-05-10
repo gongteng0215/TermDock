@@ -15,7 +15,8 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
 - Current branch hardening: recoverable global error routing now also points Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures at their matching settings sections, with Safety sync failures covered by smoke automation
 - Current branch Operation Center follow-up: added a unified activity timeline plus grouped controls for transfer, active-tab, and tools workflows
-- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-31-05-514Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
+- Current branch multilingual baseline: `Settings > Workspace` now has a persisted interface-language selector with English and Simplified Chinese, covering the settings shell, Workspace controls, topbar, transfer dock, and Operation Center
+- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-49-31-764Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`, and latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11

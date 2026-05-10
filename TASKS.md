@@ -54,11 +54,12 @@ Last updated: 2026-05-10
    - SFTP explorer now has persisted `Compact` / `Details` view modes
    - right inspector now supports collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs
    - large renderer UI regions were split into focused modules for settings, workbench modals, command snippets, UI preferences, and separated workbench/terminal CSS
+   - multilingual baseline now exposes persisted English/Simplified Chinese interface selection in `Settings > Workspace`, with Chinese coverage for high-frequency workbench surfaces
    - post-refactor `pnpm run typecheck` passed
    - post-refactor `pnpm run build` passed
    - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
    - post-refactor `pnpm run smoke:ui:packaged` passed with `PASS 45 / FAIL 0 / SKIP 0`
-   - hardening follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-10 with `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T06-31-05-514Z/summary.json`
+   - hardening follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-10 with `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T06-49-31-764Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling

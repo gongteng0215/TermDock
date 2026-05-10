@@ -12,6 +12,9 @@ interface SettingsModalShellProps {
   activeSectionId: string;
   sections: SettingsSectionNavItem[];
   sectionTitle: string;
+  titleLabel: string;
+  sectionsAriaLabel: string;
+  doneLabel: string;
   versionLabel: string;
   onSelectSection: (sectionId: string) => void;
   onClose: () => void;
@@ -23,6 +26,9 @@ export function SettingsModalShell({
   activeSectionId,
   sections,
   sectionTitle,
+  titleLabel,
+  sectionsAriaLabel,
+  doneLabel,
   versionLabel,
   onSelectSection,
   onClose,
@@ -35,20 +41,20 @@ export function SettingsModalShell({
   return (
     <div className="modal-backdrop" role="presentation">
       <div
-        aria-label="Settings"
+        aria-label={titleLabel}
         aria-modal="true"
         className="modal modal--settings"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
         <div className="modal__header">
-          <h3>Settings</h3>
+          <h3>{titleLabel}</h3>
           <button className="icon-button" onClick={onClose} type="button">
             <UiIcon name="close" />
           </button>
         </div>
         <div className="settings-layout">
-          <div aria-label="Settings sections" className="settings-nav" role="tablist">
+          <div aria-label={sectionsAriaLabel} className="settings-nav" role="tablist">
             {sections.map((section) => (
               <button
                 className={
@@ -75,7 +81,7 @@ export function SettingsModalShell({
         </div>
         <div className="modal__actions settings-panel__footer">
           <button className="primary-button" onClick={onClose} type="button">
-            Done
+            {doneLabel}
           </button>
         </div>
       </div>

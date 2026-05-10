@@ -123,7 +123,7 @@ function createMarkdownReport({
   lines.push("- Embedded remote-open-file save-back conflict notification path");
   lines.push("- Unexpected fixture shutdown -> Diagnostics disconnect report capture path");
   lines.push(
-    "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics), including transfer pack save/apply, sync controls, and schedule resume hints"
+    "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics), including interface language, transfer pack save/apply, sync controls, and schedule resume hints"
   );
   lines.push("- Recoverable global error bar routing for invalid hotkey imports and safety bundle sync failures");
   lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
@@ -1683,6 +1683,9 @@ async function main() {
         );
         await page.waitForTimeout(260);
         if (section.label === "Workspace") {
+          const languageSelect = page
+            .locator(".modal--settings label:has-text('Language') select")
+            .first();
           const workspaceSyncToggle = page
             .locator(
               ".modal--settings label.settings-checkbox:has-text('Sync global Safety pack/template to workspace profile')"
@@ -1705,6 +1708,7 @@ async function main() {
           });
 
           if (
+            !(await isVisible(languageSelect)) ||
             !(await isVisible(workspaceSyncToggle)) ||
             !(await isVisible(editorFocusToggle)) ||
             (await editorThemePresets.count()) < 3 ||
@@ -1714,6 +1718,10 @@ async function main() {
             (await editorCursorPresets.count()) < 3
           ) {
             throw new Error("workspace profile sync toggle not visible");
+          }
+          const languageOptions = await languageSelect.locator("option").allTextContents();
+          if (!languageOptions.some((label) => label.includes("简体中文"))) {
+            throw new Error("Simplified Chinese language option not visible");
           }
           if ((await workspacePresets.count()) < 4) {
             throw new Error("workspace profile presets not visible");

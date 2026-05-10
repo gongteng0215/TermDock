@@ -30,7 +30,8 @@ Last updated: 2026-05-10
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
-- Latest hardening validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-31-05-514Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`).
+- Editor workbench branch now adds a lightweight multilingual foundation with persisted English/Simplified Chinese interface language selection, currently covering the settings shell, Workspace controls, topbar, transfer dock, and Operation Center
+- Latest hardening validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-49-31-764Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -81,10 +82,14 @@ Last updated: 2026-05-10
   - command snippet manager and workbench modals moved out of `App.tsx`
   - workbench UI local-storage preferences moved into a small helper module
   - workbench shell and terminal CSS were split out from the root stylesheet
+- Multilingual baseline:
+  - `Settings > Workspace` now exposes a persisted interface-language selector
+  - English remains the default language; Simplified Chinese covers the settings shell, Workspace controls, topbar, transfer dock, and Operation Center
+  - smoke coverage now verifies the Simplified Chinese language option is present
 - Verification so far:
   - hardening follow-up `pnpm run typecheck`: passed
   - hardening follow-up `pnpm run build`: passed
-  - hardening follow-up `pnpm run smoke:ui`: `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T06-31-05-514Z/summary.json`
+  - hardening follow-up `pnpm run smoke:ui`: `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T06-49-31-764Z/summary.json`
   - full UI refresh smoke artifact: `PASS 45 / FAIL 0 / SKIP 0`
   - post-refactor `pnpm run typecheck`: passed
   - post-refactor `pnpm run build`: passed

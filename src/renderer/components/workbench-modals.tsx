@@ -1,3 +1,4 @@
+import type { OperationCenterLabels } from "../i18n";
 import { UiIcon } from "./ui-icon";
 
 type TransferHistoryScope = "activeSession" | "allSessions";
@@ -58,6 +59,7 @@ interface OperationCenterTimelineItemView {
 
 interface OperationCenterModalProps {
   open: boolean;
+  labels: OperationCenterLabels;
   onClose: () => void;
   uploadSummary: OperationCenterQueueSummaryView;
   downloadSummary: OperationCenterQueueSummaryView;
@@ -284,6 +286,7 @@ interface RetryCenterModalProps {
 
 export function OperationCenterModal({
   open,
+  labels,
   onClose,
   uploadSummary,
   downloadSummary,
@@ -331,25 +334,23 @@ export function OperationCenterModal({
   return (
     <div className="modal-backdrop" role="presentation">
       <div
-        aria-label="Operation Center"
+        aria-label={labels.title}
         aria-modal="true"
         className="modal modal--operation-center"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
         <div className="modal__header">
-          <h3>Operation Center</h3>
+          <h3>{labels.title}</h3>
           <button className="icon-button" onClick={onClose} type="button">
             <UiIcon name="close" />
           </button>
         </div>
-        <p className="hint">
-          Consolidated view for long-running operations across open workspace tabs.
-        </p>
+        <p className="hint">{labels.description}</p>
         <div className="operation-center__grid">
           <article className="operation-center__card operation-center__card--wide">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">Grouped Controls</p>
+              <p className="operation-center__title">{labels.groupedControls}</p>
               <span
                 className={
                   hasActivity || canRetryAllFailedTransfers
@@ -357,14 +358,14 @@ export function OperationCenterModal({
                     : "operation-center__state is-idle"
                 }
               >
-                {hasActivity || canRetryAllFailedTransfers ? "Ready" : "Idle"}
+                {hasActivity || canRetryAllFailedTransfers ? labels.ready : labels.idle}
               </span>
             </div>
             <div className="operation-center__control-groups">
               <section className="operation-center__control-group">
-                <p className="operation-center__control-title">Transfers</p>
+                <p className="operation-center__control-title">{labels.transfers}</p>
                 <p className="operation-center__meta">
-                  active tabs {transferTabSummaries.length} | retry candidates {failedRetryCandidateTotal}
+                  {labels.transfersMeta(transferTabSummaries.length, failedRetryCandidateTotal)}
                 </p>
                 <div className="operation-center__actions">
                   <button
@@ -373,7 +374,7 @@ export function OperationCenterModal({
                     onClick={onRetryAllFailedTransfers}
                     type="button"
                   >
-                    Retry All Failed
+                    {labels.retryAllFailed}
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -381,7 +382,7 @@ export function OperationCenterModal({
                     onClick={onCancelAllTransfersAcrossTabs}
                     type="button"
                   >
-                    {isBulkCancelingTabs ? "Canceling..." : "Cancel All Active"}
+                    {isBulkCancelingTabs ? labels.canceling : labels.cancelAllActive}
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -389,14 +390,14 @@ export function OperationCenterModal({
                     onClick={onReconnectDisconnectedTabs}
                     type="button"
                   >
-                    {isReconnectingTabs ? "Reconnecting..." : "Reconnect Disconnected"}
+                    {isReconnectingTabs ? labels.reconnecting : labels.reconnectDisconnected}
                   </button>
                 </div>
               </section>
               <section className="operation-center__control-group">
-                <p className="operation-center__control-title">Active Tab</p>
+                <p className="operation-center__control-title">{labels.activeTab}</p>
                 <p className="operation-center__meta">
-                  uploads failed {uploadSummary.failed} | downloads failed {downloadSummary.failed}
+                  {labels.activeTabMeta(uploadSummary.failed, downloadSummary.failed)}
                 </p>
                 <div className="operation-center__actions">
                   <button
@@ -405,7 +406,7 @@ export function OperationCenterModal({
                     onClick={onCancelActiveUploads}
                     type="button"
                   >
-                    Cancel Uploads
+                    {labels.cancelUploads}
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -413,7 +414,7 @@ export function OperationCenterModal({
                     onClick={onCancelActiveDownloads}
                     type="button"
                   >
-                    Cancel Downloads
+                    {labels.cancelDownloads}
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -421,7 +422,7 @@ export function OperationCenterModal({
                     onClick={onRetryActiveUploads}
                     type="button"
                   >
-                    Retry Uploads
+                    {labels.retryUploads}
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -429,14 +430,14 @@ export function OperationCenterModal({
                     onClick={onRetryActiveDownloads}
                     type="button"
                   >
-                    Retry Downloads
+                    {labels.retryDownloads}
                   </button>
                 </div>
               </section>
               <section className="operation-center__control-group">
-                <p className="operation-center__control-title">Tools</p>
+                <p className="operation-center__control-title">{labels.tools}</p>
                 <p className="operation-center__meta">
-                  port forwards {portForwardSummary.total} | app jobs {recentAppJobs.length}
+                  {labels.toolsMeta(portForwardSummary.total, recentAppJobs.length)}
                 </p>
                 <div className="operation-center__actions">
                   <button
@@ -444,14 +445,14 @@ export function OperationCenterModal({
                     onClick={onOpenPortForward}
                     type="button"
                   >
-                    Port Fwd
+                    {labels.portFwd}
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
                     onClick={onOpenDiagnostics}
                     type="button"
                   >
-                    Diagnostics
+                    {labels.diagnostics}
                   </button>
                   <button
                     className="secondary-button secondary-button--small"
@@ -459,7 +460,7 @@ export function OperationCenterModal({
                     onClick={onClearFinishedAppJobs}
                     type="button"
                   >
-                    Clear Jobs
+                    {labels.clearJobs}
                   </button>
                 </div>
               </section>
@@ -468,7 +469,7 @@ export function OperationCenterModal({
 
           <article className="operation-center__card">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">Upload Queue</p>
+              <p className="operation-center__title">{labels.uploadQueue}</p>
               <span
                 className={
                   uploadSummary.running + uploadSummary.queued > 0
@@ -476,16 +477,19 @@ export function OperationCenterModal({
                     : "operation-center__state is-idle"
                 }
               >
-                {uploadSummary.running + uploadSummary.queued > 0 ? "Active" : "Idle"}
+                {uploadSummary.running + uploadSummary.queued > 0 ? labels.active : labels.idle}
               </span>
             </div>
             <p className="operation-center__meta">
-              tabs {uploadSummary.activeTabCount} | running {uploadSummary.running} | queued{" "}
-              {uploadSummary.queued}
+              {labels.queueMeta(uploadSummary.activeTabCount, uploadSummary.running, uploadSummary.queued)}
             </p>
             <p className="operation-center__meta">
-              progress {uploadSummary.completed}/{uploadSummary.total} | failed {uploadSummary.failed} |
-              canceled {uploadSummary.canceled}
+              {labels.progressMeta(
+                uploadSummary.completed,
+                uploadSummary.total,
+                uploadSummary.failed,
+                uploadSummary.canceled
+              )}
             </p>
             <div className="operation-center__actions">
               <button
@@ -494,7 +498,7 @@ export function OperationCenterModal({
                 onClick={onCancelActiveUploads}
                 type="button"
               >
-                Cancel Active Tab
+                {labels.cancelActiveTab}
               </button>
               <button
                 className="secondary-button secondary-button--small"
@@ -502,14 +506,14 @@ export function OperationCenterModal({
                 onClick={onRetryActiveUploads}
                 type="button"
               >
-                Retry Active Tab
+                {labels.retryActiveTab}
               </button>
             </div>
           </article>
 
           <article className="operation-center__card">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">Download Queue</p>
+              <p className="operation-center__title">{labels.downloadQueue}</p>
               <span
                 className={
                   downloadSummary.running + downloadSummary.queued > 0
@@ -517,16 +521,23 @@ export function OperationCenterModal({
                     : "operation-center__state is-idle"
                 }
               >
-                {downloadSummary.running + downloadSummary.queued > 0 ? "Active" : "Idle"}
+                {downloadSummary.running + downloadSummary.queued > 0 ? labels.active : labels.idle}
               </span>
             </div>
             <p className="operation-center__meta">
-              tabs {downloadSummary.activeTabCount} | running {downloadSummary.running} | queued{" "}
-              {downloadSummary.queued}
+              {labels.queueMeta(
+                downloadSummary.activeTabCount,
+                downloadSummary.running,
+                downloadSummary.queued
+              )}
             </p>
             <p className="operation-center__meta">
-              progress {downloadSummary.completed}/{downloadSummary.total} | failed {downloadSummary.failed} |
-              canceled {downloadSummary.canceled}
+              {labels.progressMeta(
+                downloadSummary.completed,
+                downloadSummary.total,
+                downloadSummary.failed,
+                downloadSummary.canceled
+              )}
             </p>
             <div className="operation-center__actions">
               <button
@@ -535,7 +546,7 @@ export function OperationCenterModal({
                 onClick={onCancelActiveDownloads}
                 type="button"
               >
-                Cancel Active Tab
+                {labels.cancelActiveTab}
               </button>
               <button
                 className="secondary-button secondary-button--small"
@@ -543,14 +554,14 @@ export function OperationCenterModal({
                 onClick={onRetryActiveDownloads}
                 type="button"
               >
-                Retry Active Tab
+                {labels.retryActiveTab}
               </button>
             </div>
           </article>
 
           <article className="operation-center__card">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">Remote Delete</p>
+              <p className="operation-center__title">{labels.remoteDelete}</p>
               <span
                 className={
                   deleteProgressLabel
@@ -558,7 +569,7 @@ export function OperationCenterModal({
                     : "operation-center__state is-idle"
                 }
               >
-                {deleteProgressLabel ? "Running" : "Idle"}
+                {deleteProgressLabel ? labels.running : labels.idle}
               </span>
             </div>
             {deleteProgressLabel ? (
@@ -566,16 +577,16 @@ export function OperationCenterModal({
                 {deleteProgressLabel}
               </p>
             ) : (
-              <p className="operation-center__meta">No active delete operation.</p>
+              <p className="operation-center__meta">{labels.noActiveDelete}</p>
             )}
             <p className="operation-center__meta operation-center__meta--muted">
-              Delete cancellation is not available yet in current backend flow.
+              {labels.deleteCancellationUnavailable}
             </p>
           </article>
 
           <article className="operation-center__card">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">Port Forwarding Ops</p>
+              <p className="operation-center__title">{labels.portForwardingOps}</p>
               <span
                 className={
                   portForwardBusy
@@ -583,15 +594,18 @@ export function OperationCenterModal({
                     : "operation-center__state is-idle"
                 }
               >
-                {portForwardBusy ? "Working" : "Idle"}
+                {portForwardBusy ? labels.working : labels.idle}
               </span>
             </div>
             <p className="operation-center__meta">
-              tabs {portForwardSummary.activeTabCount} | active forwards {portForwardSummary.total} |
-              degraded {portForwardSummary.degraded}
+              {labels.portForwardMeta(
+                portForwardSummary.activeTabCount,
+                portForwardSummary.total,
+                portForwardSummary.degraded
+              )}
             </p>
             <p className="operation-center__meta">
-              active tab status: {portForwardSummary.activeTabStatus?.trim() || "No recent status message."}
+              {labels.activeTabStatus(portForwardSummary.activeTabStatus?.trim() || labels.noRecentStatus)}
             </p>
             <div className="operation-center__actions">
               <button
@@ -599,21 +613,21 @@ export function OperationCenterModal({
                 onClick={onOpenPortForward}
                 type="button"
               >
-                Open Port Fwd
+                {labels.openPortFwd}
               </button>
               <button
                 className="secondary-button secondary-button--small"
                 onClick={onOpenDiagnostics}
                 type="button"
               >
-                Open Diagnostics
+                {labels.openDiagnostics}
               </button>
             </div>
           </article>
 
           <article className="operation-center__card operation-center__card--wide">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">Activity Timeline</p>
+              <p className="operation-center__title">{labels.activityTimeline}</p>
               <span
                 className={
                   timelineItems.length > 0
@@ -621,7 +635,7 @@ export function OperationCenterModal({
                     : "operation-center__state is-idle"
                 }
               >
-                {timelineItems.length > 0 ? `${timelineItems.length} item(s)` : "Idle"}
+                {timelineItems.length > 0 ? labels.itemCount(timelineItems.length) : labels.idle}
               </span>
             </div>
             {timelineItems.length > 0 ? (
@@ -641,14 +655,14 @@ export function OperationCenterModal({
               </ul>
             ) : (
               <p className="operation-center__meta">
-                No transfer, port-forward, delete, or tracked app-job activity yet.
+                {labels.noActivityTimeline}
               </p>
             )}
           </article>
 
           <article className="operation-center__card operation-center__card--wide">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">Tracked App Jobs</p>
+              <p className="operation-center__title">{labels.trackedAppJobs}</p>
               <span
                 className={
                   runningAppJobCount > 0
@@ -658,11 +672,7 @@ export function OperationCenterModal({
                       : "operation-center__state is-idle"
                 }
               >
-                {runningAppJobCount > 0
-                  ? `${runningAppJobCount} running`
-                  : recentAppJobs.length > 0
-                    ? `${recentAppJobs.length} recent`
-                    : "Idle"}
+                {labels.appJobState(runningAppJobCount, recentAppJobs.length)}
               </span>
             </div>
             {recentAppJobs.length > 0 ? (
@@ -672,12 +682,12 @@ export function OperationCenterModal({
                     <div className="operation-center__tab-main">
                       <p className="operation-center__tab-title">{job.title}</p>
                       <p className="operation-center__meta">
-                        {job.categoryLabel} | started {job.startedAtLabel} | duration {job.durationLabel}
+                        {labels.appJobMeta(job.categoryLabel, job.startedAtLabel, job.durationLabel)}
                       </p>
                       <p className="operation-center__meta operation-center__meta--wrap">{job.detail}</p>
                       {job.outputPath ? (
                         <p className="operation-center__meta operation-center__meta--wrap">
-                          output: {job.outputPath}
+                          {labels.outputPath(job.outputPath)}
                         </p>
                       ) : null}
                     </div>
@@ -689,7 +699,7 @@ export function OperationCenterModal({
                           onClick={() => onCopyAppJobOutputPath(job.id)}
                           type="button"
                         >
-                          Copy Path
+                          {labels.copyPath}
                         </button>
                       ) : null}
                     </div>
@@ -697,7 +707,7 @@ export function OperationCenterModal({
                 ))}
               </ul>
             ) : (
-              <p className="operation-center__meta">No tracked session/snippet/diagnostics jobs yet.</p>
+              <p className="operation-center__meta">{labels.noTrackedAppJobs}</p>
             )}
             <div className="operation-center__actions">
               <button
@@ -706,7 +716,7 @@ export function OperationCenterModal({
                 onClick={onClearFinishedAppJobs}
                 type="button"
               >
-                Clear Finished
+                {labels.clearFinished}
               </button>
               <button
                 className="secondary-button secondary-button--small"
@@ -714,7 +724,7 @@ export function OperationCenterModal({
                 onClick={onOpenSnippets}
                 type="button"
               >
-                Open Snippets
+                {labels.openSnippets}
               </button>
               <button
                 className="secondary-button secondary-button--small"
@@ -722,14 +732,14 @@ export function OperationCenterModal({
                 onClick={onOpenDiagnosticsJobs}
                 type="button"
               >
-                Open Diagnostics
+                {labels.openDiagnostics}
               </button>
             </div>
           </article>
 
           <article className="operation-center__card operation-center__card--wide">
             <div className="operation-center__card-header">
-              <p className="operation-center__title">All Tabs Transfer Activity</p>
+              <p className="operation-center__title">{labels.allTabsTransferActivity}</p>
               <span
                 className={
                   transferTabSummaries.length > 0
@@ -737,7 +747,7 @@ export function OperationCenterModal({
                     : "operation-center__state is-idle"
                 }
               >
-                {transferTabSummaries.length > 0 ? `${transferTabSummaries.length} tab(s)` : "Idle"}
+                {transferTabSummaries.length > 0 ? labels.tabCount(transferTabSummaries.length) : labels.idle}
               </span>
             </div>
             {transferTabSummaries.length > 0 ? (
@@ -747,8 +757,13 @@ export function OperationCenterModal({
                     <div className="operation-center__tab-main">
                       <p className="operation-center__tab-title">{summary.title}</p>
                       <p className="operation-center__meta">
-                        U(r{summary.uploadRunning}/q{summary.uploadQueued}) | D(r
-                        {summary.downloadRunning}/q{summary.downloadQueued}) | total {summary.totalActive}
+                        {labels.transferTabMeta(
+                          summary.uploadRunning,
+                          summary.uploadQueued,
+                          summary.downloadRunning,
+                          summary.downloadQueued,
+                          summary.totalActive
+                        )}
                       </p>
                     </div>
                     <div className="operation-center__tab-actions">
@@ -759,14 +774,14 @@ export function OperationCenterModal({
                             : "operation-center__state is-idle"
                         }
                       >
-                        {summary.connected ? "Connected" : "Disconnected"}
+                        {summary.connected ? labels.connected : labels.disconnected}
                       </span>
                       <button
                         className="secondary-button secondary-button--small"
                         onClick={() => onFocusTab(summary.tabId)}
                         type="button"
                       >
-                        Focus Tab
+                        {labels.focusTab}
                       </button>
                       <button
                         className="secondary-button secondary-button--small"
@@ -774,7 +789,7 @@ export function OperationCenterModal({
                         onClick={() => onReconnectTab(summary.tabId)}
                         type="button"
                       >
-                        Reconnect Tab
+                        {labels.reconnectTab}
                       </button>
                       <button
                         className="secondary-button secondary-button--small"
@@ -782,14 +797,14 @@ export function OperationCenterModal({
                         onClick={() => onCancelTabTasks(summary.tabId)}
                         type="button"
                       >
-                        Cancel Tab Tasks
+                        {labels.cancelTabTasks}
                       </button>
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="operation-center__meta">No queued/running transfer activity across tabs.</p>
+              <p className="operation-center__meta">{labels.noTransferActivity}</p>
             )}
             <div className="operation-center__actions">
               <button
@@ -801,7 +816,7 @@ export function OperationCenterModal({
                 onClick={onReconnectDisconnectedTabs}
                 type="button"
               >
-                {isReconnectingTabs ? "Reconnecting..." : "Reconnect Disconnected Tabs"}
+                {isReconnectingTabs ? labels.reconnecting : labels.reconnectDisconnectedTabs}
               </button>
               <button
                 className="secondary-button secondary-button--small"
@@ -809,14 +824,14 @@ export function OperationCenterModal({
                 onClick={onCancelAllTransfersAcrossTabs}
                 type="button"
               >
-                {isBulkCancelingTabs ? "Canceling..." : "Cancel All Transfers (All Tabs)"}
+                {isBulkCancelingTabs ? labels.canceling : labels.cancelAllTransfersAllTabs}
               </button>
             </div>
           </article>
         </div>
         {!hasActivity ? (
           <p className="hint operation-center__idle-note">
-            No high-latency operation is active right now. Queues and long jobs are idle.
+            {labels.noHighLatencyActivity}
           </p>
         ) : null}
         <div className="modal__actions">
@@ -824,13 +839,13 @@ export function OperationCenterModal({
             className="secondary-button"
             disabled={!canRetryAllFailedTransfers}
             onClick={onRetryAllFailedTransfers}
-            title="Retry all failed upload/download candidates with retry-scope strategy"
+            title={labels.retryAllFailedTitle}
             type="button"
           >
-            Retry All Failed ({failedRetryCandidateTotal})
+            {labels.retryAllFailedWithCount(failedRetryCandidateTotal)}
           </button>
           <button className="primary-button" onClick={onClose} type="button">
-            Done
+            {labels.done}
           </button>
         </div>
       </div>

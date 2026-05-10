@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 
+import type { TransferDockLabels, WorkbenchTopbarLabels } from "../i18n";
 import { UiIcon } from "./ui-icon";
 
 interface WorkbenchTopbarProps {
   isMacPlatform: boolean;
   autoReconnectLabel: string;
+  labels: WorkbenchTopbarLabels;
   workspaceProfile: {
     id: string;
     shortLabel: string;
@@ -46,6 +48,7 @@ interface TransferDockPanelView {
 
 interface TransferDockProps {
   bindingLabel: string;
+  labels: TransferDockLabels;
   notice: TransferDockNoticeView | null;
   pendingRestoreCount: number;
   onRestorePending: () => void;
@@ -97,6 +100,7 @@ interface WorkbenchLayoutProps {
 export function WorkbenchTopbar({
   isMacPlatform,
   autoReconnectLabel,
+  labels,
   workspaceProfile
 }: WorkbenchTopbarProps) {
   if (!isMacPlatform) {
@@ -107,7 +111,7 @@ export function WorkbenchTopbar({
     <header className="topbar">
       <div className="topbar__brand">
         <strong>TermDock</strong>
-        <span>SSH + SFTP Workbench</span>
+        <span>{labels.subtitle}</span>
       </div>
       <div className="topbar__meta">
         <span className="topbar__meta-dot" />
@@ -139,6 +143,7 @@ export function WorkbenchLayout({
 
 export function TransferDock({
   bindingLabel,
+  labels,
   notice,
   pendingRestoreCount,
   onRestorePending,
@@ -156,7 +161,7 @@ export function TransferDock({
   return (
     <section className="transfer-dock">
       <div className="transfer-dock__heading">
-        <h3>Transfers</h3>
+        <h3>{labels.title}</h3>
         <div className="transfer-dock__heading-actions">
           <div className="transfer-dock__heading-meta">
             <span className="hint transfer-dock__binding">{bindingLabel}</span>
@@ -176,7 +181,7 @@ export function TransferDock({
             onClick={onRestorePending}
             type="button"
           >
-            Restore Pending <span className="transfer-dock__count">({pendingRestoreCount})</span>
+            {labels.restorePending} <span className="transfer-dock__count">({pendingRestoreCount})</span>
           </button>
           <button
             className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
@@ -184,23 +189,23 @@ export function TransferDock({
             onClick={onDiscardPending}
             type="button"
           >
-            Discard Pending
+            {labels.discardPending}
           </button>
           <button
             className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
             disabled={!canRetryAllFailed}
             onClick={onRetryAllFailed}
-            title="Retry all failed upload/download candidates with retry-scope strategy"
+            title={labels.retryAllFailedTitle}
             type="button"
           >
-            Retry All Failed <span className="transfer-dock__count">({failedRetryCandidateTotal})</span>
+            {labels.retryAllFailed} <span className="transfer-dock__count">({failedRetryCandidateTotal})</span>
           </button>
           <button
             className="secondary-button sftp-transfer-panel__clear transfer-dock__action-button"
             onClick={onOpenRetryCenter}
             type="button"
           >
-            Retry Center
+            {labels.retryCenter}
           </button>
           <button
             className={
@@ -211,19 +216,25 @@ export function TransferDock({
             onClick={onOpenOperationCenter}
             type="button"
           >
-            Operation Center <span className="transfer-dock__count">({operationCenterActiveCount})</span>
+            {labels.operationCenter} <span className="transfer-dock__count">({operationCenterActiveCount})</span>
           </button>
         </div>
       </div>
       <div className="transfer-dock__grid">
-        <TransferDockPanel panel={uploadPanel} />
-        <TransferDockPanel panel={downloadPanel} />
+        <TransferDockPanel labels={labels} panel={uploadPanel} />
+        <TransferDockPanel labels={labels} panel={downloadPanel} />
       </div>
     </section>
   );
 }
 
-function TransferDockPanel({ panel }: { panel: TransferDockPanelView }) {
+function TransferDockPanel({
+  labels,
+  panel
+}: {
+  labels: TransferDockLabels;
+  panel: TransferDockPanelView;
+}) {
   return (
     <section className="transfer-dock__panel">
       <div className="sftp-transfer-panel__header">
@@ -235,7 +246,7 @@ function TransferDockPanel({ panel }: { panel: TransferDockPanelView }) {
             onClick={panel.onRetryFailed}
             type="button"
           >
-            Retry Failed ({panel.retryFailedCount})
+            {labels.retryFailed} ({panel.retryFailedCount})
           </button>
           <button
             className="secondary-button sftp-transfer-panel__clear"
@@ -243,7 +254,7 @@ function TransferDockPanel({ panel }: { panel: TransferDockPanelView }) {
             onClick={panel.onClearFinished}
             type="button"
           >
-            Clear Finished
+            {labels.clearFinished}
           </button>
           <button
             aria-label={panel.cancelAllLabel}
@@ -275,10 +286,10 @@ function TransferDockPanel({ panel }: { panel: TransferDockPanelView }) {
               <span className="sftp-transfer__progress">{transfer.progressLabel}</span>
               {transfer.canCancel ? (
                 <button
-                  aria-label={`Cancel ${transfer.direction}`}
+                  aria-label={labels.cancelTransfer(transfer.direction)}
                   className="icon-button sftp-transfer__cancel"
                   onClick={transfer.onCancel}
-                  title={`Cancel ${transfer.direction}`}
+                  title={labels.cancelTransfer(transfer.direction)}
                   type="button"
                 >
                   <UiIcon name="close" />
