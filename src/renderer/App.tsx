@@ -10249,7 +10249,7 @@ export function App() {
   const canExportRetryCenterAnalytics = transferHistory.length > 0;
   const retryCenterSelectedFailureReasonLabel =
     retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL
-      ? "All"
+      ? i18n.retryCenter.all
       : retryCenterResolvedFailureReasonFilter;
   const retryCenterFailureReasonExportValue =
     retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL
@@ -10257,10 +10257,10 @@ export function App() {
       : retryCenterResolvedFailureReasonFilter;
   const retryCenterLastRetryScopeLabel =
     retryCenterLastRetryScope === "upload"
-      ? "Upload Only"
+      ? i18n.retryCenter.uploadOnly
       : retryCenterLastRetryScope === "download"
-        ? "Download Only"
-        : "All Retryable";
+        ? i18n.retryCenter.downloadOnly
+        : i18n.retryCenter.allRetryable;
   const hasCustomizedRetryCenterView =
     retryCenterScope !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.scope ||
     retryCenterDirection !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.direction ||
@@ -24544,6 +24544,7 @@ export function App() {
         isGroupedView={isRetryCenterGroupedView}
         lastRetryScope={retryCenterLastRetryScope}
         lastRetryScopeLabel={retryCenterLastRetryScopeLabel}
+        labels={i18n.retryCenter}
         listMode={retryCenterListMode}
         maxRetryBatchConfirmThreshold={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
         minRetryBatchConfirmThreshold={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}

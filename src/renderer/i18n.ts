@@ -184,6 +184,117 @@ export interface OperationCenterLabels {
   done: string;
 }
 
+export interface RetryCenterSummaryLabelsInput {
+  entryCount: number;
+  totalHistoryCount: number;
+  selectedCount: number;
+  selectedFailedCount: number;
+  visibleFailedCount: number;
+  failedUploadCandidateCount: number;
+  failedDownloadCandidateCount: number;
+  selectedFailureReasonLabel: string;
+  lastRetryScopeLabel: string;
+  autoUseLastRetryScope: boolean;
+  retryBatchConfirmThreshold: number;
+  isGroupedView: boolean;
+  groupCount: number;
+  collapsedGroupCount: number;
+}
+
+export interface RetryCenterLabels {
+  title: string;
+  description: string;
+  scope: string;
+  activeSession: string;
+  allSessions: string;
+  direction: string;
+  all: string;
+  upload: string;
+  download: string;
+  status: string;
+  failed: string;
+  completed: string;
+  canceled: string;
+  queued: string;
+  running: string;
+  timeRange: string;
+  last5m: string;
+  last30m: string;
+  last1h: string;
+  last24h: string;
+  view: string;
+  flatList: string;
+  groupedByFailure: string;
+  failureReason: string;
+  allFailureReasons: (count: number) => string;
+  defaultRetryScope: string;
+  allRetryable: string;
+  uploadOnly: string;
+  downloadOnly: string;
+  retryConfirmThreshold: string;
+  largeBatchHint: string;
+  search: string;
+  searchPlaceholder: string;
+  resetFilters: string;
+  autoRetryScopeOn: string;
+  autoRetryScopeOff: string;
+  autoRetryScopeTitle: string;
+  summary: (input: RetryCenterSummaryLabelsInput) => string;
+  failureRatio: string;
+  failedRatio: (failedCount: number, totalCount: number) => string;
+  directionBreakdown: string;
+  statusBreakdown: (completed: number, failed: number, canceled: number) => string;
+  topSessionsGroups: string;
+  noVisibleRecords: string;
+  noGroupData: string;
+  topFailureReasons: string;
+  noFailedRecords: string;
+  filterByFailureReasonTitle: (reason: string) => string;
+  retryFailureReasonTitle: (reason: string) => string;
+  deleteFailureReasonTitle: (reason: string) => string;
+  retryWithCount: (count: number) => string;
+  deleteWithCount: (count: number) => string;
+  failureReasonHelp: string;
+  expandAllGroups: string;
+  collapseAllGroups: string;
+  expandGroup: string;
+  collapseGroup: string;
+  expand: string;
+  collapse: string;
+  groupMeta: (total: number, failedCount: number, retryableCount: number) => string;
+  selectWithCount: (count: number) => string;
+  retryFailedWithCount: (count: number) => string;
+  retryGroupFailedTitle: string;
+  deleteCount: (count: number) => string;
+  exportJson: string;
+  exportCsv: string;
+  noHistoryMatches: string;
+  selectVisible: string;
+  clearSelection: string;
+  exportVisibleJson: string;
+  exportVisibleCsv: string;
+  exportAnalyticsJson: string;
+  exportAnalyticsCsv: string;
+  retryFailedUploads: (count: number) => string;
+  retryFailedDownloads: (count: number) => string;
+  retryAllFailed: (count: number) => string;
+  retryVisibleFailed: string;
+  retrySelectedFailed: string;
+  deleteSelected: string;
+  deleteVisible: string;
+  deleteAll: string;
+  retryFailedUploadsTitle: string;
+  retryFailedDownloadsTitle: string;
+  retryAllFailedTitle: string;
+  retryVisibleFailedTitle: string;
+  retrySelectedFailedTitle: string;
+  done: string;
+  entryAttempts: (count: number) => string;
+  entryMeta: (timestampLabel: string, directionLabel: string, attemptCount: number, message?: string) => string;
+  directionLabel: (direction: TransferDirectionLabel) => string;
+  statusLabel: (status: string) => string;
+}
+
 export interface WorkbenchTopbarLabels {
   subtitle: string;
   autoReconnect: (delaySeconds: number) => string;
@@ -195,6 +306,7 @@ export interface AppI18n {
   settings: SettingsModalLabels;
   transfer: TransferDockLabels;
   operationCenter: OperationCenterLabels;
+  retryCenter: RetryCenterLabels;
 }
 
 export const APP_LANGUAGE_OPTIONS: AppLanguageOption[] = [
@@ -448,6 +560,127 @@ const ENGLISH_I18N: AppI18n = {
       "No high-latency operation is active right now. Queues and long jobs are idle.",
     noTrackedAppJobs: "No tracked session/snippet/diagnostics jobs yet.",
     done: "Done"
+  },
+  retryCenter: {
+    title: "Transfer Retry Center",
+    description:
+      "Persistent transfer history across restarts. Retry works for failed entries bound to the active session tab.",
+    scope: "Scope",
+    activeSession: "Active Session",
+    allSessions: "All Sessions",
+    direction: "Direction",
+    all: "All",
+    upload: "Upload",
+    download: "Download",
+    status: "Status",
+    failed: "Failed",
+    completed: "Completed",
+    canceled: "Canceled",
+    queued: "Queued",
+    running: "Running",
+    timeRange: "Time Range",
+    last5m: "Last 5m",
+    last30m: "Last 30m",
+    last1h: "Last 1h",
+    last24h: "Last 24h",
+    view: "View",
+    flatList: "Flat List",
+    groupedByFailure: "Grouped by Failure",
+    failureReason: "Failure Reason",
+    allFailureReasons: (count) => `All (${count})`,
+    defaultRetryScope: "Default Retry Scope",
+    allRetryable: "All Retryable",
+    uploadOnly: "Upload Only",
+    downloadOnly: "Download Only",
+    retryConfirmThreshold: "Retry Confirm Threshold",
+    largeBatchHint: "Set 0 to disable large-batch retry confirmations.",
+    search: "Search",
+    searchPlaceholder: "name/local/remote/message",
+    resetFilters: "Reset Filters",
+    autoRetryScopeOn: "Auto Retry Scope: On",
+    autoRetryScopeOff: "Auto Retry Scope: Off",
+    autoRetryScopeTitle: "Automatically use last retry scope and skip retry-scope chooser",
+    summary: ({
+      entryCount,
+      totalHistoryCount,
+      selectedCount,
+      selectedFailedCount,
+      visibleFailedCount,
+      failedUploadCandidateCount,
+      failedDownloadCandidateCount,
+      selectedFailureReasonLabel,
+      lastRetryScopeLabel,
+      autoUseLastRetryScope,
+      retryBatchConfirmThreshold,
+      isGroupedView,
+      groupCount,
+      collapsedGroupCount
+    }) =>
+      `Visible ${entryCount} / Total ${totalHistoryCount}, Selected ${selectedCount}, Selected failed (active session) ${selectedFailedCount}, Visible failed (active session) ${visibleFailedCount}, Dock failed candidates U ${failedUploadCandidateCount} / D ${failedDownloadCandidateCount}, Failure reason ${selectedFailureReasonLabel}, Default scope ${lastRetryScopeLabel}${
+        autoUseLastRetryScope ? " (auto)" : ""
+      }, Large retry confirm ${
+        retryBatchConfirmThreshold <= 0 ? "off" : `>=${retryBatchConfirmThreshold}`
+      }${isGroupedView ? `, Groups ${groupCount}, Collapsed ${collapsedGroupCount}` : ""}`,
+    failureRatio: "Failure Ratio",
+    failedRatio: (failedCount, totalCount) => `Failed ${failedCount}/${totalCount}`,
+    directionBreakdown: "Direction Breakdown",
+    statusBreakdown: (completed, failed, canceled) =>
+      `completed ${completed} | failed ${failed} | canceled ${canceled}`,
+    topSessionsGroups: "Top Sessions / Groups",
+    noVisibleRecords: "No visible records",
+    noGroupData: "No group data",
+    topFailureReasons: "Top Failure Reasons",
+    noFailedRecords: "No failed records",
+    filterByFailureReasonTitle: (reason) => `Filter by failure reason "${reason}"`,
+    retryFailureReasonTitle: (reason) =>
+      `Retry "${reason}" failed transfers in active session with scope strategy`,
+    deleteFailureReasonTitle: (reason) =>
+      `Delete visible failed history records with reason "${reason}"`,
+    retryWithCount: (count) => `Retry (${count})`,
+    deleteWithCount: (count) => `Delete (${count})`,
+    failureReasonHelp:
+      "Visible failed history only. Quick retry targets active-session entries and follows retry-scope strategy (chooser or auto last scope); delete removes visible failed history by reason.",
+    expandAllGroups: "Expand All Groups",
+    collapseAllGroups: "Collapse All Groups",
+    expandGroup: "Expand group",
+    collapseGroup: "Collapse group",
+    expand: "Expand",
+    collapse: "Collapse",
+    groupMeta: (total, failedCount, retryableCount) =>
+      `${total} item(s), failed ${failedCount}, retryable ${retryableCount}`,
+    selectWithCount: (count) => `Select (${count})`,
+    retryFailedWithCount: (count) => `Retry Failed (${count})`,
+    retryGroupFailedTitle: "Retry failed active-session records in this group (scope selectable)",
+    deleteCount: (count) => `Delete (${count})`,
+    exportJson: "Export JSON",
+    exportCsv: "Export CSV",
+    noHistoryMatches: "No transfer history records match the current filters.",
+    selectVisible: "Select Visible",
+    clearSelection: "Clear Selection",
+    exportVisibleJson: "Export Visible JSON",
+    exportVisibleCsv: "Export Visible CSV",
+    exportAnalyticsJson: "Export Analytics JSON",
+    exportAnalyticsCsv: "Export Analytics CSV",
+    retryFailedUploads: (count) => `Retry Failed Uploads (${count})`,
+    retryFailedDownloads: (count) => `Retry Failed Downloads (${count})`,
+    retryAllFailed: (count) => `Retry All Failed (${count})`,
+    retryVisibleFailed: "Retry Visible Failed",
+    retrySelectedFailed: "Retry Selected Failed",
+    deleteSelected: "Delete Selected",
+    deleteVisible: "Delete Visible",
+    deleteAll: "Delete All",
+    retryFailedUploadsTitle: "Retry failed upload candidates for the active tab/session",
+    retryFailedDownloadsTitle: "Retry failed download candidates for the active tab/session",
+    retryAllFailedTitle:
+      "Retry all failed upload/download candidates with retry-scope strategy",
+    retryVisibleFailedTitle: "Retry visible failed records with scope selection",
+    retrySelectedFailedTitle: "Retry selected failed records with scope selection",
+    done: "Done",
+    entryAttempts: (count) => `attempts ${count}`,
+    entryMeta: (timestampLabel, directionLabel, attemptCount, message) =>
+      `${timestampLabel} | ${directionLabel} | attempts ${attemptCount}${message ? ` | ${message}` : ""}`,
+    directionLabel: (direction) => (direction === "upload" ? "upload" : "download"),
+    statusLabel: (status) => status
   }
 };
 
@@ -649,6 +882,138 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
     noHighLatencyActivity: "当前没有活动的长耗时操作。队列和长任务处于空闲状态。",
     noTrackedAppJobs: "还没有已跟踪的会话/片段/诊断任务。",
     done: "完成"
+  },
+  retryCenter: {
+    title: "传输重试中心",
+    description: "跨重启保留传输历史。重试会作用于绑定到当前会话标签页的失败记录。",
+    scope: "范围",
+    activeSession: "当前会话",
+    allSessions: "全部会话",
+    direction: "方向",
+    all: "全部",
+    upload: "上传",
+    download: "下载",
+    status: "状态",
+    failed: "失败",
+    completed: "已完成",
+    canceled: "已取消",
+    queued: "排队中",
+    running: "运行中",
+    timeRange: "时间范围",
+    last5m: "最近 5 分钟",
+    last30m: "最近 30 分钟",
+    last1h: "最近 1 小时",
+    last24h: "最近 24 小时",
+    view: "视图",
+    flatList: "平铺列表",
+    groupedByFailure: "按失败原因分组",
+    failureReason: "失败原因",
+    allFailureReasons: (count) => `全部（${count}）`,
+    defaultRetryScope: "默认重试范围",
+    allRetryable: "全部可重试",
+    uploadOnly: "仅上传",
+    downloadOnly: "仅下载",
+    retryConfirmThreshold: "重试确认阈值",
+    largeBatchHint: "设为 0 可关闭大批量重试确认。",
+    search: "搜索",
+    searchPlaceholder: "名称/本地/远端/消息",
+    resetFilters: "重置筛选",
+    autoRetryScopeOn: "自动重试范围：开",
+    autoRetryScopeOff: "自动重试范围：关",
+    autoRetryScopeTitle: "自动使用上次重试范围，并跳过重试范围选择器",
+    summary: ({
+      entryCount,
+      totalHistoryCount,
+      selectedCount,
+      selectedFailedCount,
+      visibleFailedCount,
+      failedUploadCandidateCount,
+      failedDownloadCandidateCount,
+      selectedFailureReasonLabel,
+      lastRetryScopeLabel,
+      autoUseLastRetryScope,
+      retryBatchConfirmThreshold,
+      isGroupedView,
+      groupCount,
+      collapsedGroupCount
+    }) =>
+      `可见 ${entryCount} / 总计 ${totalHistoryCount}，已选 ${selectedCount}，已选失败（当前会话）${selectedFailedCount}，可见失败（当前会话）${visibleFailedCount}，面板失败候选 上传 ${failedUploadCandidateCount} / 下载 ${failedDownloadCandidateCount}，失败原因 ${selectedFailureReasonLabel}，默认范围 ${lastRetryScopeLabel}${
+        autoUseLastRetryScope ? "（自动）" : ""
+      }，大批量重试确认 ${
+        retryBatchConfirmThreshold <= 0 ? "关闭" : `>=${retryBatchConfirmThreshold}`
+      }${isGroupedView ? `，分组 ${groupCount}，已折叠 ${collapsedGroupCount}` : ""}`,
+    failureRatio: "失败比例",
+    failedRatio: (failedCount, totalCount) => `失败 ${failedCount}/${totalCount}`,
+    directionBreakdown: "方向分布",
+    statusBreakdown: (completed, failed, canceled) =>
+      `已完成 ${completed} | 失败 ${failed} | 已取消 ${canceled}`,
+    topSessionsGroups: "主要会话/分组",
+    noVisibleRecords: "没有可见记录",
+    noGroupData: "没有分组数据",
+    topFailureReasons: "主要失败原因",
+    noFailedRecords: "没有失败记录",
+    filterByFailureReasonTitle: (reason) => `按失败原因“${reason}”筛选`,
+    retryFailureReasonTitle: (reason) => `按范围策略重试当前会话中“${reason}”的失败传输`,
+    deleteFailureReasonTitle: (reason) => `删除失败原因“${reason}”对应的可见失败历史`,
+    retryWithCount: (count) => `重试（${count}）`,
+    deleteWithCount: (count) => `删除（${count}）`,
+    failureReasonHelp:
+      "仅统计可见失败历史。快速重试面向当前会话记录，并遵循重试范围策略（选择器或自动使用上次范围）；删除会按原因移除可见失败历史。",
+    expandAllGroups: "展开所有分组",
+    collapseAllGroups: "折叠所有分组",
+    expandGroup: "展开分组",
+    collapseGroup: "折叠分组",
+    expand: "展开",
+    collapse: "折叠",
+    groupMeta: (total, failedCount, retryableCount) =>
+      `${total} 项，失败 ${failedCount}，可重试 ${retryableCount}`,
+    selectWithCount: (count) => `选择（${count}）`,
+    retryFailedWithCount: (count) => `重试失败项（${count}）`,
+    retryGroupFailedTitle: "重试此分组中的当前会话失败记录（可选择范围）",
+    deleteCount: (count) => `删除（${count}）`,
+    exportJson: "导出 JSON",
+    exportCsv: "导出 CSV",
+    noHistoryMatches: "没有符合当前筛选条件的传输历史记录。",
+    selectVisible: "选择可见项",
+    clearSelection: "清除选择",
+    exportVisibleJson: "导出可见 JSON",
+    exportVisibleCsv: "导出可见 CSV",
+    exportAnalyticsJson: "导出分析 JSON",
+    exportAnalyticsCsv: "导出分析 CSV",
+    retryFailedUploads: (count) => `重试失败上传（${count}）`,
+    retryFailedDownloads: (count) => `重试失败下载（${count}）`,
+    retryAllFailed: (count) => `重试所有失败项（${count}）`,
+    retryVisibleFailed: "重试可见失败项",
+    retrySelectedFailed: "重试已选失败项",
+    deleteSelected: "删除已选",
+    deleteVisible: "删除可见",
+    deleteAll: "全部删除",
+    retryFailedUploadsTitle: "重试当前标签页/会话的失败上传候选项",
+    retryFailedDownloadsTitle: "重试当前标签页/会话的失败下载候选项",
+    retryAllFailedTitle: "按重试范围策略重试所有失败的上传/下载候选项",
+    retryVisibleFailedTitle: "选择范围后重试可见失败记录",
+    retrySelectedFailedTitle: "选择范围后重试已选失败记录",
+    done: "完成",
+    entryAttempts: (count) => `尝试 ${count} 次`,
+    entryMeta: (timestampLabel, directionLabel, attemptCount, message) =>
+      `${timestampLabel} | ${directionLabel} | 尝试 ${attemptCount} 次${message ? ` | ${message}` : ""}`,
+    directionLabel: (direction) => (direction === "upload" ? "上传" : "下载"),
+    statusLabel: (status) => {
+      switch (status) {
+        case "queued":
+          return "排队中";
+        case "running":
+          return "运行中";
+        case "completed":
+          return "已完成";
+        case "failed":
+          return "失败";
+        case "canceled":
+          return "已取消";
+        default:
+          return status;
+      }
+    }
   }
 };
 

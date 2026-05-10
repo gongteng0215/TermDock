@@ -130,7 +130,7 @@ function createMarkdownReport({
   lines.push("- Command history manager (add/edit/export/import/delete)");
   lines.push("- Command history side panel context menu");
   lines.push("- Operation Center modal + tracked app-job baseline + activity timeline + grouped controls");
-  lines.push("- Retry Center modal + grouped view");
+  lines.push("- Retry Center modal + grouped view + Simplified Chinese interface check");
 
   const passedSteps = steps.filter((entry) => entry.status === "pass");
   const failedSteps = steps.filter((entry) => entry.status === "fail");
@@ -2489,7 +2489,76 @@ async function main() {
       }
       await done.click();
       await page.waitForTimeout(220);
-      return `${openShot}, ${groupedShot}`;
+
+      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      if (!(await isVisible(settingsButton))) {
+        throw new Error("settings button not found for retry center i18n check");
+      }
+      await settingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5000 });
+      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings nav activation for retry center i18n smoke"
+        }
+      );
+      const languageSelect = page.locator(".modal--settings label:has-text('Language') select").first();
+      if (!(await isVisible(languageSelect))) {
+        throw new Error("language selector not visible for retry center i18n check");
+      }
+      await languageSelect.selectOption("zh-CN");
+      await page.waitForTimeout(220);
+      const zhDone = page.locator(".modal--settings .primary-button:has-text('完成')").first();
+      if (!(await isVisible(zhDone))) {
+        throw new Error("localized settings done button not visible");
+      }
+      await zhDone.click();
+      await page.waitForTimeout(260);
+
+      const zhTrigger = page.locator("button:has-text('重试中心')").first();
+      if (!(await isVisible(zhTrigger))) {
+        throw new Error("localized retry center trigger not found");
+      }
+      await zhTrigger.click();
+      await page.locator(".modal--retry-center").waitFor({ state: "visible", timeout: 5000 });
+      const zhTitle = page.locator(".modal--retry-center h3:has-text('传输重试中心')").first();
+      if (!(await isVisible(zhTitle))) {
+        throw new Error("localized retry center title not visible");
+      }
+      const zhRetryAction = page
+        .locator(".modal--retry-center .secondary-button:has-text('重试所有失败项')")
+        .first();
+      if (!(await isVisible(zhRetryAction))) {
+        throw new Error("localized retry center retry-all action not visible");
+      }
+      const zhShot = await recordShot(page, "retry-center-zh-cn");
+      await page.locator(".modal--retry-center .primary-button:has-text('完成')").first().click();
+      await page.waitForTimeout(220);
+
+      const zhSettingsButton = page.getByRole("button", { name: "Open settings" }).first();
+      await zhSettingsButton.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5000 });
+      const zhWorkspaceNav = page.locator(".settings-nav__button", { hasText: "工作区" }).first();
+      await zhWorkspaceNav.click();
+      await waitForCondition(
+        async () => await zhWorkspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "localized workspace settings nav activation for language restore"
+        }
+      );
+      const zhLanguageSelect = page.locator(".modal--settings label:has-text('语言') select").first();
+      if (!(await isVisible(zhLanguageSelect))) {
+        throw new Error("localized language selector not visible for restore");
+      }
+      await zhLanguageSelect.selectOption("en");
+      await page.waitForTimeout(220);
+      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
+      await page.waitForTimeout(260);
+      return `${openShot}, ${groupedShot}, ${zhShot}`;
     });
 
     await runStep("unexpected fixture shutdown captures disconnect report", async () => {

@@ -1,4 +1,4 @@
-import type { OperationCenterLabels } from "../i18n";
+import type { OperationCenterLabels, RetryCenterLabels } from "../i18n";
 import { UiIcon } from "./ui-icon";
 
 type TransferHistoryScope = "activeSession" | "allSessions";
@@ -198,6 +198,7 @@ interface CommandHistoryManagerModalProps {
 
 interface RetryCenterModalProps {
   open: boolean;
+  labels: RetryCenterLabels;
   onClose: () => void;
   scope: TransferHistoryScope;
   onScopeChange: (value: TransferHistoryScope) => void;
@@ -855,6 +856,7 @@ export function OperationCenterModal({
 
 export function RetryCenterModal({
   open,
+  labels,
   onClose,
   scope,
   onScopeChange,
@@ -947,74 +949,71 @@ export function RetryCenterModal({
   return (
     <div className="modal-backdrop" role="presentation">
       <div
-        aria-label="Transfer Retry Center"
+        aria-label={labels.title}
         aria-modal="true"
         className="modal modal--retry-center"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
         <div className="modal__header">
-          <h3>Transfer Retry Center</h3>
+          <h3>{labels.title}</h3>
           <button className="icon-button" onClick={onClose} type="button">
             <UiIcon name="close" />
           </button>
         </div>
-        <p className="hint">
-          Persistent transfer history across restarts. Retry works for failed entries bound to the
-          active session tab.
-        </p>
+        <p className="hint">{labels.description}</p>
         <div className="retry-center__filters">
           <label>
-            Scope
+            {labels.scope}
             <select onChange={(event) => onScopeChange(event.target.value as TransferHistoryScope)} value={scope}>
-              <option value="activeSession">Active Session</option>
-              <option value="allSessions">All Sessions</option>
+              <option value="activeSession">{labels.activeSession}</option>
+              <option value="allSessions">{labels.allSessions}</option>
             </select>
           </label>
           <label>
-            Direction
+            {labels.direction}
             <select
               onChange={(event) => onDirectionChange(event.target.value as TransferHistoryDirectionFilter)}
               value={direction}
             >
-              <option value="all">All</option>
-              <option value="upload">Upload</option>
-              <option value="download">Download</option>
+              <option value="all">{labels.all}</option>
+              <option value="upload">{labels.upload}</option>
+              <option value="download">{labels.download}</option>
             </select>
           </label>
           <label>
-            Status
+            {labels.status}
             <select onChange={(event) => onStatusChange(event.target.value as TransferHistoryStatusFilter)} value={status}>
-              <option value="all">All</option>
-              <option value="failed">Failed</option>
-              <option value="completed">Completed</option>
-              <option value="canceled">Canceled</option>
-              <option value="queued">Queued</option>
-              <option value="running">Running</option>
+              <option value="all">{labels.all}</option>
+              <option value="failed">{labels.failed}</option>
+              <option value="completed">{labels.completed}</option>
+              <option value="canceled">{labels.canceled}</option>
+              <option value="queued">{labels.queued}</option>
+              <option value="running">{labels.running}</option>
             </select>
           </label>
           <label>
-            Time Range
+            {labels.timeRange}
             <select onChange={(event) => onTimeRangeChange(event.target.value as TransferHistoryTimeRange)} value={timeRange}>
-              <option value="all">All</option>
-              <option value="5m">Last 5m</option>
-              <option value="30m">Last 30m</option>
-              <option value="1h">Last 1h</option>
-              <option value="24h">Last 24h</option>
+              <option value="all">{labels.all}</option>
+              <option value="5m">{labels.last5m}</option>
+              <option value="30m">{labels.last30m}</option>
+              <option value="1h">{labels.last1h}</option>
+              <option value="24h">{labels.last24h}</option>
             </select>
           </label>
           <label>
-            View
+            {labels.view}
             <select onChange={(event) => onListModeChange(event.target.value as RetryCenterListMode)} value={listMode}>
-              <option value="flat">Flat List</option>
-              <option value="groupedByReason">Grouped by Failure</option>
+              <option value="flat">{labels.flatList}</option>
+              <option value="groupedByReason">{labels.groupedByFailure}</option>
             </select>
           </label>
           <label>
-            Failure Reason
+            {labels.failureReason}
             <select onChange={(event) => onFailureReasonFilterChange(event.target.value)} value={failureReasonFilter}>
               <option value={failureReasonAllValue}>
-                All ({failureReasonOptions.reduce((total, entry) => total + entry.total, 0)})
+                {labels.allFailureReasons(failureReasonOptions.reduce((total, entry) => total + entry.total, 0))}
               </option>
               {failureReasonOptions.map((entry) => (
                 <option key={entry.reason} value={entry.reason}>
@@ -1024,18 +1023,18 @@ export function RetryCenterModal({
             </select>
           </label>
           <label>
-            Default Retry Scope
+            {labels.defaultRetryScope}
             <select
               onChange={(event) => onLastRetryScopeChange(event.target.value as RetryCenterRetryScope)}
               value={lastRetryScope}
             >
-              <option value="all">All Retryable</option>
-              <option value="upload">Upload Only</option>
-              <option value="download">Download Only</option>
+              <option value="all">{labels.allRetryable}</option>
+              <option value="upload">{labels.uploadOnly}</option>
+              <option value="download">{labels.downloadOnly}</option>
             </select>
           </label>
           <label>
-            Retry Confirm Threshold
+            {labels.retryConfirmThreshold}
             <input
               max={maxRetryBatchConfirmThreshold}
               min={minRetryBatchConfirmThreshold}
@@ -1045,13 +1044,13 @@ export function RetryCenterModal({
             />
           </label>
           <p className="hint">
-            Set <code>0</code> to disable large-batch retry confirmations.
+            {labels.largeBatchHint}
           </p>
           <label className="retry-center__search">
-            Search
+            {labels.search}
             <input
               onChange={(event) => onQueryChange(event.target.value)}
-              placeholder="name/local/remote/message"
+              placeholder={labels.searchPlaceholder}
               value={query}
             />
           </label>
@@ -1061,66 +1060,76 @@ export function RetryCenterModal({
             onClick={onResetFilters}
             type="button"
           >
-            Reset Filters
+            {labels.resetFilters}
           </button>
           <button
             aria-pressed={autoUseLastRetryScope}
             className="secondary-button secondary-button--small retry-center__filter-reset"
             onClick={onToggleAutoUseLastRetryScope}
-            title="Automatically use last retry scope and skip retry-scope chooser"
+            title={labels.autoRetryScopeTitle}
             type="button"
           >
-            {autoUseLastRetryScope ? "Auto Retry Scope: On" : "Auto Retry Scope: Off"}
+            {autoUseLastRetryScope ? labels.autoRetryScopeOn : labels.autoRetryScopeOff}
           </button>
         </div>
         <p className="hint retry-center__summary">
-          Visible {entryCount} / Total {totalHistoryCount}, Selected {selectedCount}, Selected failed
-          (active session) {selectedFailedCount}, Visible failed (active session) {visibleFailedCount},
-          Dock failed candidates U {failedUploadCandidateCount} / D {failedDownloadCandidateCount},
-          Failure reason {selectedFailureReasonLabel}, Default scope {lastRetryScopeLabel}
-          {autoUseLastRetryScope ? " (auto)" : ""}, Large retry confirm{" "}
-          {retryBatchConfirmThreshold <= 0 ? "off" : `>=${retryBatchConfirmThreshold}`}
-          {isGroupedView
-            ? `, Groups ${groupedEntries.length}, Collapsed ${collapsedGroupKeySet.size}`
-            : ""}
+          {labels.summary({
+            entryCount,
+            totalHistoryCount,
+            selectedCount,
+            selectedFailedCount,
+            visibleFailedCount,
+            failedUploadCandidateCount,
+            failedDownloadCandidateCount,
+            selectedFailureReasonLabel,
+            lastRetryScopeLabel,
+            autoUseLastRetryScope,
+            retryBatchConfirmThreshold,
+            isGroupedView,
+            groupCount: groupedEntries.length,
+            collapsedGroupCount: collapsedGroupKeySet.size
+          })}
         </p>
         <div className="retry-center__analytics">
           <article className="retry-center__metric">
-            <p className="retry-center__metric-label">Failure Ratio</p>
+            <p className="retry-center__metric-label">{labels.failureRatio}</p>
             <p className="retry-center__metric-value">{formatPercent(analytics.failedRatioPercent)}</p>
             <p className="retry-center__metric-meta">
-              Failed {analytics.failedCount}/{analytics.totalCount}
+              {labels.failedRatio(analytics.failedCount, analytics.totalCount)}
             </p>
           </article>
           <article className="retry-center__metric">
-            <p className="retry-center__metric-label">Direction Breakdown</p>
+            <p className="retry-center__metric-label">{labels.directionBreakdown}</p>
             <p className="retry-center__metric-value">
               U {analytics.directionCounts.upload} | D {analytics.directionCounts.download}
             </p>
             <p className="retry-center__metric-meta">
-              completed {analytics.statusCounts.completed} | failed {analytics.statusCounts.failed} |
-              canceled {analytics.statusCounts.canceled}
+              {labels.statusBreakdown(
+                analytics.statusCounts.completed,
+                analytics.statusCounts.failed,
+                analytics.statusCounts.canceled
+              )}
             </p>
           </article>
           <article className="retry-center__metric">
-            <p className="retry-center__metric-label">Top Sessions / Groups</p>
+            <p className="retry-center__metric-label">{labels.topSessionsGroups}</p>
             <p className="retry-center__metric-meta">
               {analytics.topSessions.length > 0
                 ? analytics.topSessions.map((entry) => `${entry.sessionName} (${entry.total})`).join(" | ")
-                : "No visible records"}
+                : labels.noVisibleRecords}
             </p>
             <p className="retry-center__metric-meta">
               {analytics.topGroups.length > 0
                 ? analytics.topGroups.map((entry) => `${entry.groupName} (${entry.total})`).join(" | ")
-                : "No group data"}
+                : labels.noGroupData}
             </p>
           </article>
           <article className="retry-center__metric">
-            <p className="retry-center__metric-label">Top Failure Reasons</p>
+            <p className="retry-center__metric-label">{labels.topFailureReasons}</p>
             <p className="retry-center__metric-meta retry-center__metric-meta--wrap">
               {analytics.topFailureReasons.length > 0
                 ? analytics.topFailureReasons.map((entry) => `${entry.reason} (${entry.total})`).join(" | ")
-                : "No failed records"}
+                : labels.noFailedRecords}
             </p>
             {failureSuggestionRows.length > 0 ? (
               <ul className="retry-center__reason-suggestions">
@@ -1142,7 +1151,7 @@ export function RetryCenterModal({
                           : "secondary-button secondary-button--small"
                       }
                       onClick={() => onFailureReasonFilterChange(entry.reason)}
-                      title={`Filter by failure reason "${entry.reason}"`}
+                      title={labels.filterByFailureReasonTitle(entry.reason)}
                       type="button"
                     >
                       {`${entry.reason} (${entry.totalVisible})`}
@@ -1151,28 +1160,26 @@ export function RetryCenterModal({
                       className="secondary-button secondary-button--small"
                       disabled={!hasActiveTab || entry.activeSessionVisibleFailed <= 0}
                       onClick={() => onRetryVisibleFailureReason(entry.reason)}
-                      title={`Retry "${entry.reason}" failed transfers in active session with scope strategy`}
+                      title={labels.retryFailureReasonTitle(entry.reason)}
                       type="button"
                     >
-                      {`Retry (${entry.activeSessionVisibleFailed})`}
+                      {labels.retryWithCount(entry.activeSessionVisibleFailed)}
                     </button>
                     <button
                       className="secondary-button secondary-button--small"
                       disabled={entry.totalVisible <= 0}
                       onClick={() => onClearVisibleFailureReason(entry.reason)}
-                      title={`Delete visible failed history records with reason "${entry.reason}"`}
+                      title={labels.deleteFailureReasonTitle(entry.reason)}
                       type="button"
                     >
-                      {`Delete (${entry.totalVisible})`}
+                      {labels.deleteWithCount(entry.totalVisible)}
                     </button>
                   </div>
                 ))}
               </div>
             ) : null}
             <p className="retry-center__metric-meta">
-              Visible failed history only. Quick retry targets active-session entries and follows
-              retry-scope strategy (chooser or auto last scope); delete removes visible failed
-              history by reason.
+              {labels.failureReasonHelp}
             </p>
           </article>
         </div>
@@ -1184,7 +1191,7 @@ export function RetryCenterModal({
               onClick={onExpandAllGroups}
               type="button"
             >
-              Expand All Groups
+              {labels.expandAllGroups}
             </button>
             <button
               className="secondary-button secondary-button--small"
@@ -1192,7 +1199,7 @@ export function RetryCenterModal({
               onClick={onCollapseAllGroups}
               type="button"
             >
-              Collapse All Groups
+              {labels.collapseAllGroups}
             </button>
           </div>
         ) : null}
@@ -1206,20 +1213,23 @@ export function RetryCenterModal({
                     <li className="retry-center__group-item" key={group.key}>
                       <div className="retry-center__group-header">
                         <button
-                          aria-label={collapsed ? "Expand group" : "Collapse group"}
+                          aria-label={collapsed ? labels.expandGroup : labels.collapseGroup}
                           className="secondary-button secondary-button--small"
                           onClick={() => onToggleGroupCollapsed(group.key)}
                           type="button"
                         >
-                          {collapsed ? "Expand" : "Collapse"}
+                          {collapsed ? labels.expand : labels.collapse}
                         </button>
                         <div className="retry-center__group-info">
                           <p className="retry-center__group-title" title={group.label}>
                             {group.label}
                           </p>
                           <p className="retry-center__group-meta">
-                            {group.total} item(s), failed {group.failedCount}, retryable{" "}
-                            {group.activeSessionFailedCount}
+                            {labels.groupMeta(
+                              group.total,
+                              group.failedCount,
+                              group.activeSessionFailedCount
+                            )}
                           </p>
                         </div>
                         <div className="retry-center__group-header-actions">
@@ -1228,37 +1238,37 @@ export function RetryCenterModal({
                             onClick={() => onSelectGroupEntries(group.key)}
                             type="button"
                           >
-                            {`Select (${group.total})`}
+                            {labels.selectWithCount(group.total)}
                           </button>
                           <button
                             className="secondary-button secondary-button--small"
                             disabled={!hasActiveTab || group.activeSessionFailedCount <= 0}
                             onClick={() => onRetryGroupFailedEntries(group.key)}
-                            title="Retry failed active-session records in this group (scope selectable)"
+                            title={labels.retryGroupFailedTitle}
                             type="button"
                           >
-                            {`Retry Failed (${group.activeSessionFailedCount})`}
+                            {labels.retryFailedWithCount(group.activeSessionFailedCount)}
                           </button>
                           <button
                             className="secondary-button secondary-button--small"
                             onClick={() => onClearGroupEntries(group.key)}
                             type="button"
                           >
-                            {`Delete (${group.total})`}
+                            {labels.deleteCount(group.total)}
                           </button>
                           <button
                             className="secondary-button secondary-button--small"
                             onClick={() => onExportGroupHistoryJson(group.key)}
                             type="button"
                           >
-                            Export JSON
+                            {labels.exportJson}
                           </button>
                           <button
                             className="secondary-button secondary-button--small"
                             onClick={() => onExportGroupHistoryCsv(group.key)}
                             type="button"
                           >
-                            Export CSV
+                            {labels.exportCsv}
                           </button>
                         </div>
                       </div>
@@ -1266,6 +1276,7 @@ export function RetryCenterModal({
                         <RetryCenterEntriesList
                           entries={group.entries}
                           formatHistoryTimestamp={formatHistoryTimestamp}
+                          labels={labels}
                           onToggleEntrySelection={onToggleEntrySelection}
                           selectionSet={selectionSet}
                         />
@@ -1278,12 +1289,13 @@ export function RetryCenterModal({
               <RetryCenterEntriesList
                 entries={entries}
                 formatHistoryTimestamp={formatHistoryTimestamp}
+                labels={labels}
                 onToggleEntrySelection={onToggleEntrySelection}
                 selectionSet={selectionSet}
               />
             )
           ) : (
-            <p className="hint">No transfer history records match the current filters.</p>
+            <p className="hint">{labels.noHistoryMatches}</p>
           )}
         </div>
         <div className="modal__actions retry-center__actions">
@@ -1293,7 +1305,7 @@ export function RetryCenterModal({
             onClick={onSelectAllVisible}
             type="button"
           >
-            Select Visible
+            {labels.selectVisible}
           </button>
           <button
             className="secondary-button"
@@ -1301,7 +1313,7 @@ export function RetryCenterModal({
             onClick={onClearSelection}
             type="button"
           >
-            Clear Selection
+            {labels.clearSelection}
           </button>
           <button
             className="secondary-button"
@@ -1309,7 +1321,7 @@ export function RetryCenterModal({
             onClick={onExportVisibleHistoryJson}
             type="button"
           >
-            Export Visible JSON
+            {labels.exportVisibleJson}
           </button>
           <button
             className="secondary-button"
@@ -1317,7 +1329,7 @@ export function RetryCenterModal({
             onClick={onExportVisibleHistoryCsv}
             type="button"
           >
-            Export Visible CSV
+            {labels.exportVisibleCsv}
           </button>
           <button
             className="secondary-button"
@@ -1325,7 +1337,7 @@ export function RetryCenterModal({
             onClick={onExportAnalyticsJson}
             type="button"
           >
-            Export Analytics JSON
+            {labels.exportAnalyticsJson}
           </button>
           <button
             className="secondary-button"
@@ -1333,52 +1345,52 @@ export function RetryCenterModal({
             onClick={onExportAnalyticsCsv}
             type="button"
           >
-            Export Analytics CSV
+            {labels.exportAnalyticsCsv}
           </button>
           <button
             className="secondary-button"
             disabled={!canRetryFailedUploads}
             onClick={onRetryFailedUploads}
-            title="Retry failed upload candidates for the active tab/session"
+            title={labels.retryFailedUploadsTitle}
             type="button"
           >
-            Retry Failed Uploads ({failedUploadCandidateCount})
+            {labels.retryFailedUploads(failedUploadCandidateCount)}
           </button>
           <button
             className="secondary-button"
             disabled={!canRetryFailedDownloads}
             onClick={onRetryFailedDownloads}
-            title="Retry failed download candidates for the active tab/session"
+            title={labels.retryFailedDownloadsTitle}
             type="button"
           >
-            Retry Failed Downloads ({failedDownloadCandidateCount})
+            {labels.retryFailedDownloads(failedDownloadCandidateCount)}
           </button>
           <button
             className="secondary-button"
             disabled={!canRetryAllFailedTransfers}
             onClick={onRetryAllFailedTransfers}
-            title="Retry all failed upload/download candidates with retry-scope strategy"
+            title={labels.retryAllFailedTitle}
             type="button"
           >
-            Retry All Failed ({failedRetryCandidateTotal})
+            {labels.retryAllFailed(failedRetryCandidateTotal)}
           </button>
           <button
             className="secondary-button"
             disabled={!canRetryVisibleEntries}
             onClick={onRetryVisibleEntries}
-            title="Retry visible failed records with scope selection"
+            title={labels.retryVisibleFailedTitle}
             type="button"
           >
-            Retry Visible Failed
+            {labels.retryVisibleFailed}
           </button>
           <button
             className="secondary-button"
             disabled={!canRetrySelectedEntries}
             onClick={onRetrySelectedEntries}
-            title="Retry selected failed records with scope selection"
+            title={labels.retrySelectedFailedTitle}
             type="button"
           >
-            Retry Selected Failed
+            {labels.retrySelectedFailed}
           </button>
           <button
             className="secondary-button"
@@ -1386,7 +1398,7 @@ export function RetryCenterModal({
             onClick={onClearSelectedEntries}
             type="button"
           >
-            Delete Selected
+            {labels.deleteSelected}
           </button>
           <button
             className="secondary-button"
@@ -1394,7 +1406,7 @@ export function RetryCenterModal({
             onClick={onClearVisibleEntries}
             type="button"
           >
-            Delete Visible
+            {labels.deleteVisible}
           </button>
           <button
             className="secondary-button"
@@ -1402,10 +1414,10 @@ export function RetryCenterModal({
             onClick={onClearAllEntries}
             type="button"
           >
-            Delete All
+            {labels.deleteAll}
           </button>
           <button className="primary-button" onClick={onClose} type="button">
-            Done
+            {labels.done}
           </button>
         </div>
       </div>
@@ -1569,11 +1581,13 @@ export function CommandHistoryManagerModal({
 
 function RetryCenterEntriesList({
   entries,
+  labels,
   selectionSet,
   onToggleEntrySelection,
   formatHistoryTimestamp
 }: {
   entries: RetryCenterEntryView[];
+  labels: RetryCenterLabels;
   selectionSet: Set<string>;
   onToggleEntrySelection: (entryKey: string) => void;
   formatHistoryTimestamp: (timestamp: number) => string;
@@ -1592,7 +1606,7 @@ function RetryCenterEntriesList({
               />
             </label>
             <span className={`retry-center__status retry-center__status--${entry.status}`}>
-              {entry.status}
+              {labels.statusLabel(entry.status)}
             </span>
             <div className="retry-center__body">
               <p className="retry-center__name">{entry.name}</p>
@@ -1600,8 +1614,12 @@ function RetryCenterEntriesList({
                 {`${entry.localPath} -> ${entry.remotePath}`}
               </p>
               <p className="retry-center__meta">
-                {formatHistoryTimestamp(entry.updatedAt)} | {entry.direction} | attempts {entry.attemptCount}
-                {entry.message ? ` | ${entry.message}` : ""}
+                {labels.entryMeta(
+                  formatHistoryTimestamp(entry.updatedAt),
+                  labels.directionLabel(entry.direction),
+                  entry.attemptCount,
+                  entry.message
+                )}
               </p>
             </div>
           </li>
