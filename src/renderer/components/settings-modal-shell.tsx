@@ -39,7 +39,7 @@ export function SettingsModalShell({
   }
 
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop modal-backdrop--settings" role="presentation">
       <div
         aria-label={titleLabel}
         aria-modal="true"

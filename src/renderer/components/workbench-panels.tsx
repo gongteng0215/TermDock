@@ -39,14 +39,6 @@ interface SessionsInspectorSectionProps {
         title: string;
       }
     | null;
-  activeSelectionDetails:
-    | {
-        authLabel: string;
-        groupLabel: string;
-        lastConnectedLabel: string;
-        remark: string | null;
-      }
-    | null;
   emptyStateLabel: string | null;
   favoritesOnly: boolean;
   filterQuery: string;
@@ -72,6 +64,7 @@ interface ServerHealthInspectorSectionProps {
   activeTabTitle: string | null;
   children: ReactNode;
   hasAlert: boolean;
+  healthyLabel: string;
   isConnected: boolean;
   isDetailOpen: boolean;
   onRefresh: () => void;
@@ -154,7 +147,6 @@ interface SftpExplorerSectionProps {
 export function SessionsInspectorSection({
   activeGroupLabel,
   activeContext,
-  activeSelectionDetails,
   emptyStateLabel,
   favoritesOnly,
   filterQuery,
@@ -205,7 +197,7 @@ export function SessionsInspectorSection({
       <div className="session-explorer">
         {activeContext ? (
           <div className="inspector-context-card">
-            <p className="inspector-context-card__eyebrow">Current Session</p>
+            <p className="inspector-context-card__eyebrow">Selected Session</p>
             <div className="inspector-context-card__row">
               <div className="inspector-context-card__main">
                 <p className="inspector-context-card__title">{activeContext.title}</p>
@@ -293,28 +285,6 @@ export function SessionsInspectorSection({
                 ))}
               </ul>
             </div>
-            {activeSelectionDetails ? (
-              <div className="inspector-context-card session-selection-card">
-                <p className="inspector-context-card__eyebrow">Selection Details</p>
-                <dl className="session-meta">
-                  <div>
-                    <dt>Auth</dt>
-                    <dd>{activeSelectionDetails.authLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>Group</dt>
-                    <dd>{activeSelectionDetails.groupLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>Last Seen</dt>
-                    <dd>{activeSelectionDetails.lastConnectedLabel}</dd>
-                  </div>
-                </dl>
-                {activeSelectionDetails.remark ? (
-                  <p className="session-selection-card__remark">{activeSelectionDetails.remark}</p>
-                ) : null}
-              </div>
-            ) : null}
           </>
         )}
       </div>
@@ -518,6 +488,7 @@ export function ServerHealthInspectorSection({
   activeTabTitle,
   children,
   hasAlert,
+  healthyLabel,
   isConnected,
   isDetailOpen,
   onRefresh,
@@ -559,7 +530,7 @@ export function ServerHealthInspectorSection({
               className={hasAlert ? "server-health__state server-health__state--alert" : "server-health__state"}
               title={hasAlert ? "One or more metrics exceeded alert threshold." : "No alert triggered."}
             >
-              {hasAlert ? "ALERT" : "OK"}
+              {hasAlert ? "ALERT" : healthyLabel}
             </span>
           </div>
         </div>

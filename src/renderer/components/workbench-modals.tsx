@@ -1,4 +1,8 @@
-import type { OperationCenterLabels, RetryCenterLabels } from "../i18n";
+import type {
+  CommandHistoryManagerLabels,
+  OperationCenterLabels,
+  RetryCenterLabels
+} from "../i18n";
 import { UiIcon } from "./ui-icon";
 
 type TransferHistoryScope = "activeSession" | "allSessions";
@@ -174,6 +178,7 @@ interface CommandHistoryManagerEntryView {
 
 interface CommandHistoryManagerModalProps {
   open: boolean;
+  labels: CommandHistoryManagerLabels;
   onClose: () => void;
   visibleCount: number;
   selectedCount: number;
@@ -1427,6 +1432,7 @@ export function RetryCenterModal({
 
 export function CommandHistoryManagerModal({
   open,
+  labels,
   onClose,
   visibleCount,
   selectedCount,
@@ -1455,28 +1461,28 @@ export function CommandHistoryManagerModal({
   return (
     <div className="modal-backdrop" role="presentation">
       <div
-        aria-label="Command History Manager"
+        aria-label={labels.title}
         aria-modal="true"
         className="modal modal--command-history-manager"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
         <div className="modal__header">
-          <h3>Command History Manager</h3>
+          <h3>{labels.title}</h3>
           <button className="icon-button" onClick={onClose} type="button">
             <UiIcon name="close" />
           </button>
         </div>
-        <p className="hint">Batch manage command records from current filter result.</p>
+        <p className="hint">{labels.description}</p>
         <p className="hint command-history-manager__summary">
-          Visible {visibleCount} | Selected {selectedCount} | Total {totalCount}
+          {labels.summary(visibleCount, selectedCount, totalCount)}
         </p>
         <div className="command-history-manager__toolbar">
           <button className="secondary-button secondary-button--small" onClick={onAdd} type="button">
-            Add
+            {labels.add}
           </button>
           <button className="secondary-button secondary-button--small" onClick={onImport} type="button">
-            Import
+            {labels.import}
           </button>
           <button
             className="secondary-button secondary-button--small"
@@ -1484,7 +1490,7 @@ export function CommandHistoryManagerModal({
             onClick={onExport}
             type="button"
           >
-            Export
+            {labels.export}
           </button>
           <button
             className="secondary-button secondary-button--small"
@@ -1492,7 +1498,7 @@ export function CommandHistoryManagerModal({
             onClick={onToggleSelectVisible}
             type="button"
           >
-            {allVisibleSelected ? "Unselect Visible" : "Select Visible"}
+            {allVisibleSelected ? labels.unselectVisible : labels.selectVisible}
           </button>
           <button
             className="secondary-button secondary-button--small"
@@ -1500,12 +1506,12 @@ export function CommandHistoryManagerModal({
             onClick={onClearSelection}
             type="button"
           >
-            Clear Selection
+            {labels.clearSelection}
           </button>
         </div>
         <div className="command-history-manager__list-shell">
           {entries.length === 0 ? (
-            <p className="hint command-history-manager__empty">No command history entries.</p>
+            <p className="hint command-history-manager__empty">{labels.empty}</p>
           ) : (
             <ul className="command-history-manager__list">
               {entries.map((entry) => (
@@ -1536,7 +1542,7 @@ export function CommandHistoryManagerModal({
                       onClick={() => onEditEntry(entry.id)}
                       type="button"
                     >
-                      Edit
+                      {labels.edit}
                     </button>
                   </div>
                   <p className="hint command-history-manager__meta">{entry.metaLabel}</p>
@@ -1552,7 +1558,7 @@ export function CommandHistoryManagerModal({
             onClick={onDeleteSelected}
             type="button"
           >
-            Delete Selected ({selectedCount})
+            {labels.deleteSelected(selectedCount)}
           </button>
           <button
             className="secondary-button"
@@ -1560,7 +1566,7 @@ export function CommandHistoryManagerModal({
             onClick={onDeleteVisible}
             type="button"
           >
-            Delete Visible ({visibleCount})
+            {labels.deleteVisible(visibleCount)}
           </button>
           <button
             className="secondary-button"
@@ -1568,10 +1574,10 @@ export function CommandHistoryManagerModal({
             onClick={onDeleteAll}
             type="button"
           >
-            Delete All ({totalCount})
+            {labels.deleteAll(totalCount)}
           </button>
           <button className="primary-button" onClick={onClose} type="button">
-            Done
+            {labels.done}
           </button>
         </div>
       </div>

@@ -2420,6 +2420,7 @@ body::before {
 .session-meta div {
   display: grid;
   gap: 1px;
+  min-width: 0;
 }
 
 .session-meta dt {
@@ -2432,27 +2433,12 @@ body::before {
 .session-meta dd {
   margin: 0;
   font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .panel--right .session-meta dd {
   font-size: 11px;
-}
-
-.session-selection-card {
-  margin-top: 6px;
-}
-
-.session-selection-card .session-meta {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.session-selection-card__remark {
-  margin: 0;
-  color: #9ab0c6;
-  font-size: 9px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
 }
 
 .server-health__binding {
@@ -3303,6 +3289,13 @@ body::before {
   align-items: center;
   justify-content: center;
   z-index: 30;
+}
+
+.modal-backdrop--settings {
+  backdrop-filter: none;
+  background:
+    radial-gradient(circle at top, rgba(68, 104, 145, 0.1) 0%, transparent 30%),
+    rgba(2, 6, 10, 0.82);
 }
 
 .modal {

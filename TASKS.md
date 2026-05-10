@@ -4,7 +4,7 @@ Last updated: 2026-05-10
 
 ## Current Release State
 
-- Stable release: `v0.1.22`
+- Stable release: `v0.1.23`
 - Active branch: `feature/editor-workbench-ui`
 - Branch baseline: `origin/feature/editor-workbench-ui`
 - Priority direction: keep editor-workbench branch shippable while resuming self-use runtime hardening and workflow quality
@@ -54,12 +54,12 @@ Last updated: 2026-05-10
    - SFTP explorer now has persisted `Compact` / `Details` view modes
    - right inspector now supports collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs
    - large renderer UI regions were split into focused modules for settings, workbench modals, command snippets, UI preferences, and separated workbench/terminal CSS
-   - multilingual baseline now exposes persisted English/Simplified Chinese interface selection in `Settings > Workspace`, with Chinese coverage for high-frequency workbench surfaces including Operation Center and Retry Center
+   - multilingual baseline now exposes persisted English/Simplified Chinese interface selection in `Settings > Workspace`, with broad Chinese coverage for settings, workbench chrome, dialogs/context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
    - post-refactor `pnpm run typecheck` passed
    - post-refactor `pnpm run build` passed
    - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
    - post-refactor `pnpm run smoke:ui:packaged` passed with `PASS 45 / FAIL 0 / SKIP 0`
-   - hardening follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-10 with `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T07-36-38-904Z/summary.json`
+   - multilingual follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-10 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T14-23-35-255Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling

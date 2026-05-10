@@ -5,7 +5,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 ## Current Status
 
-- Current stable release: `v0.1.22` (2026-04-12)
+- Current stable release: `v0.1.23` (2026-05-10)
 - Current active branch: `feature/editor-workbench-ui`
 - Current branch focus: editor-workbench UI refresh plus self-use hardening follow-up
 - Current stable release includes alternate-screen editor focus mode with selectable `Midnight` / `Graphite` / `Paper` themes in `Settings > Workspace`
@@ -15,8 +15,8 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
 - Current branch hardening: recoverable global error routing now also points Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures at their matching settings sections, with Safety sync failures covered by smoke automation
 - Current branch Operation Center follow-up: added a unified activity timeline plus grouped controls for transfer, active-tab, and tools workflows
-- Current branch multilingual baseline: `Settings > Workspace` now has a persisted interface-language selector with English and Simplified Chinese, covering the settings shell, Workspace controls, topbar, transfer dock, Operation Center, and Retry Center
-- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T07-36-38-904Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
+- Current branch multilingual baseline: `Settings > Workspace` now has a persisted interface-language selector with English and Simplified Chinese, plus broad Simplified Chinese coverage for settings, workbench chrome, dialogs/context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
+- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T14-23-35-255Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`)
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`, and latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
@@ -25,6 +25,15 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 ## UI Rules
 
 - Compact UI and fixed-height list policy: `UI_COMPACT_RULES.md`
+
+## Release in `v0.1.23` (2026-05-10)
+
+- Editor workbench UI refresh ships the flatter code-editor-style shell, Explorer/Inspector rails, terminal-focused center stage, and bottom transfer dock.
+- Simplified Chinese interface baseline now covers broad app surfaces, including Safety settings and command-history management.
+- Settings scrolling is smoother after removing the settings modal's full-screen live backdrop blur and batching DOM localization work.
+- Command history now keeps longer commands and captures long wrapped terminal submissions more reliably.
+- App icons were regenerated from a tighter full-size crop.
+- Latest workspace smoke: `PASS 47 / FAIL 0 / SKIP 0`.
 
 ## Release in `v0.1.22` (2026-04-12)
 
@@ -357,21 +366,21 @@ pnpm run release:self-use:win
 Stable release:
 
 ```bash
-git tag v0.1.22
-git push origin v0.1.22
+git tag v0.1.23
+git push origin v0.1.23
 ```
 
 Prerelease example:
 
 ```bash
-git tag v0.1.23-test.1
-git push origin v0.1.23-test.1
+git tag v0.1.24-test.1
+git push origin v0.1.24-test.1
 ```
 
 Tag rules:
 
-- Tag without `-` (for example `v0.1.22`) => stable release
-- Tag with `-` (for example `v0.1.23-test.1`) => prerelease
+- Tag without `-` (for example `v0.1.23`) => stable release
+- Tag with `-` (for example `v0.1.24-test.1`) => prerelease
 
 ## Known Limitations
 

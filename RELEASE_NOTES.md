@@ -1,8 +1,8 @@
 ﻿# TermDock Release Notes
 
-## Unreleased (master)
+## v0.1.23 (2026-05-10)
 
-Release type: In development
+Release type: Stable
 
 ### Highlights
 
@@ -11,6 +11,10 @@ Release type: In development
   - SFTP moved visually into an Explorer-style rail, while sessions, server health, and command history read as a coordinated Inspector rail
   - terminal tabs/stage and the transfer dock were restyled so the terminal remains primary and transfers read as a bottom workbench panel
   - settings and manager modal chrome now follows the same compact workbench language
+- Simplified Chinese interface baseline:
+  - `Settings > Workspace` now includes a persisted interface-language selector for English and Simplified Chinese
+  - Simplified Chinese coverage now spans settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, Command History Manager, and Safety settings
+  - DOM localization now batches updates through `MutationObserver` / `requestAnimationFrame` instead of rescanning after every render
 - Renderer module split:
   - settings modal shell/sections, command snippet manager, workbench modals, and persisted workbench UI preferences were split out of `App.tsx`
   - workbench shell and terminal CSS were separated from the root stylesheet
@@ -18,6 +22,12 @@ Release type: In development
   - SFTP Explorer view mode now persists as `Compact` or `Details`
   - command history can collapse inside the right Inspector
   - narrow widths expose `Sessions` / `Health` / `History` Inspector tabs
+- Command history and polish fixes:
+  - long command-history capture now looks back across more wrapped terminal rows
+  - stored command-history entries keep longer commands before truncation
+  - right Inspector selection details were removed to keep useful information denser
+  - application icons were regenerated from a tighter source crop
+  - Settings scrolling is smoother because the settings modal no longer applies a live full-screen backdrop blur
 
 ### Validation
 
@@ -25,8 +35,21 @@ Release type: In development
 - Post-refactor build passed: `pnpm run build`
 - Post-refactor workspace smoke passed: `PASS 45 / FAIL 0 / SKIP 0`
 - Post-refactor packaged smoke passed: `PASS 45 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
+- Latest multilingual workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
+- Latest multilingual workspace smoke artifact: `artifacts/smoke/2026-05-10T14-23-35-255Z/summary.json`
 - Latest packaged smoke artifact: `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
+
+## Unreleased (master)
+
+Release type: In development
+
+### Highlights
+
+- Next changes will be tracked here.
+
+### Validation
+
+- Pending.
 
 ## v0.1.22 (2026-04-12)
 

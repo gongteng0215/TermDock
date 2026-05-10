@@ -6,6 +6,7 @@ import { Terminal } from "xterm";
 import type { IDisposable, ITheme } from "xterm";
 
 import type { TerminalConnectionStatus } from "../../shared/terminal";
+import type { AppLanguage } from "../i18n";
 import {
   inspectDangerousCommandText,
   shouldInspectDangerousCommandWrite,
@@ -200,6 +201,7 @@ export interface HotkeyPreferences {
 }
 
 interface TerminalWorkspaceProps {
+  language: AppLanguage;
   tabs: TerminalTab[];
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
@@ -405,12 +407,14 @@ type CommandHistoryScope = "activeTab" | "allTabs";
 export type TerminalCommandHistorySource = "screen" | "buffer" | "manual" | "imported";
 
 export const MAX_TERMINAL_COMMAND_HISTORY = 500;
+export const MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH = 16000;
 export const TERMINAL_COMMAND_HISTORY_STORAGE_KEY = "termdock.terminal-command-history.v2";
 export const LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS = [
   "termdock.terminal-command-history.v1"
 ];
 export const TERMINAL_COMMAND_HISTORY_APPEND_EVENT = "termdock:terminal-command-history-append";
 export const TERMINAL_COMMAND_HISTORY_REMOVE_EVENT = "termdock:terminal-command-history-remove";
+const COMMAND_CAPTURE_LOOKBACK_ROWS = 80;
 const COMMAND_CAPTURE_PROMPT_MARKERS = ["$ ", "# ", "% ", "> "];
 
 function isTerminalCommandHistorySource(value: unknown): value is TerminalCommandHistorySource {
@@ -503,7 +507,11 @@ function readSubmittedCommandFromTerminal(terminal: Terminal, fallbackCommand: s
   const cursorRow = activeBuffer.baseY + activeBuffer.cursorY;
   const visitedStartRows = new Set<number>();
 
-  for (let row = cursorRow; row >= Math.max(0, cursorRow - 10); row -= 1) {
+  for (
+    let row = cursorRow;
+    row >= Math.max(0, cursorRow - COMMAND_CAPTURE_LOOKBACK_ROWS);
+    row -= 1
+  ) {
     const logicalLine = readLogicalTerminalLine(terminal, row);
     if (!logicalLine || visitedStartRows.has(logicalLine.startRow)) {
       continue;
@@ -611,7 +619,7 @@ export function readTerminalCommandHistory(): TerminalCommandHistoryEntry[] {
       entries.push({
         id,
         tabId,
-        command: command.slice(0, 4000),
+        command: command.slice(0, MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH),
         executedAt,
         source
       });
@@ -638,6 +646,7 @@ function readTerminalCommandHistoryStorageValue(): string | null {
 }
 
 export function TerminalWorkspace({
+  language: _language,
   tabs,
   activeTabId,
   onSelectTab,
@@ -1443,7 +1452,9 @@ export function TerminalWorkspace({
     command: string,
     source: TerminalCommandHistorySource
   ) => {
-    const normalizedCommand = command.trim();
+    const normalizedCommand = command
+      .trim()
+      .slice(0, MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH);
     if (!normalizedCommand) {
       return;
     }
@@ -1613,7 +1624,10 @@ export function TerminalWorkspace({
         forwarded += char;
         index += 1;
       }
-      commandInputBufferRef.current.set(tabId, buffer.slice(0, 4000));
+      commandInputBufferRef.current.set(
+        tabId,
+        buffer.slice(0, MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH)
+      );
       if (forwarded) {
         await terminalApi.write(tabId, forwarded);
       }

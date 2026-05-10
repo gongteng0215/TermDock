@@ -127,7 +127,7 @@ function createMarkdownReport({
   );
   lines.push("- Recoverable global error bar routing for invalid hotkey imports and safety bundle sync failures");
   lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
-  lines.push("- Command history manager (add/edit/export/import/delete)");
+  lines.push("- Command history manager (add/edit/export/import/delete) plus Simplified Chinese interface check");
   lines.push("- Command history side panel context menu");
   lines.push("- Operation Center modal + tracked app-job baseline + activity timeline + grouped controls");
   lines.push("- Retry Center modal + grouped view + Simplified Chinese interface check");
@@ -211,6 +211,68 @@ async function waitForAny(page, selectors, timeout = 5000) {
 
 async function isVisible(locator) {
   return (await locator.count()) > 0 && (await locator.first().isVisible());
+}
+
+function cssStringLiteral(value) {
+  return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+}
+
+function textSelector(baseSelector, labels) {
+  return labels.map((label) => `${baseSelector}:has-text(${cssStringLiteral(label)})`).join(", ");
+}
+
+function byText(page, baseSelector, labels) {
+  return page.locator(textSelector(baseSelector, labels)).first();
+}
+
+function settingsButton(page) {
+  return page.locator("button[aria-label='Open settings'], button[aria-label='打开设置']").first();
+}
+
+function settingsDoneButton(page) {
+  return byText(page, ".modal--settings .primary-button", ["Done", "完成"]);
+}
+
+function settingsNavButton(page, labels) {
+  return byText(page, ".settings-nav__button", labels);
+}
+
+async function selectInterfaceLanguage(page, language) {
+  const workspaceNav = settingsNavButton(page, ["Workspace", "工作区"]);
+  await workspaceNav.click();
+  await waitForCondition(
+    async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+    {
+      timeout: 5_000,
+      description: "workspace settings nav activation for language switch"
+    }
+  );
+  const languageSelect = page
+    .locator(
+      ".modal--settings label:has-text('Language') select, .modal--settings label:has-text('语言') select"
+    )
+    .first();
+  if (!(await isVisible(languageSelect))) {
+    throw new Error("interface language selector not visible");
+  }
+  await languageSelect.selectOption(language);
+  await page.waitForTimeout(220);
+}
+
+async function openSettingsModal(page) {
+  const trigger = settingsButton(page);
+  if (!(await isVisible(trigger))) {
+    throw new Error("settings button not found");
+  }
+  await trigger.click();
+  await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5000 });
+}
+
+async function restoreEnglishInterface(page) {
+  await openSettingsModal(page);
+  await selectInterfaceLanguage(page, "en");
+  await settingsDoneButton(page).click();
+  await page.waitForTimeout(260);
 }
 
 async function closeMenusAndDialogs(page, { closeTopLevelModals = false } = {}) {
@@ -2358,6 +2420,45 @@ async function main() {
       return fileName;
     });
 
+    await runStep("command history manager localized zh-cn", async () => {
+      await openSettingsModal(page);
+      await selectInterfaceLanguage(page, "zh-CN");
+      await settingsDoneButton(page).click();
+      await page.waitForTimeout(260);
+
+      const manageButton = byText(page, ".panel__section--command-history .secondary-button", [
+        "Manage",
+        "管理"
+      ]);
+      if (!(await isVisible(manageButton))) {
+        throw new Error("manage button not found for localized command history manager");
+      }
+      await manageButton.click();
+      await page
+        .locator(".modal--command-history-manager")
+        .waitFor({ state: "visible", timeout: 5000 });
+      const zhTitle = page.locator(".modal--command-history-manager h3:has-text('命令历史管理')").first();
+      const zhAddButton = page
+        .locator(".command-history-manager__toolbar .secondary-button:has-text('添加')")
+        .first();
+      const zhDeleteButton = page
+        .locator(".modal--command-history-manager .secondary-button:has-text('删除已选（')")
+        .first();
+      if (
+        !(await isVisible(zhTitle)) ||
+        !(await isVisible(zhAddButton)) ||
+        !(await isVisible(zhDeleteButton))
+      ) {
+        throw new Error("localized command history manager controls not visible");
+      }
+      const zhShot = await recordShot(page, "command-history-manager-zh-cn");
+      await page.locator(".modal--command-history-manager .primary-button:has-text('完成')").first().click();
+      await page.waitForTimeout(220);
+
+      await restoreEnglishInterface(page);
+      return zhShot;
+    });
+
     await runStep("command history panel context menu", async () => {
       const scopeSelect = page
         .locator(".panel__section--command-history .command-history-panel__filters select")
@@ -2398,7 +2499,7 @@ async function main() {
     });
 
     await runStep("open operation center", async () => {
-      const trigger = page.locator("button:has-text('Operation Center')").first();
+      const trigger = byText(page, "button", ["Operation Center", "操作中心"]);
       if (!(await isVisible(trigger))) {
         throw new Error("operation center trigger not found");
       }
@@ -2457,9 +2558,7 @@ async function main() {
         }
       );
       const fileName = await recordShot(page, "operation-center-open");
-      const done = page
-        .locator(".modal--operation-center .primary-button:has-text('Done')")
-        .first();
+      const done = byText(page, ".modal--operation-center .primary-button", ["Done", "完成"]);
       if (await isVisible(done)) {
         await done.click();
         await page.waitForTimeout(220);
@@ -2468,7 +2567,7 @@ async function main() {
     });
 
     await runStep("open retry center", async () => {
-      const trigger = page.locator("button:has-text('Retry Center')").first();
+      const trigger = byText(page, "button", ["Retry Center", "重试中心"]);
       if (!(await isVisible(trigger))) {
         throw new Error("retry center trigger not found");
       }
@@ -2483,35 +2582,16 @@ async function main() {
       }
       const groupedShot = await recordShot(page, "retry-center-grouped-view");
 
-      const done = page.locator(".modal--retry-center .primary-button:has-text('Done')").first();
+      const done = byText(page, ".modal--retry-center .primary-button", ["Done", "完成"]);
       if (!(await isVisible(done))) {
         throw new Error("retry center done button not found");
       }
       await done.click();
       await page.waitForTimeout(220);
 
-      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
-      if (!(await isVisible(settingsButton))) {
-        throw new Error("settings button not found for retry center i18n check");
-      }
-      await settingsButton.click();
-      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5000 });
-      const workspaceNav = page.locator(".settings-nav__button", { hasText: "Workspace" }).first();
-      await workspaceNav.click();
-      await waitForCondition(
-        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
-        {
-          timeout: 5_000,
-          description: "workspace settings nav activation for retry center i18n smoke"
-        }
-      );
-      const languageSelect = page.locator(".modal--settings label:has-text('Language') select").first();
-      if (!(await isVisible(languageSelect))) {
-        throw new Error("language selector not visible for retry center i18n check");
-      }
-      await languageSelect.selectOption("zh-CN");
-      await page.waitForTimeout(220);
-      const zhDone = page.locator(".modal--settings .primary-button:has-text('完成')").first();
+      await openSettingsModal(page);
+      await selectInterfaceLanguage(page, "zh-CN");
+      const zhDone = settingsDoneButton(page);
       if (!(await isVisible(zhDone))) {
         throw new Error("localized settings done button not visible");
       }
@@ -2538,26 +2618,7 @@ async function main() {
       await page.locator(".modal--retry-center .primary-button:has-text('完成')").first().click();
       await page.waitForTimeout(220);
 
-      const zhSettingsButton = page.getByRole("button", { name: "Open settings" }).first();
-      await zhSettingsButton.click();
-      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5000 });
-      const zhWorkspaceNav = page.locator(".settings-nav__button", { hasText: "工作区" }).first();
-      await zhWorkspaceNav.click();
-      await waitForCondition(
-        async () => await zhWorkspaceNav.evaluate((element) => element.classList.contains("is-active")),
-        {
-          timeout: 5_000,
-          description: "localized workspace settings nav activation for language restore"
-        }
-      );
-      const zhLanguageSelect = page.locator(".modal--settings label:has-text('语言') select").first();
-      if (!(await isVisible(zhLanguageSelect))) {
-        throw new Error("localized language selector not visible for restore");
-      }
-      await zhLanguageSelect.selectOption("en");
-      await page.waitForTimeout(220);
-      await page.locator(".modal--settings .primary-button:has-text('Done')").first().click();
-      await page.waitForTimeout(260);
+      await restoreEnglishInterface(page);
       return `${openShot}, ${groupedShot}, ${zhShot}`;
     });
 
@@ -2567,14 +2628,14 @@ async function main() {
         fixtureClosed = true;
       }
 
-      const settingsButton = page.getByRole("button", { name: "Open settings" }).first();
-      if (!(await isVisible(settingsButton))) {
+      const settingsTrigger = settingsButton(page);
+      if (!(await isVisible(settingsTrigger))) {
         throw new Error("settings button not found after fixture shutdown");
       }
-      await settingsButton.click();
+      await settingsTrigger.click();
       await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5000 });
 
-      const diagnosticsNav = page.locator(".settings-nav__button", { hasText: "Diagnostics" }).first();
+      const diagnosticsNav = settingsNavButton(page, ["Diagnostics", "诊断"]);
       if (!(await isVisible(diagnosticsNav))) {
         throw new Error("diagnostics nav button not found");
       }
@@ -2588,7 +2649,9 @@ async function main() {
         await disconnectScope.selectOption("allSessions");
       }
       const resetFilters = page
-        .locator(".modal--settings .settings-disconnect-reports-toolbar button:has-text('Reset Filters')")
+        .locator(
+          ".modal--settings .settings-disconnect-reports-toolbar button:has-text('Reset Filters'), .modal--settings .settings-disconnect-reports-toolbar button:has-text('重置筛选')"
+        )
         .first();
       if (await isVisible(resetFilters) && !(await resetFilters.isDisabled())) {
         await resetFilters.click();
@@ -2599,14 +2662,16 @@ async function main() {
         async () => {
           const heading = page
             .locator(".modal--settings .settings-port-forward-section__title", {
-              hasText: "Disconnect Reports ("
+              hasText: /Disconnect Reports \(|断开报告 \(/u
             })
             .first();
           if (!(await isVisible(heading))) {
             return false;
           }
           const text = ((await heading.textContent()) ?? "").replace(/\s+/g, " ").trim();
-          const match = text.match(/Disconnect Reports \((\d+)\/(\d+)\)/i);
+          const match =
+            text.match(/Disconnect Reports \((\d+)\/(\d+)\)/i) ??
+            text.match(/断开报告 \((\d+)\/(\d+)\)/u);
           if (!match) {
             return false;
           }
@@ -2624,14 +2689,16 @@ async function main() {
       );
 
       const copyLatestVisible = page
-        .locator(".modal--settings button:has-text('Copy Latest Visible')")
+        .locator(
+          ".modal--settings button:has-text('Copy Latest Visible'), .modal--settings button:has-text('复制最新可见项')"
+        )
         .first();
       if (!(await isVisible(copyLatestVisible)) || (await copyLatestVisible.isDisabled())) {
         throw new Error("disconnect report actions did not enable after fixture shutdown");
       }
 
       const fileName = await recordShot(page, "diagnostics-disconnect-report-captured");
-      const done = page.locator(".modal--settings .primary-button:has-text('Done')").first();
+      const done = settingsDoneButton(page);
       if (await isVisible(done)) {
         await done.click();
         await page.waitForTimeout(220);

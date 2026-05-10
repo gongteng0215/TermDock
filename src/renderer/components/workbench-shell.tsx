@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-import type { TransferDockLabels, WorkbenchTopbarLabels } from "../i18n";
+import type { AppLanguage, TransferDockLabels, WorkbenchTopbarLabels } from "../i18n";
+import { translateAppText } from "../i18n";
 import { UiIcon } from "./ui-icon";
 
 interface WorkbenchTopbarProps {
@@ -80,6 +81,7 @@ interface DangerousCommandApprovalView {
 }
 
 interface AppInlineHintPanelProps {
+  language: AppLanguage;
   approval: DangerousCommandApprovalView | null;
   hintMessage: AppInlineHintMessageView | null;
   onCancelApproval: () => void;
@@ -306,6 +308,7 @@ function TransferDockPanel({
 }
 
 export function AppInlineHintPanel({
+  language,
   approval,
   hintMessage,
   onCancelApproval,
@@ -332,7 +335,11 @@ export function AppInlineHintPanel({
     : hintMessage?.message ?? "";
 
   const text = approval
-    ? `${approval.severity === "critical" ? "Critical" : "Risk"} command from ${approval.sourceLabel}: ${approval.preview} | ${approval.contextSummary} | ${approval.ruleSummary}`
+    ? `${
+        approval.severity === "critical"
+          ? translateAppText(language, "Critical")
+          : translateAppText(language, "Risk")
+      }${translateAppText(language, " command from ")}${approval.sourceLabel}: ${approval.preview} | ${approval.contextSummary} | ${approval.ruleSummary}`
     : hintMessage?.message ?? "\u00A0";
 
   return (
@@ -347,21 +354,21 @@ export function AppInlineHintPanel({
       {approval ? (
         <div className="app-inline-hint-panel__actions">
           <button className="secondary-button secondary-button--small" onClick={onCancelApproval} type="button">
-            Cancel
+            {translateAppText(language, "Cancel")}
           </button>
           <button className="secondary-button secondary-button--small" onClick={onAllowInTab} type="button">
-            Allow In Tab
+            {translateAppText(language, "Allow In Tab")}
           </button>
           {approval.allowInGroup ? (
             <button className="secondary-button secondary-button--small" onClick={onAllowInGroup} type="button">
-              Allow In Group
+              {translateAppText(language, "Allow In Group")}
             </button>
           ) : null}
           <button className="secondary-button secondary-button--small" onClick={onSavePolicy} type="button">
-            Save Policy...
+            {translateAppText(language, "Save Policy...")}
           </button>
           <button className="primary-button primary-button--small" onClick={onRunOnce} type="button">
-            Run Once
+            {translateAppText(language, "Run Once")}
           </button>
         </div>
       ) : hintMessage ? (

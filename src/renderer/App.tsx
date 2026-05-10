@@ -34,6 +34,7 @@ import type { RemoteOpenFileAutoSyncEvent } from "../shared/system";
 import {
   LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
   MAX_TERMINAL_COMMAND_HISTORY,
+  MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH,
   readTerminalCommandHistory,
   TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
   TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
@@ -106,7 +107,9 @@ import {
 import {
   APP_LANGUAGE_OPTIONS,
   getI18n,
+  localizeDomTree,
   readAppLanguagePreference,
+  translateAppText,
   writeAppLanguagePreference,
   type AppLanguage,
   type SettingsSectionI18nKey,
@@ -2130,7 +2133,7 @@ function parseImportedCommandHistoryCommands(payload: unknown): ImportedCommandH
     }
     seen.add(command);
     parsed.push({
-      command: command.slice(0, 4000),
+      command: command.slice(0, MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH),
       source
     });
     if (parsed.length >= MAX_TERMINAL_COMMAND_HISTORY) {
@@ -5352,6 +5355,9 @@ export function App() {
   const isMacPlatform = /mac/i.test(navigator.platform);
   const [appLanguage, setAppLanguage] = useState<AppLanguage>(() => readAppLanguagePreference());
   const i18n = useMemo(() => getI18n(appLanguage), [appLanguage]);
+  const appRootRef = useRef<HTMLDivElement | null>(null);
+  const localizationFrameRef = useRef<number | null>(null);
+  const tr = useCallback((value: string) => translateAppText(appLanguage, value), [appLanguage]);
   const selectedLanguageOption = useMemo(
     () => APP_LANGUAGE_OPTIONS.find((option) => option.id === appLanguage) ?? APP_LANGUAGE_OPTIONS[0],
     [appLanguage]
@@ -5378,6 +5384,67 @@ export function App() {
 
   useEffect(() => {
     writeAppLanguagePreference(appLanguage);
+  }, [appLanguage]);
+  useEffect(() => {
+    const root = appRootRef.current;
+    if (!root || typeof window === "undefined") {
+      return;
+    }
+
+    let disposed = false;
+    const shouldIgnoreMutation = (target: Node): boolean => {
+      const element = target instanceof Element ? target : target.parentElement;
+      return Boolean(
+        element?.closest(
+          ".xterm, .terminal-pane__canvas, code, pre, script, style, textarea, .app-dialog__textarea--readonly"
+        )
+      );
+    };
+    const scheduleLocalization = () => {
+      if (localizationFrameRef.current !== null) {
+        return;
+      }
+      localizationFrameRef.current = window.requestAnimationFrame(() => {
+        localizationFrameRef.current = null;
+        if (!disposed) {
+          localizeDomTree(root, appLanguage);
+        }
+      });
+    };
+
+    scheduleLocalization();
+    if (typeof MutationObserver === "undefined") {
+      return () => {
+        disposed = true;
+        if (localizationFrameRef.current !== null) {
+          window.cancelAnimationFrame(localizationFrameRef.current);
+          localizationFrameRef.current = null;
+        }
+      };
+    }
+
+    const observer = new MutationObserver((mutations) => {
+      if (mutations.every((mutation) => shouldIgnoreMutation(mutation.target))) {
+        return;
+      }
+      scheduleLocalization();
+    });
+    observer.observe(root, {
+      attributeFilter: ["aria-label", "placeholder", "title"],
+      attributes: true,
+      characterData: true,
+      childList: true,
+      subtree: true
+    });
+
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      if (localizationFrameRef.current !== null) {
+        window.cancelAnimationFrame(localizationFrameRef.current);
+        localizationFrameRef.current = null;
+      }
+    };
   }, [appLanguage]);
 
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -6047,7 +6114,7 @@ export function App() {
   }, [activeTabId, sessions, terminalTabs]);
   const visibleTerminalCommandHistoryEntries = useMemo(() => {
     const normalizedQuery = terminalCommandHistoryQuery.trim().toLowerCase();
-    const filtered = terminalCommandHistoryEntries.filter((entry) => {
+    return terminalCommandHistoryEntries.filter((entry) => {
       if (terminalCommandHistoryScope === "activeTab" && activeTabId) {
         if (entry.tabId !== activeTabId) {
           return false;
@@ -6058,7 +6125,6 @@ export function App() {
       }
       return entry.command.toLowerCase().includes(normalizedQuery);
     });
-    return filtered.slice(0, 120);
   }, [activeTabId, terminalCommandHistoryEntries, terminalCommandHistoryQuery, terminalCommandHistoryScope]);
   const selectedCommandHistoryIdSet = useMemo(
     () => new Set(commandHistorySelection),
@@ -6078,9 +6144,12 @@ export function App() {
         command: entry.command,
         selected: selectedCommandHistoryIdSet.has(entry.id),
         metaLabel: `${formatHistoryTimestamp(entry.executedAt)} | ${formatTerminalCommandHistorySourceLabel(entry.source)}`,
-        title: `${entry.command}\n\nSource: ${formatTerminalCommandHistorySourceLabel(entry.source)}\n\nDouble-click command text area to paste into active terminal.`
+        title: i18n.commandHistoryManager.entryTitle(
+          entry.command,
+          formatTerminalCommandHistorySourceLabel(entry.source)
+        )
       })),
-    [selectedCommandHistoryIdSet, visibleTerminalCommandHistoryEntries]
+    [i18n, selectedCommandHistoryIdSet, visibleTerminalCommandHistoryEntries]
   );
   const copyTerminalCommandHistoryEntry = useCallback(
     async (entry: TerminalCommandHistoryEntry) => {
@@ -6235,7 +6304,9 @@ export function App() {
         source?: TerminalCommandHistorySource;
       }
     ): boolean => {
-      const normalizedCommand = command.trim();
+      const normalizedCommand = command
+        .trim()
+        .slice(0, MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH);
       if (!normalizedCommand) {
         return false;
       }
@@ -7737,31 +7808,32 @@ export function App() {
   }, []);
   const showAppAlert = useCallback(
     async (message: string, options?: AppAlertDialogOptions): Promise<void> => {
-      const title = (options?.title ?? "").trim();
+      const title = tr((options?.title ?? "").trim());
+      const translatedMessage = tr(message);
       const hasDetailText = typeof options?.detailText === "string" && options.detailText.trim().length > 0;
-      const summary = hasDetailText ? `${message} (details available)` : message;
+      const summary = hasDetailText ? `${translatedMessage} (${tr("details available")})` : translatedMessage;
       pushAppHintMessage(summary, {
         level: /error|fail|warning|warn/i.test(title) ? "warn" : "info",
         durationMs: hasDetailText ? 5600 : 3600
       });
     },
-    [pushAppHintMessage]
+    [pushAppHintMessage, tr]
   );
   const showAppConfirm = useCallback(
     async (message: string, options?: AppConfirmDialogOptions): Promise<boolean> => {
       const dialog: AppConfirmDialogState = {
         mode: "confirm",
-        title: options?.title ?? "Confirm",
-        message,
-        confirmLabel: options?.confirmLabel ?? "Confirm",
-        cancelLabel: options?.cancelLabel ?? "Cancel",
+        title: tr(options?.title ?? "Confirm"),
+        message: tr(message),
+        confirmLabel: tr(options?.confirmLabel ?? "Confirm"),
+        cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
         danger: options?.danger,
-        detailText: options?.detailText
+        detailText: options?.detailText ? tr(options.detailText) : undefined
       };
       const result = await openAppDialog(dialog, false);
       return result === true;
     },
-    [openAppDialog]
+    [openAppDialog, tr]
   );
   const showAppPrompt = useCallback(
     async (
@@ -7771,17 +7843,17 @@ export function App() {
     ): Promise<string | null> => {
       const dialog: AppPromptDialogState = {
         mode: "prompt",
-        title: options?.title ?? "Input Required",
-        message,
-        confirmLabel: options?.confirmLabel ?? "OK",
-        cancelLabel: options?.cancelLabel ?? "Cancel",
+        title: tr(options?.title ?? "Input Required"),
+        message: tr(message),
+        confirmLabel: tr(options?.confirmLabel ?? "OK"),
+        cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
         value: defaultValue,
         multiline: options?.multiline
       };
       const result = await openAppDialog(dialog, null);
       return typeof result === "string" ? result : null;
     },
-    [openAppDialog]
+    [openAppDialog, tr]
   );
   const addTerminalCommandHistoryEntry = useCallback(async () => {
     const input = await showAppPrompt("Enter command to add into history.", "", {
@@ -9097,17 +9169,20 @@ export function App() {
       }
       const dialog: AppChoiceDialogState = {
         mode: "choice",
-        title: options?.title ?? "Choose Action",
-        message,
+        title: tr(options?.title ?? "Choose Action"),
+        message: tr(message),
         confirmLabel: "",
-        cancelLabel: options?.cancelLabel ?? "Cancel",
-        detailText: options?.detailText,
-        options: choices
+        cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
+        detailText: options?.detailText ? tr(options.detailText) : undefined,
+        options: choices.map((choice) => ({
+          ...choice,
+          label: tr(choice.label)
+        }))
       };
       const result = await openAppDialog(dialog, null);
       return typeof result === "string" ? result : null;
     },
-    [openAppDialog]
+    [openAppDialog, tr]
   );
   const clearDangerousCommandPersistentApprovals = useCallback(async () => {
     const currentApprovals = dangerousCommandGuardPreferencesRef.current.persistentApprovals;
@@ -23018,28 +23093,28 @@ export function App() {
   const appendSessionSortActions = (actions: SessionContextAction[]) => {
     actions.push({
       id: "sort-default",
-      label: sessionSortMode === "default" ? "Sort: Default (Current)" : "Sort: Default",
+      label: tr(sessionSortMode === "default" ? "Sort: Default (Current)" : "Sort: Default"),
       run: () => {
         setSessionSortMode("default");
       }
     });
     actions.push({
       id: "sort-recent",
-      label: sessionSortMode === "recent" ? "Sort: Recent (Current)" : "Sort: Recent",
+      label: tr(sessionSortMode === "recent" ? "Sort: Recent (Current)" : "Sort: Recent"),
       run: () => {
         setSessionSortMode("recent");
       }
     });
     actions.push({
       id: "sort-name-asc",
-      label: sessionSortMode === "nameAsc" ? "Sort: Name A-Z (Current)" : "Sort: Name A-Z",
+      label: tr(sessionSortMode === "nameAsc" ? "Sort: Name A-Z (Current)" : "Sort: Name A-Z"),
       run: () => {
         setSessionSortMode("nameAsc");
       }
     });
     actions.push({
       id: "sort-name-desc",
-      label: sessionSortMode === "nameDesc" ? "Sort: Name Z-A (Current)" : "Sort: Name Z-A",
+      label: tr(sessionSortMode === "nameDesc" ? "Sort: Name Z-A (Current)" : "Sort: Name Z-A"),
       run: () => {
         setSessionSortMode("nameDesc");
       }
@@ -23059,7 +23134,7 @@ export function App() {
 
     sessionContextActions.push({
       id: "open-session",
-      label: selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Terminal Tab",
+      label: tr(selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Terminal Tab"),
       run: () => {
         for (const session of sessionsForActions) {
           openTerminalTab(session);
@@ -23069,14 +23144,14 @@ export function App() {
     if (selectedCount === 1) {
       sessionContextActions.push({
         id: "view-session",
-        label: "View Details",
+        label: tr("View Details"),
         run: () => {
           void viewSessionDetails(sessionContextTarget);
         }
       });
       sessionContextActions.push({
         id: "toggle-favorite",
-        label: sessionContextTarget.favorite ? "Unfavorite" : "Favorite",
+        label: tr(sessionContextTarget.favorite ? "Unfavorite" : "Favorite"),
         run: () => {
           void patchSession(sessionContextTarget.id, {
             favorite: !sessionContextTarget.favorite
@@ -23085,35 +23160,35 @@ export function App() {
       });
       sessionContextActions.push({
         id: "copy-clash-rules",
-        label: "Copy Clash Direct Rules",
+        label: tr("Copy Clash Direct Rules"),
         run: () => {
           void copyClashDirectRules(sessionContextTarget);
         }
       });
       sessionContextActions.push({
         id: "copy-ssh-command",
-        label: "Copy SSH Command",
+        label: tr("Copy SSH Command"),
         run: () => {
           void copySessionConnectionCommand(sessionContextTarget);
         }
       });
       sessionContextActions.push({
         id: "edit-session",
-        label: "Edit Session",
+        label: tr("Edit Session"),
         run: () => {
           openEditModal(sessionContextTarget);
         }
       });
       sessionContextActions.push({
         id: "duplicate-session",
-        label: "Duplicate Session",
+        label: tr("Duplicate Session"),
         run: () => {
           openDuplicateSessionModal(sessionContextTarget);
         }
       });
       sessionContextActions.push({
         id: "save-session-template",
-        label: "Save as Session Template...",
+        label: tr("Save as Session Template..."),
         run: () => {
           openSessionTemplateManager({
             sourceForm: toFormFromSession(sessionContextTarget)
@@ -23124,8 +23199,8 @@ export function App() {
         id: "run-quick-profile",
         label:
           sessionQuickProfiles.length > 0
-            ? `Run Quick Profile... (${sessionQuickProfiles.length})`
-            : "Run Quick Profile...",
+            ? tr(`Run Quick Profile... (${sessionQuickProfiles.length})`)
+            : tr("Run Quick Profile..."),
         disabled: sessionQuickProfiles.length === 0,
         run: () => {
           void runSessionQuickProfileChooser(sessionContextTarget);
@@ -23133,14 +23208,14 @@ export function App() {
       });
       sessionContextActions.push({
         id: "create-quick-profile",
-        label: "Save Quick Profile...",
+        label: tr("Save Quick Profile..."),
         run: () => {
           void createSessionQuickProfileForSession(sessionContextTarget);
         }
       });
       sessionContextActions.push({
         id: "manage-quick-profile",
-        label: "Manage Quick Profiles...",
+        label: tr("Manage Quick Profiles..."),
         run: () => {
           void manageSessionQuickProfilesForSession(sessionContextTarget);
         }
@@ -23148,21 +23223,21 @@ export function App() {
     }
     sessionContextActions.push({
       id: "move-session-group",
-      label: selectedCount > 1 ? "Move Selected to Group..." : "Move to Group...",
+      label: tr(selectedCount > 1 ? "Move Selected to Group..." : "Move to Group..."),
       run: () => {
         openMoveSessionsToGroupDialog(selectedIds);
       }
     });
     sessionContextActions.push({
       id: "move-session-ungrouped",
-      label: selectedCount > 1 ? "Move Selected to Ungrouped" : "Move to Ungrouped",
+      label: tr(selectedCount > 1 ? "Move Selected to Ungrouped" : "Move to Ungrouped"),
       run: () => {
         void assignSessionsToGroup(selectedIds, "");
       }
     });
     sessionContextActions.push({
       id: "delete-session",
-      label: selectedCount > 1 ? `Delete ${selectedCount} Selected` : "Delete Session",
+      label: tr(selectedCount > 1 ? `Delete ${selectedCount} Selected` : "Delete Session"),
       danger: true,
       run: () => {
         void removeSessionsByIds(selectedIds);
@@ -23184,7 +23259,7 @@ export function App() {
 
     sessionContextActions.push({
       id: "open-group",
-      label: "Open Group",
+      label: tr("Open Group"),
       run: () => {
         setSelectedGroupKeys([contextTarget.groupKey]);
         setActiveSessionGroupKey(contextTarget.groupKey);
@@ -23192,7 +23267,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "new-session",
-      label: "New Session",
+      label: tr("New Session"),
       run: () => {
         openCreateModal(contextTarget.groupName);
       }
@@ -23201,8 +23276,8 @@ export function App() {
       id: "new-session-from-template",
       label:
         sessionTemplates.length > 0
-          ? `New Session From Template... (${sessionTemplates.length})`
-          : "New Session From Template...",
+          ? tr(`New Session From Template... (${sessionTemplates.length})`)
+          : tr("New Session From Template..."),
       disabled: sessionTemplates.length === 0,
       run: () => {
         void chooseSessionTemplateAndApply({
@@ -23214,49 +23289,49 @@ export function App() {
     });
     sessionContextActions.push({
       id: "manage-session-templates",
-      label: "Manage Session Templates...",
+      label: tr("Manage Session Templates..."),
       run: () => {
         openSessionTemplateManager();
       }
     });
     sessionContextActions.push({
       id: "import-ssh-config",
-      label: "Import SSH Config...",
+      label: tr("Import SSH Config..."),
       run: () => {
         void importSessionsFromSshConfig();
       }
     });
     sessionContextActions.push({
       id: "import-sessions-json",
-      label: "Import Sessions JSON...",
+      label: tr("Import Sessions JSON..."),
       run: () => {
         void importSessionsFromJson();
       }
     });
     sessionContextActions.push({
       id: "export-all-sessions",
-      label: "Export All Sessions...",
+      label: tr("Export All Sessions..."),
       run: () => {
         void exportAllSessionsWithGroups();
       }
     });
     sessionContextActions.push({
       id: "export-all-groups",
-      label: "Export All Groups...",
+      label: tr("Export All Groups..."),
       run: () => {
         void exportAllSessionGroups();
       }
     });
     sessionContextActions.push({
       id: "new-group",
-      label: "New Group",
+      label: tr("New Group"),
       run: () => {
         void promptCreateSessionGroup();
       }
     });
     sessionContextActions.push({
       id: "select-all-groups",
-      label: "Select All Groups",
+      label: tr("Select All Groups"),
       disabled: groupedSessions.length === 0,
       run: () => {
         setSelectedGroupKeys(groupedSessions.map((group) => group.key));
@@ -23264,7 +23339,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "clear-group-selection",
-      label: "Clear Group Selection",
+      label: tr("Clear Group Selection"),
       disabled: selectedGroupKeys.length === 0,
       run: () => {
         setSelectedGroupKeys([]);
@@ -23274,8 +23349,8 @@ export function App() {
       id: "rename-group",
       label:
         groupNamesForActions.length > 1
-          ? "Rename Group (Select One)"
-          : "Rename Group",
+          ? tr("Rename Group (Select One)")
+          : tr("Rename Group"),
       disabled: groupNamesForActions.length !== 1,
       run: () => {
         void renameSessionGroup(groupNamesForActions[0]);
@@ -23285,8 +23360,8 @@ export function App() {
       id: "delete-group",
       label:
         groupNamesForActions.length > 1
-          ? `Delete ${groupNamesForActions.length} Selected Groups`
-          : "Delete Group",
+          ? tr(`Delete ${groupNamesForActions.length} Selected Groups`)
+          : tr("Delete Group"),
       disabled: groupNamesForActions.length === 0,
       danger: true,
       run: () => {
@@ -23297,14 +23372,14 @@ export function App() {
   } else if (contextTarget?.type === "group-root") {
     sessionContextActions.push({
       id: "new-group",
-      label: "New Group",
+      label: tr("New Group"),
       run: () => {
         void promptCreateSessionGroup();
       }
     });
     sessionContextActions.push({
       id: "new-session",
-      label: "New Session",
+      label: tr("New Session"),
       run: () => {
         openCreateModal("");
       }
@@ -23313,8 +23388,8 @@ export function App() {
       id: "new-session-from-template",
       label:
         sessionTemplates.length > 0
-          ? `New Session From Template... (${sessionTemplates.length})`
-          : "New Session From Template...",
+          ? tr(`New Session From Template... (${sessionTemplates.length})`)
+          : tr("New Session From Template..."),
       disabled: sessionTemplates.length === 0,
       run: () => {
         void chooseSessionTemplateAndApply({
@@ -23325,42 +23400,42 @@ export function App() {
     });
     sessionContextActions.push({
       id: "manage-session-templates",
-      label: "Manage Session Templates...",
+      label: tr("Manage Session Templates..."),
       run: () => {
         openSessionTemplateManager();
       }
     });
     sessionContextActions.push({
       id: "import-ssh-config",
-      label: "Import SSH Config...",
+      label: tr("Import SSH Config..."),
       run: () => {
         void importSessionsFromSshConfig();
       }
     });
     sessionContextActions.push({
       id: "import-sessions-json",
-      label: "Import Sessions JSON...",
+      label: tr("Import Sessions JSON..."),
       run: () => {
         void importSessionsFromJson();
       }
     });
     sessionContextActions.push({
       id: "export-all-sessions",
-      label: "Export All Sessions...",
+      label: tr("Export All Sessions..."),
       run: () => {
         void exportAllSessionsWithGroups();
       }
     });
     sessionContextActions.push({
       id: "export-all-groups",
-      label: "Export All Groups...",
+      label: tr("Export All Groups..."),
       run: () => {
         void exportAllSessionGroups();
       }
     });
     sessionContextActions.push({
       id: "select-all-groups",
-      label: "Select All Groups",
+      label: tr("Select All Groups"),
       disabled: groupedSessions.length === 0,
       run: () => {
         setSelectedGroupKeys(groupedSessions.map((group) => group.key));
@@ -23368,7 +23443,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "clear-group-selection",
-      label: "Clear Group Selection",
+      label: tr("Clear Group Selection"),
       disabled: selectedGroupKeys.length === 0,
       run: () => {
         setSelectedGroupKeys([]);
@@ -23376,7 +23451,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "rename-selected-group",
-      label: "Rename Selected Group",
+      label: tr("Rename Selected Group"),
       disabled: selectedGroupNames.length !== 1,
       run: () => {
         void renameSessionGroup(selectedGroupNames[0]);
@@ -23386,8 +23461,8 @@ export function App() {
       id: "delete-selected-groups",
       label:
         selectedGroupNames.length > 1
-          ? `Delete ${selectedGroupNames.length} Selected Groups`
-          : "Delete Selected Group",
+          ? tr(`Delete ${selectedGroupNames.length} Selected Groups`)
+          : tr("Delete Selected Group"),
       disabled: selectedGroupNames.length === 0,
       danger: true,
       run: () => {
@@ -23400,14 +23475,14 @@ export function App() {
     const selectedIds = selectedSessionsInActiveGroup.map((session) => session.id);
     sessionContextActions.push({
       id: "back-groups",
-      label: "Back to Groups",
+      label: tr("Back to Groups"),
       run: () => {
         setActiveSessionGroupKey(null);
       }
     });
     sessionContextActions.push({
       id: "new-session",
-      label: "New Session",
+      label: tr("New Session"),
       run: () => {
         openCreateModal(contextTarget.groupName);
       }
@@ -23416,8 +23491,8 @@ export function App() {
       id: "new-session-from-template",
       label:
         sessionTemplates.length > 0
-          ? `New Session From Template... (${sessionTemplates.length})`
-          : "New Session From Template...",
+          ? tr(`New Session From Template... (${sessionTemplates.length})`)
+          : tr("New Session From Template..."),
       disabled: sessionTemplates.length === 0,
       run: () => {
         void chooseSessionTemplateAndApply({
@@ -23429,42 +23504,42 @@ export function App() {
     });
     sessionContextActions.push({
       id: "manage-session-templates",
-      label: "Manage Session Templates...",
+      label: tr("Manage Session Templates..."),
       run: () => {
         openSessionTemplateManager();
       }
     });
     sessionContextActions.push({
       id: "import-ssh-config",
-      label: "Import SSH Config...",
+      label: tr("Import SSH Config..."),
       run: () => {
         void importSessionsFromSshConfig();
       }
     });
     sessionContextActions.push({
       id: "import-sessions-json",
-      label: "Import Sessions JSON...",
+      label: tr("Import Sessions JSON..."),
       run: () => {
         void importSessionsFromJson();
       }
     });
     sessionContextActions.push({
       id: "export-all-sessions",
-      label: "Export All Sessions...",
+      label: tr("Export All Sessions..."),
       run: () => {
         void exportAllSessionsWithGroups();
       }
     });
     sessionContextActions.push({
       id: "export-all-groups",
-      label: "Export All Groups...",
+      label: tr("Export All Groups..."),
       run: () => {
         void exportAllSessionGroups();
       }
     });
     sessionContextActions.push({
       id: "new-group",
-      label: "New Group",
+      label: tr("New Group"),
       run: () => {
         void promptCreateSessionGroup();
       }
@@ -23472,14 +23547,14 @@ export function App() {
     if (contextTarget.groupName) {
       sessionContextActions.push({
         id: "rename-group",
-        label: "Rename Group",
+        label: tr("Rename Group"),
         run: () => {
           void renameSessionGroup(contextTarget.groupName);
         }
       });
       sessionContextActions.push({
         id: "delete-group",
-        label: "Delete Group",
+        label: tr("Delete Group"),
         danger: true,
         run: () => {
           void deleteSessionGroup(contextTarget.groupName);
@@ -23488,7 +23563,7 @@ export function App() {
     }
     sessionContextActions.push({
       id: "select-all-sessions",
-      label: "Select All Sessions",
+      label: tr("Select All Sessions"),
       disabled: activeGroupSessions.length === 0,
       run: () => {
         const allIds = activeGroupSessions.map((session) => session.id);
@@ -23498,7 +23573,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "clear-session-selection",
-      label: "Clear Session Selection",
+      label: tr("Clear Session Selection"),
       disabled: selectedCount === 0,
       run: () => {
         setSelectedSessionIds([]);
@@ -23506,7 +23581,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "open-selected-sessions",
-      label: selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Selected Session",
+      label: tr(selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Selected Session"),
       disabled: selectedCount === 0,
       run: () => {
         for (const session of selectedSessionsInActiveGroup) {
@@ -23516,7 +23591,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "move-selected-sessions",
-      label: "Move Selected to Group...",
+      label: tr("Move Selected to Group..."),
       disabled: selectedCount === 0,
       run: () => {
         openMoveSessionsToGroupDialog(selectedIds);
@@ -23524,7 +23599,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "move-selected-sessions-ungrouped",
-      label: "Move Selected to Ungrouped",
+      label: tr("Move Selected to Ungrouped"),
       disabled: selectedCount === 0,
       run: () => {
         void assignSessionsToGroup(selectedIds, "");
@@ -23532,7 +23607,7 @@ export function App() {
     });
     sessionContextActions.push({
       id: "delete-selected-sessions",
-      label: selectedCount > 1 ? `Delete ${selectedCount} Selected Sessions` : "Delete Selected Session",
+      label: tr(selectedCount > 1 ? `Delete ${selectedCount} Selected Sessions` : "Delete Selected Session"),
       disabled: selectedCount === 0,
       danger: true,
       run: () => {
@@ -23546,7 +23621,7 @@ export function App() {
   const sftpToolbarActions: SftpContextAction[] = [
     {
       id: "go-to-path",
-      label: "Go to Path",
+      label: tr("Go to Path"),
       disabled: isSftpActionDisabled,
       run: () => {
         void loadSftpDirectory(sftpPath);
@@ -23554,7 +23629,7 @@ export function App() {
     },
     {
       id: "go-parent",
-      label: "Go Up",
+      label: tr("Go Up"),
       disabled: isSftpActionDisabled || !sftpDirectory?.parent,
       run: () => {
         if (!sftpDirectory?.parent) {
@@ -23565,7 +23640,7 @@ export function App() {
     },
     {
       id: "refresh-directory",
-      label: "Refresh",
+      label: tr("Refresh"),
       disabled: isSftpActionDisabled,
       run: () => {
         void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
@@ -23573,7 +23648,7 @@ export function App() {
     },
     {
       id: "new-folder",
-      label: "New Folder",
+      label: tr("New Folder"),
       disabled: isSftpActionDisabled,
       run: () => {
         void createSftpDirectory();
@@ -23581,7 +23656,7 @@ export function App() {
     },
     {
       id: "upload-file",
-      label: "Upload File",
+      label: tr("Upload File"),
       disabled: isSftpActionDisabled,
       run: () => {
         void uploadLocalFileToSftp();
@@ -23589,7 +23664,7 @@ export function App() {
     },
     {
       id: "download-selected",
-      label: "Download Selected",
+      label: tr("Download Selected"),
       disabled: isSftpActionDisabled || !canDownloadSelectedSftpEntry,
       run: () => {
         void downloadSelectedSftpEntry();
@@ -23597,7 +23672,7 @@ export function App() {
     },
     {
       id: "rename-selected",
-      label: "Rename Selected",
+      label: tr("Rename Selected"),
       disabled: isSftpActionDisabled || !selectedSftpEntry,
       run: () => {
         void renameSelectedSftpEntry();
@@ -23605,7 +23680,7 @@ export function App() {
     },
     {
       id: "delete-selected",
-      label: "Delete Selected",
+      label: tr("Delete Selected"),
       disabled: isSftpActionDisabled || !selectedSftpEntry,
       run: () => {
         void deleteSelectedSftpEntry();
@@ -23617,14 +23692,14 @@ export function App() {
   if (sftpContextEntry?.kind === "directory") {
     sftpContextActions.push({
       id: "open-directory",
-      label: "Open Directory",
+      label: tr("Open Directory"),
       run: () => {
         void loadSftpDirectory(sftpContextEntry.path);
       }
     });
     sftpContextActions.push({
       id: "download-directory",
-      label: "Download Folder",
+      label: tr("Download Folder"),
       disabled: isSftpActionDisabled,
       run: () => {
         void downloadSftpDirectory(sftpContextEntry);
@@ -23634,7 +23709,7 @@ export function App() {
   if (sftpContextEntry && sftpContextEntry.kind !== "directory") {
     sftpContextActions.push({
       id: "open-file",
-      label: "Open File",
+      label: tr("Open File"),
       disabled: isSftpActionDisabled,
       run: () => {
         void openSftpEntryFile(sftpContextEntry);
@@ -23642,7 +23717,7 @@ export function App() {
     });
     sftpContextActions.push({
       id: "download-file",
-      label: "Download File",
+      label: tr("Download File"),
       disabled: isSftpActionDisabled,
       run: () => {
         void downloadSelectedSftpEntry(sftpContextEntry);
@@ -23651,7 +23726,7 @@ export function App() {
   }
   sftpContextActions.push({
     id: "upload-file",
-    label: "Upload File",
+    label: tr("Upload File"),
     disabled: isSftpActionDisabled,
     run: () => {
       void uploadLocalFileToSftp();
@@ -23659,7 +23734,7 @@ export function App() {
   });
   sftpContextActions.push({
     id: "create-directory",
-    label: "New Folder",
+    label: tr("New Folder"),
     disabled: isSftpActionDisabled,
     run: () => {
       void createSftpDirectory();
@@ -23667,7 +23742,7 @@ export function App() {
   });
   sftpContextActions.push({
     id: "refresh-directory",
-    label: "Refresh",
+    label: tr("Refresh"),
     disabled: isSftpActionDisabled,
     run: () => {
       void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
@@ -23676,7 +23751,7 @@ export function App() {
   if (sftpContextEntry) {
     sftpContextActions.push({
       id: "rename-entry",
-      label: "Rename",
+      label: tr("Rename"),
       disabled: isSftpActionDisabled,
       run: () => {
         void renameSelectedSftpEntry(sftpContextEntry);
@@ -23684,7 +23759,7 @@ export function App() {
     });
     sftpContextActions.push({
       id: "delete-entry",
-      label: "Delete",
+      label: tr("Delete"),
       disabled: isSftpActionDisabled,
       run: () => {
         void deleteSelectedSftpEntry(sftpContextEntry);
@@ -23692,7 +23767,7 @@ export function App() {
     });
     sftpContextActions.push({
       id: "copy-entry-path",
-      label: "Copy Path",
+      label: tr("Copy Path"),
       run: () => {
         void (async () => {
           try {
@@ -23714,7 +23789,7 @@ export function App() {
   } else if (sftpDirectory?.cwd) {
     sftpContextActions.push({
       id: "copy-current-path",
-      label: "Copy Current Path",
+      label: tr("Copy Current Path"),
       run: () => {
         void (async () => {
           try {
@@ -23736,7 +23811,7 @@ export function App() {
   }
 
   return (
-    <div className={isMacPlatform ? "app app--mac" : "app app--windows"}>
+    <div className={isMacPlatform ? "app app--mac" : "app app--windows"} ref={appRootRef}>
       <WorkbenchTopbar
         autoReconnectLabel={
           connectionPreferences.autoReconnect
@@ -23856,6 +23931,7 @@ export function App() {
             editorFocusTypographyId={terminalEditorFocusPreferences.typographyId}
             getDangerousCommandSessionGroupName={getSessionGroupNameForTab}
             hotkeyPreferences={hotkeyPreferences}
+            language={appLanguage}
             onActiveEditorModeChange={setIsTerminalEditorFocusMode}
             onCloseAllTabs={closeAllTabs}
             onCloseTab={closeTerminalTab}
@@ -23922,23 +23998,6 @@ export function App() {
                         title: activeTerminalTab.title
                       }
                     : null
-              }
-              activeSelectionDetails={
-                activeSessionGroup && selectedSession && activeGroupSessions.some((session) => session.id === selectedSession.id)
-                  ? {
-                      authLabel:
-                        selectedSession.authType === "privateKey"
-                          ? selectedSession.privateKeyPath?.trim()
-                            ? `Private Key · ${selectedSession.privateKeyPath.trim()}`
-                            : "Private Key"
-                          : selectedSession.hasSecret
-                            ? "Password · Secret Stored"
-                            : "Password",
-                      groupLabel: selectedSession.groupId?.trim() || "Ungrouped",
-                      lastConnectedLabel: formatSessionLastConnected(selectedSession.lastConnectedAt),
-                      remark: selectedSession.remark?.trim() || null
-                    }
-                  : null
               }
               emptyStateLabel={
                 !activeSessionGroup
@@ -24054,6 +24113,7 @@ export function App() {
               <ServerHealthInspectorSection
               activeTabTitle={activeTerminalTab?.title ?? null}
               hasAlert={serverHealthAlertStatus.hasAny}
+              healthyLabel={tr("Healthy")}
               isConnected={isActiveTabConnected}
               isDetailOpen={isServerHealthDetailOpen}
               onRefresh={() => {
@@ -24433,6 +24493,7 @@ export function App() {
             : null
         }
         hintMessage={appHintMessage}
+        language={appLanguage}
         onAllowInGroup={() => approveDangerousCommandWithScope("sessionGroup")}
         onAllowInTab={() => approveDangerousCommandWithScope("tab")}
         onCancelApproval={() => resolveDangerousCommandApproval(false)}
@@ -24648,6 +24709,7 @@ export function App() {
         canExport={terminalCommandHistoryEntries.length > 0}
         canToggleSelectVisible={visibleCommandHistoryIds.length > 0}
         entries={visibleTerminalCommandHistoryEntryViews}
+        labels={i18n.commandHistoryManager}
         onAdd={() => {
           void addTerminalCommandHistoryEntry();
         }}

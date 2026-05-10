@@ -4,7 +4,7 @@ Last updated: 2026-05-10
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.22`
+- Stable release shipped: `v0.1.23`
 - Active branch: `feature/editor-workbench-ui`
 - Active branch focus: editor-workbench UI refresh plus self-use hardening follow-up
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
@@ -30,8 +30,8 @@ Last updated: 2026-05-10
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
-- Editor workbench branch now adds a lightweight multilingual foundation with persisted English/Simplified Chinese interface language selection, currently covering the settings shell, Workspace controls, topbar, transfer dock, Operation Center, and Retry Center
-- Latest hardening validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-10T07-36-38-904Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`).
+- Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
+- Latest multilingual validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-10T14-23-35-255Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -84,11 +84,13 @@ Last updated: 2026-05-10
   - workbench shell and terminal CSS were split out from the root stylesheet
 - Multilingual baseline:
   - `Settings > Workspace` now exposes a persisted interface-language selector
-  - English remains the default language; Simplified Chinese covers the settings shell, Workspace controls, topbar, transfer dock, Operation Center, and Retry Center
-  - smoke coverage now verifies the Simplified Chinese language option is present and opens a localized Retry Center
+  - English remains the default language; Simplified Chinese now includes an explicit label set plus DOM localization fallback for remaining hardcoded UI text/attributes
+  - Simplified Chinese coverage now includes the settings shell, Workspace controls, topbar, transfer dock, terminal/workbench chrome, context menus, common dialogs, Operation Center, Retry Center, Command History Manager, port forwarding, diagnostics, hotkeys, and snippets
+  - smoke coverage now verifies the Simplified Chinese language option is present and opens localized Retry Center and Command History Manager modals
 - Verification so far:
   - hardening follow-up `pnpm run typecheck`: passed
   - hardening follow-up `pnpm run build`: passed
+  - multilingual follow-up `pnpm run smoke:ui`: `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T14-23-35-255Z/summary.json`
   - hardening follow-up `pnpm run smoke:ui`: `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T07-36-38-904Z/summary.json`
   - full UI refresh smoke artifact: `PASS 45 / FAIL 0 / SKIP 0`
   - post-refactor `pnpm run typecheck`: passed
