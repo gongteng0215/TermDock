@@ -7,12 +7,14 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 
 - Current stable release: `v0.1.22` (2026-04-12)
 - Current active branch: `feature/editor-workbench-ui`
-- Current branch focus: editor-workbench UI refresh, renderer module split, and post-refactor validation
+- Current branch focus: editor-workbench UI refresh plus self-use hardening follow-up
 - Current stable release includes alternate-screen editor focus mode with selectable `Midnight` / `Graphite` / `Paper` themes in `Settings > Workspace`
 - Current stable release also includes `Compact` / `Balanced` / `Reading` typography presets, `System Mono` / `Coding Mono` / `Drafting Mono` font presets, `Crisp` / `Steady` / `Open` text-rhythm presets, `Beam` / `Underline` / `Block` cursor presets, and inactive-tab compaction for editor-only focus mode
 - Current master addition: recoverable global error UX now also routes hotkey and port-forward failures into `Hotkeys` / `Port Fwd`, and transfer-style failures can jump straight into `Retry Center` in addition to the existing settings, `Operation Center`, and bug-report actions
 - Current branch addition: the main renderer now reads as a code-editor-style workbench with a flatter shell, left Explorer rail, right Inspector rail, stronger terminal stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` view persistence, collapsible command history, and narrow-width inspector tabs
 - Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
+- Current branch hardening: recoverable global error routing now also points Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures at their matching settings sections, with Safety sync failures covered by smoke automation
+- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T02-20-06-322Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`, and latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
@@ -196,7 +198,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - upgraded error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
   - includes `Copy Latest Disconnect` action when reports are available
   - connection/bridge related errors now show contextual recovery hints
-- high-frequency error types now route directly to `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when that recovery path is more specific than plain diagnostics
+- high-frequency error types now route directly to `Connection Settings`, `Workspace`, `Safety`, `File Opening`, `Hotkeys`, `Monitor`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, `Diagnostics`, or `Export Bug Report` when that recovery path is more specific than plain diagnostics
 - Operation center baseline:
   - new `Operation Center` modal for active long-running operations
   - consolidated status for upload/download queues, remote delete, and port-forward busy state

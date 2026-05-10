@@ -125,7 +125,7 @@ function createMarkdownReport({
   lines.push(
     "- Settings sections (Connection/Workspace/Safety/Hotkeys/Monitor/File Open/SFTP/Port Fwd/Diagnostics), including transfer pack save/apply, sync controls, and schedule resume hints"
   );
-  lines.push("- Recoverable global error bar routing for invalid hotkey imports");
+  lines.push("- Recoverable global error bar routing for invalid hotkey imports and safety bundle sync failures");
   lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
   lines.push("- Command history manager (add/edit/export/import/delete)");
   lines.push("- Command history side panel context menu");
@@ -2032,6 +2032,62 @@ async function main() {
         await page.waitForTimeout(180);
       }
       return `message=${invalidMessage}; shots=${errorShot}, ${routeShot}`;
+    });
+
+    await runStep("global error bar routes safety bundle errors back to safety settings", async () => {
+      const safetyMessage = await page.evaluate(() => {
+        if (typeof window.__termdockSmokeSetGlobalError !== "function") {
+          throw new Error("smoke global error setter not installed");
+        }
+        const message = "Failed to pull safety bundles from sync file.";
+        window.__termdockSmokeSetGlobalError(message);
+        return message;
+      });
+      await waitForCondition(
+        async () => {
+          const message =
+            ((await page.locator(".error-bar__message").first().textContent()) ?? "").trim();
+          return message.includes("safety bundles") ? message : false;
+        },
+        {
+          timeout: 8_000,
+          description: "safety bundle global error bar message"
+        }
+      );
+      const safetyAction = page.locator(".error-bar button:has-text('Safety')").first();
+      if (!(await isVisible(safetyAction))) {
+        throw new Error("safety recovery action not visible in global error bar");
+      }
+      const errorShot = await recordShot(page, "global-error-safety-action");
+      await safetyAction.click();
+      await page.locator(".modal--settings").waitFor({ state: "visible", timeout: 5_000 });
+      const reopenedSafetyNav = page.locator(".settings-nav__button", { hasText: "Safety" }).first();
+      const safetyActive = await waitForCondition(
+        async () =>
+          (await reopenedSafetyNav.count()) > 0 &&
+          (await reopenedSafetyNav.evaluate((element) => element.classList.contains("is-active"))),
+        {
+          timeout: 5_000,
+          description: "global error route back to safety settings"
+        }
+      );
+      if (!safetyActive) {
+        throw new Error("global error safety action did not reopen safety settings");
+      }
+      const routeShot = await recordShot(page, "global-error-safety-routed");
+      const restoreDoneButton = page
+        .locator(".modal--settings .primary-button:has-text('Done')")
+        .first();
+      if (await isVisible(restoreDoneButton)) {
+        await restoreDoneButton.click();
+      }
+      await page.waitForTimeout(220);
+      const dismissErrorButton = page.locator(".error-bar .icon-button[aria-label='Dismiss error']").first();
+      if (await isVisible(dismissErrorButton)) {
+        await dismissErrorButton.click();
+        await page.waitForTimeout(180);
+      }
+      return `message=${safetyMessage}; shots=${errorShot}, ${routeShot}`;
     });
 
     await runStep("workspace editor focus toggle disables auto layout until re-enabled", async () => {

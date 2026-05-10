@@ -1869,6 +1869,40 @@ function isPortForwardRecoverableError(message?: string): boolean {
   );
 }
 
+function isSafetyRecoverableError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(dangerous command|safety (?:bundle|guardrail|settings)|safety bundles?|policy bundles?|guard preferences)/i.test(
+    message
+  );
+}
+
+function isWorkspaceRecoverableError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(workspace profile|workspace safety sync|workspace settings|profile sync)/i.test(message);
+}
+
+function isServerHealthRecoverableError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(server monitor|server health|health snapshot|process details|failed services|monitor command)/i.test(
+    message
+  );
+}
+
+function isDiagnosticsRecoverableError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(diagnostics|log bridge|log info|log directory|bug report|disconnect report|snapshot export)/i.test(
+    message
+  );
+}
+
 function resolveTransferRecoveryReasonForError(message?: string): string | null {
   const normalized = message?.trim() ?? "";
   if (!normalized) {
@@ -17171,7 +17205,7 @@ export function App() {
       );
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
-      setError(message);
+      setError(`Failed to import safety bundles. ${message}`);
       writeAppLog("error", "renderer:safety", "Failed to import safety bundles.", caughtError);
     }
   }, [showAppAlert, systemApi, writeAppLog]);
@@ -17240,7 +17274,7 @@ export function App() {
         return true;
       } catch (caughtError) {
         const message = toLogMessage(caughtError);
-        setError(message);
+        setError(`Failed to pull safety bundles from sync file. ${message}`);
         writeAppLog(
           "error",
           "renderer:safety",
@@ -17312,7 +17346,7 @@ export function App() {
         return true;
       } catch (caughtError) {
         const message = toLogMessage(caughtError);
-        setError(message);
+        setError(`Failed to push safety bundles to sync file. ${message}`);
         writeAppLog(
           "error",
           "renderer:safety",
@@ -18519,6 +18553,18 @@ export function App() {
     openSettingsPanel("portForwarding");
   }, [openSettingsPanel]);
 
+  const openSafetySettingsFromError = useCallback(() => {
+    openSettingsPanel("safety");
+  }, [openSettingsPanel]);
+
+  const openWorkspaceSettingsFromError = useCallback(() => {
+    openSettingsPanel("workspace");
+  }, [openSettingsPanel]);
+
+  const openServerHealthSettingsFromError = useCallback(() => {
+    openSettingsPanel("serverHealth");
+  }, [openSettingsPanel]);
+
   const openDiagnosticsFromError = useCallback(() => {
     openSettingsPanel("diagnostics");
   }, [openSettingsPanel]);
@@ -18596,6 +18642,10 @@ export function App() {
     const openerLike = isPreferredOpenerConfigurationError(message);
     const hotkeyLike = isHotkeyRecoverableError(message);
     const portForwardLike = isPortForwardRecoverableError(message);
+    const safetyLike = isSafetyRecoverableError(message);
+    const workspaceLike = isWorkspaceRecoverableError(message);
+    const serverHealthLike = isServerHealthRecoverableError(message);
+    const diagnosticsLike = isDiagnosticsRecoverableError(message);
     const transferReason = resolveTransferRecoveryReasonForError(message);
     const canReconnect =
       reconnectLike &&
@@ -18609,18 +18659,32 @@ export function App() {
       (transferReason || reconnectLike || portForwardLike) &&
       hasOperationCenterActivity
     );
-    const canExportBugReport = !!(bridgeLike || transferReason || portForwardLike);
+    const canExportBugReport = !!(
+      bridgeLike ||
+      transferReason ||
+      portForwardLike ||
+      diagnosticsLike ||
+      serverHealthLike
+    );
     let settingsAction: SettingsSectionId | null = null;
     if (openerLike) {
       settingsAction = "fileOpening";
     } else if (hotkeyLike) {
       settingsAction = "hotkeys";
+    } else if (safetyLike) {
+      settingsAction = "safety";
+    } else if (workspaceLike) {
+      settingsAction = "workspace";
     } else if (portForwardLike) {
       settingsAction = "portForwarding";
+    } else if (serverHealthLike) {
+      settingsAction = "serverHealth";
     } else if (transferReason) {
       settingsAction = "sftp";
     } else if (reconnectLike && !canReconnect) {
       settingsAction = "connection";
+    } else if (diagnosticsLike) {
+      settingsAction = "diagnostics";
     }
     let hint = "";
     if (openerLike) {
@@ -18629,10 +18693,19 @@ export function App() {
     } else if (hotkeyLike) {
       hint =
         "Hotkey import or shortcut configuration issue detected. Open Hotkeys to review conflicts or re-import a valid file.";
+    } else if (safetyLike) {
+      hint =
+        "Safety guardrail or shared-bundle issue detected. Open Safety to review policy packs, templates, sync file, or approvals.";
+    } else if (workspaceLike) {
+      hint =
+        "Workspace profile issue detected. Open Workspace to review the active profile and Safety sync defaults.";
     } else if (portForwardLike) {
       hint = canOpenOperationCenter
         ? "Port-forwarding issue detected. Review bind/target settings, then check Operation Center for affected work."
         : "Port-forwarding issue detected. Review bind/target settings and active forwards in Port Fwd settings.";
+    } else if (serverHealthLike) {
+      hint =
+        "Server health collection issue detected. Open Monitor settings to review alert thresholds, then use Diagnostics if the remote command keeps failing.";
     } else if (transferReason) {
       hint = getTransferFailureSuggestion(transferReason) ?? "";
       if (canOpenRetryCenter) {
@@ -18640,6 +18713,10 @@ export function App() {
           ? `${hint} Retry Center can requeue failed items after the root cause is fixed.`
           : "Retry Center can requeue failed items after the root cause is fixed.";
       }
+    } else if (diagnosticsLike) {
+      hint = canExportBugReport
+        ? "Diagnostics issue detected. Open Diagnostics, export a bug report, or copy the error for handoff."
+        : "Diagnostics issue detected. Open Diagnostics or copy the error for handoff.";
     } else if (bridgeLike) {
       hint = "Bridge/runtime issue detected. Open logs or export a bug report.";
     } else if (reconnectLike) {
@@ -26600,6 +26677,33 @@ export function App() {
                 type="button"
               >
                 Hotkeys
+              </button>
+            ) : null}
+            {globalErrorRecovery.settingsAction === "workspace" ? (
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={openWorkspaceSettingsFromError}
+                type="button"
+              >
+                Workspace
+              </button>
+            ) : null}
+            {globalErrorRecovery.settingsAction === "safety" ? (
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={openSafetySettingsFromError}
+                type="button"
+              >
+                Safety
+              </button>
+            ) : null}
+            {globalErrorRecovery.settingsAction === "serverHealth" ? (
+              <button
+                className="secondary-button secondary-button--small"
+                onClick={openServerHealthSettingsFromError}
+                type="button"
+              >
+                Monitor
               </button>
             ) : null}
             {globalErrorRecovery.settingsAction === "sftp" ? (

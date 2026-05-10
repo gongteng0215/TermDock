@@ -1,12 +1,12 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-05-09
+Last updated: 2026-05-10
 
 ## Snapshot
 
 - Stable release shipped: `v0.1.22`
 - Active branch: `feature/editor-workbench-ui`
-- Active branch focus: editor-workbench UI refresh, renderer module split, and post-refactor validation
+- Active branch focus: editor-workbench UI refresh plus self-use hardening follow-up
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -28,6 +28,8 @@ Last updated: 2026-05-09
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
+- Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
+- Latest hardening validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-10T02-20-06-322Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -79,6 +81,9 @@ Last updated: 2026-05-09
   - workbench UI local-storage preferences moved into a small helper module
   - workbench shell and terminal CSS were split out from the root stylesheet
 - Verification so far:
+  - hardening follow-up `pnpm run typecheck`: passed
+  - hardening follow-up `pnpm run build`: passed
+  - hardening follow-up `pnpm run smoke:ui`: `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T02-20-06-322Z/summary.json`
   - full UI refresh smoke artifact: `PASS 45 / FAIL 0 / SKIP 0`
   - post-refactor `pnpm run typecheck`: passed
   - post-refactor `pnpm run build`: passed
