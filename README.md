@@ -14,8 +14,8 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Current branch addition: the main renderer now reads as a code-editor-style workbench with a flatter shell, left Explorer rail, right Inspector rail, stronger terminal stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` view persistence, collapsible command history, and narrow-width inspector tabs
 - Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
 - Current branch hardening: recoverable global error routing now also points Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures at their matching settings sections, with Safety sync failures covered by smoke automation
-- Current branch Operation Center follow-up: added a unified activity timeline that interleaves transfer, remote delete, port-forward, and tracked app-job activity in one scan-friendly card
-- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-18-45-507Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
+- Current branch Operation Center follow-up: added a unified activity timeline plus grouped controls for transfer, active-tab, and tools workflows
+- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-31-05-514Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`, and latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
@@ -204,6 +204,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
   - new `Operation Center` modal for active long-running operations
   - consolidated status for upload/download queues, remote delete, and port-forward busy state
   - unified activity timeline for recent transfer, delete, port-forward, and tracked app-job events
+  - grouped controls for transfer-wide, active-tab, and tool/navigation actions
   - quick actions for cancel-all transfer queues and jump to diagnostics/port-forward settings
   - cross-tab transfer activity summary with one-click focus to target tab
   - per-tab and cross-tab one-click transfer cancellation actions
@@ -242,7 +243,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Workspace profile mode (`dev` / `staging` / `prod`) with persistent risk badges and optional global Safety pack/template sync
 - Command History side panel + manager, including blank-area context menu actions (`Add` / `Import` / `Export` / `Manage`)
 - Command snippets manager and grouped snippet execution (`Run Snippet`, `Snippet Manager`) with prompted variables, scoped remembered values, reusable prompt sets, and preview-before-run
-- Operation Center modal with active transfer/delete/port-forward status, tracked session/snippet/diagnostics jobs, cross-tab activity summary, cancel-all actions, and bulk reconnect shortcuts
+- Operation Center modal with active transfer/delete/port-forward status, grouped controls, unified activity timeline, tracked session/snippet/diagnostics jobs, cross-tab activity summary, cancel-all actions, and bulk reconnect shortcuts
 - Port forwarding manager in Settings:
   - Local forward (`-L`)
   - Remote forward (`-R`)
@@ -386,7 +387,7 @@ Tag rules:
 
 1. Push or PR `feature/editor-workbench-ui` with current workspace and packaged smoke evidence
 2. Review any feedback from real usage of the refreshed workbench shell
-3. Continue the self-use hardening backlog: recoverable global error coverage, Operation Center timeline/grouped controls, persistence hardening, and startup/large-transfer performance
+3. Continue the self-use hardening backlog: recoverable global error coverage, Operation Center broader control coverage, persistence hardening, and startup/large-transfer performance
 4. Keep signing/notarization and broader release/test evidence in the low-priority self-use backlog
 
 ## Remaining Work (Not Done Yet)
@@ -394,7 +395,7 @@ Tag rules:
 1. Optional workbench polish after real usage feedback
 2. Remaining macOS/external-host packaged evidence for broader release confidence
 3. `P0-E3`: extend recoverable global error actions beyond current baseline coverage
-4. `F8`: extend Operation Center beyond the current tracked jobs with richer timeline and cancellation controls
+4. `F8`: extend Operation Center beyond the current grouped controls with broader cancel/retry coverage
 5. `P0-A3` + `F9` follow-up: SQLite migration and credential-safe encrypted backup/restore
 6. `P0-E1` + `P0-E2`: startup and large-transfer performance follow-up
 7. `P0-F3`: remaining macOS/external-host packaged validation, now low priority for self-use
@@ -403,7 +404,7 @@ Tag rules:
 
 ## Candidate Features (Prioritized)
 
-Current next-wave emphasis after the editor-workbench branch is verified: operation center timeline/control follow-up, session templates v2, and dangerous-command/workspace follow-up. Additional ideas are listed below.
+Current next-wave emphasis after the editor-workbench branch is verified: operation center control-coverage follow-up, session templates v2, and dangerous-command/workspace follow-up. Additional ideas are listed below.
 
 1. Advanced retry-center analytics and history export
 2. Session templates v2 (runtime prompts, import/export, layered presets)

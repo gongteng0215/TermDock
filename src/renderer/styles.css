@@ -3489,6 +3489,31 @@ body::before {
   margin-top: 1px;
 }
 
+.operation-center__control-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.operation-center__control-group {
+  border: 1px solid var(--ui-card-border);
+  border-radius: 6px;
+  background: var(--ui-card-bg);
+  padding: 5px;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.operation-center__control-title {
+  margin: 0;
+  color: #d4e8fb;
+  font-size: 10px;
+  font-weight: 650;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
 .operation-center__timeline {
   list-style: none;
   margin: 0;
@@ -4414,6 +4439,10 @@ body::before {
   }
 
   .operation-center__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operation-center__control-groups {
     grid-template-columns: 1fr;
   }
 

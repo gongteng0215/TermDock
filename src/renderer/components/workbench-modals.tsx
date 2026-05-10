@@ -326,6 +326,8 @@ export function OperationCenterModal({
     return null;
   }
 
+  const disconnectedTransferTabCount = transferTabSummaries.filter((entry) => !entry.connected).length;
+
   return (
     <div className="modal-backdrop" role="presentation">
       <div
@@ -345,6 +347,125 @@ export function OperationCenterModal({
           Consolidated view for long-running operations across open workspace tabs.
         </p>
         <div className="operation-center__grid">
+          <article className="operation-center__card operation-center__card--wide">
+            <div className="operation-center__card-header">
+              <p className="operation-center__title">Grouped Controls</p>
+              <span
+                className={
+                  hasActivity || canRetryAllFailedTransfers
+                    ? "operation-center__state is-active"
+                    : "operation-center__state is-idle"
+                }
+              >
+                {hasActivity || canRetryAllFailedTransfers ? "Ready" : "Idle"}
+              </span>
+            </div>
+            <div className="operation-center__control-groups">
+              <section className="operation-center__control-group">
+                <p className="operation-center__control-title">Transfers</p>
+                <p className="operation-center__meta">
+                  active tabs {transferTabSummaries.length} | retry candidates {failedRetryCandidateTotal}
+                </p>
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!canRetryAllFailedTransfers}
+                    onClick={onRetryAllFailedTransfers}
+                    type="button"
+                  >
+                    Retry All Failed
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={transferTabSummaries.length === 0 || isBulkCancelingTabs}
+                    onClick={onCancelAllTransfersAcrossTabs}
+                    type="button"
+                  >
+                    {isBulkCancelingTabs ? "Canceling..." : "Cancel All Active"}
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={disconnectedTransferTabCount === 0 || isReconnectingTabs}
+                    onClick={onReconnectDisconnectedTabs}
+                    type="button"
+                  >
+                    {isReconnectingTabs ? "Reconnecting..." : "Reconnect Disconnected"}
+                  </button>
+                </div>
+              </section>
+              <section className="operation-center__control-group">
+                <p className="operation-center__control-title">Active Tab</p>
+                <p className="operation-center__meta">
+                  uploads failed {uploadSummary.failed} | downloads failed {downloadSummary.failed}
+                </p>
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!hasActiveTab}
+                    onClick={onCancelActiveUploads}
+                    type="button"
+                  >
+                    Cancel Uploads
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!hasActiveTab}
+                    onClick={onCancelActiveDownloads}
+                    type="button"
+                  >
+                    Cancel Downloads
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!canRetryFailedUploads}
+                    onClick={onRetryActiveUploads}
+                    type="button"
+                  >
+                    Retry Uploads
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!canRetryFailedDownloads}
+                    onClick={onRetryActiveDownloads}
+                    type="button"
+                  >
+                    Retry Downloads
+                  </button>
+                </div>
+              </section>
+              <section className="operation-center__control-group">
+                <p className="operation-center__control-title">Tools</p>
+                <p className="operation-center__meta">
+                  port forwards {portForwardSummary.total} | app jobs {recentAppJobs.length}
+                </p>
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={onOpenPortForward}
+                    type="button"
+                  >
+                    Port Fwd
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={onOpenDiagnostics}
+                    type="button"
+                  >
+                    Diagnostics
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={finishedAppJobCount === 0}
+                    onClick={onClearFinishedAppJobs}
+                    type="button"
+                  >
+                    Clear Jobs
+                  </button>
+                </div>
+              </section>
+            </div>
+          </article>
+
           <article className="operation-center__card">
             <div className="operation-center__card-header">
               <p className="operation-center__title">Upload Queue</p>

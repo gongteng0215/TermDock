@@ -129,7 +129,7 @@ function createMarkdownReport({
   lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
   lines.push("- Command history manager (add/edit/export/import/delete)");
   lines.push("- Command history side panel context menu");
-  lines.push("- Operation Center modal + tracked app-job baseline + activity timeline");
+  lines.push("- Operation Center modal + tracked app-job baseline + activity timeline + grouped controls");
   lines.push("- Retry Center modal + grouped view");
 
   const passedSteps = steps.filter((entry) => entry.status === "pass");
@@ -2417,6 +2417,18 @@ async function main() {
       const timelineItem = page.locator(".modal--operation-center .operation-center__timeline-item").first();
       if (!(await isVisible(timelineItem))) {
         throw new Error("operation center activity timeline has no items");
+      }
+      const groupedControlsTitle = page
+        .locator(".modal--operation-center .operation-center__title", {
+          hasText: "Grouped Controls"
+        })
+        .first();
+      if (!(await isVisible(groupedControlsTitle))) {
+        throw new Error("operation center grouped controls not visible");
+      }
+      const groupedControls = page.locator(".modal--operation-center .operation-center__control-group");
+      if ((await groupedControls.count()) < 3) {
+        throw new Error("operation center grouped controls are incomplete");
       }
       const portForwardCard = page
         .locator(".modal--operation-center .operation-center__card", {
