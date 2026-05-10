@@ -47,6 +47,15 @@ interface OperationCenterPortForwardSummaryView {
   activeTabStatus?: string | null;
 }
 
+interface OperationCenterTimelineItemView {
+  id: string;
+  title: string;
+  meta: string;
+  detail: string;
+  stateClassName: string;
+  stateLabel: string;
+}
+
 interface OperationCenterModalProps {
   open: boolean;
   onClose: () => void;
@@ -73,6 +82,7 @@ interface OperationCenterModalProps {
   onOpenSnippets: () => void;
   hasDiagnosticsJobs: boolean;
   onOpenDiagnosticsJobs: () => void;
+  timelineItems: OperationCenterTimelineItemView[];
   transferTabSummaries: OperationCenterTransferTabSummaryView[];
   onFocusTab: (tabId: string) => void;
   onReconnectTab: (tabId: string) => void;
@@ -298,6 +308,7 @@ export function OperationCenterModal({
   onOpenSnippets,
   hasDiagnosticsJobs,
   onOpenDiagnosticsJobs,
+  timelineItems,
   transferTabSummaries,
   onFocusTab,
   onReconnectTab,
@@ -477,6 +488,41 @@ export function OperationCenterModal({
                 Open Diagnostics
               </button>
             </div>
+          </article>
+
+          <article className="operation-center__card operation-center__card--wide">
+            <div className="operation-center__card-header">
+              <p className="operation-center__title">Activity Timeline</p>
+              <span
+                className={
+                  timelineItems.length > 0
+                    ? "operation-center__state is-active"
+                    : "operation-center__state is-idle"
+                }
+              >
+                {timelineItems.length > 0 ? `${timelineItems.length} item(s)` : "Idle"}
+              </span>
+            </div>
+            {timelineItems.length > 0 ? (
+              <ul className="operation-center__timeline">
+                {timelineItems.map((item) => (
+                  <li className="operation-center__timeline-item" key={item.id}>
+                    <span className={item.stateClassName}>{item.stateLabel}</span>
+                    <div className="operation-center__tab-main">
+                      <p className="operation-center__tab-title">{item.title}</p>
+                      <p className="operation-center__meta">{item.meta}</p>
+                      <p className="operation-center__meta operation-center__meta--wrap">
+                        {item.detail}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="operation-center__meta">
+                No transfer, port-forward, delete, or tracked app-job activity yet.
+              </p>
+            )}
           </article>
 
           <article className="operation-center__card operation-center__card--wide">

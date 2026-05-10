@@ -129,7 +129,7 @@ function createMarkdownReport({
   lines.push("- Command snippet manager (group/snippet/prompt-set baseline)");
   lines.push("- Command history manager (add/edit/export/import/delete)");
   lines.push("- Command history side panel context menu");
-  lines.push("- Operation Center modal + tracked app-job baseline");
+  lines.push("- Operation Center modal + tracked app-job baseline + activity timeline");
   lines.push("- Retry Center modal + grouped view");
 
   const passedSteps = steps.filter((entry) => entry.status === "pass");
@@ -2405,6 +2405,18 @@ async function main() {
         .first();
       if (!(await isVisible(trackedJobsTitle))) {
         throw new Error("tracked app jobs card not visible");
+      }
+      const timelineTitle = page
+        .locator(".modal--operation-center .operation-center__title", {
+          hasText: "Activity Timeline"
+        })
+        .first();
+      if (!(await isVisible(timelineTitle))) {
+        throw new Error("operation center activity timeline not visible");
+      }
+      const timelineItem = page.locator(".modal--operation-center .operation-center__timeline-item").first();
+      if (!(await isVisible(timelineItem))) {
+        throw new Error("operation center activity timeline has no items");
       }
       const portForwardCard = page
         .locator(".modal--operation-center .operation-center__card", {

@@ -3489,6 +3489,37 @@ body::before {
   margin-top: 1px;
 }
 
+.operation-center__timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 1px 0 0;
+  display: grid;
+  gap: 4px;
+  height: 124px;
+  min-height: 124px;
+  max-height: 124px;
+  overflow: auto;
+  align-content: start;
+}
+
+.operation-center__timeline-item {
+  border: 1px solid var(--ui-card-border);
+  border-radius: 6px;
+  background: var(--ui-card-bg);
+  padding: 5px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.operation-center__timeline-item:hover {
+  border-color: var(--ui-card-hover-border);
+  background: var(--ui-card-hover-bg);
+  box-shadow: var(--ui-hover-shadow);
+}
+
 .operation-center__tab-list {
   list-style: none;
   margin: 0;
@@ -4391,10 +4422,15 @@ body::before {
     align-items: start;
   }
 
+  .operation-center__timeline-item {
+    grid-template-columns: 1fr;
+  }
+
   .operation-center__tab-actions {
     justify-content: flex-start;
   }
 
+  .operation-center__timeline,
   .operation-center__tab-list {
     height: 144px;
     min-height: 144px;
@@ -4579,6 +4615,7 @@ body::before {
 .session-folder-list,
 .sftp-list,
 .command-history-panel__list-shell,
+.operation-center__timeline,
 .operation-center__tab-list,
 .retry-center__list-shell,
 .retry-center__list,
@@ -4593,6 +4630,7 @@ body::before {
 .session-folder-list::-webkit-scrollbar-track,
 .sftp-list::-webkit-scrollbar-track,
 .command-history-panel__list-shell::-webkit-scrollbar-track,
+.operation-center__timeline::-webkit-scrollbar-track,
 .operation-center__tab-list::-webkit-scrollbar-track,
 .retry-center__list-shell::-webkit-scrollbar-track,
 .retry-center__list::-webkit-scrollbar-track,
@@ -4607,6 +4645,7 @@ body::before {
 .session-folder-list::-webkit-scrollbar-thumb,
 .sftp-list::-webkit-scrollbar-thumb,
 .command-history-panel__list-shell::-webkit-scrollbar-thumb,
+.operation-center__timeline::-webkit-scrollbar-thumb,
 .operation-center__tab-list::-webkit-scrollbar-thumb,
 .retry-center__list-shell::-webkit-scrollbar-thumb,
 .retry-center__list::-webkit-scrollbar-thumb,
@@ -4626,6 +4665,7 @@ body::before {
 .session-folder-list:hover,
 .sftp-list:hover,
 .command-history-panel__list-shell:hover,
+.operation-center__timeline:hover,
 .operation-center__tab-list:hover,
 .retry-center__list-shell:hover,
 .retry-center__list:hover,
@@ -4640,6 +4680,7 @@ body::before {
 .session-folder-list:hover::-webkit-scrollbar-thumb,
 .sftp-list:hover::-webkit-scrollbar-thumb,
 .command-history-panel__list-shell:hover::-webkit-scrollbar-thumb,
+.operation-center__timeline:hover::-webkit-scrollbar-thumb,
 .operation-center__tab-list:hover::-webkit-scrollbar-thumb,
 .retry-center__list-shell:hover::-webkit-scrollbar-thumb,
 .retry-center__list:hover::-webkit-scrollbar-thumb,

@@ -4133,6 +4133,38 @@ function formatOperationCenterAppJobDuration(startedAt: number, finishedAt?: num
   return remainingMinutes > 0 ? `${totalHours}h ${remainingMinutes}m` : `${totalHours}h`;
 }
 
+function getOperationCenterTransferStateClass(status: SftpTransferEvent["status"]): string {
+  switch (status) {
+    case "running":
+    case "queued":
+      return "operation-center__state is-active";
+    case "completed":
+      return "operation-center__state is-success";
+    case "failed":
+      return "operation-center__state is-failed";
+    case "canceled":
+    default:
+      return "operation-center__state is-idle";
+  }
+}
+
+function formatOperationCenterTransferStatus(status: SftpTransferEvent["status"]): string {
+  switch (status) {
+    case "queued":
+      return "Queued";
+    case "running":
+      return "Running";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "canceled":
+      return "Canceled";
+    default:
+      return "Unknown";
+  }
+}
+
 function createEmptySessionTemplateDraft(): SessionTemplateDraft {
   return {
     templateName: "",
@@ -9736,6 +9768,125 @@ export function App() {
       })),
     [operationCenterRecentAppJobs]
   );
+  const operationCenterDeleteProgressLabel = sftpDeleteProgress
+    ? `Deleting ${sftpDeleteProgress.kind === "directory" ? "directory" : "file"} "${sftpDeleteProgress.name}"...`
+    : null;
+  const operationCenterTimelineItems = useMemo(() => {
+    const timelineItems: Array<{
+      id: string;
+      title: string;
+      meta: string;
+      detail: string;
+      stateClassName: string;
+      stateLabel: string;
+      timestamp: number;
+    }> = [];
+    const tabTitleById = new Map(terminalTabs.map((tab) => [tab.id, tab.title]));
+    for (const transfer of sftpTransfers.slice(0, 18)) {
+      if (!tabTitleById.has(transfer.tabId)) {
+        continue;
+      }
+      const directionLabel = transfer.direction === "upload" ? "Upload" : "Download";
+      const tabTitle = tabTitleById.get(transfer.tabId) ?? transfer.tabId;
+      const route =
+        transfer.direction === "upload"
+          ? `${transfer.localPath} -> ${transfer.remotePath}`
+          : `${transfer.remotePath} -> ${transfer.localPath}`;
+      const message = transfer.message?.trim();
+      timelineItems.push({
+        id: `transfer:${transfer.transferId}:${transfer.updatedAt}`,
+        title: `${directionLabel}: ${transfer.name || "transfer"}`,
+        meta: `${tabTitle} | ${formatHistoryTimestamp(transfer.updatedAt)}`,
+        detail: message ? `${route} | ${message}` : route,
+        stateClassName: getOperationCenterTransferStateClass(transfer.status),
+        stateLabel: formatOperationCenterTransferStatus(transfer.status),
+        timestamp: transfer.updatedAt
+      });
+    }
+    if (sftpDeleteProgress) {
+      timelineItems.push({
+        id: `delete:${sftpDeleteProgress.name}:${Date.now()}`,
+        title: "Remote Delete",
+        meta: "Active now",
+        detail: operationCenterDeleteProgressLabel ?? "Delete operation running.",
+        stateClassName: "operation-center__state is-active",
+        stateLabel: "Running",
+        timestamp: Date.now()
+      });
+    }
+    for (const forward of allPortForwards.slice(0, 12)) {
+      const createdAt = new Date(forward.lastActivityAt ?? forward.lastErrorAt ?? forward.createdAt);
+      const timestamp = Number.isFinite(createdAt.getTime()) ? createdAt.getTime() : 0;
+      const statusLabel = getPortForwardStatusLabel(forward);
+      timelineItems.push({
+        id: `port-forward:${forward.tabId}:${forward.id}:${forward.status}`,
+        title: `Port Forward: ${formatPortForwardRecord(forward)}`,
+        meta: `${tabTitleById.get(forward.tabId) ?? forward.tabId} | ${formatPortForwardTimestamp(
+          forward.lastActivityAt ?? forward.lastErrorAt ?? forward.createdAt
+        )}`,
+        detail:
+          forward.lastError?.trim() ||
+          `connections ${forward.totalConnections} | failed ${forward.failedConnections}`,
+        stateClassName:
+          forward.status === "degraded"
+            ? "operation-center__state is-failed"
+            : "operation-center__state is-active",
+        stateLabel: statusLabel,
+        timestamp
+      });
+    }
+    for (const event of portForwardEventHistory.slice(0, 12)) {
+      if (!tabTitleById.has(event.tabId)) {
+        continue;
+      }
+      const createdAt = new Date(event.createdAt);
+      const timestamp = Number.isFinite(createdAt.getTime()) ? createdAt.getTime() : 0;
+      timelineItems.push({
+        id: `port-forward-event:${event.key}`,
+        title: `${formatPortForwardEventType(event.type)} ${formatPortForwardEventSummary(event)}`,
+        meta: `${formatPortForwardTimestamp(event.createdAt)} | ${event.level.toUpperCase()}`,
+        detail: event.message,
+        stateClassName:
+          event.level === "error"
+            ? "operation-center__state is-failed"
+            : "operation-center__state is-success",
+        stateLabel: event.level === "error" ? "Error" : "Event",
+        timestamp
+      });
+    }
+    for (const job of operationCenterRecentAppJobs) {
+      timelineItems.push({
+        id: `app-job:${job.id}:${job.finishedAt ?? job.startedAt}`,
+        title: job.title,
+        meta: `${formatOperationCenterAppJobCategoryLabel(job.category)} | ${formatHistoryTimestamp(
+          job.finishedAt ?? job.startedAt
+        )}`,
+        detail: job.detail?.trim() || job.description,
+        stateClassName: getOperationCenterAppJobStateClass(job.status),
+        stateLabel: formatOperationCenterAppJobStatusLabel(job.status),
+        timestamp: job.finishedAt ?? job.startedAt
+      });
+    }
+    return timelineItems
+      .sort((left, right) => right.timestamp - left.timestamp)
+      .slice(0, 10)
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        meta: item.meta,
+        detail: item.detail,
+        stateClassName: item.stateClassName,
+        stateLabel: item.stateLabel
+      }));
+  }, [
+    allPortForwards,
+    operationCenterDeleteProgressLabel,
+    operationCenterRecentAppJobs,
+    portForwardEventHistory,
+    sftpDeleteProgress,
+    sftpTransfers,
+    terminalTabs
+  ]);
   const operationCenterFinishedAppJobCount = useMemo(
     () => operationCenterAppJobs.filter((entry) => entry.status !== "running").length,
     [operationCenterAppJobs]
@@ -9754,9 +9905,6 @@ export function App() {
     (portForwardBusy ? 1 : 0) +
     operationCenterRunningAppJobCount;
   const hasOperationCenterActivity = operationCenterActiveCount > 0;
-  const operationCenterDeleteProgressLabel = sftpDeleteProgress
-    ? `Deleting ${sftpDeleteProgress.kind === "directory" ? "directory" : "file"} "${sftpDeleteProgress.name}"...`
-    : null;
   const retryCenterSessionMetaById = useMemo(() => {
     const map = new Map<string, { sessionName: string; groupName: string }>();
     for (const session of sessions) {
@@ -24337,6 +24485,7 @@ export function App() {
         portForwardSummary={operationCenterPortForwardSummary}
         recentAppJobs={operationCenterRecentAppJobViews}
         runningAppJobCount={operationCenterRunningAppJobCount}
+        timelineItems={operationCenterTimelineItems}
         transferTabSummaries={operationCenterTransferTabSummaries}
         uploadSummary={operationCenterUploadSummary}
       />

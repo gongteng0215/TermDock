@@ -14,7 +14,8 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Current branch addition: the main renderer now reads as a code-editor-style workbench with a flatter shell, left Explorer rail, right Inspector rail, stronger terminal stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` view persistence, collapsible command history, and narrow-width inspector tabs
 - Current branch refactor: large `App.tsx` UI regions were split into focused renderer modules for workbench modals, settings sections, command snippets, UI preferences, and workbench/terminal CSS
 - Current branch hardening: recoverable global error routing now also points Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures at their matching settings sections, with Safety sync failures covered by smoke automation
-- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T02-20-06-322Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
+- Current branch Operation Center follow-up: added a unified activity timeline that interleaves transfer, remote delete, port-forward, and tracked app-job activity in one scan-friendly card
+- Latest branch validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-18-45-507Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`)
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` all passed; latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`, and latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 - Current smoke baseline: embedded SSH/SFTP fixture-backed workspace and packaged verification
 - Main targets: macOS and Windows 11
@@ -202,6 +203,7 @@ It combines session management, multi-tab terminal, file transfer, diagnostics l
 - Operation center baseline:
   - new `Operation Center` modal for active long-running operations
   - consolidated status for upload/download queues, remote delete, and port-forward busy state
+  - unified activity timeline for recent transfer, delete, port-forward, and tracked app-job events
   - quick actions for cancel-all transfer queues and jump to diagnostics/port-forward settings
   - cross-tab transfer activity summary with one-click focus to target tab
   - per-tab and cross-tab one-click transfer cancellation actions

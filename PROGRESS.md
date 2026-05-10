@@ -29,7 +29,8 @@ Last updated: 2026-05-10
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
-- Latest hardening validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-10T02-20-06-322Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`).
+- Editor workbench branch now adds an Operation Center activity timeline that interleaves recent/current transfer, remote delete, port-forward, and tracked app-job activity
+- Latest hardening validation on 2026-05-10: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-10T06-18-45-507Z/summary.json` (`PASS 46 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -83,7 +84,7 @@ Last updated: 2026-05-10
 - Verification so far:
   - hardening follow-up `pnpm run typecheck`: passed
   - hardening follow-up `pnpm run build`: passed
-  - hardening follow-up `pnpm run smoke:ui`: `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T02-20-06-322Z/summary.json`
+  - hardening follow-up `pnpm run smoke:ui`: `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T06-18-45-507Z/summary.json`
   - full UI refresh smoke artifact: `PASS 45 / FAIL 0 / SKIP 0`
   - post-refactor `pnpm run typecheck`: passed
   - post-refactor `pnpm run build`: passed
@@ -366,6 +367,7 @@ Last updated: 2026-05-10
 - Added operation center baseline (`F8`):
   - new modal to consolidate active long-running operations
   - includes queue state for uploads/downloads, remote delete status, and port-forward busy state
+  - adds an activity timeline for recent transfer, delete, port-forward, and app-job events
   - provides quick actions for cancel-all transfer queues and diagnostics navigation
   - adds cross-tab transfer activity summary with one-click tab focus
   - adds per-tab and cross-tab one-click transfer cancellation actions

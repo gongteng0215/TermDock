@@ -58,7 +58,7 @@ Last updated: 2026-05-10
    - post-refactor `pnpm run build` passed
    - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
    - post-refactor `pnpm run smoke:ui:packaged` passed with `PASS 45 / FAIL 0 / SKIP 0`
-   - hardening follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-10 with `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T02-20-06-322Z/summary.json`
+   - hardening follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-10 with `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T06-18-45-507Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling
@@ -175,6 +175,7 @@ Last updated: 2026-05-10
 15. Operation center baseline (`F8`):
    - added `Operation Center` modal with active long-running operation summary
    - includes upload/download queue status, remote delete status, and port-forward busy status
+   - includes unified activity timeline entries for recent/current transfer, delete, port-forward, and app-job events
    - quick actions for transfer cancel-all and navigation to diagnostics/port-forward settings
    - includes cross-tab transfer activity summary with tab focus action
    - includes per-tab and cross-tab one-click transfer cancellation actions
@@ -228,7 +229,7 @@ Last updated: 2026-05-10
 1. `UI-WB-HANDOFF`: push or PR `feature/editor-workbench-ui` with current workspace and packaged smoke evidence
 2. `UI-WB-FEEDBACK`: collect real-usage feedback on the refreshed workbench shell
 3. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy
-4. `F8`: Operation Center follow-up (richer timeline + grouped controls)
+4. `F8`: Operation Center follow-up (grouped controls and broader cancel/retry coverage)
 5. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
 6. `P0-E1`/`P0-E2`: startup and large-transfer performance follow-up
 
@@ -237,7 +238,7 @@ Last updated: 2026-05-10
 1. `UI-WB-FEEDBACK`: optional polish after real usage feedback
 2. Remaining macOS/external-host packaged smoke evidence for broader release confidence
 3. `P0-E3`: remaining recoverable global error edge-case coverage and guidance polish
-4. `F8`: richer timeline and grouped controls for Operation Center
+4. `F8`: grouped controls and broader cancel/retry coverage for Operation Center
 5. `P0-A3`: JSON-to-SQLite migration planning and execution
 6. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
 7. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
@@ -293,7 +294,7 @@ Last updated: 2026-05-10
 | F5 | P1 | DONE | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
 | F6 | P2 | DONE | Session templates + env variables | Local template manager, env-var substitution, and create/apply flows now cover repeated host patterns |
 | F7 | P2 | PARTIAL | Remote overwrite pre-check (mtime/size/checksum) | Metadata guard baseline shipped; conflict resolution UI/diff follow-up pending |
-| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline plus tracked session/snippet/diagnostics jobs landed; richer timeline and grouped controls are still pending |
+| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline, tracked session/snippet/diagnostics jobs, and unified activity timeline landed; grouped controls and broader cancel/retry coverage are still pending |
 | F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
 | F11 | P2 | PARTIAL | Transfer bandwidth limiter + schedule window | Per-direction rate limits, queued-transfer weekday/time windows, one-click schedule presets, exact next-boundary wake-up with next-resume hints, transfer policy pack save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push, and upload reliability auto-recovery from transient missing-path plus SSH channel-pressure faults landed; richer schedule automation and auto-distribution are still pending |
