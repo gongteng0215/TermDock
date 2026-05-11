@@ -59,7 +59,7 @@ Last updated: 2026-05-10
    - post-refactor `pnpm run build` passed
    - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
    - post-refactor `pnpm run smoke:ui:packaged` passed with `PASS 45 / FAIL 0 / SKIP 0`
-   - multilingual/workbench density follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-11 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-11T08-35-26-189Z/summary.json`
+   - master follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-11 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling

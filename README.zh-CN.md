@@ -138,7 +138,7 @@ docs/assets    README 截图和产品素材
 ## 当前状态
 
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 均通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-11T08-35-26-189Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`)。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`)。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 
 更细的进度、验证和计划见：

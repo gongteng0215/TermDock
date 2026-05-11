@@ -138,7 +138,7 @@ docs/assets    README screenshots and product assets
 ## Status
 
 - Current validation: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed.
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-11T08-35-26-189Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
 - Current packaging targets: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`).
 
 For detailed progress, release validation, and planning notes, see:

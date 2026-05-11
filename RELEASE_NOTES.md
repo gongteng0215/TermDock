@@ -28,7 +28,7 @@ Release type: Stable
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
 - Latest workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-11T03-32-09-887Z/summary.json`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json`
 - Latest packaged smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
 - Latest packaged smoke artifact: `artifacts/smoke/2026-05-11T03-40-28-692Z/summary.json`
 - Manual server health tabs screenshot artifact: `artifacts/manual-server-health-tabs/2026-05-11T02-16-53-783Z/disk-tab.png`
