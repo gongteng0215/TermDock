@@ -107,6 +107,7 @@ import {
 import {
   APP_LANGUAGE_OPTIONS,
   getI18n,
+  localizeDomNode,
   localizeDomTree,
   readAppLanguagePreference,
   translateAppText,
@@ -5391,6 +5392,7 @@ export function App() {
     }
 
     let disposed = false;
+    const pendingLocalizationNodes = new Set<Node>();
     const shouldIgnoreMutation = (target: Node): boolean => {
       const element = target instanceof Element ? target : target.parentElement;
       return Boolean(
@@ -5399,22 +5401,36 @@ export function App() {
         )
       );
     };
-    const scheduleLocalization = () => {
+    const scheduleLocalization = (target?: Node | null) => {
+      if (target) {
+        pendingLocalizationNodes.add(target);
+      }
       if (localizationFrameRef.current !== null) {
         return;
       }
       localizationFrameRef.current = window.requestAnimationFrame(() => {
         localizationFrameRef.current = null;
-        if (!disposed) {
+        if (disposed) {
+          pendingLocalizationNodes.clear();
+          return;
+        }
+        if (pendingLocalizationNodes.size > 0) {
+          const nodes = Array.from(pendingLocalizationNodes);
+          pendingLocalizationNodes.clear();
+          for (const node of nodes) {
+            localizeDomNode(node, appLanguage);
+          }
+        } else {
           localizeDomTree(root, appLanguage);
         }
       });
     };
 
     scheduleLocalization();
-    if (typeof MutationObserver === "undefined") {
+    if (appLanguage !== "zh-CN" || typeof MutationObserver === "undefined") {
       return () => {
         disposed = true;
+        pendingLocalizationNodes.clear();
         if (localizationFrameRef.current !== null) {
           window.cancelAnimationFrame(localizationFrameRef.current);
           localizationFrameRef.current = null;
@@ -5423,10 +5439,19 @@ export function App() {
     }
 
     const observer = new MutationObserver((mutations) => {
-      if (mutations.every((mutation) => shouldIgnoreMutation(mutation.target))) {
-        return;
+      for (const mutation of mutations) {
+        if (mutation.type === "childList") {
+          for (const node of Array.from(mutation.addedNodes)) {
+            if (!shouldIgnoreMutation(node)) {
+              scheduleLocalization(node);
+            }
+          }
+          continue;
+        }
+        if (!shouldIgnoreMutation(mutation.target)) {
+          scheduleLocalization(mutation.target);
+        }
       }
-      scheduleLocalization();
     });
     observer.observe(root, {
       attributeFilter: ["aria-label", "placeholder", "title"],
@@ -5439,6 +5464,7 @@ export function App() {
     return () => {
       disposed = true;
       observer.disconnect();
+      pendingLocalizationNodes.clear();
       if (localizationFrameRef.current !== null) {
         window.cancelAnimationFrame(localizationFrameRef.current);
         localizationFrameRef.current = null;
@@ -7819,13 +7845,24 @@ export function App() {
       const title = tr((options?.title ?? "").trim());
       const translatedMessage = tr(message);
       const hasDetailText = typeof options?.detailText === "string" && options.detailText.trim().length > 0;
+      if (hasDetailText) {
+        const dialog: AppAlertDialogState = {
+          mode: "alert",
+          title: title || tr("Notice"),
+          message: translatedMessage,
+          confirmLabel: tr(options?.confirmLabel ?? "OK"),
+          detailText: options.detailText
+        };
+        await openAppDialog(dialog, undefined);
+        return;
+      }
       const summary = hasDetailText ? `${translatedMessage} (${tr("details available")})` : translatedMessage;
       pushAppHintMessage(summary, {
         level: /error|fail|warning|warn/i.test(title) ? "warn" : "info",
         durationMs: hasDetailText ? 5600 : 3600
       });
     },
-    [pushAppHintMessage, tr]
+    [openAppDialog, pushAppHintMessage, tr]
   );
   const showAppConfirm = useCallback(
     async (message: string, options?: AppConfirmDialogOptions): Promise<boolean> => {
@@ -19501,22 +19538,30 @@ export function App() {
 
   const viewSessionDetails = useCallback(
     async (session: SessionRecord) => {
+      const authLabel = session.authType === "privateKey" ? tr("Private Key") : tr("Password");
+      const credentialLabel = session.hasSecret ? tr("Stored in secure vault") : "-";
       const lines = [
-        `Name: ${session.name}`,
-        `Group: ${session.groupId?.trim() || "Ungrouped"}`,
-        `Target: ${session.username}@${session.host}:${session.port}`,
-        `Auth: ${session.authType}`,
-        `Secret: ${session.hasSecret ? "Stored in secure vault" : "-"}`,
-        `Last Connected: ${formatSessionLastConnected(session.lastConnectedAt)}`,
-        `Remark: ${session.remark || "-"}`
-      ];
+        `${tr("Name")}: ${session.name}`,
+        `${tr("Group")}: ${session.groupId?.trim() || tr("Ungrouped")}`,
+        `${tr("Target")}: ${session.username}@${session.host}:${session.port}`,
+        `${tr("Auth")}: ${authLabel}`,
+        `${tr("Credential")}: ${credentialLabel}`,
+        session.authType === "privateKey"
+          ? `${tr("Private Key Path")}: ${session.privateKeyPath?.trim() || "-"}`
+          : null,
+        `${tr("Favorite")}: ${session.favorite ? tr("Yes") : tr("No")}`,
+        `${tr("Last Connected")}: ${formatSessionLastConnected(session.lastConnectedAt)}`,
+        `${tr("Created At")}: ${formatSessionLastConnected(session.createdAt)}`,
+        `${tr("Updated At")}: ${formatSessionLastConnected(session.updatedAt)}`,
+        `${tr("Remark")}: ${session.remark || "-"}`
+      ].filter((line): line is string => Boolean(line));
       await showAppAlert("Session details", {
-        title: session.name,
+        title: "Session Details",
         confirmLabel: "Close",
         detailText: lines.join("\n")
       });
     },
-    [showAppAlert]
+    [showAppAlert, tr]
   );
 
   const pickPrivateKeyFile = async () => {
@@ -27066,13 +27111,15 @@ export function App() {
         </div>
       ) : null}
 
-      {appDialog && appDialog.mode !== "alert" ? (
+      {appDialog ? (
         <div className="modal-backdrop" role="presentation">
           <div
             className={
               appDialog.mode === "choice"
                 ? "modal modal--compact app-dialog app-dialog--choice"
-                : "modal modal--compact app-dialog"
+                : (appDialog.mode === "alert" || appDialog.mode === "confirm") && appDialog.detailText
+                  ? "modal modal--compact app-dialog app-dialog--details"
+                  : "modal modal--compact app-dialog"
             }
             onClick={(event) => event.stopPropagation()}
             role="dialog"
@@ -27107,7 +27154,8 @@ export function App() {
                   value={appDialogInput}
                 />
               )
-            ) : (appDialog.mode === "confirm" || appDialog.mode === "choice") && appDialog.detailText ? (
+            ) : (appDialog.mode === "alert" || appDialog.mode === "confirm" || appDialog.mode === "choice") &&
+              appDialog.detailText ? (
               <textarea
                 className="app-dialog__textarea app-dialog__textarea--readonly"
                 readOnly
@@ -27124,17 +27172,19 @@ export function App() {
                   : "modal__actions"
               }
             >
-              <button
-                className={
-                  appDialog.mode === "choice"
-                    ? "secondary-button app-dialog__choice-cancel"
-                    : "secondary-button"
-                }
-                onClick={closeAppDialog}
-                type="button"
-              >
-                {appDialog.cancelLabel}
-              </button>
+              {appDialog.mode !== "alert" ? (
+                <button
+                  className={
+                    appDialog.mode === "choice"
+                      ? "secondary-button app-dialog__choice-cancel"
+                      : "secondary-button"
+                  }
+                  onClick={closeAppDialog}
+                  type="button"
+                >
+                  {appDialog.cancelLabel}
+                </button>
+              ) : null}
               {appDialog.mode === "choice"
                 ? appDialog.options.map((option) => (
                     <button

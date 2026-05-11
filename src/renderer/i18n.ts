@@ -403,6 +403,7 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Export": "导出",
   "Choose Action": "选择操作",
   "Input Required": "需要输入",
+  "Notice": "提示",
   "Manual Copy": "手动复制",
   "Open settings": "打开设置",
   "Dismiss": "关闭",
@@ -618,6 +619,15 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Open Terminal Tab": "打开终端标签页",
   "Open Selected Session": "打开已选会话",
   "View Details": "查看详情",
+  "Session Details": "会话详情",
+  "Session details": "会话详情",
+  "Name": "名称",
+  "Target": "目标",
+  "Credential": "凭据",
+  "Stored in secure vault": "已保存在系统安全凭据库",
+  "Last Connected": "上次连接",
+  "Created At": "创建时间",
+  "Updated At": "更新时间",
   "Unfavorite": "取消收藏",
   "Copy Clash Direct Rules": "复制 Clash 直连规则",
   "Copy SSH Command": "复制 SSH 命令",
@@ -1731,8 +1741,15 @@ function localizeElementAttributes(element: Element, language: AppLanguage): voi
   }
 }
 
-export function localizeDomTree(root: HTMLElement | null, language: AppLanguage): void {
+export function localizeDomNode(root: Node | null, language: AppLanguage): void {
   if (!root) {
+    return;
+  }
+  if (root.nodeType === Node.TEXT_NODE) {
+    localizeTextNode(root as Text, language);
+    return;
+  }
+  if (!(root instanceof Element)) {
     return;
   }
   localizeElementAttributes(root, language);
@@ -1746,6 +1763,10 @@ export function localizeDomTree(root: HTMLElement | null, language: AppLanguage)
     }
     node = walker.nextNode();
   }
+}
+
+export function localizeDomTree(root: HTMLElement | null, language: AppLanguage): void {
+  localizeDomNode(root, language);
 }
 
 const ENGLISH_I18N: AppI18n = {

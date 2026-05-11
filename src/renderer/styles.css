@@ -4555,6 +4555,16 @@ body::before {
   width: min(720px, calc(100vw - 20px));
 }
 
+.app-dialog--details {
+  width: min(560px, calc(100vw - 20px));
+}
+
+.app-dialog--details .app-dialog__textarea--readonly {
+  min-height: 150px;
+  max-height: min(48vh, 320px);
+  resize: none;
+}
+
 .app-dialog__choice-actions {
   justify-content: flex-start;
   display: grid;
