@@ -150,6 +150,7 @@ For detailed progress, release validation, and planning notes, see:
 - [Release Signing Runbook](RELEASE_SIGNING.md)
 - [UI Compact Rules](UI_COMPACT_RULES.md)
 - [60-Second Demo Script](docs/promotion/60-second-demo.md)
+- [GitHub Page Setup](docs/promotion/github-page-setup.md)
 
 ## Known Limitations
 
