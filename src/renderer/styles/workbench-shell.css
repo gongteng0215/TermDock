@@ -514,7 +514,7 @@
 
 .workbench-inspector-panels {
   display: grid;
-  grid-template-rows: minmax(288px, 1fr) 128px auto;
+  grid-template-rows: minmax(288px, 1fr) minmax(86px, auto) minmax(128px, auto);
   min-height: 0;
   height: 100%;
 }

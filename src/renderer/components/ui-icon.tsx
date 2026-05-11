@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  BarChart3,
   ChevronLeft,
   Download,
   Menu,
@@ -15,6 +16,7 @@ import type { LucideIcon } from "lucide-react";
 export type UiIconName =
   | "settings"
   | "refresh"
+  | "details"
   | "chevronLeft"
   | "arrowUp"
   | "upload"
@@ -27,6 +29,7 @@ export type UiIconName =
 const UI_ICONS: Record<UiIconName, LucideIcon> = {
   settings: Settings,
   refresh: RefreshCw,
+  details: BarChart3,
   chevronLeft: ChevronLeft,
   arrowUp: ArrowUp,
   upload: Upload,

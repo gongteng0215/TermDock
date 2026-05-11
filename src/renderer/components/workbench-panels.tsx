@@ -85,6 +85,7 @@ interface CommandHistoryInspectorSectionProps {
   activeTabTitle: string | null;
   activeTabConnected: boolean;
   entries: CommandHistoryEntryView[];
+  hiddenEntryCount: number;
   isCollapsed: boolean;
   onOpenContextMenu: MouseEventHandler<HTMLDivElement>;
   onOpenManager: () => void;
@@ -99,7 +100,6 @@ interface CommandHistoryInspectorSectionProps {
 }
 
 interface SftpExplorerEntryView {
-  compactMetaLabel: string;
   compactSizeLabel: string;
   id: string;
   kind: string;
@@ -196,17 +196,14 @@ export function SessionsInspectorSection({
       {loading ? <p className="hint workbench-section__status">Loading sessions...</p> : null}
       <div className="session-explorer">
         {activeContext ? (
-          <div className="inspector-context-card">
-            <p className="inspector-context-card__eyebrow">Selected Session</p>
-            <div className="inspector-context-card__row">
-              <div className="inspector-context-card__main">
-                <p className="inspector-context-card__title">{activeContext.title}</p>
-                <p className="inspector-context-card__detail">{activeContext.detail}</p>
-              </div>
-              <span className={`inspector-context-card__state inspector-context-card__state--${activeContext.stateTone}`}>
-                {activeContext.stateLabel}
-              </span>
+          <div className="session-explorer__active-row">
+            <div className="session-explorer__active-main">
+              <span className="session-explorer__active-title" title={activeContext.title}>{activeContext.title}</span>
+              <span className="session-explorer__active-detail" title={activeContext.detail}>{activeContext.detail}</span>
             </div>
+            <span className={`inspector-context-card__state inspector-context-card__state--${activeContext.stateTone}`}>
+              {activeContext.stateLabel}
+            </span>
           </div>
         ) : null}
         <div className="session-filter-bar">
@@ -442,12 +439,13 @@ export function SftpExplorerSection({
                   >
                     {viewMode === "compact" ? (
                       <>
-                        {renderNameCell(entry)}
+                        <div className="sftp-list__compact-main">
+                          <span className={`sftp-list__kind-dot sftp-list__kind-dot--${entry.kind}`} />
+                          {renderNameCell(entry)}
+                        </div>
                         <span className="sftp-list__meta sftp-list__meta--compact-size">
                           {entry.compactSizeLabel}
                         </span>
-                        <span className="sftp-list__mtime">{entry.modifiedAtLabel}</span>
-                        <span className="sftp-list__compact-meta">{entry.compactMetaLabel}</span>
                       </>
                     ) : (
                       <>
@@ -503,7 +501,7 @@ export function ServerHealthInspectorSection({
           <h2>Server Health</h2>
           <div className="server-health__actions">
             <button
-              aria-label="Toggle server health details"
+              aria-label="Open server health details"
               className={
                 isDetailOpen
                   ? "icon-button server-health__detail-toggle is-active"
@@ -511,10 +509,10 @@ export function ServerHealthInspectorSection({
               }
               disabled={toggleDisabled}
               onClick={onToggleDetail}
-              title={isDetailOpen ? "Hide details" : "Show details"}
+              title="Show details"
               type="button"
             >
-              <UiIcon name={isDetailOpen ? "minus" : "plus"} />
+              <UiIcon name="details" />
             </button>
             <button
               aria-label="Refresh server metrics"
@@ -537,23 +535,17 @@ export function ServerHealthInspectorSection({
       </div>
       {activeTabTitle ? (
         <>
-          <div className="inspector-context-card server-health__binding">
-            <p className="inspector-context-card__eyebrow">Monitoring Target</p>
-            <div className="inspector-context-card__row">
-              <div className="inspector-context-card__main">
-                <p className="inspector-context-card__title">{activeTabTitle}</p>
-                <p className="inspector-context-card__detail">Server metrics and process samples follow the active tab.</p>
-              </div>
-              <span
-                className={
-                  isConnected
-                    ? "inspector-context-card__state inspector-context-card__state--ok"
-                    : "inspector-context-card__state inspector-context-card__state--warn"
-                }
-              >
-                {isConnected ? "Connected" : "Disconnected"}
-              </span>
-            </div>
+          <div className="server-health__target-row">
+            <span className="server-health__target" title={activeTabTitle}>{activeTabTitle}</span>
+            <span
+              className={
+                isConnected
+                  ? "server-health__connection server-health__connection--ok"
+                  : "server-health__connection server-health__connection--warn"
+              }
+            >
+              {isConnected ? "Connected" : "Disconnected"}
+            </span>
           </div>
           {children}
         </>
@@ -568,6 +560,7 @@ export function CommandHistoryInspectorSection({
   activeTabTitle,
   activeTabConnected,
   entries,
+  hiddenEntryCount,
   isCollapsed,
   onOpenContextMenu,
   onOpenManager,
@@ -626,27 +619,21 @@ export function CommandHistoryInspectorSection({
             </select>
             <input onChange={onQueryChange} placeholder="Search command" value={query} />
           </div>
-          <div className="inspector-context-card command-history-panel__context">
-            <p className="inspector-context-card__eyebrow">Paste Target</p>
-            <div className="inspector-context-card__row">
-              <div className="inspector-context-card__main">
-                <p className="inspector-context-card__title">{activeTabTitle ?? "No active terminal tab"}</p>
-                <p className="inspector-context-card__detail">
-                  {scope === "activeTab" ? "Searching commands from the active tab only." : "Searching commands across all tabs."}
-                </p>
-              </div>
-              <span
-                className={
-                  activeTabTitle
-                    ? activeTabConnected
-                      ? "inspector-context-card__state inspector-context-card__state--ok"
-                      : "inspector-context-card__state inspector-context-card__state--warn"
-                    : "inspector-context-card__state inspector-context-card__state--neutral"
-                }
-              >
-                {activeTabTitle ? (activeTabConnected ? "Ready" : "Offline") : "No Tab"}
-              </span>
-            </div>
+          <div className="command-history-panel__target-row">
+            <span className="command-history-panel__target" title={activeTabTitle ?? undefined}>
+              {activeTabTitle ?? "No active tab"}
+            </span>
+            <span
+              className={
+                activeTabTitle
+                  ? activeTabConnected
+                    ? "command-history-panel__state command-history-panel__state--ok"
+                    : "command-history-panel__state command-history-panel__state--warn"
+                  : "command-history-panel__state command-history-panel__state--neutral"
+              }
+            >
+              {activeTabTitle ? (activeTabConnected ? "Ready" : "Offline") : "No Tab"}
+            </span>
           </div>
           <div className="command-history-panel__list-shell workbench-list-shell" onContextMenu={onOpenContextMenu}>
             {entries.length === 0 ? (
@@ -669,6 +656,15 @@ export function CommandHistoryInspectorSection({
               </ul>
             )}
           </div>
+          {hiddenEntryCount > 0 ? (
+            <button
+              className="command-history-panel__more"
+              onClick={onOpenManager}
+              type="button"
+            >
+              View {hiddenEntryCount} more
+            </button>
+          ) : null}
         </>
       )}
     </section>

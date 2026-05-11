@@ -208,6 +208,7 @@ const MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH = 80;
 const MAX_COMMAND_SNIPPET_PARAMETER_KEY_LENGTH = 32;
 const MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH = 80;
 const MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH = 240;
+const COMMAND_HISTORY_INSPECTOR_PREVIEW_LIMIT = 5;
 const MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH = 240;
 const MAX_COMMAND_SNIPPET_SCOPED_VALUES = 400;
 const MAX_OPERATION_CENTER_APP_JOBS = 24;
@@ -587,7 +588,8 @@ function createDefaultHotkeyPreferences(): HotkeyPreferences {
 
 const SERVER_HEALTH_POLL_INTERVAL_MS = 5000;
 const SERVER_PROCESS_POLL_INTERVAL_MS = 10000;
-const SERVER_HEALTH_HISTORY_LIMIT = 24;
+
+type ServerHealthDetailTab = "overview" | "disk" | "network" | "processes" | "services";
 
 interface SftpTransferItem extends SftpTransferEvent {
   updatedAt: number;
@@ -616,19 +618,9 @@ interface ServerHealthDerivedMetrics {
   txBytesPerSecond: number;
 }
 
-interface ServerHealthHistoryPoint {
-  at: number;
-  cpuUsagePercent: number;
-  memoryUsagePercent: number;
-  diskUsagePercent: number;
-  rxBytesPerSecond: number;
-  txBytesPerSecond: number;
-}
-
 interface ServerHealthTabState {
   snapshot: ServerHealthSnapshot | null;
   metrics: ServerHealthDerivedMetrics | null;
-  history: ServerHealthHistoryPoint[];
   loading: boolean;
   error: string | null;
 }
@@ -2598,6 +2590,13 @@ function formatProcessPercent(value: number): string {
     return "0.0%";
   }
   return `${Math.max(0, value).toFixed(1)}%`;
+}
+
+function formatOptionalPercent(value?: number): string {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+  return formatPercent(value ?? 0);
 }
 
 function formatServerUptime(seconds: number): string {
@@ -5706,6 +5705,8 @@ export function App() {
   const [serverHealthByTab, setServerHealthByTab] = useState<Record<string, ServerHealthTabState>>({});
   const [serverProcessByTab, setServerProcessByTab] = useState<Record<string, ServerProcessTabState>>({});
   const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
+  const [serverHealthDetailTab, setServerHealthDetailTab] =
+    useState<ServerHealthDetailTab>("overview");
   const [terminalCommandHistoryEntries, setTerminalCommandHistoryEntries] = useState<
     TerminalCommandHistoryEntry[]
   >(() => readTerminalCommandHistory());
@@ -5877,7 +5878,6 @@ export function App() {
   const activeServerProcessState = activeTabId ? serverProcessByTab[activeTabId] ?? null : null;
   const serverHealth = activeServerHealthState?.snapshot ?? null;
   const serverHealthMetrics = activeServerHealthState?.metrics ?? null;
-  const serverHealthHistory = activeServerHealthState?.history ?? [];
   const serverHealthLoading = activeServerHealthState?.loading ?? false;
   const serverHealthError = activeServerHealthState?.error ?? null;
   const serverProcessSnapshot = activeServerProcessState?.snapshot ?? null;
@@ -6126,6 +6126,14 @@ export function App() {
       return entry.command.toLowerCase().includes(normalizedQuery);
     });
   }, [activeTabId, terminalCommandHistoryEntries, terminalCommandHistoryQuery, terminalCommandHistoryScope]);
+  const inspectorTerminalCommandHistoryEntries = useMemo(
+    () => visibleTerminalCommandHistoryEntries.slice(0, COMMAND_HISTORY_INSPECTOR_PREVIEW_LIMIT),
+    [visibleTerminalCommandHistoryEntries]
+  );
+  const hiddenInspectorCommandHistoryCount = Math.max(
+    0,
+    visibleTerminalCommandHistoryEntries.length - inspectorTerminalCommandHistoryEntries.length
+  );
   const selectedCommandHistoryIdSet = useMemo(
     () => new Set(commandHistorySelection),
     [commandHistorySelection]
@@ -10623,10 +10631,47 @@ export function App() {
     }
     return timestamp.toLocaleTimeString();
   }, [serverHealth]);
-  const recentServerHealthPoints = useMemo(
-    () => serverHealthHistory.slice(-10),
-    [serverHealthHistory]
-  );
+  const serverHealthMemoryAvailableBytes = serverHealth
+    ? serverHealth.memoryAvailableBytes ??
+      Math.max(0, serverHealth.memoryTotalBytes - serverHealth.memoryUsedBytes)
+    : 0;
+  const serverHealthKernelLabel = serverHealth
+    ? [serverHealth.kernelName, serverHealth.kernelRelease].filter(Boolean).join(" ") || "-"
+    : "-";
+  const serverHealthCpuCoreLabel =
+    serverHealth && serverHealth.cpuCoreCount && serverHealth.cpuCoreCount > 0
+      ? serverHealth.cpuCoreCount.toLocaleString()
+      : "-";
+  const serverHealthCollectedAtLabel = serverHealth
+    ? (() => {
+        const timestamp = new Date(serverHealth.collectedAt);
+        return Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString() : "-";
+      })()
+    : "-";
+  const serverHealthSwapUsagePercent =
+    serverHealth && serverHealth.swapTotalBytes && serverHealth.swapTotalBytes > 0
+      ? ((serverHealth.swapUsedBytes ?? 0) / serverHealth.swapTotalBytes) * 100
+      : 0;
+  const serverHealthLoadPerCore =
+    serverHealth && serverHealth.cpuCoreCount && serverHealth.cpuCoreCount > 0
+      ? serverHealth.load1 / serverHealth.cpuCoreCount
+      : null;
+  const serverHealthFilesystems = serverHealth?.filesystems?.length
+    ? serverHealth.filesystems
+    : serverHealth
+      ? [
+          {
+            filesystem: "",
+            path: serverHealth.diskPath,
+            totalBytes: serverHealth.diskTotalBytes,
+            usedBytes: serverHealth.diskUsedBytes,
+            availableBytes: serverHealth.diskAvailableBytes,
+            usePercent: serverHealthMetrics?.diskUsagePercent ?? 0
+          }
+        ]
+      : [];
+  const serverHealthNetworkInterfaces = serverHealth?.networkInterfaces ?? [];
+  const serverHealthMemoryProcesses = serverProcessSnapshot?.memoryProcesses ?? [];
   const serverHealthAlertStatus = useMemo(() => {
     const safeMetrics = serverHealthMetrics;
     if (!safeMetrics || !serverHealthAlertPreferences.enabled) {
@@ -11504,7 +11549,6 @@ export function App() {
       const nextState: ServerHealthTabState = {
         snapshot: null,
         metrics: null,
-        history: [],
         loading: false,
         error: options?.message ?? null
       };
@@ -11514,7 +11558,6 @@ export function App() {
           previous &&
           previous.snapshot === null &&
           previous.metrics === null &&
-          previous.history.length === 0 &&
           previous.loading === false &&
           previous.error === nextState.error
         ) {
@@ -11640,7 +11683,6 @@ export function App() {
           [targetTabId]: {
             snapshot: previous?.snapshot ?? null,
             metrics: previous?.metrics ?? null,
-            history: previous?.history ?? [],
             loading: true,
             error: isSilent ? previous?.error ?? null : null
           }
@@ -11656,18 +11698,11 @@ export function App() {
         }
         const nextMetrics = deriveServerHealthMetrics(snapshot, previousSnapshot);
         setServerHealthByTab((prev) => {
-          const previous = prev[targetTabId];
-          const baseHistory = previousSnapshot ? previous?.history ?? [] : [];
-          const nextPoint: ServerHealthHistoryPoint = {
-            at: Date.now(),
-            ...nextMetrics
-          };
           return {
             ...prev,
             [targetTabId]: {
               snapshot,
               metrics: nextMetrics,
-              history: [...baseHistory, nextPoint].slice(-SERVER_HEALTH_HISTORY_LIMIT),
               loading: false,
               error: null
             }
@@ -11685,7 +11720,6 @@ export function App() {
             [targetTabId]: {
               snapshot: previous?.snapshot ?? null,
               metrics: previous?.metrics ?? null,
-              history: previous?.history ?? [],
               loading: false,
               error: message
             }
@@ -23847,14 +23881,7 @@ export function App() {
               directorySizeLabel={`Current directory size: ${formatExactByteCount(sftpSummary.totalSize)} (${formatTransferBytes(sftpSummary.totalSize)})`}
               dropActive={sftpDropActive}
               entries={(sftpDirectory?.entries ?? []).map((entry) => ({
-                compactMetaLabel: [
-                  entry.permissions,
-                  `${entry.owner}:${entry.group}`,
-                  entry.links > 1 ? `${formatSftpLinksForLs(entry.links)} links` : null
-                ]
-                  .filter((part): part is string => !!part)
-                  .join(" · "),
-                compactSizeLabel: formatTransferBytes(entry.size),
+                compactSizeLabel: entry.kind === "directory" ? "Folder" : formatTransferBytes(entry.size),
                 group: entry.group,
                 id: `${entry.path}-${entry.modifiedAt ?? ""}`,
                 isSelected: selectedSftpPath === entry.path,
@@ -23955,7 +23982,11 @@ export function App() {
             tabs={[
               { badge: sessionBadgeText, id: "sessions", label: "Sessions" },
               { id: "health", label: "Health" },
-              { badge: `${visibleTerminalCommandHistoryEntries.length}`, id: "history", label: "History" }
+              {
+                badge: `${inspectorTerminalCommandHistoryEntries.length}/${visibleTerminalCommandHistoryEntries.length}`,
+                id: "history",
+                label: "History"
+              }
             ]}
           >
             <div
@@ -24122,7 +24153,7 @@ export function App() {
                   void refreshServerProcesses();
                 }
               }}
-              onToggleDetail={() => setIsServerHealthDetailOpen((prev) => !prev)}
+              onToggleDetail={() => setIsServerHealthDetailOpen(true)}
               refreshDisabled={
                 !activeTerminalTab ||
                 !isActiveTabConnected ||
@@ -24190,116 +24221,9 @@ export function App() {
                       <strong className="server-health-card__value">
                         {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
                       </strong>
-                      <span className="server-health-card__meta">
-                        {serverHealth.diskPath} | {formatTransferBytes(serverHealth.diskUsedBytes)}/
-                        {formatTransferBytes(serverHealth.diskTotalBytes)}
-                      </span>
-                    </div>
-                    <div className="server-health-card server-health-card--network">
-                      <span className="server-health-card__label">Network</span>
-                      <strong className="server-health-card__value">
-                        RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
-                      </strong>
-                      <span className="server-health-card__meta">
-                        TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s
-                      </span>
-                    </div>
-                    <div className="server-health-card server-health-card--load">
-                      <span className="server-health-card__label">Load</span>
-                      <strong className="server-health-card__value">
-                        {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
-                        {serverHealth.load15.toFixed(2)}
-                      </strong>
-                    </div>
-                    <div className="server-health-card server-health-card--uptime">
-                      <span className="server-health-card__label">Uptime</span>
-                      <strong className="server-health-card__value">
-                        {formatServerUptime(serverHealth.uptimeSeconds)}
-                      </strong>
-                      <span className="server-health-card__meta">{serverHealth.hostname}</span>
                     </div>
                   </div>
-                  {isServerHealthDetailOpen ? (
-                    <div className="server-health-details">
-                      {recentServerHealthPoints.length > 0 ? (
-                        <div className="server-health-trend">
-                          <p className="hint server-health-trend__title">
-                            Recent trend (last {recentServerHealthPoints.length} samples)
-                          </p>
-                          <div className="server-health-trend__bars" aria-hidden="true">
-                            {recentServerHealthPoints.map((point, index) => (
-                              <div className="server-health-trend__sample" key={`${point.at}-${index}`}>
-                                <span
-                                  className="server-health-trend__bar server-health-trend__bar--cpu"
-                                  style={{ height: `${Math.max(4, point.cpuUsagePercent)}%` }}
-                                  title={`CPU ${formatPercent(point.cpuUsagePercent)}`}
-                                />
-                                <span
-                                  className="server-health-trend__bar server-health-trend__bar--memory"
-                                  style={{ height: `${Math.max(4, point.memoryUsagePercent)}%` }}
-                                  title={`Memory ${formatPercent(point.memoryUsagePercent)}`}
-                                />
-                                <span
-                                  className="server-health-trend__bar server-health-trend__bar--disk"
-                                  style={{ height: `${Math.max(4, point.diskUsagePercent)}%` }}
-                                  title={`Disk ${formatPercent(point.diskUsagePercent)}`}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                      {serverProcessError ? <p className="hint sftp-error">{serverProcessError}</p> : null}
-                      {serverProcessLoading ? (
-                        <p className="hint" role="status" aria-live="polite">
-                          Collecting process details...
-                        </p>
-                      ) : null}
-                      <div className="server-health-processes">
-                        <p className="hint server-health-processes__title">Top processes (CPU)</p>
-                        {serverProcessSnapshot?.processes?.length ? (
-                          <ul className="server-health-processes__list">
-                            {serverProcessSnapshot.processes.map((entry) => (
-                              <li className="server-health-processes__item" key={`${entry.pid}-${entry.command}`}>
-                                <span className="server-health-processes__pid">{entry.pid}</span>
-                                <span className="server-health-processes__command" title={entry.command}>
-                                  {entry.command}
-                                </span>
-                                <span className="server-health-processes__cpu">
-                                  {formatProcessPercent(entry.cpuPercent)}
-                                </span>
-                                <span className="server-health-processes__mem">
-                                  {formatProcessPercent(entry.memoryPercent)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="hint">No process data yet.</p>
-                        )}
-                      </div>
-                      <div className="server-health-services">
-                        <p className="hint server-health-processes__title">Failed services</p>
-                        {serverProcessSnapshot?.failedServices?.length ? (
-                          <ul className="server-health-services__list">
-                            {serverProcessSnapshot.failedServices.map((name) => (
-                              <li className="server-health-services__item" key={name}>
-                                {name}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="hint">No failed services detected.</p>
-                        )}
-                      </div>
-                      <p className="hint server-health__footnote">
-                        Updated: {serverHealthUpdatedLabel} | RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
-                        {formatTransferBytes(serverHealth.networkTxBytes)}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="hint server-health__footnote">Updated: {serverHealthUpdatedLabel}</p>
-                  )}
+                  <p className="hint server-health__footnote">Updated: {serverHealthUpdatedLabel}</p>
                 </>
               ) : null}
               </ServerHealthInspectorSection>
@@ -24315,7 +24239,7 @@ export function App() {
               <CommandHistoryInspectorSection
               activeTabConnected={isActiveTabConnected}
               activeTabTitle={activeTerminalTab?.title ?? null}
-              entries={visibleTerminalCommandHistoryEntries.map((entry) => ({
+              entries={inspectorTerminalCommandHistoryEntries.map((entry) => ({
                 command: entry.command,
                 id: entry.id,
                 onContextMenu: (event) => openCommandHistoryContextMenu(event, entry.id),
@@ -24324,6 +24248,7 @@ export function App() {
                 },
                 title: `${entry.command}\n\nDouble-click to paste into active terminal. Right-click for actions.`
               }))}
+              hiddenEntryCount={hiddenInspectorCommandHistoryCount}
               isCollapsed={isCommandHistoryInspectorCollapsed}
               onOpenContextMenu={openCommandHistoryPanelContextMenu}
               onOpenManager={openCommandHistoryManager}
@@ -24338,7 +24263,7 @@ export function App() {
               query={terminalCommandHistoryQuery}
               scope={terminalCommandHistoryScope}
               totalCommandSnippetCount={totalCommandSnippetCount}
-              visibleCountLabel={`${visibleTerminalCommandHistoryEntries.length}/${terminalCommandHistoryEntries.length}`}
+              visibleCountLabel={`${inspectorTerminalCommandHistoryEntries.length}/${visibleTerminalCommandHistoryEntries.length}`}
               />
             </div>
           </WorkbenchInspectorSidebar>
@@ -24503,6 +24428,385 @@ export function App() {
           void saveDangerousCommandPersistentApproval();
         }}
       />
+
+      {isServerHealthDetailOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            aria-label="Server Health Details"
+            aria-modal="true"
+            className="modal modal--server-health-details"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal__header">
+              <div>
+                <h3>Server Health Details</h3>
+                <p className="hint server-health-modal__subtitle">
+                  {activeTerminalTab?.title ?? "No active tab"}
+                </p>
+              </div>
+              <button
+                aria-label="Close server health details"
+                className="icon-button"
+                onClick={() => setIsServerHealthDetailOpen(false)}
+                type="button"
+              >
+                <UiIcon name="close" />
+              </button>
+            </div>
+            {!isActiveTabConnected ? (
+              <p className="hint">Connect the active terminal tab to collect metrics.</p>
+            ) : null}
+            {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
+            {serverHealth ? (
+              <div className="server-health-details">
+                <div className="server-health-grid server-health-grid--details">
+                  <div
+                    className={
+                      serverHealthAlertStatus.cpuHigh
+                        ? "server-health-card server-health-card--cpu is-alert"
+                        : "server-health-card server-health-card--cpu"
+                    }
+                  >
+                    <span className="server-health-card__label">CPU</span>
+                    <strong className="server-health-card__value">
+                      {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
+                    </strong>
+                    <span className="server-health-card__meta">
+                      <span>Cores</span> {serverHealthCpuCoreLabel}
+                    </span>
+                  </div>
+                  <div
+                    className={
+                      serverHealthAlertStatus.memoryHigh
+                        ? "server-health-card server-health-card--memory is-alert"
+                        : "server-health-card server-health-card--memory"
+                    }
+                  >
+                    <span className="server-health-card__label">Memory</span>
+                    <strong className="server-health-card__value">
+                      {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
+                    </strong>
+                    <span className="server-health-card__meta">
+                      <span>Used</span> {formatTransferBytes(serverHealth.memoryUsedBytes)} ·{" "}
+                      <span>Available</span> {formatTransferBytes(serverHealthMemoryAvailableBytes)}
+                    </span>
+                  </div>
+                  <div
+                    className={
+                      serverHealthAlertStatus.diskHigh
+                        ? "server-health-card server-health-card--disk is-alert"
+                        : "server-health-card server-health-card--disk"
+                    }
+                  >
+                    <span className="server-health-card__label">Disk</span>
+                    <strong className="server-health-card__value">
+                      {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
+                    </strong>
+                    <span className="server-health-card__meta">
+                      {serverHealth.diskPath} · <span>Free</span>{" "}
+                      {formatTransferBytes(serverHealth.diskAvailableBytes)} · <span>Total</span>{" "}
+                      {formatTransferBytes(serverHealth.diskTotalBytes)}
+                    </span>
+                  </div>
+                  <div className="server-health-card server-health-card--network">
+                    <span className="server-health-card__label">Network</span>
+                    <strong className="server-health-card__value">
+                      RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
+                    </strong>
+                    <span className="server-health-card__meta">
+                      TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s ·{" "}
+                      <span>Total</span> RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
+                      {formatTransferBytes(serverHealth.networkTxBytes)}
+                    </span>
+                  </div>
+                  <div className="server-health-card server-health-card--load">
+                    <span className="server-health-card__label">Load</span>
+                    <strong className="server-health-card__value">
+                      {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
+                      {serverHealth.load15.toFixed(2)}
+                    </strong>
+                    <span className="server-health-card__meta">1m / 5m / 15m</span>
+                  </div>
+                  <div className="server-health-card server-health-card--uptime">
+                    <span className="server-health-card__label">Uptime</span>
+                    <strong className="server-health-card__value">
+                      {formatServerUptime(serverHealth.uptimeSeconds)}
+                    </strong>
+                    <span className="server-health-card__meta">{serverHealth.hostname}</span>
+                  </div>
+                </div>
+                <div className="server-health-detail-tabs" role="tablist" aria-label="Server health sections">
+                  {[
+                    ["overview", "Overview"],
+                    ["disk", "Disk"],
+                    ["network", "Network"],
+                    ["processes", "Processes"],
+                    ["services", "Services"]
+                  ].map(([tabId, label]) => (
+                    <button
+                      aria-selected={serverHealthDetailTab === tabId}
+                      className={
+                        serverHealthDetailTab === tabId
+                          ? "server-health-detail-tab is-active"
+                          : "server-health-detail-tab"
+                      }
+                      key={tabId}
+                      onClick={() => setServerHealthDetailTab(tabId as ServerHealthDetailTab)}
+                      role="tab"
+                      type="button"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="server-health-detail-panel">
+                  {serverHealthDetailTab === "overview" ? (
+                    <>
+                      <div className="server-health-info-grid" aria-label="System information">
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Hostname</span>
+                          <strong className="server-health-info-item__value">{serverHealth.hostname}</strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">OS</span>
+                          <strong className="server-health-info-item__value">
+                            {serverHealth.osName || "-"}
+                          </strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Kernel</span>
+                          <strong className="server-health-info-item__value">{serverHealthKernelLabel}</strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Architecture</span>
+                          <strong className="server-health-info-item__value">
+                            {serverHealth.architecture || "-"}
+                          </strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">CPU cores</span>
+                          <strong className="server-health-info-item__value">{serverHealthCpuCoreLabel}</strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Load / core</span>
+                          <strong className="server-health-info-item__value">
+                            {serverHealthLoadPerCore === null ? "-" : serverHealthLoadPerCore.toFixed(2)}
+                          </strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Free memory</span>
+                          <strong className="server-health-info-item__value">
+                            {formatTransferBytes(serverHealth.memoryFreeBytes ?? 0)}
+                          </strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Cache / buffers</span>
+                          <strong className="server-health-info-item__value">
+                            {formatTransferBytes(serverHealth.memoryCachedBytes ?? 0)} /{" "}
+                            {formatTransferBytes(serverHealth.memoryBufferBytes ?? 0)}
+                          </strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Swap</span>
+                          <strong className="server-health-info-item__value">
+                            {formatPercent(serverHealthSwapUsagePercent)} ·{" "}
+                            {formatTransferBytes(serverHealth.swapUsedBytes ?? 0)}/
+                            {formatTransferBytes(serverHealth.swapTotalBytes ?? 0)}
+                          </strong>
+                        </div>
+                        <div className="server-health-info-item">
+                          <span className="server-health-info-item__label">Collected</span>
+                          <strong className="server-health-info-item__value">
+                            {serverHealthCollectedAtLabel}
+                          </strong>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                  {serverHealthDetailTab === "disk" ? (
+                    <div className="server-health-table server-health-table--disk">
+                      <div className="server-health-table__row server-health-table__row--header">
+                        <span>Mount</span>
+                        <span>Type</span>
+                        <span>Used</span>
+                        <span>Free</span>
+                        <span>Use</span>
+                        <span>Inodes</span>
+                      </div>
+                      {serverHealthFilesystems.map((entry) => (
+                        <div className="server-health-table__row" key={`${entry.filesystem}-${entry.path}`}>
+                          <span className="server-health-table__main" title={`${entry.filesystem} ${entry.path}`}>
+                            {entry.path}
+                          </span>
+                          <span>{entry.type || "-"}</span>
+                          <span>
+                            {formatTransferBytes(entry.usedBytes)}/{formatTransferBytes(entry.totalBytes)}
+                          </span>
+                          <span>{formatTransferBytes(entry.availableBytes)}</span>
+                          <span>{formatOptionalPercent(entry.usePercent)}</span>
+                          <span>{formatOptionalPercent(entry.inodeUsedPercent)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {serverHealthDetailTab === "network" ? (
+                    <div className="server-health-table server-health-table--network">
+                      <div className="server-health-table__row server-health-table__row--header">
+                        <span>Interface</span>
+                        <span>RX</span>
+                        <span>TX</span>
+                        <span>RX errors</span>
+                        <span>TX errors</span>
+                        <span>Dropped</span>
+                      </div>
+                      {serverHealthNetworkInterfaces.length ? (
+                        serverHealthNetworkInterfaces.map((entry) => (
+                          <div className="server-health-table__row" key={entry.name}>
+                            <span className="server-health-table__main">{entry.name}</span>
+                            <span>{formatTransferBytes(entry.rxBytes)}</span>
+                            <span>{formatTransferBytes(entry.txBytes)}</span>
+                            <span>{entry.rxErrors ?? 0}</span>
+                            <span>{entry.txErrors ?? 0}</span>
+                            <span>
+                              {(entry.rxDropped ?? 0).toLocaleString()}/
+                              {(entry.txDropped ?? 0).toLocaleString()}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="hint">No network interface data yet.</p>
+                      )}
+                    </div>
+                  ) : null}
+                  {serverHealthDetailTab === "processes" ? (
+                    <>
+                      {serverProcessError ? <p className="hint sftp-error">{serverProcessError}</p> : null}
+                      {serverProcessLoading ? (
+                        <p className="hint" role="status" aria-live="polite">
+                          Collecting process details...
+                        </p>
+                      ) : null}
+                      <div className="server-health-details__columns">
+                        <div className="server-health-processes">
+                          <p className="hint server-health-processes__title">Top processes (CPU)</p>
+                          {serverProcessSnapshot?.processes?.length ? (
+                            <ul className="server-health-processes__list">
+                              <li className="server-health-processes__item server-health-processes__item--header">
+                                <span className="server-health-processes__pid">PID</span>
+                                <span className="server-health-processes__user">User</span>
+                                <span className="server-health-processes__command">Command</span>
+                                <span className="server-health-processes__cpu">CPU</span>
+                                <span className="server-health-processes__mem">MEM</span>
+                              </li>
+                              {serverProcessSnapshot.processes.map((entry) => (
+                                <li className="server-health-processes__item" key={`cpu-${entry.pid}-${entry.command}`}>
+                                  <span className="server-health-processes__pid">{entry.pid}</span>
+                                  <span className="server-health-processes__user" title={entry.user}>
+                                    {entry.user}
+                                  </span>
+                                  <span className="server-health-processes__command" title={entry.command}>
+                                    {entry.command}
+                                  </span>
+                                  <span className="server-health-processes__cpu">
+                                    {formatProcessPercent(entry.cpuPercent)}
+                                  </span>
+                                  <span className="server-health-processes__mem">
+                                    {formatProcessPercent(entry.memoryPercent)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="hint">No process data yet.</p>
+                          )}
+                        </div>
+                        <div className="server-health-processes">
+                          <p className="hint server-health-processes__title">Top processes (Memory)</p>
+                          {serverHealthMemoryProcesses.length ? (
+                            <ul className="server-health-processes__list">
+                              <li className="server-health-processes__item server-health-processes__item--header">
+                                <span className="server-health-processes__pid">PID</span>
+                                <span className="server-health-processes__user">User</span>
+                                <span className="server-health-processes__command">Command</span>
+                                <span className="server-health-processes__cpu">CPU</span>
+                                <span className="server-health-processes__mem">MEM</span>
+                              </li>
+                              {serverHealthMemoryProcesses.map((entry) => (
+                                <li className="server-health-processes__item" key={`mem-${entry.pid}-${entry.command}`}>
+                                  <span className="server-health-processes__pid">{entry.pid}</span>
+                                  <span className="server-health-processes__user" title={entry.user}>
+                                    {entry.user}
+                                  </span>
+                                  <span className="server-health-processes__command" title={entry.command}>
+                                    {entry.command}
+                                  </span>
+                                  <span className="server-health-processes__cpu">
+                                    {formatProcessPercent(entry.cpuPercent)}
+                                  </span>
+                                  <span className="server-health-processes__mem">
+                                    {formatProcessPercent(entry.memoryPercent)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="hint">No process data yet.</p>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                  {serverHealthDetailTab === "services" ? (
+                    <div className="server-health-services server-health-services--details">
+                      <p className="hint server-health-processes__title">Failed services</p>
+                      {serverProcessError ? <p className="hint sftp-error">{serverProcessError}</p> : null}
+                      {serverProcessSnapshot?.failedServices?.length ? (
+                        <ul className="server-health-services__list server-health-services__list--details">
+                          {serverProcessSnapshot.failedServices.map((entry) => (
+                            <li className="server-health-services__item server-health-services__item--details" key={entry.name}>
+                              <strong>{entry.name}</strong>
+                              <span>
+                                {[entry.loadState, entry.activeState, entry.subState].filter(Boolean).join(" / ") ||
+                                  "-"}
+                              </span>
+                              {entry.description ? <small>{entry.description}</small> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="hint">No failed services detected.</p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <p className="hint">No server metrics collected yet.</p>
+            )}
+            <div className="modal__actions">
+              <button
+                className="secondary-button"
+                disabled={!activeTerminalTab || !isActiveTabConnected || serverHealthLoading || serverProcessLoading}
+                onClick={() => {
+                  void refreshServerHealth();
+                  void refreshServerProcesses();
+                }}
+                type="button"
+              >
+                Refresh
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => setIsServerHealthDetailOpen(false)}
+                type="button"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <OperationCenterModal
         canRetryAllFailedTransfers={canRetryAllFailedTransfers}

@@ -56,20 +56,34 @@ export interface ServerHealthSnapshot {
   tabId: string;
   collectedAt: string;
   hostname: string;
+  osName?: string;
+  kernelName?: string;
+  kernelRelease?: string;
+  architecture?: string;
+  cpuCoreCount?: number;
   uptimeSeconds: number;
   load1: number;
   load5: number;
   load15: number;
   memoryTotalBytes: number;
   memoryUsedBytes: number;
+  memoryAvailableBytes?: number;
+  memoryFreeBytes?: number;
+  memoryBufferBytes?: number;
+  memoryCachedBytes?: number;
+  swapTotalBytes?: number;
+  swapUsedBytes?: number;
+  swapFreeBytes?: number;
   diskPath: string;
   diskTotalBytes: number;
   diskUsedBytes: number;
   diskAvailableBytes: number;
+  filesystems?: ServerFilesystemUsage[];
   cpuTotalTicks: number;
   cpuIdleTicks: number;
   networkRxBytes: number;
   networkTxBytes: number;
+  networkInterfaces?: ServerNetworkInterfaceUsage[];
 }
 
 export interface ServerProcessEntry {
@@ -80,11 +94,41 @@ export interface ServerProcessEntry {
   command: string;
 }
 
+export interface ServerFailedServiceEntry {
+  name: string;
+  loadState?: string;
+  activeState?: string;
+  subState?: string;
+  description?: string;
+}
+
+export interface ServerFilesystemUsage {
+  filesystem: string;
+  path: string;
+  type?: string;
+  totalBytes: number;
+  usedBytes: number;
+  availableBytes: number;
+  usePercent: number;
+  inodeUsedPercent?: number;
+}
+
+export interface ServerNetworkInterfaceUsage {
+  name: string;
+  rxBytes: number;
+  txBytes: number;
+  rxErrors?: number;
+  txErrors?: number;
+  rxDropped?: number;
+  txDropped?: number;
+}
+
 export interface ServerProcessSnapshot {
   tabId: string;
   collectedAt: string;
   processes: ServerProcessEntry[];
-  failedServices: string[];
+  memoryProcesses?: ServerProcessEntry[];
+  failedServices: ServerFailedServiceEntry[];
 }
 
 export type TerminalEvent =

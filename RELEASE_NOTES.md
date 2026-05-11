@@ -1,5 +1,41 @@
 ﻿# TermDock Release Notes
 
+## v0.1.24 (2026-05-11)
+
+Release type: Stable
+
+### Highlights
+
+- Right Inspector density pass:
+  - selected-session details were removed from the right rail so the panel focuses on active session, server health, and recent command history
+  - command history now defaults to the latest 5 visible entries in the Inspector, with the full manager still available for deeper review
+  - server health stays compact in the right rail and opens a dedicated detail dialog instead of expanding inline
+- Server Health detail upgrade:
+  - the detail dialog now uses tabs for `Overview`, `Disk`, `Network`, `Processes`, and `Services`
+  - overview adds OS/kernel/architecture, CPU cores, load per core, free/cache/buffer memory, Swap, and collection time
+  - disk details now list mounted filesystems with type, used/free/total, usage percent, and inode usage
+  - network details now list interfaces with RX/TX totals, error counts, and dropped packet counts
+  - process details now show both CPU-heavy and memory-heavy processes with PID/user/command/CPU/MEM
+  - failed services now include structured load/active/sub states plus service descriptions when available
+- SFTP Explorer compact layout fix:
+  - compact mode now prioritizes file and folder names, showing only a type dot and size/folder marker
+  - permission, owner, group, and link metadata remain available in Details mode where there is enough horizontal space
+- Simplified Chinese polish:
+  - added translations for the new server health tabs, table labels, status labels, and SFTP folder marker
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-11T03-32-09-887Z/summary.json`
+- Latest packaged smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
+- Latest packaged smoke artifact: `artifacts/smoke/2026-05-11T03-40-28-692Z/summary.json`
+- Manual server health tabs screenshot artifact: `artifacts/manual-server-health-tabs/2026-05-11T02-16-53-783Z/disk-tab.png`
+- Manual Simplified Chinese server health screenshot artifact: `artifacts/manual-zh-server-health-tabs/2026-05-11T03-37-24-976Z/zh-disk-tab.png`
+- Manual SFTP compact screenshot artifact: `artifacts/manual-sftp-compact/2026-05-11T01-43-53-116Z/sftp-compact.png`
+- Local `dist:mac:x64` produced ZIP output but DMG creation failed on this macOS 12 host because electron-builder's downloaded `dmgbuild` runtime requires `_mkfifoat`; tagged GitHub Actions release builds run on macOS 14.
+
 ## v0.1.23 (2026-05-10)
 
 Release type: Stable
