@@ -430,7 +430,7 @@
 .panel--right .panel__title-group {
   flex-wrap: wrap;
   min-width: 0;
-  gap: 4px;
+  gap: 3px;
 }
 
 .panel--right .panel__heading-actions,
@@ -441,7 +441,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -514,7 +514,7 @@
 
 .workbench-inspector-panels {
   display: grid;
-  grid-template-rows: minmax(288px, 1fr) minmax(86px, auto) minmax(128px, auto);
+  grid-template-rows: minmax(276px, 1fr) minmax(78px, auto) minmax(118px, auto);
   min-height: 0;
   height: 100%;
 }
