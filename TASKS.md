@@ -1,12 +1,13 @@
 ﻿# TermDock Task Board
 
-Last updated: 2026-04-02
+Last updated: 2026-05-10
 
 ## Current Release State
 
-- Stable release: `v0.1.21`
-- Branch baseline: `master`
-- Priority direction: self-use runtime hardening and workflow quality, not public-release signing/testing work
+- Stable release: `v0.1.23`
+- Active branch: `feature/editor-workbench-ui`
+- Branch baseline: `origin/feature/editor-workbench-ui`
+- Priority direction: keep editor-workbench branch shippable while resuming self-use runtime hardening and workflow quality
 
 ## P0 Matrix
 
@@ -38,7 +39,7 @@ Last updated: 2026-04-02
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
 | P0-E1 | TODO | Startup performance benchmark/optimization |
 | P0-E2 | TODO | Large transfer memory optimization |
-| P0-E3 | PARTIAL | Recoverable global error baseline now covers disconnect copy, `Hotkeys` / `Port Fwd` / `Retry Center` routing, and bug-report/export guidance; deeper coverage is still pending |
+| P0-E3 | PARTIAL | Recoverable global error routing now covers disconnect copy, `Workspace` / `Safety` / `Hotkeys` / `Monitor` / `Port Fwd` / `Retry Center` / `Diagnostics` routing, and bug-report/export guidance; deeper edge-case coverage is still pending |
 | P0-E4 | TODO | Persistence crash-recovery verification |
 | P0-F1 | TODO | Unit tests; low priority for current self-use track |
 | P0-F2 | TODO | Integration tests; low priority for current self-use track |
@@ -48,6 +49,17 @@ Last updated: 2026-04-02
 
 ## In Progress Track (v0.1.3+)
 
+0. Active editor-workbench UI branch:
+   - shell, sidebars, terminal stage, transfer dock, and modal chrome have been refreshed into a flatter code-editor workbench language
+   - SFTP explorer now has persisted `Compact` / `Details` view modes
+   - right inspector now supports collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs
+   - large renderer UI regions were split into focused modules for settings, workbench modals, command snippets, UI preferences, and separated workbench/terminal CSS
+   - multilingual baseline now exposes persisted English/Simplified Chinese interface selection in `Settings > Workspace`, with broad Chinese coverage for settings, workbench chrome, dialogs/context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
+   - post-refactor `pnpm run typecheck` passed
+   - post-refactor `pnpm run build` passed
+   - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
+   - post-refactor `pnpm run smoke:ui:packaged` passed with `PASS 45 / FAIL 0 / SKIP 0`
+   - multilingual/workbench density follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-11 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-11T08-35-26-189Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling
@@ -159,10 +171,13 @@ Last updated: 2026-04-02
    - upgraded global error bar with quick actions (`Reconnect`, `Open Logs`, `Diagnostics`, `Copy Error`)
    - added `Copy Latest Disconnect` quick action when disconnect reports exist
    - contextual recovery hints for connection/bridge related errors
-- high-frequency error types now route directly to `Connection Settings`, `File Opening`, `Hotkeys`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, or `Export Bug Report` when that recovery path is more specific than generic diagnostics
+   - high-frequency error types now route directly to `Connection Settings`, `Workspace`, `Safety`, `File Opening`, `Hotkeys`, `Monitor`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, `Diagnostics`, or `Export Bug Report` when that recovery path is more specific than generic diagnostics
+   - Safety sync failures now retain contextual error-bar text and have smoke coverage for routing back to `Settings > Safety`
 15. Operation center baseline (`F8`):
    - added `Operation Center` modal with active long-running operation summary
    - includes upload/download queue status, remote delete status, and port-forward busy status
+   - includes unified activity timeline entries for recent/current transfer, delete, port-forward, and app-job events
+   - includes grouped controls for transfer-wide, active-tab, and tool/navigation actions
    - quick actions for transfer cancel-all and navigation to diagnostics/port-forward settings
    - includes cross-tab transfer activity summary with tab focus action
    - includes per-tab and cross-tab one-click transfer cancellation actions
@@ -213,20 +228,24 @@ Last updated: 2026-04-02
 
 ## Immediate Next Target
 
-1. `P0-E3` Global error recovery follow-up (broader action coverage + guidance)
-2. `F8` Operation center follow-up (richer timeline + grouped controls)
-3. `P0-A3`/`F9` Persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
-4. `P0-E1`/`P0-E2` Startup and large-transfer performance follow-up
+1. `UI-WB-HANDOFF`: push or PR `feature/editor-workbench-ui` with current workspace and packaged smoke evidence
+2. `UI-WB-FEEDBACK`: collect real-usage feedback on the refreshed workbench shell
+3. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy
+4. `F8`: Operation Center follow-up (broader cancel/retry coverage)
+5. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
+6. `P0-E1`/`P0-E2`: startup and large-transfer performance follow-up
 
 ## Not Done Yet (Top Blocking Items)
 
-1. `P0-E3`: recoverable global error action coverage expansion (beyond current baseline)
-2. `F8`: richer timeline and grouped controls for Operation Center
-3. `P0-A3`: JSON-to-SQLite migration planning and execution
-4. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
-5. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
-6. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
-7. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
+1. `UI-WB-FEEDBACK`: optional polish after real usage feedback
+2. Remaining macOS/external-host packaged smoke evidence for broader release confidence
+3. `P0-E3`: remaining recoverable global error edge-case coverage and guidance polish
+4. `F8`: broader cancel/retry coverage for Operation Center
+5. `P0-A3`: JSON-to-SQLite migration planning and execution
+6. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
+7. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
+8. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
+9. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
 
 ## Backlog Candidates
 
@@ -249,6 +268,7 @@ Last updated: 2026-04-02
 - Recurring folder sync profiles
 - Connection quality timeline dashboard
 - Workspace profile follow-up (broader automation and shared defaults)
+- Editor-workbench follow-up: command palette, split panes, and richer editor-style layout affordances
 
 ## Exploration Pool (Unprioritized)
 
@@ -276,7 +296,7 @@ Last updated: 2026-04-02
 | F5 | P1 | DONE | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
 | F6 | P2 | DONE | Session templates + env variables | Local template manager, env-var substitution, and create/apply flows now cover repeated host patterns |
 | F7 | P2 | PARTIAL | Remote overwrite pre-check (mtime/size/checksum) | Metadata guard baseline shipped; conflict resolution UI/diff follow-up pending |
-| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline plus tracked session/snippet/diagnostics jobs landed; richer timeline and grouped controls are still pending |
+| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline, tracked session/snippet/diagnostics jobs, unified activity timeline, and grouped controls landed; broader cancel/retry coverage is still pending |
 | F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
 | F11 | P2 | PARTIAL | Transfer bandwidth limiter + schedule window | Per-direction rate limits, queued-transfer weekday/time windows, one-click schedule presets, exact next-boundary wake-up with next-resume hints, transfer policy pack save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push, and upload reliability auto-recovery from transient missing-path plus SSH channel-pressure faults landed; richer schedule automation and auto-distribution are still pending |

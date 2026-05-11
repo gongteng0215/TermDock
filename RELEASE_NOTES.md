@@ -1,16 +1,91 @@
 ﻿# TermDock Release Notes
 
+## v0.1.24 (2026-05-11)
+
+Release type: Stable
+
+### Highlights
+
+- Right Inspector density pass:
+  - selected-session details were removed from the right rail so the panel focuses on active session, server health, and recent command history
+  - command history now defaults to the latest 5 visible entries in the Inspector, with the full manager still available for deeper review
+  - server health stays compact in the right rail and opens a dedicated detail dialog instead of expanding inline
+- Server Health detail upgrade:
+  - the detail dialog now uses tabs for `Overview`, `Disk`, `Network`, `Processes`, and `Services`
+  - overview adds OS/kernel/architecture, CPU cores, load per core, free/cache/buffer memory, Swap, and collection time
+  - disk details now list mounted filesystems with type, used/free/total, usage percent, and inode usage
+  - network details now list interfaces with RX/TX totals, error counts, and dropped packet counts
+  - process details now show both CPU-heavy and memory-heavy processes with PID/user/command/CPU/MEM
+  - failed services now include structured load/active/sub states plus service descriptions when available
+- SFTP Explorer compact layout fix:
+  - compact mode now prioritizes file and folder names, showing only a type dot and size/folder marker
+  - permission, owner, group, and link metadata remain available in Details mode where there is enough horizontal space
+- Simplified Chinese polish:
+  - added translations for the new server health tabs, table labels, status labels, and SFTP folder marker
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-11T03-32-09-887Z/summary.json`
+- Latest packaged smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
+- Latest packaged smoke artifact: `artifacts/smoke/2026-05-11T03-40-28-692Z/summary.json`
+- Manual server health tabs screenshot artifact: `artifacts/manual-server-health-tabs/2026-05-11T02-16-53-783Z/disk-tab.png`
+- Manual Simplified Chinese server health screenshot artifact: `artifacts/manual-zh-server-health-tabs/2026-05-11T03-37-24-976Z/zh-disk-tab.png`
+- Manual SFTP compact screenshot artifact: `artifacts/manual-sftp-compact/2026-05-11T01-43-53-116Z/sftp-compact.png`
+- Local `dist:mac:x64` produced ZIP output but DMG creation failed on this macOS 12 host because electron-builder's downloaded `dmgbuild` runtime requires `_mkfifoat`; tagged GitHub Actions release builds run on macOS 14.
+
+## v0.1.23 (2026-05-10)
+
+Release type: Stable
+
+### Highlights
+
+- Editor workbench UI refresh on `feature/editor-workbench-ui`:
+  - main shell now reads more like a dark code-editor workbench instead of a stacked operations dashboard
+  - SFTP moved visually into an Explorer-style rail, while sessions, server health, and command history read as a coordinated Inspector rail
+  - terminal tabs/stage and the transfer dock were restyled so the terminal remains primary and transfers read as a bottom workbench panel
+  - settings and manager modal chrome now follows the same compact workbench language
+- Simplified Chinese interface baseline:
+  - `Settings > Workspace` now includes a persisted interface-language selector for English and Simplified Chinese
+  - Simplified Chinese coverage now spans settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, Command History Manager, and Safety settings
+  - DOM localization now batches updates through `MutationObserver` / `requestAnimationFrame` instead of rescanning after every render
+- Renderer module split:
+  - settings modal shell/sections, command snippet manager, workbench modals, and persisted workbench UI preferences were split out of `App.tsx`
+  - workbench shell and terminal CSS were separated from the root stylesheet
+- Sidebar usability polish:
+  - SFTP Explorer view mode now persists as `Compact` or `Details`
+  - command history can collapse inside the right Inspector
+  - narrow widths expose `Sessions` / `Health` / `History` Inspector tabs
+- Command history and polish fixes:
+  - long command-history capture now looks back across more wrapped terminal rows
+  - stored command-history entries keep longer commands before truncation
+  - right Inspector selection details were removed to keep useful information denser
+  - application icons were regenerated from a tighter source crop
+  - Settings scrolling is smoother because the settings modal no longer applies a live full-screen backdrop blur
+
+### Validation
+
+- Post-refactor type check passed: `pnpm run typecheck`
+- Post-refactor build passed: `pnpm run build`
+- Post-refactor workspace smoke passed: `PASS 45 / FAIL 0 / SKIP 0`
+- Post-refactor packaged smoke passed: `PASS 45 / FAIL 0 / SKIP 0`
+- Latest multilingual workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
+- Latest multilingual workspace smoke artifact: `artifacts/smoke/2026-05-10T14-23-35-255Z/summary.json`
+- Latest packaged smoke artifact: `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
+
 ## Unreleased (master)
 
 Release type: In development
 
 ### Highlights
 
-No changes yet.
+- Next changes will be tracked here.
 
 ### Validation
 
-- Not run yet for this cycle.
+- Pending.
 
 ## v0.1.22 (2026-04-12)
 
@@ -643,5 +718,3 @@ Release type: Stable
 ### Validation
 
 - Build verification completed: `pnpm run build` (renderer + main passed)
-
-

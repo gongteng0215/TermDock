@@ -1,10 +1,12 @@
 ﻿# TermDock Progress
 
-Last updated: 2026-04-12
+Last updated: 2026-05-10
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.22`
+- Stable release shipped: `v0.1.23`
+- Active branch: `feature/editor-workbench-ui`
+- Active branch focus: editor-workbench UI refresh plus self-use hardening follow-up
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -24,6 +26,13 @@ Last updated: 2026-04-12
 - Master branch now also includes alternate-screen terminal editor focus mode that auto-tightens the main layout and terminal chrome while full-screen TUI editors are active, with a workspace-level enable/disable toggle plus editor-theme, typography, font, text-rhythm, and cursor presets
 - Master branch now also includes richer recoverable global error routing so high-frequency errors can jump directly to `Hotkeys`, `Port Fwd`, `Retry Center`, settings, `Operation Center`, or bug-report export instead of generic diagnostics only
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
+- Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
+- Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
+- Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
+- Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
+- Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
+- Latest multilingual/workbench density validation on 2026-05-11: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-11T08-35-26-189Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
+- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
@@ -54,6 +63,40 @@ Last updated: 2026-04-12
   - legacy stored transfer preferences migrate to the new upload default baseline
   - upload queue now prewarms remote directories before workers need them
   - local upload directory expansion now scans folders concurrently
+
+## Completed on feature/editor-workbench-ui
+
+- Editor workbench shell refresh:
+  - app chrome shifted from a card-heavy operations-console feel toward a flatter dark code-editor workbench
+  - left side now reads as a remote-file Explorer rail
+  - right side now reads as a coordinated Inspector rail for sessions, health, and command history
+  - terminal workspace remains the visual center and uses tighter editor-tab/stage language
+  - transfer dock now reads as a bottom workbench panel
+  - modal chrome and compact action states now align with the new shell language
+- Sidebar and inspector follow-up:
+  - SFTP explorer now has persisted `Compact` / `Details` view modes
+  - command history can collapse inside the inspector rail
+  - narrow widths switch the inspector into `Sessions` / `Health` / `History` tab behavior
+- Renderer module split:
+  - settings modal structure moved into dedicated shell and section components
+  - command snippet manager and workbench modals moved out of `App.tsx`
+  - workbench UI local-storage preferences moved into a small helper module
+  - workbench shell and terminal CSS were split out from the root stylesheet
+- Multilingual baseline:
+  - `Settings > Workspace` now exposes a persisted interface-language selector
+  - English remains the default language; Simplified Chinese now includes an explicit label set plus DOM localization fallback for remaining hardcoded UI text/attributes
+  - Simplified Chinese coverage now includes the settings shell, Workspace controls, topbar, transfer dock, terminal/workbench chrome, context menus, common dialogs, Operation Center, Retry Center, Command History Manager, port forwarding, diagnostics, hotkeys, and snippets
+  - smoke coverage now verifies the Simplified Chinese language option is present and opens localized Retry Center and Command History Manager modals
+- Verification so far:
+  - hardening follow-up `pnpm run typecheck`: passed
+  - hardening follow-up `pnpm run build`: passed
+  - multilingual/workbench density follow-up `pnpm run smoke:ui`: `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-11T08-35-26-189Z/summary.json`
+  - hardening follow-up `pnpm run smoke:ui`: `PASS 46 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-10T07-36-38-904Z/summary.json`
+  - full UI refresh smoke artifact: `PASS 45 / FAIL 0 / SKIP 0`
+  - post-refactor `pnpm run typecheck`: passed
+  - post-refactor `pnpm run build`: passed
+  - post-refactor `pnpm run smoke:ui`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
+  - post-refactor `pnpm run smoke:ui:packaged`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 
 ## Completed in v0.1.18
 
@@ -203,6 +246,15 @@ Last updated: 2026-04-12
   - queued transfer workers can now be constrained to selected weekdays plus a start/end time window
   - queues pause outside the configured window and automatically resume when the next allowed window opens
 
+## Current branch additions
+
+- `feature/editor-workbench-ui` now has three local commits ahead of `origin/feature/editor-workbench-ui`:
+  - `feat: complete editor workbench ui refresh`
+  - `docs: update editor workbench progress tracker`
+  - `refactor: split editor workbench renderer modules`
+- The branch is currently suitable for source-level continuation, with type safety verified after the refactor.
+- Before merge/release handoff, refresh build and smoke evidence after the module split.
+
 ## Completed in v0.1.11
 - Port forwarding presets with optional auto-restore
 - Runtime status/failure visibility (`Active` / `Degraded`, counters, last error/activity)
@@ -322,6 +374,8 @@ Last updated: 2026-04-12
 - Added operation center baseline (`F8`):
   - new modal to consolidate active long-running operations
   - includes queue state for uploads/downloads, remote delete status, and port-forward busy state
+  - adds an activity timeline for recent transfer, delete, port-forward, and app-job events
+  - adds grouped controls for transfer-wide retry/cancel/reconnect, active-tab transfer actions, and tool navigation
   - provides quick actions for cancel-all transfer queues and diagnostics navigation
   - adds cross-tab transfer activity summary with one-click tab focus
   - adds per-tab and cross-tab one-click transfer cancellation actions
@@ -417,23 +471,26 @@ Last updated: 2026-04-12
 
 ## Next Focus
 
-1. Extend recoverable global error actions and guidance coverage (`P0-E3`)
-2. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
-3. Complete persistence hardening (`P0-A3`/`F9`)
-4. Continue startup and large-transfer performance follow-up (`P0-E1`/`P0-E2`)
-5. Continue dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
+1. Push or PR the editor-workbench branch with current workspace and packaged smoke evidence
+2. Review feedback from real usage of the refreshed workbench shell
+3. Resume recoverable global error actions and guidance coverage (`P0-E3`)
+4. Resume recoverable global error actions and guidance coverage (`P0-E3`)
+5. Expand Operation Center from the current grouped controls into broader cancel/retry coverage (`F8`)
+6. Continue persistence hardening and startup/large-transfer performance follow-up
 
 ## Remaining Work Snapshot
 
-1. Expand global error recovery actions beyond current baseline (`P0-E3`)
-2. Expand Operation Center from the current tracked jobs into richer timeline and grouped control coverage (`F8`)
-3. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
-4. Continue startup and large-transfer performance follow-up (`P0-E1`/`P0-E2`)
-5. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
-6. Session templates v2 (import/export, runtime prompt overrides, layered presets)
-7. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`), low priority for self-use
-8. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`), low priority for self-use
-9. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`), low priority for self-use
+1. Optional editor-workbench polish after live usage feedback
+2. Remaining macOS/external-host packaged evidence for broader release confidence
+3. Expand global error recovery actions beyond current baseline (`P0-E3`)
+4. Expand Operation Center from the current grouped controls into broader cancel/retry coverage (`F8`)
+5. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
+6. Continue startup and large-transfer performance follow-up (`P0-E1`/`P0-E2`)
+7. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
+8. Session templates v2 (import/export, runtime prompt overrides, layered presets)
+9. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`), low priority for self-use
+10. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`), low priority for self-use
+11. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`), low priority for self-use
 
 ## Feature Candidates After Hardening
 

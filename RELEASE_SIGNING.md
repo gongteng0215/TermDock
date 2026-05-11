@@ -1,6 +1,6 @@
 # TermDock Release Signing
 
-Last updated: 2026-03-19
+Last updated: 2026-05-09
 
 ## Goal
 
@@ -11,6 +11,12 @@ Use one deterministic preflight/build/verify flow for:
 - reproducible installation verification evidence
 
 For local/private Windows use, a self-signed path is also available.
+
+Current branch note:
+
+- `feature/editor-workbench-ui` does not change the signing or notarization flow.
+- Post-refactor `pnpm run build`, workspace `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` pass for this branch. Public-trust signing/notarization evidence remains a separate broader-rollout gate.
+- Public-trust signing/notarization evidence remains a lower-priority self-use backlog item.
 
 ## CI Secrets
 

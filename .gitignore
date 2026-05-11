@@ -11,3 +11,4 @@ yarn-error.log*
 pnpm-debug.log*
 Microsoft/Windows/PowerShell/ModuleAnalysisCache
 .superpowers/
+.worktrees/

@@ -40,7 +40,10 @@ import type {
   PortForwardRecord,
   PortForwardStatus,
   PortForwardType,
+  ServerFailedServiceEntry,
+  ServerFilesystemUsage,
   ServerHealthSnapshot,
+  ServerNetworkInterfaceUsage,
   ServerProcessEntry,
   ServerProcessSnapshot,
   TerminalEvent
@@ -99,6 +102,8 @@ interface ReusableUploadSftpEntry {
   tabId: string;
   sftp: SFTPWrapper;
 }
+
+const MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB = 1;
 
 interface ActivePortForwardBase {
   id: string;
@@ -1975,6 +1980,10 @@ export class TerminalService {
       tabId: connection.tabId,
       sftp
     });
+    while (pool.length > MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB) {
+      const staleEntry = pool.shift();
+      safeEndSftp(staleEntry?.sftp);
+    }
   }
 
   private clearReusableUploadSftp(tabId: string): void {
@@ -2766,14 +2775,23 @@ function parseIpv6Buffer(input: Buffer): string {
 const SERVER_HEALTH_COMMAND = [
   "echo '__TD_HOST__'",
   "hostname 2>/dev/null || uname -n || echo unknown",
+  "echo '__TD_OS__'",
+  "(test -r /etc/os-release && . /etc/os-release && printf '%s\\n' \"${PRETTY_NAME:-${NAME:-unknown}}\") || uname -s 2>/dev/null || echo unknown",
+  "uname -s 2>/dev/null || echo unknown",
+  "uname -r 2>/dev/null || echo unknown",
+  "uname -m 2>/dev/null || echo unknown",
   "echo '__TD_UPTIME__'",
   "cat /proc/uptime 2>/dev/null || echo '0 0'",
   "echo '__TD_LOAD__'",
   "cat /proc/loadavg 2>/dev/null || echo '0 0 0'",
   "echo '__TD_MEM__'",
   "cat /proc/meminfo 2>/dev/null || echo ''",
+  "echo '__TD_CPUINFO__'",
+  "(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 0)",
   "echo '__TD_DISK__'",
-  "df -B1 -P / 2>/dev/null || echo ''",
+  "df -B1 -PT 2>/dev/null || df -B1 -P 2>/dev/null || echo ''",
+  "echo '__TD_INODE__'",
+  "df -Pi 2>/dev/null || echo ''",
   "echo '__TD_CPU__'",
   "cat /proc/stat 2>/dev/null || echo ''",
   "echo '__TD_NET__'",
@@ -2783,7 +2801,9 @@ const SERVER_HEALTH_COMMAND = [
 
 const SERVER_PROCESS_COMMAND = [
   "echo '__TD_PROC__'",
-  "ps -eo pid,user,pcpu,pmem,comm --sort=-pcpu 2>/dev/null | sed -n '2,11p'",
+  "ps -eo pid,user,pcpu,pmem,args --sort=-pcpu 2>/dev/null | sed -n '2,11p'",
+  "echo '__TD_MEMPROC__'",
+  "ps -eo pid,user,pcpu,pmem,args --sort=-pmem 2>/dev/null | sed -n '2,11p'",
   "echo '__TD_FAILED__'",
   "(command -v systemctl >/dev/null 2>&1 && systemctl --failed --no-legend --no-pager --plain 2>/dev/null | head -n 8) || true",
   "echo '__TD_END__'"
@@ -2793,27 +2813,34 @@ const REMOTE_DELETE_DIRECTORY_TIMEOUT_MS = 30 * 60_000;
 
 type ServerHealthSectionName =
   | "__TD_HOST__"
+  | "__TD_OS__"
   | "__TD_UPTIME__"
   | "__TD_LOAD__"
   | "__TD_MEM__"
+  | "__TD_CPUINFO__"
   | "__TD_DISK__"
+  | "__TD_INODE__"
   | "__TD_CPU__"
   | "__TD_NET__";
 
 const SERVER_HEALTH_SECTION_NAMES: ServerHealthSectionName[] = [
   "__TD_HOST__",
+  "__TD_OS__",
   "__TD_UPTIME__",
   "__TD_LOAD__",
   "__TD_MEM__",
+  "__TD_CPUINFO__",
   "__TD_DISK__",
+  "__TD_INODE__",
   "__TD_CPU__",
   "__TD_NET__"
 ];
 const SERVER_HEALTH_SECTION_SET = new Set<string>(SERVER_HEALTH_SECTION_NAMES);
 
-type ServerProcessSectionName = "__TD_PROC__" | "__TD_FAILED__";
+type ServerProcessSectionName = "__TD_PROC__" | "__TD_MEMPROC__" | "__TD_FAILED__";
 const SERVER_PROCESS_SECTION_NAMES: ServerProcessSectionName[] = [
   "__TD_PROC__",
+  "__TD_MEMPROC__",
   "__TD_FAILED__"
 ];
 const SERVER_PROCESS_SECTION_SET = new Set<string>(SERVER_PROCESS_SECTION_NAMES);
@@ -2842,6 +2869,11 @@ function parseServerHealthOutput(
   }
 
   const host = getFirstNonEmptyLine(sectionLines.get("__TD_HOST__")) ?? "unknown";
+  const osLines = getNonEmptyLines(sectionLines.get("__TD_OS__"));
+  const osName = osLines[0] ?? "unknown";
+  const kernelName = osLines[1] ?? "";
+  const kernelRelease = osLines[2] ?? "";
+  const architecture = osLines[3] ?? "";
   const uptimeParts = (getFirstNonEmptyLine(sectionLines.get("__TD_UPTIME__")) ?? "0").split(/\s+/);
   const uptimeSeconds = toSafeInteger(Number.parseFloat(uptimeParts[0] ?? "0"));
 
@@ -2853,26 +2885,47 @@ function parseServerHealthOutput(
   const load15 = toSafeNumber(Number.parseFloat(loadParts[2] ?? "0"));
 
   const memory = parseMemInfoSection(sectionLines.get("__TD_MEM__") ?? []);
-  const disk = parseDiskSection(sectionLines.get("__TD_DISK__") ?? []);
+  const filesystems = parseDiskSections(
+    sectionLines.get("__TD_DISK__") ?? [],
+    sectionLines.get("__TD_INODE__") ?? []
+  );
+  const disk = filesystems.find((entry) => entry.path === "/") ?? filesystems[0] ?? createEmptyFilesystemUsage();
   const cpu = parseCpuSection(sectionLines.get("__TD_CPU__") ?? []);
+  const cpuInfoCoreCount = toSafeInteger(
+    Number.parseInt(getFirstNonEmptyLine(sectionLines.get("__TD_CPUINFO__")) ?? "0", 10)
+  );
   const network = parseNetworkSection(sectionLines.get("__TD_NET__") ?? []);
 
   return {
     hostname: host,
+    osName,
+    kernelName,
+    kernelRelease,
+    architecture,
+    cpuCoreCount: cpuInfoCoreCount || cpu.coreCount,
     uptimeSeconds,
     load1,
     load5,
     load15,
     memoryTotalBytes: memory.totalBytes,
     memoryUsedBytes: memory.usedBytes,
+    memoryAvailableBytes: memory.availableBytes,
+    memoryFreeBytes: memory.freeBytes,
+    memoryBufferBytes: memory.bufferBytes,
+    memoryCachedBytes: memory.cachedBytes,
+    swapTotalBytes: memory.swapTotalBytes,
+    swapUsedBytes: memory.swapUsedBytes,
+    swapFreeBytes: memory.swapFreeBytes,
     diskPath: disk.path,
     diskTotalBytes: disk.totalBytes,
     diskUsedBytes: disk.usedBytes,
     diskAvailableBytes: disk.availableBytes,
+    filesystems,
     cpuTotalTicks: cpu.totalTicks,
     cpuIdleTicks: cpu.idleTicks,
     networkRxBytes: network.rxBytes,
-    networkTxBytes: network.txBytes
+    networkTxBytes: network.txBytes,
+    networkInterfaces: network.interfaces
   };
 }
 
@@ -2901,6 +2954,7 @@ function parseServerProcessOutput(
 
   return {
     processes: parseProcessRows(sectionLines.get("__TD_PROC__") ?? []),
+    memoryProcesses: parseProcessRows(sectionLines.get("__TD_MEMPROC__") ?? []),
     failedServices: parseFailedServiceRows(sectionLines.get("__TD_FAILED__") ?? [])
   };
 }
@@ -2935,20 +2989,27 @@ function parseProcessRows(lines: string[]): ServerProcessEntry[] {
   return result.slice(0, 8);
 }
 
-function parseFailedServiceRows(lines: string[]): string[] {
-  const result: string[] = [];
+function parseFailedServiceRows(lines: string[]): ServerFailedServiceEntry[] {
+  const result: ServerFailedServiceEntry[] = [];
+  const seen = new Set<string>();
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) {
       continue;
     }
-    const name = line.split(/\s+/)[0];
-    if (!name || !name.includes(".")) {
+    const fields = line.split(/\s+/);
+    const name = fields[0] ?? "";
+    if (!name || !name.includes(".") || seen.has(name)) {
       continue;
     }
-    if (!result.includes(name)) {
-      result.push(name);
-    }
+    seen.add(name);
+    result.push({
+      name,
+      loadState: fields[1],
+      activeState: fields[2],
+      subState: fields[3],
+      description: fields.slice(4).join(" ") || undefined
+    });
   }
   return result.slice(0, 8);
 }
@@ -2956,12 +3017,21 @@ function parseFailedServiceRows(lines: string[]): string[] {
 function parseMemInfoSection(lines: string[]): {
   totalBytes: number;
   usedBytes: number;
+  availableBytes: number;
+  freeBytes: number;
+  bufferBytes: number;
+  cachedBytes: number;
+  swapTotalBytes: number;
+  swapUsedBytes: number;
+  swapFreeBytes: number;
 } {
   let totalKb = 0;
   let availableKb = 0;
   let freeKb = 0;
   let bufferKb = 0;
   let cachedKb = 0;
+  let swapTotalKb = 0;
+  let swapFreeKb = 0;
   for (const rawLine of lines) {
     const line = rawLine.trim();
     const match = line.match(/^([A-Za-z()]+):\s+(\d+)/);
@@ -2985,6 +3055,12 @@ function parseMemInfoSection(lines: string[]): {
       case "Cached":
         cachedKb = value;
         break;
+      case "SwapTotal":
+        swapTotalKb = value;
+        break;
+      case "SwapFree":
+        swapFreeKb = value;
+        break;
       default:
         break;
     }
@@ -2995,47 +3071,101 @@ function parseMemInfoSection(lines: string[]): {
   const totalBytes = toSafeInteger(totalKb * 1024);
   const availableBytes = toSafeInteger(availableKb * 1024);
   const usedBytes = Math.max(0, totalBytes - availableBytes);
+  const swapTotalBytes = toSafeInteger(swapTotalKb * 1024);
+  const swapFreeBytes = toSafeInteger(swapFreeKb * 1024);
   return {
     totalBytes,
-    usedBytes
+    usedBytes,
+    availableBytes,
+    freeBytes: toSafeInteger(freeKb * 1024),
+    bufferBytes: toSafeInteger(bufferKb * 1024),
+    cachedBytes: toSafeInteger(cachedKb * 1024),
+    swapTotalBytes,
+    swapUsedBytes: Math.max(0, swapTotalBytes - swapFreeBytes),
+    swapFreeBytes
   };
 }
 
-function parseDiskSection(lines: string[]): {
-  path: string;
-  totalBytes: number;
-  usedBytes: number;
-  availableBytes: number;
-} {
-  const dataLine = lines.find((line) =>
-    /^\S+\s+\d+\s+\d+\s+\d+\s+\d+%\s+\S+/.test(line.trim())
-  );
-  if (!dataLine) {
-    return {
-      path: "/",
-      totalBytes: 0,
-      usedBytes: 0,
-      availableBytes: 0
-    };
+function parseDiskSections(diskLines: string[], inodeLines: string[]): ServerFilesystemUsage[] {
+  const inodePercentByPath = new Map<string, number>();
+  for (const rawLine of inodeLines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("Filesystem")) {
+      continue;
+    }
+    const tokens = line.split(/\s+/);
+    if (tokens.length < 6) {
+      continue;
+    }
+    const path = tokens[tokens.length - 1] || "/";
+    inodePercentByPath.set(path, parsePercentToken(tokens[tokens.length - 2]));
   }
-  const tokens = dataLine.trim().split(/\s+/);
+
+  const result: ServerFilesystemUsage[] = [];
+  for (const rawLine of diskLines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("Filesystem")) {
+      continue;
+    }
+    const tokens = line.split(/\s+/);
+    if (tokens.length < 6) {
+      continue;
+    }
+    const hasTypeColumn = tokens.length >= 7 && !/^\d+$/.test(tokens[1] ?? "");
+    const filesystem = tokens[0] ?? "";
+    const type = hasTypeColumn ? tokens[1] : undefined;
+    const totalIndex = hasTypeColumn ? 2 : 1;
+    const path = tokens[tokens.length - 1] || "/";
+    const totalBytes = toSafeInteger(Number.parseInt(tokens[totalIndex] ?? "0", 10));
+    const usedBytes = toSafeInteger(Number.parseInt(tokens[totalIndex + 1] ?? "0", 10));
+    const availableBytes = toSafeInteger(Number.parseInt(tokens[totalIndex + 2] ?? "0", 10));
+    if (!filesystem || totalBytes <= 0) {
+      continue;
+    }
+    result.push({
+      filesystem,
+      path,
+      type,
+      totalBytes,
+      usedBytes,
+      availableBytes,
+      usePercent: parsePercentToken(tokens[totalIndex + 3]),
+      inodeUsedPercent: inodePercentByPath.get(path)
+    });
+  }
+  return result.length > 0 ? result.slice(0, 12) : [createEmptyFilesystemUsage()];
+}
+
+function createEmptyFilesystemUsage(): ServerFilesystemUsage {
   return {
-    path: tokens[tokens.length - 1] || "/",
-    totalBytes: toSafeInteger(Number.parseInt(tokens[1] ?? "0", 10)),
-    usedBytes: toSafeInteger(Number.parseInt(tokens[2] ?? "0", 10)),
-    availableBytes: toSafeInteger(Number.parseInt(tokens[3] ?? "0", 10))
+    filesystem: "",
+    path: "/",
+    totalBytes: 0,
+    usedBytes: 0,
+    availableBytes: 0,
+    usePercent: 0
   };
+}
+
+function parsePercentToken(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, toSafeNumber(Number.parseFloat(value.replace("%", "")))));
 }
 
 function parseCpuSection(lines: string[]): {
   totalTicks: number;
   idleTicks: number;
+  coreCount: number;
 } {
+  const coreCount = lines.filter((line) => /^cpu\d+\s/.test(line.trim())).length;
   const cpuLine = lines.find((line) => line.trimStart().startsWith("cpu "));
   if (!cpuLine) {
     return {
       totalTicks: 0,
-      idleTicks: 0
+      idleTicks: 0,
+      coreCount
     };
   }
   const fields = cpuLine
@@ -3047,19 +3177,22 @@ function parseCpuSection(lines: string[]): {
   const idleTicks = (fields[3] ?? 0) + (fields[4] ?? 0);
   return {
     totalTicks: toSafeInteger(totalTicks),
-    idleTicks: toSafeInteger(idleTicks)
+    idleTicks: toSafeInteger(idleTicks),
+    coreCount
   };
 }
 
 function parseNetworkSection(lines: string[]): {
   rxBytes: number;
   txBytes: number;
+  interfaces: ServerNetworkInterfaceUsage[];
 } {
   let rxBytes = 0;
   let txBytes = 0;
   let loopbackRxBytes = 0;
   let loopbackTxBytes = 0;
   let nonLoopbackCount = 0;
+  const interfaces: ServerNetworkInterfaceUsage[] = [];
 
   for (const rawLine of lines) {
     if (!rawLine.includes(":")) {
@@ -3076,14 +3209,25 @@ function parseNetworkSection(lines: string[]): {
     }
     const lineRxBytes = toSafeInteger(Number.parseInt(values[0] ?? "0", 10));
     const lineTxBytes = toSafeInteger(Number.parseInt(values[8] ?? "0", 10));
+    const usage: ServerNetworkInterfaceUsage = {
+      name: interfaceName,
+      rxBytes: lineRxBytes,
+      txBytes: lineTxBytes,
+      rxErrors: toSafeInteger(Number.parseInt(values[2] ?? "0", 10)),
+      rxDropped: toSafeInteger(Number.parseInt(values[3] ?? "0", 10)),
+      txErrors: toSafeInteger(Number.parseInt(values[10] ?? "0", 10)),
+      txDropped: toSafeInteger(Number.parseInt(values[11] ?? "0", 10))
+    };
     if (interfaceName === "lo") {
       loopbackRxBytes += lineRxBytes;
       loopbackTxBytes += lineTxBytes;
+      interfaces.push(usage);
       continue;
     }
     nonLoopbackCount += 1;
     rxBytes += lineRxBytes;
     txBytes += lineTxBytes;
+    interfaces.push(usage);
   }
 
   if (nonLoopbackCount === 0) {
@@ -3092,7 +3236,10 @@ function parseNetworkSection(lines: string[]): {
   }
   return {
     rxBytes: toSafeInteger(rxBytes),
-    txBytes: toSafeInteger(txBytes)
+    txBytes: toSafeInteger(txBytes),
+    interfaces: interfaces
+      .sort((left, right) => right.rxBytes + right.txBytes - (left.rxBytes + left.txBytes))
+      .slice(0, 12)
   };
 }
 
@@ -3107,6 +3254,13 @@ function getFirstNonEmptyLine(lines: string[] | undefined): string | null {
     }
   }
   return null;
+}
+
+function getNonEmptyLines(lines: string[] | undefined): string[] {
+  if (!lines || lines.length === 0) {
+    return [];
+  }
+  return lines.map((line) => line.trim()).filter((line) => line.length > 0);
 }
 
 function toSafeNumber(value: number): number {

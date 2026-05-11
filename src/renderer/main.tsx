@@ -4,6 +4,8 @@ import "xterm/css/xterm.css";
 
 import { App } from "./App";
 import "./styles.css";
+import "./styles/workbench-shell.css";
+import "./styles/terminal.css";
 
 const root = document.getElementById("root");
 if (!root) {
