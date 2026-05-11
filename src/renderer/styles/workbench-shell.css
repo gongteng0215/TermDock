@@ -104,10 +104,10 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 24%),
     linear-gradient(180deg, #181d24 0%, #151a20 100%);
   box-shadow: none;
-  padding: 7px 8px 8px;
-  height: 188px;
-  min-height: 188px;
-  max-height: 188px;
+  padding: 5px 7px 6px;
+  height: 168px;
+  min-height: 168px;
+  max-height: 168px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -117,10 +117,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 28px;
-  margin-bottom: 6px;
-  padding-bottom: 5px;
+  gap: 6px;
+  min-height: 24px;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
   border-bottom: 1px solid var(--ui-divider);
 }
 
@@ -141,10 +141,10 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  width: 176px;
-  min-width: 176px;
-  max-width: 176px;
-  min-height: 20px;
+  width: 164px;
+  min-width: 164px;
+  max-width: 164px;
+  min-height: 18px;
   justify-content: center;
   gap: 2px;
 }
@@ -198,11 +198,11 @@
 
 .transfer-dock__action-button {
   width: auto;
-  min-width: 96px;
+  min-width: 84px;
   max-width: none;
-  height: 20px;
-  border-radius: 6px;
-  padding: 0 7px;
+  height: 18px;
+  border-radius: 5px;
+  padding: 0 6px;
   font-size: 9px;
   line-height: 1;
   display: inline-flex;
@@ -227,17 +227,17 @@
 .transfer-dock__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   min-height: 0;
 }
 
 .transfer-dock__panel {
   border: 1px solid var(--ui-surface-border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--ui-surface-bg);
   box-shadow: var(--ui-surface-highlight);
-  padding: 7px;
+  padding: 5px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -253,7 +253,7 @@
 
 .transfer-dock__empty {
   margin: 0;
-  padding: 8px 4px;
+  padding: 4px 3px;
 }
 
 .panel {

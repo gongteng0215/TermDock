@@ -2047,15 +2047,15 @@ body::before {
 }
 
 .sftp-transfer-panel {
-  margin-top: 4px;
-  padding: 5px;
+  margin-top: 3px;
+  padding: 4px;
   border: 1px solid rgba(89, 111, 136, 0.28);
   border-radius: 6px;
   background: rgba(24, 31, 39, 0.94);
 }
 
 .sftp-transfer-panel__title {
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-size: 10px;
   color: #c0d8ef;
@@ -2066,8 +2066,8 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 5px;
+  gap: 4px;
+  margin-bottom: 3px;
 }
 
 .sftp-transfer-panel__header .sftp-transfer-panel__title {
@@ -2081,22 +2081,22 @@ body::before {
 }
 
 .sftp-transfer-panel__clear {
-  height: 18px;
-  padding: 0 7px;
+  height: 17px;
+  padding: 0 6px;
   font-size: 9px;
   border-radius: 5px;
 }
 
 .sftp-transfer-panel__bulk-cancel {
-  width: 20px;
-  height: 18px;
+  width: 18px;
+  height: 17px;
   padding: 0;
   font-size: 10px;
   line-height: 1;
 }
 
 .sftp-transfer-panel__batch-progress {
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   min-height: 11px;
   color: #9eb8d3;
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
@@ -2121,7 +2121,7 @@ body::before {
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-size: 10px;
   color: #a9bfd6;
-  padding: 2px 4px;
+  padding: 1px 3px;
   border: 1px solid rgba(255, 255, 255, 0);
   border-radius: 5px;
   background: rgba(33, 59, 83, 0.12);
