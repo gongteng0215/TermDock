@@ -37,20 +37,15 @@ sftp-client
 
 ## Social Preview
 
-Use a clean screenshot with the main terminal workspace visible.
+Use the dedicated repository social preview image.
 
 Recommended candidate:
 
 ```text
-docs/assets/screenshots/preview/terminal-workspace.png
+docs/assets/social-preview.png
 ```
 
-If GitHub crops it poorly, create a dedicated 1280x640 social preview later with:
-
-- TermDock title
-- "Safer SSH + SFTP desktop workspace"
-- Terminal workspace screenshot
-- Dark background
+The image is 1280x640 and cropped from the terminal workspace so GitHub does not need to guess a crop.
 
 ## Latest Release Description Template
 
