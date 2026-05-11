@@ -151,6 +151,7 @@ docs/assets    README 截图和产品素材
 - [紧凑 UI 规则](UI_COMPACT_RULES.md)
 - [60 秒演示脚本](docs/promotion/60-second-demo.md)
 - [GitHub 页面配置](docs/promotion/github-page-setup.md)
+- [Release 页面文案](docs/promotion/release-page-copy.md)
 
 ## 已知限制
 
