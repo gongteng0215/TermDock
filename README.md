@@ -6,7 +6,7 @@ TermDock helps you manage remote servers in one place: multi-tab SSH terminal, S
 
 [中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [Security](SECURITY.md) · [Release Notes](RELEASE_NOTES.md)
 
-![TermDock terminal workspace](docs/assets/screenshots/terminal-workspace.png)
+![TermDock terminal workspace](docs/assets/screenshots/preview/terminal-workspace.png)
 
 ## Why TermDock?
 
@@ -35,27 +35,27 @@ TermDock is currently focused on macOS and Windows 11.
 
 ### Multi-Tab SSH Terminal
 
-![Multi-tab SSH terminal](docs/assets/screenshots/terminal-workspace.png)
+![Multi-tab SSH terminal](docs/assets/screenshots/preview/terminal-workspace.png)
 
 ### SFTP File Browser
 
-![SFTP file browser](docs/assets/screenshots/sftp-file-browser.png)
+![SFTP file browser](docs/assets/screenshots/preview/sftp-file-browser.png)
 
 ### Dangerous Command Guardrails
 
-![Dangerous command guardrails](docs/assets/screenshots/dangerous-command-guardrails.png)
+![Dangerous command guardrails](docs/assets/screenshots/preview/dangerous-command-guardrails.png)
 
 ### Operation Center
 
-![Operation Center](docs/assets/screenshots/operation-center.png)
+![Operation Center](docs/assets/screenshots/preview/operation-center.png)
 
 ### Retry Center
 
-![Retry Center](docs/assets/screenshots/retry-center.png)
+![Retry Center](docs/assets/screenshots/preview/retry-center.png)
 
 ### Port Forwarding Manager
 
-![Port forwarding settings](docs/assets/screenshots/port-forwarding-settings.png)
+![Port forwarding settings](docs/assets/screenshots/preview/port-forwarding-settings.png)
 
 ## Core Features
 
@@ -149,6 +149,7 @@ For detailed progress, release validation, and planning notes, see:
 - [Packaged Smoke Runbook](PACKAGED_SMOKE.md)
 - [Release Signing Runbook](RELEASE_SIGNING.md)
 - [UI Compact Rules](UI_COMPACT_RULES.md)
+- [60-Second Demo Script](docs/promotion/60-second-demo.md)
 
 ## Known Limitations
 

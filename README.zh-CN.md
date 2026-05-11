@@ -6,7 +6,7 @@ TermDock 把日常服务器操作放在一个桌面应用里：多标签 SSH 终
 
 [English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [安全说明](SECURITY.md) · [更新记录](RELEASE_NOTES.md)
 
-![TermDock 终端工作台](docs/assets/screenshots/terminal-workspace.png)
+![TermDock 终端工作台](docs/assets/screenshots/preview/terminal-workspace.png)
 
 ## 为什么做 TermDock？
 
@@ -35,27 +35,27 @@ TermDock 当前主要面向 macOS 和 Windows 11。
 
 ### 多标签 SSH 终端
 
-![多标签 SSH 终端](docs/assets/screenshots/terminal-workspace.png)
+![多标签 SSH 终端](docs/assets/screenshots/preview/terminal-workspace.png)
 
 ### SFTP 文件管理
 
-![SFTP 文件管理](docs/assets/screenshots/sftp-file-browser.png)
+![SFTP 文件管理](docs/assets/screenshots/preview/sftp-file-browser.png)
 
 ### 危险命令保护
 
-![危险命令保护](docs/assets/screenshots/dangerous-command-guardrails.png)
+![危险命令保护](docs/assets/screenshots/preview/dangerous-command-guardrails.png)
 
 ### 操作中心
 
-![操作中心](docs/assets/screenshots/operation-center.png)
+![操作中心](docs/assets/screenshots/preview/operation-center.png)
 
 ### 重试中心
 
-![重试中心](docs/assets/screenshots/retry-center.png)
+![重试中心](docs/assets/screenshots/preview/retry-center.png)
 
 ### 端口转发管理
 
-![端口转发管理](docs/assets/screenshots/port-forwarding-settings.png)
+![端口转发管理](docs/assets/screenshots/preview/port-forwarding-settings.png)
 
 ## 核心功能
 
@@ -149,6 +149,7 @@ docs/assets    README 截图和产品素材
 - [打包 Smoke Runbook](PACKAGED_SMOKE.md)
 - [签名发布 Runbook](RELEASE_SIGNING.md)
 - [紧凑 UI 规则](UI_COMPACT_RULES.md)
+- [60 秒演示脚本](docs/promotion/60-second-demo.md)
 
 ## 已知限制
 
