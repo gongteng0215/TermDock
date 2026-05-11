@@ -2229,9 +2229,9 @@ body::before {
 .sftp-list__item--compact {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  padding: 3px 5px;
+  gap: 5px;
+  min-height: 18px;
+  padding: 1px 3px;
 }
 
 .sftp-list__item:hover {
@@ -2302,14 +2302,14 @@ body::before {
 .sftp-list__compact-main {
   min-width: 0;
   display: grid;
-  grid-template-columns: 7px minmax(0, 1fr);
+  grid-template-columns: 6px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .sftp-list__kind-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
   background: #7f91a4;
   box-shadow: 0 0 0 1px rgba(12, 20, 30, 0.55);
@@ -2332,8 +2332,9 @@ body::before {
 }
 
 .sftp-list--compact .sftp-list__name {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 650;
+  line-height: 1.1;
 }
 
 .sftp-list__name--directory {
@@ -2372,6 +2373,7 @@ body::before {
   text-align: right;
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-size: 9px;
+  line-height: 1.1;
   max-width: 70px;
 }
 
