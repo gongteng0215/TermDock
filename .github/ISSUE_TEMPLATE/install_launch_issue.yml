@@ -1,0 +1,78 @@
+name: Install or launch issue
+description: Report installation, startup, signing, or packaging problems.
+title: "[Install]: "
+labels:
+  - install
+  - packaging
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for download, install, launch, signing, or first-run problems. Do not paste secrets or private keys.
+  - type: input
+    id: version
+    attributes:
+      label: TermDock version
+      placeholder: "v0.1.24"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows 11
+        - Windows 10
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "macOS 14.5 / Windows 11 23H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: asset
+    attributes:
+      label: Downloaded asset
+      options:
+        - Windows installer .exe
+        - Windows portable .zip
+        - macOS .dmg
+        - macOS .zip
+        - Source build
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      placeholder: "Install failed, app did not open, system showed a signing warning, blank window, etc."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps you tried
+      placeholder: |
+        1. Downloaded...
+        2. Opened...
+        3. Saw...
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshot or exact error text
+      description: Attach the install warning, crash dialog, or terminal output if available.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I downloaded the app from the official GitHub Releases page.
+          required: true
+        - label: I removed private paths, usernames, tokens, and credentials from logs/screenshots.
+          required: true

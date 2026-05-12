@@ -1,0 +1,53 @@
+name: Feature request
+description: Suggest an improvement or new workflow for TermDock.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us about the workflow, not only the button. TermDock is focused on safer SSH + SFTP server operations for developers and small teams.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - SSH terminal
+        - SFTP transfer
+        - Session import/export
+        - Dangerous-command guardrails
+        - Retry Center
+        - Operation Center
+        - Server health
+        - Port forwarding
+        - Diagnostics/logs
+        - Packaging/update
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      placeholder: "When I manage servers, I currently have to..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      placeholder: "I would like TermDock to..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or current workaround
+      description: How do you handle this today?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, examples, links, or comparable tools are welcome.

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/gongteng0215/TermDock/security/advisories/new
+    about: Please report sensitive security issues privately instead of opening a public issue.
+  - name: Documentation and screenshots
+    url: https://github.com/gongteng0215/TermDock#readme
+    about: Check the README, screenshots, download links, and security notes.
