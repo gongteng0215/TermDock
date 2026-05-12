@@ -4,7 +4,7 @@
 
 TermDock 把日常服务器操作放在一个桌面应用里：多标签 SSH 终端、SFTP 文件传输、服务器健康监控、端口转发、危险命令保护、失败重试中心和诊断导出。
 
-[English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [安全说明](SECURITY.md) · [更新记录](RELEASE_NOTES.md)
+[English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [安全说明](SECURITY.md) · [参与贡献](CONTRIBUTING.md) · [更新记录](RELEASE_NOTES.md)
 
 ![TermDock 终端工作台](docs/assets/screenshots/preview/terminal-workspace.png)
 
@@ -153,6 +153,8 @@ docs/assets    README 截图和产品素材
 - [紧凑 UI 规则](UI_COMPACT_RULES.md)
 - [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.md)
 - [反馈处理流程](docs/FEEDBACK_TRIAGE.md)
+- [GitHub Labels](docs/GITHUB_LABELS.md)
+- [参与贡献](CONTRIBUTING.md)
 - [60 秒演示脚本](docs/promotion/60-second-demo.md)
 - [GitHub 页面配置](docs/promotion/github-page-setup.md)
 - [Release 页面文案](docs/promotion/release-page-copy.md)

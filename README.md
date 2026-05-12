@@ -4,7 +4,7 @@
 
 TermDock helps you manage remote servers in one place: multi-tab SSH terminal, SFTP file transfer, server health monitoring, port forwarding, dangerous-command guardrails, transfer retry center, and diagnostics export.
 
-[中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [Security](SECURITY.md) · [Release Notes](RELEASE_NOTES.md)
+[中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release Notes](RELEASE_NOTES.md)
 
 ![TermDock terminal workspace](docs/assets/screenshots/preview/terminal-workspace.png)
 
@@ -153,6 +153,8 @@ For detailed progress, release validation, and planning notes, see:
 - [UI Compact Rules](UI_COMPACT_RULES.md)
 - [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md)
 - [Feedback Triage](docs/FEEDBACK_TRIAGE.md)
+- [GitHub Labels](docs/GITHUB_LABELS.md)
+- [Contributing](CONTRIBUTING.md)
 - [60-Second Demo Script](docs/promotion/60-second-demo.md)
 - [GitHub Page Setup](docs/promotion/github-page-setup.md)
 - [Release Page Copy](docs/promotion/release-page-copy.md)
