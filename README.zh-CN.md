@@ -4,7 +4,7 @@
 
 TermDock 把日常服务器操作放在一个桌面应用里：多标签 SSH 终端、SFTP 文件传输、服务器健康监控、端口转发、危险命令保护、失败重试中心和诊断导出。
 
-[English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [安全说明](SECURITY.md) · [参与贡献](CONTRIBUTING.md) · [更新记录](RELEASE_NOTES.md)
+[English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [安全说明](SECURITY.zh-CN.md) · [参与贡献](CONTRIBUTING.zh-CN.md) · [更新记录](RELEASE_NOTES.zh-CN.md)
 
 ![TermDock 终端工作台](docs/assets/screenshots/preview/terminal-workspace.png)
 
@@ -25,13 +25,26 @@ TermDock 不想成为另一个“大而全”的终端工具。它更像一个�
 
 从 [GitHub Releases](https://github.com/gongteng0215/TermDock/releases) 下载最新版本。
 
-- Windows：安装包 `.exe` 和便携版 `.zip`
-- macOS：`.dmg` 和 `.zip`
-- 源码构建：Electron + React + TypeScript
+### 我应该下载哪个文件？
+
+| 平台 | 推荐文件 | 适用场景 |
+| --- | --- | --- |
+| Windows | `TermDock.Setup.*.exe` | 想用普通安装包。 |
+| Windows | Windows `.zip` | 想使用免安装便携版。 |
+| macOS Apple Silicon | macOS `arm64` `.dmg` 或 `.zip` | 你的 Mac 使用 M1/M2/M3/M4 等 Apple Silicon 芯片。 |
+| macOS Intel | macOS `x64` `.dmg` 或 `.zip` | 你的 Mac 使用 Intel 处理器。 |
+| Source | 源码 | 想本地运行或参与开发。 |
 
 TermDock 当前主要面向 macOS 和 Windows 11。
 
-如果应用无法安装或打开，请先看 [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.md)。
+### 第一次启动提示
+
+- 请只从官方 GitHub Releases 页面下载 TermDock。
+- Windows 可能会对新的开源构建显示 SmartScreen 或发布者提示。
+- macOS 可能会在公开可信签名 / notarization 完善前显示 Gatekeeper 提示。
+- 如果不确定自己的 Mac 芯片类型，可以打开 Apple 菜单 -> 关于本机查看。
+
+如果应用无法安装或打开，请先看 [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.zh-CN.md)。
 
 ## 截图
 
@@ -105,7 +118,7 @@ TermDock 是本地桌面应用，不需要云账号来管理服务器。
 - 会话和分组导出不会包含解密后的凭据。
 - 诊断日志和 bug report 在本地生成，你可以检查后再决定是否分享。
 
-更多细节和当前限制见 [SECURITY.md](SECURITY.md)。
+更多细节和当前限制见 [安全说明](SECURITY.zh-CN.md)。
 
 ## 开发运行
 
@@ -145,19 +158,20 @@ docs/assets    README 截图和产品素材
 
 更细的进度、验证和计划见：
 
-- [更新记录](RELEASE_NOTES.md)
-- [进度快照](PROGRESS.md)
-- [任务看板](TASKS.md)
-- [打包 Smoke Runbook](PACKAGED_SMOKE.md)
-- [签名发布 Runbook](RELEASE_SIGNING.md)
-- [紧凑 UI 规则](UI_COMPACT_RULES.md)
-- [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.md)
-- [反馈处理流程](docs/FEEDBACK_TRIAGE.md)
-- [GitHub Labels](docs/GITHUB_LABELS.md)
-- [参与贡献](CONTRIBUTING.md)
-- [60 秒演示脚本](docs/promotion/60-second-demo.md)
-- [GitHub 页面配置](docs/promotion/github-page-setup.md)
-- [Release 页面文案](docs/promotion/release-page-copy.md)
+- [更新记录](RELEASE_NOTES.zh-CN.md) / [English](RELEASE_NOTES.md)
+- [文档索引](docs/DOCUMENTATION.zh-CN.md) / [English](docs/DOCUMENTATION.md)
+- [进度快照](PROGRESS.zh-CN.md) / [English](PROGRESS.md)
+- [任务看板](TASKS.zh-CN.md) / [English](TASKS.md)
+- [打包 Smoke Runbook](PACKAGED_SMOKE.zh-CN.md) / [English](PACKAGED_SMOKE.md)
+- [签名发布 Runbook](RELEASE_SIGNING.zh-CN.md) / [English](RELEASE_SIGNING.md)
+- [紧凑 UI 规则](UI_COMPACT_RULES.zh-CN.md) / [English](UI_COMPACT_RULES.md)
+- [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.zh-CN.md) / [English](docs/INSTALL_TROUBLESHOOTING.md)
+- [反馈处理流程](docs/FEEDBACK_TRIAGE.zh-CN.md) / [English](docs/FEEDBACK_TRIAGE.md)
+- [GitHub Labels](docs/GITHUB_LABELS.zh-CN.md) / [English](docs/GITHUB_LABELS.md)
+- [参与贡献](CONTRIBUTING.zh-CN.md) / [English](CONTRIBUTING.md)
+- [60 秒演示脚本](docs/promotion/60-second-demo.zh-CN.md) / [English](docs/promotion/60-second-demo.md)
+- [GitHub 页面配置](docs/promotion/github-page-setup.zh-CN.md) / [English](docs/promotion/github-page-setup.md)
+- [Release 页面文案](docs/promotion/release-page-copy.zh-CN.md) / [English](docs/promotion/release-page-copy.md)
 
 ## 已知限制
 

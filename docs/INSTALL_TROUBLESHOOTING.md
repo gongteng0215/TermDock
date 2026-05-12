@@ -1,5 +1,7 @@
 # Install And Launch Troubleshooting
 
+[中文](INSTALL_TROUBLESHOOTING.zh-CN.md)
+
 Use this guide when TermDock cannot be installed, opened, or launched.
 
 ## Download The Right Asset
@@ -12,12 +14,15 @@ https://github.com/gongteng0215/TermDock/releases
 
 Recommended assets:
 
-- Windows installer: `TermDock.Setup.*.exe`
-- Windows portable build: Windows `.zip`
-- macOS disk image: `.dmg`
-- macOS archive: macOS `.zip`
+| Platform | Recommended file | Use when |
+| --- | --- | --- |
+| Windows | `TermDock.Setup.*.exe` | You want the normal installer. |
+| Windows | Windows `.zip` | You want a portable build without installation. |
+| macOS Apple Silicon | macOS `arm64` `.dmg` or `.zip` | Your Mac uses Apple Silicon, such as M1/M2/M3/M4. |
+| macOS Intel | macOS `x64` `.dmg` or `.zip` | Your Mac uses an Intel processor. |
+| Source | Source code | You want to run or develop TermDock locally. |
 
-If you are unsure, use the installer on Windows and the `.dmg` on macOS.
+If you are unsure, use the installer on Windows and the `.dmg` on macOS. If you are unsure which macOS CPU you have, check Apple menu -> About This Mac.
 
 ## Windows
 

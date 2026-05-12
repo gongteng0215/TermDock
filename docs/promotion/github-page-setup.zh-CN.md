@@ -1,10 +1,10 @@
-# GitHub Page Setup
+# GitHub 页面配置
 
-[中文](github-page-setup.zh-CN.md)
+[English](github-page-setup.md)
 
-Use this file to configure the public GitHub repository page after README assets are in place.
+README 素材就绪后，用这份文档配置公开 GitHub 仓库页面。
 
-## About Description
+## About 描述
 
 ```text
 A safer SSH + SFTP desktop workspace for developers and operators.
@@ -12,11 +12,11 @@ A safer SSH + SFTP desktop workspace for developers and operators.
 
 ## Website
 
-Leave empty until there is a product site. The GitHub repository and Releases page are the primary landing pages for now.
+暂时留空，直到有独立产品网站。目前 GitHub 仓库和 Releases 页面就是主要落地页。
 
 ## Topics
 
-Add these topics from the repository page:
+在仓库页面添加这些 topics：
 
 ```text
 ssh
@@ -39,17 +39,17 @@ sftp-client
 
 ## Social Preview
 
-Use the dedicated repository social preview image.
+使用专门的仓库 social preview 图片。
 
-Recommended candidate:
+推荐文件：
 
 ```text
 docs/assets/social-preview.png
 ```
 
-The image is 1280x640 and cropped from the terminal workspace so GitHub does not need to guess a crop.
+图片尺寸为 1280x640，从终端工作台截图裁切，避免 GitHub 自动裁切出不合适的画面。
 
-## Latest Release Description Template
+## 最新 Release 描述模板
 
 ```md
 ## TermDock
@@ -81,12 +81,12 @@ TermDock is a local-first desktop app. Session data and diagnostics are stored l
 If macOS or Windows shows signing/trust warnings, check the release notes and signing documentation before installing.
 ```
 
-## Manual Steps
+## 手动步骤
 
-1. Open `https://github.com/gongteng0215/TermDock`.
-2. Click the repository About settings gear.
-3. Set the description to the text above.
-4. Add the listed topics.
-5. Confirm Releases are visible from the README download link.
-6. Update the latest release description with the template above.
-7. Upload or configure a social preview image if desired.
+1. 打开 `https://github.com/gongteng0215/TermDock`。
+2. 点击仓库 About 设置齿轮。
+3. 将描述设置为上面的文字。
+4. 添加 topics。
+5. 确认 README 下载链接可以进入 Releases。
+6. 用上面的模板更新最新 Release 描述。
+7. 如需要，上传或配置 social preview 图片。

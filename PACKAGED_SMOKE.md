@@ -1,5 +1,7 @@
 # TermDock Packaged Smoke
 
+[中文](PACKAGED_SMOKE.zh-CN.md)
+
 Last updated: 2026-05-09
 
 ## Goal

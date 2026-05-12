@@ -1,5 +1,7 @@
 ﻿# Draft Release Notes (master hardening, pre-v0.1.12)
 
+[中文](tmp-release-v0.1.10.zh-CN.md)
+
 Last updated: 2026-03-13
 
 ## Highlights
@@ -76,5 +78,4 @@ Last updated: 2026-03-13
 
 - `pnpm run typecheck` passed.
 - `pnpm run build` passed.
-
 

@@ -1,5 +1,7 @@
 ﻿# TermDock PRD
 
+[中文](PRD.zh-CN.md)
+
 Version: v1.23
 Last updated: 2026-05-09
 

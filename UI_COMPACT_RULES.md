@@ -1,5 +1,7 @@
 ﻿# TermDock UI Compact Rules
 
+[中文](UI_COMPACT_RULES.zh-CN.md)
+
 Last updated: 2026-05-09
 
 ## Objective

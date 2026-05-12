@@ -25,11 +25,24 @@ TermDock is not trying to be another giant terminal app. It is built as a practi
 
 Get the latest build from [GitHub Releases](https://github.com/gongteng0215/TermDock/releases).
 
-- Windows: installer `.exe` and portable `.zip`
-- macOS: `.dmg` and `.zip`
-- Source builds: Electron + React + TypeScript
+### Which File Should I Download?
+
+| Platform | Recommended file | Use when |
+| --- | --- | --- |
+| Windows | `TermDock.Setup.*.exe` | You want the normal installer. |
+| Windows | Windows `.zip` | You want a portable build without installation. |
+| macOS Apple Silicon | macOS `arm64` `.dmg` or `.zip` | Your Mac uses Apple Silicon, such as M1/M2/M3/M4. |
+| macOS Intel | macOS `x64` `.dmg` or `.zip` | Your Mac uses an Intel processor. |
+| Source | Source code | You want to run or develop TermDock locally. |
 
 TermDock is currently focused on macOS and Windows 11.
+
+### First Launch Notes
+
+- Download TermDock only from the official GitHub Releases page.
+- Windows may show SmartScreen or publisher warnings for new open-source builds.
+- macOS may show Gatekeeper warnings while public-trust signing/notarization is still in progress.
+- If you are not sure which macOS CPU you have, check Apple menu -> About This Mac.
 
 If the app cannot be installed or opened, see [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md).
 
@@ -146,18 +159,19 @@ docs/assets    README screenshots and product assets
 For detailed progress, release validation, and planning notes, see:
 
 - [Release Notes](RELEASE_NOTES.md)
-- [Progress Snapshot](PROGRESS.md)
-- [Task Board](TASKS.md)
-- [Packaged Smoke Runbook](PACKAGED_SMOKE.md)
-- [Release Signing Runbook](RELEASE_SIGNING.md)
-- [UI Compact Rules](UI_COMPACT_RULES.md)
-- [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md)
-- [Feedback Triage](docs/FEEDBACK_TRIAGE.md)
-- [GitHub Labels](docs/GITHUB_LABELS.md)
-- [Contributing](CONTRIBUTING.md)
-- [60-Second Demo Script](docs/promotion/60-second-demo.md)
-- [GitHub Page Setup](docs/promotion/github-page-setup.md)
-- [Release Page Copy](docs/promotion/release-page-copy.md)
+- [Documentation Index](docs/DOCUMENTATION.md) / [中文](docs/DOCUMENTATION.zh-CN.md)
+- [Progress Snapshot](PROGRESS.md) / [中文](PROGRESS.zh-CN.md)
+- [Task Board](TASKS.md) / [中文](TASKS.zh-CN.md)
+- [Packaged Smoke Runbook](PACKAGED_SMOKE.md) / [中文](PACKAGED_SMOKE.zh-CN.md)
+- [Release Signing Runbook](RELEASE_SIGNING.md) / [中文](RELEASE_SIGNING.zh-CN.md)
+- [UI Compact Rules](UI_COMPACT_RULES.md) / [中文](UI_COMPACT_RULES.zh-CN.md)
+- [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md) / [中文](docs/INSTALL_TROUBLESHOOTING.zh-CN.md)
+- [Feedback Triage](docs/FEEDBACK_TRIAGE.md) / [中文](docs/FEEDBACK_TRIAGE.zh-CN.md)
+- [GitHub Labels](docs/GITHUB_LABELS.md) / [中文](docs/GITHUB_LABELS.zh-CN.md)
+- [Contributing](CONTRIBUTING.md) / [中文](CONTRIBUTING.zh-CN.md)
+- [60-Second Demo Script](docs/promotion/60-second-demo.md) / [中文](docs/promotion/60-second-demo.zh-CN.md)
+- [GitHub Page Setup](docs/promotion/github-page-setup.md) / [中文](docs/promotion/github-page-setup.zh-CN.md)
+- [Release Page Copy](docs/promotion/release-page-copy.md) / [中文](docs/promotion/release-page-copy.zh-CN.md)
 
 ## Known Limitations
 

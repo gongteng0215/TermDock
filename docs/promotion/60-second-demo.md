@@ -1,5 +1,7 @@
 # TermDock 60-Second Demo Script
 
+[中文](60-second-demo.zh-CN.md)
+
 Use this as the source for the README GIF, a short video, or a social post. Keep the recording focused on one clear promise: TermDock is a safer SSH + SFTP desktop workspace for small-team server operations.
 
 ## English Version

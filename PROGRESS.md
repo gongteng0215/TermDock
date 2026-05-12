@@ -1,5 +1,7 @@
 ﻿# TermDock Progress
 
+[中文](PROGRESS.zh-CN.md)
+
 Last updated: 2026-05-10
 
 ## Snapshot

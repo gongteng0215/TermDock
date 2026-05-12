@@ -1,5 +1,7 @@
 ﻿# TermDock Product Notes
 
+[中文](news.zh-CN.md)
+
 Last updated: 2026-05-09
 
 ## Confirmed Direction

@@ -1,5 +1,7 @@
 # TermDock Editor Workbench UI Design
 
+[中文](2026-05-01-termdock-editor-workbench-design.zh-CN.md)
+
 Date: 2026-05-01
 Last updated: 2026-05-09
 

@@ -1,5 +1,7 @@
 # Security
 
+[中文](SECURITY.zh-CN.md)
+
 TermDock is an SSH/SFTP desktop client, so credential handling and local data boundaries matter.
 
 ## Local-First Design

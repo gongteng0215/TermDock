@@ -1,5 +1,7 @@
 # Feedback Triage
 
+[中文](FEEDBACK_TRIAGE.zh-CN.md)
+
 Use this guide for the first wave of GitHub issues, release comments, article comments, and direct user feedback.
 
 ## Goals

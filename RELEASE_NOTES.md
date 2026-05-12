@@ -1,5 +1,7 @@
 ﻿# TermDock Release Notes
 
+[中文](RELEASE_NOTES.zh-CN.md)
+
 ## v0.1.24 (2026-05-11)
 
 Release type: Stable

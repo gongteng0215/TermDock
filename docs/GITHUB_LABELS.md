@@ -1,5 +1,7 @@
 # GitHub Labels
 
+[中文](GITHUB_LABELS.zh-CN.md)
+
 Use these labels with the issue templates and [Feedback Triage](FEEDBACK_TRIAGE.md). The goal is to make early feedback easy to scan during the first launch wave.
 
 ## Core Labels

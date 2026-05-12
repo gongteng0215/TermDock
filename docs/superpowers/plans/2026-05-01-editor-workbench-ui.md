@@ -1,5 +1,7 @@
 # Editor Workbench UI Implementation Plan
 
+[中文](2026-05-01-editor-workbench-ui.zh-CN.md)
+
 ## Progress Snapshot
 
 Last updated: 2026-05-09

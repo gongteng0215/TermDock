@@ -1,5 +1,7 @@
 # TermDock Release Signing
 
+[中文](RELEASE_SIGNING.zh-CN.md)
+
 Last updated: 2026-05-09
 
 ## Goal

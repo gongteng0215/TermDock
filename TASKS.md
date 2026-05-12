@@ -1,5 +1,7 @@
 ﻿# TermDock Task Board
 
+[中文](TASKS.zh-CN.md)
+
 Last updated: 2026-05-10
 
 ## Current Release State

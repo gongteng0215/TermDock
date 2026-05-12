@@ -1,5 +1,7 @@
 ﻿# Transfer Soak Test
 
+[中文](SOAK_TEST.zh-CN.md)
+
 This document describes how to run long-duration transfer stress tests against a real SSH/SFTP server.
 
 Last updated: 2026-05-09
