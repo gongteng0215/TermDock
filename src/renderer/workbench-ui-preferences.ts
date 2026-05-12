@@ -5,6 +5,7 @@ const SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY = "termdock.sftp-explorer-view-mode.v1
 const COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY =
   "termdock.command-history-inspector-collapsed.v1";
 const INSPECTOR_SIDEBAR_TAB_STORAGE_KEY = "termdock.inspector-sidebar-tab.v1";
+const FIRST_RUN_ONBOARDING_DISMISSED_STORAGE_KEY = "termdock.first-run-onboarding-dismissed.v1";
 
 function readStorageItem(key: string): string | null {
   if (typeof window === "undefined") {
@@ -34,6 +35,14 @@ export function readCommandHistoryInspectorCollapsed(): boolean {
 
 export function writeCommandHistoryInspectorCollapsed(value: boolean): void {
   writeStorageItem(COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY, value ? "true" : "false");
+}
+
+export function readFirstRunOnboardingDismissed(): boolean {
+  return readStorageItem(FIRST_RUN_ONBOARDING_DISMISSED_STORAGE_KEY) === "true";
+}
+
+export function writeFirstRunOnboardingDismissed(value: boolean): void {
+  writeStorageItem(FIRST_RUN_ONBOARDING_DISMISSED_STORAGE_KEY, value ? "true" : "false");
 }
 
 export function readInspectorSidebarTabId(): InspectorSidebarTabId {

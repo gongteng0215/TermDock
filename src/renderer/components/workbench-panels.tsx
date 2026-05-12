@@ -46,12 +46,17 @@ interface SessionsInspectorSectionProps {
   isGroupView: boolean;
   loading: boolean;
   onBackToGroups: () => void;
+  onCreateFirstSession: () => void;
+  onDismissWelcome: () => void;
   onFilterQueryChange: ChangeEventHandler<HTMLInputElement>;
+  onImportSshConfig: () => void;
+  onOpenSecurityNotes: () => void;
   onOpenSettings: () => void;
   onRootContextMenu: MouseEventHandler<HTMLElement>;
   onToggleFavoritesOnly: () => void;
   sessions: SessionsItemView[];
   sessionBadgeText: string;
+  showWelcome: boolean;
   workspaceProfile:
     | {
         id: string;
@@ -154,12 +159,17 @@ export function SessionsInspectorSection({
   isGroupView,
   loading,
   onBackToGroups,
+  onCreateFirstSession,
+  onDismissWelcome,
   onFilterQueryChange,
+  onImportSshConfig,
+  onOpenSecurityNotes,
   onOpenSettings,
   onRootContextMenu,
   onToggleFavoritesOnly,
   sessions,
   sessionBadgeText,
+  showWelcome,
   workspaceProfile
 }: SessionsInspectorSectionProps) {
   return (
@@ -195,6 +205,38 @@ export function SessionsInspectorSection({
       </div>
       {loading ? <p className="hint workbench-section__status">Loading sessions...</p> : null}
       <div className="session-explorer">
+        {showWelcome ? (
+          <div className="first-run-card">
+            <div className="first-run-card__header">
+              <div>
+                <strong>Start with your first server</strong>
+                <p className="hint">
+                  Import existing SSH hosts or create a session manually.
+                </p>
+              </div>
+              <button
+                aria-label="Dismiss first-run tips"
+                className="icon-button first-run-card__dismiss"
+                onClick={onDismissWelcome}
+                title="Dismiss"
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <div className="first-run-card__actions">
+              <button className="primary-button primary-button--small" onClick={onImportSshConfig} type="button">
+                Import SSH Config
+              </button>
+              <button className="secondary-button secondary-button--small" onClick={onCreateFirstSession} type="button">
+                New Session
+              </button>
+              <button className="secondary-button secondary-button--small" onClick={onOpenSecurityNotes} type="button">
+                Security Notes
+              </button>
+            </div>
+          </div>
+        ) : null}
         {activeContext ? (
           <div className="session-explorer__active-row">
             <div className="session-explorer__active-main">

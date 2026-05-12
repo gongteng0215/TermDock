@@ -96,11 +96,13 @@ import {
 } from "./components/workbench-sidebars";
 import {
   readCommandHistoryInspectorCollapsed,
+  readFirstRunOnboardingDismissed,
   readInspectorSidebarTabId,
   readSftpExplorerViewMode,
   type InspectorSidebarTabId,
   type SftpExplorerViewMode,
   writeCommandHistoryInspectorCollapsed,
+  writeFirstRunOnboardingDismissed,
   writeInspectorSidebarTabId,
   writeSftpExplorerViewMode
 } from "./workbench-ui-preferences";
@@ -5573,6 +5575,9 @@ export function App() {
   );
   const [isCommandHistoryInspectorCollapsed, setIsCommandHistoryInspectorCollapsed] = useState(
     () => readCommandHistoryInspectorCollapsed()
+  );
+  const [isFirstRunOnboardingDismissed, setIsFirstRunOnboardingDismissed] = useState(
+    () => readFirstRunOnboardingDismissed()
   );
   const [activeInspectorSidebarTab, setActiveInspectorSidebarTab] = useState<InspectorSidebarTabId>(
     () => readInspectorSidebarTabId()
@@ -12204,6 +12209,10 @@ export function App() {
   }, [isCommandHistoryInspectorCollapsed]);
 
   useEffect(() => {
+    writeFirstRunOnboardingDismissed(isFirstRunOnboardingDismissed);
+  }, [isFirstRunOnboardingDismissed]);
+
+  useEffect(() => {
     writeInspectorSidebarTabId(activeInspectorSidebarTab);
   }, [activeInspectorSidebarTab]);
 
@@ -18817,6 +18826,26 @@ export function App() {
     setIsSettingsOpen(true);
   }, []);
 
+  const dismissFirstRunOnboarding = useCallback(() => {
+    setIsFirstRunOnboardingDismissed(true);
+  }, []);
+
+  const openFirstRunSecurityNotes = useCallback(() => {
+    void showAppAlert(
+      [
+        tr("TermDock is a local-first desktop app. It does not require a cloud account to manage servers."),
+        "",
+        tr("Session data and diagnostics are stored locally. Session and group exports exclude decrypted credentials."),
+        "",
+        tr("Before sharing logs or bug reports, review the generated files and remove private hosts, usernames, tokens, paths, and credentials.")
+      ].join("\n"),
+      {
+        title: "Security Notes",
+        detailText: "Full notes are available in SECURITY.md and SECURITY.zh-CN.md in the repository."
+      }
+    );
+  }, [showAppAlert, tr]);
+
   const closeSettingsPanel = useCallback(() => {
     setIsSettingsOpen(false);
   }, []);
@@ -24117,11 +24146,20 @@ export function App() {
               isGroupView={Boolean(activeSessionGroup)}
               loading={loading}
               onBackToGroups={() => setActiveSessionGroupKey(null)}
+              onCreateFirstSession={() => {
+                openCreateModal(activeSessionGroup?.groupName ?? "");
+              }}
+              onDismissWelcome={dismissFirstRunOnboarding}
               onFilterQueryChange={(event) => setSessionFilterQuery(event.target.value)}
+              onImportSshConfig={() => {
+                void importSessionsFromSshConfig();
+              }}
+              onOpenSecurityNotes={openFirstRunSecurityNotes}
               onOpenSettings={() => openSettingsPanel("connection")}
               onRootContextMenu={openSessionBlankContextMenu}
               onToggleFavoritesOnly={() => setSessionFavoritesOnly((prev) => !prev)}
               sessionBadgeText={sessionBadgeText}
+              showWelcome={!isFirstRunOnboardingDismissed && sessions.length === 0 && !loading}
               sessions={activeGroupSessions.map((session) => ({
                 host: session.host,
                 id: session.id,
