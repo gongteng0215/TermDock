@@ -31,6 +31,8 @@ Get the latest build from [GitHub Releases](https://github.com/gongteng0215/Term
 
 TermDock is currently focused on macOS and Windows 11.
 
+If the app cannot be installed or opened, see [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md).
+
 ## Screenshots
 
 ### Multi-Tab SSH Terminal
@@ -149,6 +151,7 @@ For detailed progress, release validation, and planning notes, see:
 - [Packaged Smoke Runbook](PACKAGED_SMOKE.md)
 - [Release Signing Runbook](RELEASE_SIGNING.md)
 - [UI Compact Rules](UI_COMPACT_RULES.md)
+- [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md)
 - [Feedback Triage](docs/FEEDBACK_TRIAGE.md)
 - [60-Second Demo Script](docs/promotion/60-second-demo.md)
 - [GitHub Page Setup](docs/promotion/github-page-setup.md)

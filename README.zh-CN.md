@@ -31,6 +31,8 @@ TermDock 不想成为另一个“大而全”的终端工具。它更像一个�
 
 TermDock 当前主要面向 macOS 和 Windows 11。
 
+如果应用无法安装或打开，请先看 [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.md)。
+
 ## 截图
 
 ### 多标签 SSH 终端
@@ -149,6 +151,7 @@ docs/assets    README 截图和产品素材
 - [打包 Smoke Runbook](PACKAGED_SMOKE.md)
 - [签名发布 Runbook](RELEASE_SIGNING.md)
 - [紧凑 UI 规则](UI_COMPACT_RULES.md)
+- [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.md)
 - [反馈处理流程](docs/FEEDBACK_TRIAGE.md)
 - [60 秒演示脚本](docs/promotion/60-second-demo.md)
 - [GitHub 页面配置](docs/promotion/github-page-setup.md)
