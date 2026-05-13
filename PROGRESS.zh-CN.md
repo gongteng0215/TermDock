@@ -10,7 +10,7 @@ Last updated: 2026-05-13
 - 远端：`origin/master`
 - 当前方向：SSH config 导入打磨、首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T05-57-03-338Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
 
@@ -29,6 +29,7 @@ Last updated: 2026-05-13
   - 服务器健康面板。
   - Local / Remote / Dynamic SOCKS5 端口转发管理。
   - `~/.ssh/config` 导入基线，并补充导入预览统计、导入后打开首个会话和 OpenSSH `IdentityFile` token 展开。
+  - SSH config 导入预览会对常见暂不支持的 OpenSSH 指令给出 warning，提醒导入后手动处理。
 - 首次连接诊断：
   - SSH 连接和测试连接失败时会显示更清晰的原因、下一步建议和原始错误。
 - 文档：

@@ -108,6 +108,7 @@ Release type: In development
   - duplicate strategy selection includes the full import plan so users can decide whether to skip, overwrite, or create renamed copies with more context
   - successful SSH config and session JSON imports can now open the first imported session immediately
   - `IdentityFile` parsing now expands common OpenSSH tokens such as `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
+  - import preview now warns when common unsupported OpenSSH directives such as `ProxyJump`, `ProxyCommand`, `LocalForward`, `RemoteForward`, `DynamicForward`, `CertificateFile`, or `IdentitiesOnly` require manual follow-up
 - First-connect diagnostics:
   - SSH connection and test-connection failures now show a plain-language reason, next-step suggestion, and raw error for common auth, key-file, DNS, port, timeout, network, host-key, handshake, and remote-close failures
 - Documentation:
@@ -119,7 +120,7 @@ Release type: In development
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
 - Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T05-57-03-338Z/summary.json`
 
 ## v0.1.22 (2026-04-12)
 

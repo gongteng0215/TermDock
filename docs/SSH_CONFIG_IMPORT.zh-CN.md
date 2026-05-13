@@ -17,6 +17,8 @@ TermDock 可以从本地 OpenSSH 配置中导入常见 `Host` 条目，把你已
 7. 确认预览无误后点击 `Import`。
 8. 导入完成后，如果想马上连接，选择 `Open First Imported`。
 
+预览里可能会显示 TermDock 已识别但暂未导入的 OpenSSH 选项 warning。可以把这些 warning 当成导入后的手动检查清单。
+
 ## 支持的字段
 
 TermDock 当前会导入这些 OpenSSH 指令：
@@ -71,6 +73,8 @@ TermDock 会按主机、端口和用户名判断重复。
 - `CertificateFile`、`IdentitiesOnly`、`HostKeyAlias` 和 known-host 相关设置
 - 只有通配符的 `Host` 模式作为独立会话
 - 密码或私钥 passphrase
+
+导入预览会对常见暂不支持的 OpenSSH 选项给出 warning，包括 `ProxyJump`、`ProxyCommand`、`LocalForward`、`RemoteForward`、`DynamicForward`、`CertificateFile` 和 `IdentitiesOnly`。
 
 导入后的会话会引用你的私钥路径。TermDock 不会把私钥文件内容复制进应用。
 

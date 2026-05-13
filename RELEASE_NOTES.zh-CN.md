@@ -108,6 +108,7 @@
   - 选择重复处理策略时会展示完整导入计划，用户能更清楚地选择跳过、覆盖或创建重命名副本。
   - SSH config 和会话 JSON 导入成功后，现在可以立即打开第一个导入的会话。
   - `IdentityFile` 解析现在会展开常见 OpenSSH token，例如 `%d`、`%u`、`%r`、`%h`、`%n`、`%p` 和 `%%`。
+  - 导入预览现在会对常见暂不支持的 OpenSSH 指令给出 warning，例如 `ProxyJump`、`ProxyCommand`、`LocalForward`、`RemoteForward`、`DynamicForward`、`CertificateFile` 或 `IdentitiesOnly`，提醒导入后手动处理。
 - 首次连接诊断：
   - SSH 连接和测试连接失败时，现在会针对常见认证、私钥文件、DNS、端口、超时、网络、host key、握手和远端关闭错误显示更清晰的原因、下一步建议和原始错误。
 - 文档：
@@ -119,7 +120,7 @@
 - Type check 通过：`pnpm run typecheck`
 - Build 通过：`pnpm run build`
 - 最新 workspace smoke 通过：`PASS 48 / FAIL 0 / SKIP 0`
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T05-57-03-338Z/summary.json`
 
 ## 历史版本索引
 

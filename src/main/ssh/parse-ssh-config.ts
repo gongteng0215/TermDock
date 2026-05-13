@@ -38,6 +38,16 @@ interface ParseContext {
   includeStack: string[];
 }
 
+const UNSUPPORTED_DIRECTIVE_WARNINGS: Record<string, string> = {
+  certificatefile: "CertificateFile is not imported; configure certificate auth manually after import.",
+  dynamicforward: "DynamicForward is not imported; recreate the SOCKS5 forward in Port Forwarding after connecting.",
+  identitiesonly: "IdentitiesOnly is not imported; verify the selected private key after import.",
+  localforward: "LocalForward is not imported; recreate the local forward in Port Forwarding after connecting.",
+  proxycommand: "ProxyCommand is not imported yet; sessions that require a proxy command may need manual setup.",
+  proxyjump: "ProxyJump is not imported yet; sessions that require a bastion host may need manual setup.",
+  remoteforward: "RemoteForward is not imported; recreate the remote forward in Port Forwarding after connecting."
+};
+
 export async function parseSshConfigFile(inputPath?: string): Promise<SshConfigParseResult> {
   const resolvedPath = resolveSshConfigPath(inputPath);
   const context: ParseContext = {
@@ -146,6 +156,12 @@ async function parseConfigFile(
       continue;
     }
 
+    const unsupportedWarning = getUnsupportedDirectiveWarning(directive);
+    if (unsupportedWarning) {
+      context.warnings.push(`${normalizedFilePath}:${lineNumber}: ${unsupportedWarning}`);
+      continue;
+    }
+
     const parsedDirective = parseOptionDirective(
       directive,
       rawValue,
@@ -231,6 +247,10 @@ function parseOptionDirective(
     };
   }
   return null;
+}
+
+function getUnsupportedDirectiveWarning(directive: string): string | null {
+  return UNSUPPORTED_DIRECTIVE_WARNINGS[directive] ?? null;
 }
 
 function buildCandidates(

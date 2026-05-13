@@ -759,7 +759,9 @@ async function main() {
                 sourceLine: 1
               }
             ],
-            warnings: []
+            warnings: [
+              "C:/tmp/termdock-smoke-ssh-config:5: ProxyJump is not imported yet; sessions that require a bastion host may need manual setup."
+            ]
           };
           bridge.system.pickSshConfigFile = async () =>
             window.__termdockSmokePickedSshConfigPath ?? null;
@@ -921,6 +923,7 @@ async function main() {
         "Duplicate targets: 0",
         "Private-key sessions: 0",
         "Target group: smoke-imports",
+        "ProxyJump is not imported yet",
         "smoke-imported"
       ]) {
         if (!previewText?.includes(expected)) {

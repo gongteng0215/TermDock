@@ -17,6 +17,8 @@ TermDock can import common OpenSSH `Host` entries from your local SSH config so 
 7. Check the preview, then click `Import`.
 8. After import, choose `Open First Imported` if you want to connect immediately.
 
+The preview can include warnings for OpenSSH options that TermDock recognizes but does not import yet. Treat those warnings as a checklist for manual follow-up after import.
+
 ## Supported Fields
 
 TermDock currently imports these OpenSSH directives:
@@ -71,6 +73,8 @@ The importer does not yet import every OpenSSH option. These are intentionally i
 - `CertificateFile`, `IdentitiesOnly`, `HostKeyAlias`, and known-host settings
 - wildcard-only `Host` patterns as standalone sessions
 - passwords or private-key passphrases
+
+The import preview warns about the most common unsupported OpenSSH options, including `ProxyJump`, `ProxyCommand`, `LocalForward`, `RemoteForward`, `DynamicForward`, `CertificateFile`, and `IdentitiesOnly`.
 
 Imported sessions reference your private key path. TermDock does not copy private-key file contents into the app.
 

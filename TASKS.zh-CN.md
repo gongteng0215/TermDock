@@ -9,7 +9,7 @@ Last updated: 2026-05-13
 - 当前分支：`master`
 - 当前方向：SSH config 导入打磨、首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T05-57-03-338Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 
@@ -51,6 +51,7 @@ Last updated: 2026-05-13
    - SSH config 和会话 JSON 导入成功后可以立即打开第一个导入的会话。
    - `IdentityFile` 支持展开常见 OpenSSH token。
    - 英文 / 简体中文 SSH 配置导入指南已记录导入流程、支持字段、重复项处理和当前限制。
+   - 导入预览会提示常见暂不支持、需要导入后手动处理的 OpenSSH 指令。
 6. 首次连接 SSH 诊断：
    - SSH 连接和测试连接错误现在会针对常见认证、私钥文件、DNS、端口、超时、网络、host key、握手和远端关闭场景显示清晰原因、下一步建议和原始错误。
    - 英文 / 简体中文故障排查文档已覆盖首次连接失败和 SSH config 导入后的检查项。
