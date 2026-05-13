@@ -35,7 +35,7 @@ Last updated: 2026-05-13
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
 - Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-05-13: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
+- Latest master validation on 2026-05-13: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -102,7 +102,7 @@ Last updated: 2026-05-13
   - post-refactor `pnpm run smoke:ui`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
   - post-refactor `pnpm run smoke:ui:packaged`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
 
-## Completed in v0.1.25
+## Completed in v0.1.25 and Current Master Follow-up
 
 - First-run session onboarding:
   - empty workspaces now show a compact onboarding card in the Sessions inspector
@@ -110,6 +110,7 @@ Last updated: 2026-05-13
   - dismissed onboarding state persists locally
   - Simplified Chinese translations cover the onboarding card and security-notes prompt
 - SSH config import polish:
+  - current master extends the released onboarding path with richer SSH config import conversion
   - preview now summarizes new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy
   - duplicate strategy selection shows the current import plan before any session data is written
   - SSH config and session JSON imports can open the first imported session immediately after completion
@@ -117,7 +118,7 @@ Last updated: 2026-05-13
 - Verification:
   - `pnpm run typecheck`: passed
   - `pnpm run build`: passed
-  - `pnpm run smoke:ui`: `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`
+  - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`
 
 ## Completed in v0.1.18
 

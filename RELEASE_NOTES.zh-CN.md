@@ -113,8 +113,8 @@
 
 - Type check 通过：`pnpm run typecheck`
 - Build 通过：`pnpm run build`
-- 最新 workspace smoke 通过：`PASS 47 / FAIL 0 / SKIP 0`
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`
+- 最新 workspace smoke 通过：`PASS 48 / FAIL 0 / SKIP 0`
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`
 
 ## 历史版本索引
 

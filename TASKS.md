@@ -66,7 +66,7 @@ Last updated: 2026-05-13
    - first-run empty workspace now offers `Import SSH Config`, `New Session`, and `Security Notes` from the Sessions inspector
    - dismissed onboarding state persists locally so the card does not return after the user closes it
    - Simplified Chinese translations were added for the onboarding card and security-notes prompt
-   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-13 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`
+   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-13 with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`
 0. SSH config import polish:
    - import preview now summarizes new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy before writing changes
    - duplicate strategy selection shows the current import plan

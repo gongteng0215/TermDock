@@ -107,6 +107,7 @@ function createMarkdownReport({
 
   lines.push("", "## Covered areas");
   lines.push("- Sessions explorer context menus (blank/group/session)");
+  lines.push("- SSH config import preview and post-import open-first-session action");
   lines.push("- Group open/back navigation");
   lines.push("- Same-session keyboard-open dedupe");
   lines.push("- Session list double-click fresh-tab behavior");
@@ -744,6 +745,25 @@ async function main() {
               commands: ["echo smoke_import_one", "echo smoke_import_two"]
             })
           };
+          window.__termdockSmokePickedSshConfigPath = "C:/tmp/termdock-smoke-ssh-config";
+          window.__termdockSmokeSshConfigResult = {
+            filePath: "C:/tmp/termdock-smoke-ssh-config",
+            candidates: [
+              {
+                hostAlias: "smoke-imported",
+                name: "smoke-imported",
+                host: "127.0.0.1",
+                port: 52199,
+                username: "smoke",
+                authType: "password",
+                sourceLine: 1
+              }
+            ],
+            warnings: []
+          };
+          bridge.system.pickSshConfigFile = async () =>
+            window.__termdockSmokePickedSshConfigPath ?? null;
+          bridge.sessions.parseSshConfig = async () => window.__termdockSmokeSshConfigResult;
           bridge.system.saveTextFile = async (options) => {
             const base =
               typeof options?.defaultFileName === "string" && options.defaultFileName.trim().length > 0
@@ -868,7 +888,93 @@ async function main() {
       return fileName;
     });
 
+    await runStep("ssh config import preview and open first imported session", async () => {
+      const sessionSection = page.locator(".panel--right .panel__section").first();
+      if (!(await isVisible(sessionSection))) {
+        throw new Error("session panel not found");
+      }
+      const tabLocator = page.locator(".terminal-tabs .tab");
+      const beforeTabs = await tabLocator.count();
+
+      const hookStarted = await page.evaluate(() => {
+        if (typeof window.__termdockSmokeImportSshConfig !== "function") {
+          return false;
+        }
+        window.__termdockSmokeImportSshConfig();
+        return true;
+      });
+      if (!hookStarted) {
+        throw new Error("SSH config import smoke hook is unavailable");
+      }
+
+      const targetGroupDialog = page.locator(".modal.app-dialog", { hasText: "SSH Config Import" }).first();
+      await targetGroupDialog.waitFor({ state: "visible", timeout: 5_000 });
+      const targetGroupInput = targetGroupDialog.locator(".app-dialog__input").first();
+      await targetGroupInput.fill("smoke-imports");
+      await targetGroupDialog.locator(".primary-button:has-text('Review Import')").first().click();
+
+      const previewDialog = page.locator(".modal.app-dialog", { hasText: "SSH Config Preview" }).first();
+      await previewDialog.waitFor({ state: "visible", timeout: 5_000 });
+      const previewText = await previewDialog.textContent();
+      for (const expected of [
+        "New sessions: 1",
+        "Duplicate targets: 0",
+        "Private-key sessions: 0",
+        "Target group: smoke-imports",
+        "smoke-imported"
+      ]) {
+        if (!previewText?.includes(expected)) {
+          throw new Error(`SSH config preview missing "${expected}"`);
+        }
+      }
+      const previewShot = await recordShot(page, "ssh-config-import-preview");
+      await previewDialog.locator(".primary-button:has-text('Import')").first().click();
+
+      const openDialog = page.locator(".modal.app-dialog", { hasText: "Open the first imported session now?" }).first();
+      await openDialog.waitFor({ state: "visible", timeout: 5_000 });
+      await openDialog.locator("button:has-text('Open First Imported')").first().click();
+
+      const afterTabs = await waitForCondition(
+        async () => {
+          const current = await tabLocator.count();
+          return current > beforeTabs ? current : false;
+        },
+        {
+          timeout: 8_000,
+          description: "imported session terminal tab"
+        }
+      );
+      await page.locator(".terminal-tabs .tab", { hasText: "smoke-imported" }).first().waitFor({
+        state: "visible",
+        timeout: 5_000
+      });
+      const openedShot = await recordShot(page, "ssh-config-import-open-first");
+      const importedTabCloseButton = page
+        .locator(".terminal-tabs .tab", { hasText: "smoke-imported" })
+        .first()
+        .locator(".tab__close")
+        .first();
+      if (await isVisible(importedTabCloseButton)) {
+        await importedTabCloseButton.click();
+        await page.waitForTimeout(320);
+      }
+      await closeMenusAndDialogs(page);
+      return `before=${beforeTabs}, after=${afterTabs}, shots=${previewShot}, ${openedShot}`;
+    });
+
     await runStep("open session tab via keyboard and keep dedupe", async () => {
+      const backButton = page.locator(".session-explorer__back, button[aria-label='Back to groups']").first();
+      if (await isVisible(backButton)) {
+        await backButton.click();
+        await page.waitForTimeout(260);
+      }
+      const groupButton = page
+        .locator(".session-folder-list__main", { hasText: "smoke-group" })
+        .first();
+      if (await isVisible(groupButton)) {
+        await groupButton.click();
+        await page.waitForTimeout(260);
+      }
       const sessionButton = page.locator(".session-list__main").first();
       if (!(await isVisible(sessionButton))) {
         throw new Error("session button missing");

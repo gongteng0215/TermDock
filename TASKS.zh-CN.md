@@ -9,7 +9,7 @@ Last updated: 2026-05-13
 - 当前分支：`master`
 - 当前方向：SSH config 导入打磨、首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 

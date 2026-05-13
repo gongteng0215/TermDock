@@ -113,8 +113,8 @@ Release type: In development
 
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
-- Latest workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`
+- Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json`
 
 ## v0.1.22 (2026-04-12)
 

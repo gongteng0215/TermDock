@@ -14180,20 +14180,12 @@ export function App() {
     }
   }, [hotkeyPreferences, isMacPlatform, showAppAlert, showAppChoice, systemApi, writeAppLog]);
 
-  const importSessionsFromSshConfig = useCallback(async () => {
+  const importParsedSshConfigSessions = useCallback(async (parsed: SshConfigParseResult) => {
     let operationJobId: string | null = null;
     try {
       if (!sessionsApi) {
         throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
       }
-      if (!systemApi?.pickSshConfigFile) {
-        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
-      }
-      const selectedPath = await systemApi.pickSshConfigFile();
-      if (!selectedPath) {
-        return;
-      }
-      const parsed = await sessionsApi.parseSshConfig(selectedPath);
       if (parsed.candidates.length === 0) {
         await showAppAlert(
           parsed.warnings.length > 0
@@ -14451,11 +14443,50 @@ export function App() {
     sessionsApi,
     showAppAlert,
     showAppChoice,
+    showAppConfirm,
     showAppPrompt,
     startOperationCenterAppJob,
-    systemApi,
     writeAppLog
   ]);
+
+  const importSessionsFromSshConfig = useCallback(async () => {
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!systemApi?.pickSshConfigFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selectedPath = await systemApi.pickSshConfigFile();
+      if (!selectedPath) {
+        return;
+      }
+      const parsed = await sessionsApi.parseSshConfig(selectedPath);
+      await importParsedSshConfigSessions(parsed);
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog("error", "renderer:sessions", "SSH config import failed.", caughtError);
+    }
+  }, [importParsedSshConfigSessions, sessionsApi, systemApi, writeAppLog]);
+
+  useEffect(() => {
+    const smokeWindow = window as typeof window & {
+      __termdockSmokeImportSshConfig?: () => void;
+      __termdockSmokeSshConfigResult?: SshConfigParseResult;
+    };
+    smokeWindow.__termdockSmokeImportSshConfig = () => {
+      const parsed = smokeWindow.__termdockSmokeSshConfigResult;
+      if (parsed) {
+        void importParsedSshConfigSessions(parsed);
+        return;
+      }
+      void importSessionsFromSshConfig();
+    };
+    return () => {
+      delete smokeWindow.__termdockSmokeImportSshConfig;
+    };
+  }, [importParsedSshConfigSessions, importSessionsFromSshConfig]);
 
   const importSessionsFromJson = useCallback(async () => {
     let operationJobId: string | null = null;
