@@ -17,7 +17,7 @@ TermDock 可以从本地 OpenSSH 配置中导入常见 `Host` 条目，把你已
 7. 确认预览无误后点击 `Import`。
 8. 导入完成后，如果想马上连接，选择 `Open First Imported`。
 
-预览里可能会显示 TermDock 已识别但暂未导入的 OpenSSH 选项 warning。可以把这些 warning 当成导入后的手动检查清单。
+预览里可能会显示 TermDock 已识别但暂未导入的 OpenSSH 选项 warning，也会提示展开后不存在的 `IdentityFile` 路径。可以把这些 warning 当成导入后的手动检查清单。
 
 ## 支持的字段
 
@@ -34,7 +34,7 @@ TermDock 当前会导入这些 OpenSSH 指令：
 
 如果没有 `HostName`，TermDock 会使用 `Host` 别名作为主机。如果没有 `User`，TermDock 会使用当前系统用户名。如果没有 `Port`，TermDock 会使用 `22`。
 
-`IdentityFile` 路径支持 `~`，也支持这些 OpenSSH token：`%d`、`%u`、`%r`、`%h`、`%n`、`%p` 和 `%%`。
+`IdentityFile` 路径支持 `~`，也支持这些 OpenSSH token：`%d`、`%u`、`%r`、`%h`、`%n`、`%p` 和 `%%`。如果展开后的私钥路径在当前机器上不存在，导入预览会显示 warning。
 
 ## 示例
 
@@ -88,7 +88,7 @@ TermDock 会按主机、端口和用户名判断重复。
 
 如果导入后的私钥会话连接失败：
 
-- 确认 `IdentityFile` 路径在当前机器上存在
+- 确认 `IdentityFile` 路径在当前机器上存在，尤其是预览已经提示 key 缺失时
 - 检查当前系统用户是否有权限读取私钥文件
 - 编辑导入后的会话，确认认证方式是 `Private Key`
 - 如果私钥有 passphrase，在连接前到会话表单里填写

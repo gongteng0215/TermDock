@@ -30,6 +30,7 @@ Last updated: 2026-05-13
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
 - Master branch now includes first-run session onboarding with `Import SSH Config`, `New Session`, and `Security Notes` actions for empty workspaces
 - Master branch now includes SSH config import preview stats, post-import open-first-session action, and OpenSSH `IdentityFile` token expansion for more reliable first-run imports
+- Master branch now warns during SSH config import when expanded `IdentityFile` paths are missing on the current machine
 - Master branch now warns during SSH config import when common unsupported OpenSSH directives need manual follow-up
 - Master branch now includes a paired English/Simplified Chinese SSH config import guide linked from the README and documentation index
 - Master branch now includes first-connect SSH error diagnostics with reason/suggestion/raw-error output plus a paired troubleshooting guide
@@ -38,7 +39,7 @@ Last updated: 2026-05-13
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
 - Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-05-13: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-13T05-57-03-338Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
+- Latest master validation on 2026-05-13: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-13T06-05-42-619Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -121,7 +122,7 @@ Last updated: 2026-05-13
 - Verification:
   - `pnpm run typecheck`: passed
   - `pnpm run build`: passed
-  - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T05-57-03-338Z/summary.json`
+  - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T06-05-42-619Z/summary.json`
 
 ## Completed in v0.1.18
 

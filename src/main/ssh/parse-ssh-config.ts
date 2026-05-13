@@ -9,7 +9,11 @@ interface SshOptionState {
   username?: string;
   port?: number;
   identityFile?: string;
+  identityFileLine?: number;
+  identityFileSourcePath?: string;
 }
+
+type SshOptionKey = "hostName" | "username" | "port" | "identityFile";
 
 interface SshHostBlock {
   line: number;
@@ -21,7 +25,7 @@ interface SshDirectiveRecord {
   line: number;
   sourcePath: string;
   hostBlock: SshHostBlock | null;
-  option: keyof SshOptionState;
+  option: SshOptionKey;
   value: string | number;
 }
 
@@ -57,7 +61,7 @@ export async function parseSshConfigFile(inputPath?: string): Promise<SshConfigP
     includeStack: []
   };
   await parseConfigFile(resolvedPath, null, context, true);
-  const candidates = buildCandidates(context.aliases, context.directives);
+  const candidates = await buildCandidates(context.aliases, context.directives, context.warnings);
   return {
     filePath: resolvedPath,
     candidates,
@@ -198,7 +202,7 @@ function parseOptionDirective(
   lineNumber: number,
   warnings: string[]
 ): {
-  option: keyof SshOptionState;
+  option: SshOptionKey;
   value: string | number;
 } | null {
   if (directive === "hostname") {
@@ -253,10 +257,11 @@ function getUnsupportedDirectiveWarning(directive: string): string | null {
   return UNSUPPORTED_DIRECTIVE_WARNINGS[directive] ?? null;
 }
 
-function buildCandidates(
+async function buildCandidates(
   aliases: Map<string, AliasDeclaration>,
-  directives: SshDirectiveRecord[]
-): SshConfigImportCandidate[] {
+  directives: SshDirectiveRecord[],
+  warnings: string[]
+): Promise<SshConfigImportCandidate[]> {
   const fallbackUser = safeOsUsername();
   const aliasValues = Array.from(aliases.values()).sort((left, right) =>
     left.alias.localeCompare(right.alias, undefined, { sensitivity: "base" })
@@ -276,6 +281,8 @@ function buildCandidates(
         state.port = Number(directive.value);
       } else if (directive.option === "identityFile" && !state.identityFile) {
         state.identityFile = String(directive.value);
+        state.identityFileLine = directive.line;
+        state.identityFileSourcePath = directive.sourcePath;
       }
     }
     const hostName = state.hostName ?? aliasDeclaration.alias;
@@ -288,8 +295,15 @@ function buildCandidates(
           localUsername: fallbackUser,
           port,
           username
-        })
+      })
       : undefined;
+    if (identityFile && !(await isExistingRegularFile(identityFile))) {
+      warnings.push(
+        `${state.identityFileSourcePath ?? aliasDeclaration.sourcePath}:${
+          state.identityFileLine ?? aliasDeclaration.line
+        }: IdentityFile "${identityFile}" for Host "${aliasDeclaration.alias}" does not exist or is not a regular file after expansion.`
+      );
+    }
     const authType: SessionAuthType = identityFile ? "privateKey" : "password";
     candidates.push({
       hostAlias: aliasDeclaration.alias,

@@ -66,12 +66,13 @@ Last updated: 2026-05-13
    - first-run empty workspace now offers `Import SSH Config`, `New Session`, and `Security Notes` from the Sessions inspector
    - dismissed onboarding state persists locally so the card does not return after the user closes it
    - Simplified Chinese translations were added for the onboarding card and security-notes prompt
-   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-13 with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T05-57-03-338Z/summary.json`
+   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-13 with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T06-05-42-619Z/summary.json`
 0. SSH config import polish:
    - import preview now summarizes new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy before writing changes
    - duplicate strategy selection shows the current import plan
    - successful SSH config and session JSON imports can open the first imported session immediately
    - `IdentityFile` now expands common OpenSSH tokens `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
+   - import preview now warns when expanded `IdentityFile` paths are missing or not regular files
    - paired English/Simplified Chinese SSH config import guide now documents the import flow, supported fields, duplicate handling, and limitations
    - import preview now warns about common unsupported OpenSSH directives that require manual follow-up
 0. First-connect SSH diagnostics:

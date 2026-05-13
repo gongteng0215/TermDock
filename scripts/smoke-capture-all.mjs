@@ -760,6 +760,7 @@ async function main() {
               }
             ],
             warnings: [
+              "C:/tmp/termdock-smoke-ssh-config:4: IdentityFile \"C:/missing/termdock-smoke-key\" for Host \"smoke-imported\" does not exist or is not a regular file after expansion.",
               "C:/tmp/termdock-smoke-ssh-config:5: ProxyJump is not imported yet; sessions that require a bastion host may need manual setup."
             ]
           };
@@ -923,6 +924,7 @@ async function main() {
         "Duplicate targets: 0",
         "Private-key sessions: 0",
         "Target group: smoke-imports",
+        "IdentityFile \"C:/missing/termdock-smoke-key\"",
         "ProxyJump is not imported yet",
         "smoke-imported"
       ]) {

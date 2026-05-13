@@ -17,7 +17,7 @@ TermDock can import common OpenSSH `Host` entries from your local SSH config so 
 7. Check the preview, then click `Import`.
 8. After import, choose `Open First Imported` if you want to connect immediately.
 
-The preview can include warnings for OpenSSH options that TermDock recognizes but does not import yet. Treat those warnings as a checklist for manual follow-up after import.
+The preview can include warnings for OpenSSH options that TermDock recognizes but does not import yet, and for `IdentityFile` paths that do not exist after expansion. Treat those warnings as a checklist for manual follow-up after import.
 
 ## Supported Fields
 
@@ -34,7 +34,7 @@ TermDock currently imports these OpenSSH directives:
 
 If `HostName` is missing, TermDock uses the `Host` alias as the host. If `User` is missing, TermDock uses the current local OS username. If `Port` is missing, TermDock uses `22`.
 
-`IdentityFile` paths support `~` plus these OpenSSH tokens: `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`.
+`IdentityFile` paths support `~` plus these OpenSSH tokens: `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`. If the expanded key path does not exist on this machine, the import preview shows a warning.
 
 ## Example
 
@@ -88,7 +88,7 @@ If no sessions appear in the preview:
 
 If a private-key session fails to connect after import:
 
-- confirm the `IdentityFile` path exists on this machine
+- confirm the `IdentityFile` path exists on this machine, especially if the preview warned about a missing key
 - check that the key file is readable by your OS user
 - edit the imported session and confirm the auth type is `Private Key`
 - if the key has a passphrase, enter it in the session form before connecting
