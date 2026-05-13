@@ -4,7 +4,7 @@
 
 TermDock helps you manage remote servers in one place: multi-tab SSH terminal, SFTP file transfer, server health monitoring, port forwarding, dangerous-command guardrails, transfer retry center, and diagnostics export.
 
-[中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [SSH Config Import](docs/SSH_CONFIG_IMPORT.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release Notes](RELEASE_NOTES.md)
+[中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [SSH Config Import](docs/SSH_CONFIG_IMPORT.md) · [SSH Troubleshooting](docs/SSH_CONNECTION_TROUBLESHOOTING.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release Notes](RELEASE_NOTES.md)
 
 ![TermDock terminal workspace](docs/assets/screenshots/preview/terminal-workspace.png)
 
@@ -81,6 +81,7 @@ If the app cannot be installed or opened, see [Install And Launch Troubleshootin
 - Folder-style session grouping, search, favorites, and recency sorting
 - Multi-tab xterm terminal with reconnect flow
 - SSH config import from `~/.ssh/config` with preview, duplicate handling, and post-import open action
+- SSH connection errors include a plain-language reason, next-step suggestion, and raw error
 - Session templates and quick startup command profiles
 
 ### SFTP Transfer
@@ -166,6 +167,7 @@ For detailed progress, release validation, and planning notes, see:
 - [Release Signing Runbook](RELEASE_SIGNING.md) / [中文](RELEASE_SIGNING.zh-CN.md)
 - [UI Compact Rules](UI_COMPACT_RULES.md) / [中文](UI_COMPACT_RULES.zh-CN.md)
 - [SSH Config Import](docs/SSH_CONFIG_IMPORT.md) / [中文](docs/SSH_CONFIG_IMPORT.zh-CN.md)
+- [SSH Connection Troubleshooting](docs/SSH_CONNECTION_TROUBLESHOOTING.md) / [中文](docs/SSH_CONNECTION_TROUBLESHOOTING.zh-CN.md)
 - [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md) / [中文](docs/INSTALL_TROUBLESHOOTING.zh-CN.md)
 - [Feedback Triage](docs/FEEDBACK_TRIAGE.md) / [中文](docs/FEEDBACK_TRIAGE.zh-CN.md)
 - [GitHub Labels](docs/GITHUB_LABELS.md) / [中文](docs/GITHUB_LABELS.zh-CN.md)

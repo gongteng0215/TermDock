@@ -30,6 +30,7 @@ import type {
   ServerProcessSnapshot,
   TerminalConnectionStatus
 } from "../shared/terminal";
+import { formatSshConnectionError } from "../shared/ssh-error-diagnostics";
 import type { RemoteOpenFileAutoSyncEvent } from "../shared/system";
 import {
   LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
@@ -15195,7 +15196,7 @@ export function App() {
     } catch (caughtError) {
       setTestConnectionResult({
         ok: false,
-        message: (caughtError as Error).message
+        message: formatSshConnectionError(caughtError)
       });
     } finally {
       setTestingConnection(false);

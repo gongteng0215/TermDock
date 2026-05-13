@@ -9,6 +9,7 @@ import type {
   SessionCreateInput,
   SessionTestConnectionResult
 } from "../../shared/session.js";
+import { formatSshConnectionError } from "../../shared/ssh-error-diagnostics.js";
 
 export async function testSshConnection(
   input: SessionCreateInput
@@ -38,7 +39,7 @@ export async function testSshConnection(
       });
 
       client.on("error", (error: Error) => {
-        finalize(false, error.message || "Connection failed.");
+        finalize(false, formatSshConnectionError(error));
       });
 
       client.on("close", () => {
@@ -52,7 +53,7 @@ export async function testSshConnection(
   } catch (error) {
     return {
       ok: false,
-      message: (error as Error).message || "Connection failed."
+      message: formatSshConnectionError(error)
     };
   }
 }
@@ -99,4 +100,3 @@ function expandHomePath(filePath: string): string {
   }
   return filePath;
 }
-

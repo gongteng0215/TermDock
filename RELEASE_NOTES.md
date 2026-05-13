@@ -108,8 +108,11 @@ Release type: In development
   - duplicate strategy selection includes the full import plan so users can decide whether to skip, overwrite, or create renamed copies with more context
   - successful SSH config and session JSON imports can now open the first imported session immediately
   - `IdentityFile` parsing now expands common OpenSSH tokens such as `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
+- First-connect diagnostics:
+  - SSH connection and test-connection failures now show a plain-language reason, next-step suggestion, and raw error for common auth, key-file, DNS, port, timeout, network, host-key, handshake, and remote-close failures
 - Documentation:
   - added a paired English/Simplified Chinese SSH config import guide and linked it from the README and documentation index
+  - added a paired English/Simplified Chinese SSH connection troubleshooting guide for first-connect failures
 
 ### Validation
 

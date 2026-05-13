@@ -29,8 +29,11 @@ Last updated: 2026-05-13
   - 服务器健康面板。
   - Local / Remote / Dynamic SOCKS5 端口转发管理。
   - `~/.ssh/config` 导入基线，并补充导入预览统计、导入后打开首个会话和 OpenSSH `IdentityFile` token 展开。
+- 首次连接诊断：
+  - SSH 连接和测试连接失败时会显示更清晰的原因、下一步建议和原始错误。
 - 文档：
   - 新增英文 / 简体中文 SSH 配置导入指南，并从 README 和文档索引链接。
+  - 新增英文 / 简体中文 SSH 连接故障排查指南。
 - UI 和多语言：
   - 深色 editor-workbench 风格主界面。
   - SFTP Explorer rail、terminal stage、Inspector rail 和底部 transfer panel。

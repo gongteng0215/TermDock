@@ -6,6 +6,7 @@ import { Terminal } from "xterm";
 import type { IDisposable, ITheme } from "xterm";
 
 import type { TerminalConnectionStatus } from "../../shared/terminal";
+import { formatSshConnectionError } from "../../shared/ssh-error-diagnostics";
 import type { AppLanguage } from "../i18n";
 import {
   inspectDangerousCommandText,
@@ -1033,7 +1034,7 @@ export function TerminalWorkspace({
           scheduleDeferredFit(tab.id);
         })
         .catch((error: Error) => {
-          const message = error.message || "Failed to connect.";
+          const message = formatSshConnectionError(error);
           setTabStatus(tab.id, { status: "error", message });
           instance.terminal.writeln(`\r\n[error] ${message}`);
           onError(message);

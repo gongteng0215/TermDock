@@ -26,6 +26,7 @@ import type {
 } from "ssh2";
 
 import type { SessionRecord } from "../../shared/session.js";
+import { formatSshConnectionError } from "../../shared/ssh-error-diagnostics.js";
 import type {
   SftpDirectoryListResult,
   SftpEntry,
@@ -234,7 +235,7 @@ export class TerminalService {
             this.emit(sender, {
               tabId,
               type: "error",
-              message: error.message
+              message: formatSshConnectionError(error)
             });
             void this.close(tabId);
             return;
@@ -288,7 +289,7 @@ export class TerminalService {
       this.emit(sender, {
         tabId,
         type: "error",
-        message: error.message
+        message: formatSshConnectionError(error)
       });
     });
 
@@ -350,7 +351,7 @@ export class TerminalService {
       this.emit(connection.sender, {
         tabId: connection.tabId,
         type: "error",
-        message: (error as Error).message
+        message: formatSshConnectionError(error)
       });
       this.emitClosed({
         ...connection,
@@ -424,7 +425,7 @@ export class TerminalService {
       this.emit(sender, {
         tabId,
         type: "error",
-        message: error.message
+        message: formatSshConnectionError(error)
       });
       this.connections.delete(tabId);
       this.emitClosed(nativeConnection);
