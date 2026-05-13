@@ -2,13 +2,13 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-05-10
+Last updated: 2026-05-12
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.23`
-- Active branch: `feature/editor-workbench-ui`
-- Active branch focus: editor-workbench UI refresh plus self-use hardening follow-up
+- Stable release shipped: `v0.1.24`
+- Active branch: `master`
+- Active focus: `v0.1.25` first-run onboarding release prep and feedback-driven polish
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -28,12 +28,13 @@ Last updated: 2026-05-10
 - Master branch now also includes alternate-screen terminal editor focus mode that auto-tightens the main layout and terminal chrome while full-screen TUI editors are active, with a workspace-level enable/disable toggle plus editor-theme, typography, font, text-rhythm, and cursor presets
 - Master branch now also includes richer recoverable global error routing so high-frequency errors can jump directly to `Hotkeys`, `Port Fwd`, `Retry Center`, settings, `Operation Center`, or bug-report export instead of generic diagnostics only
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
+- Master branch now includes first-run session onboarding with `Import SSH Config`, `New Session`, and `Security Notes` actions for empty workspaces
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
 - Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-05-11: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
+- Latest master validation on 2026-05-12: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -99,6 +100,18 @@ Last updated: 2026-05-10
   - post-refactor `pnpm run build`: passed
   - post-refactor `pnpm run smoke:ui`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`
   - post-refactor `pnpm run smoke:ui:packaged`: `PASS 45 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
+
+## Completed in v0.1.25
+
+- First-run session onboarding:
+  - empty workspaces now show a compact onboarding card in the Sessions inspector
+  - onboarding actions open `Import SSH Config`, `New Session`, and `Security Notes`
+  - dismissed onboarding state persists locally
+  - Simplified Chinese translations cover the onboarding card and security-notes prompt
+- Verification:
+  - `pnpm run typecheck`: passed
+  - `pnpm run build`: passed
+  - `pnpm run smoke:ui`: `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`
 
 ## Completed in v0.1.18
 

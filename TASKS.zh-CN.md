@@ -7,9 +7,9 @@ Last updated: 2026-05-12
 ## 当前发布状态
 
 - 当前分支：`master`
-- 当前方向：发布后反馈接收、双语文档完善、安装/启动路径降噪。
+- 当前方向：`v0.1.25` 首次启动引导发布准备、反馈驱动打磨。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 
@@ -42,14 +42,16 @@ Last updated: 2026-05-12
 3. 文档双语化：
    - 面向用户和贡献者的文档保持 English / 中文两份。
    - 内部维护类文档补充中文维护版。
+4. 首次启动引导：
+   - 空工作区显示导入 SSH 配置、新建会话和安全说明入口。
+   - 关闭状态本地保存，避免重复打扰。
 
 ## 下一批建议任务
 
-1. 在 GitHub Issues 中创建 labels。
-2. 根据首批评论补充 Release FAQ。
-3. 录制危险命令保护 60 秒演示。
-4. 观察是否出现重复的 Windows/macOS 安装阻塞。
-5. 如果反馈稳定，再选择一个小功能或修复进入下一个版本。
+1. 准备并发布 `v0.1.25`。
+2. 观察安装、信任提示和首次连接反馈。
+3. 根据首批评论补充 Release FAQ。
+4. 如果反馈稳定，再选择一个小功能或修复进入下一个版本。
 
 ## 详细任务历史
 

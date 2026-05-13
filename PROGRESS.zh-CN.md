@@ -8,8 +8,9 @@ Last updated: 2026-05-12
 
 - 当前主分支：`master`
 - 远端：`origin/master`
+- 当前方向：`v0.1.25` 首次启动引导发布准备、反馈驱动打磨。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
 
@@ -32,6 +33,7 @@ Last updated: 2026-05-12
   - 深色 editor-workbench 风格主界面。
   - SFTP Explorer rail、terminal stage、Inspector rail 和底部 transfer panel。
   - 简体中文界面基线和中文 README。
+  - 首次启动会话引导：空工作区显示导入 SSH 配置、新建会话和安全说明入口，关闭状态本地保存。
 - 发布准备：
   - Windows installer / portable zip。
   - macOS dmg / zip。
@@ -51,10 +53,10 @@ Last updated: 2026-05-12
 
 ## 下一步优先级
 
-1. 完成 GitHub Labels 配置。
-2. 跟踪掘金等平台反馈，并把重复问题转成 GitHub issues。
+1. 准备并发布 `v0.1.25` 小版本。
+2. 继续观察安装、信任提示和首次连接反馈。
 3. 如果安装/启动问题重复出现，优先更新 README、Release 描述和故障排查。
-4. 根据反馈决定下一个小产品修复，而不是立即启动大型新功能。
+4. 根据真实反馈决定下一项小修复，而不是立即启动大型新功能。
 
 ## 详细历史
 

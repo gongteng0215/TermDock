@@ -2,6 +2,26 @@
 
 [English](RELEASE_NOTES.md)
 
+## v0.1.25 (2026-05-12)
+
+发布类型：稳定候选版
+
+### 主要变化
+
+- 首次启动会话引导：
+  - 空工作区现在会在 Sessions Inspector 中显示紧凑的新用户引导卡片。
+  - 引导动作可直接进入 `Import SSH Config`、`New Session` 和 `Security Notes`。
+  - 关闭状态会保存在本地，避免引导卡片反复出现。
+- 简体中文打磨：
+  - 补充首次启动引导卡片和安全说明弹窗的中文翻译。
+
+### 验证
+
+- Type check 通过：`pnpm run typecheck`
+- Build 通过：`pnpm run build`
+- 最新 workspace smoke 通过：`PASS 47 / FAIL 0 / SKIP 0`
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`
+
 ## v0.1.24 (2026-05-11)
 
 发布类型：稳定版

@@ -2,6 +2,26 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## v0.1.25 (2026-05-12)
+
+Release type: Stable candidate
+
+### Highlights
+
+- First-run session onboarding:
+  - empty workspaces now show a compact Sessions inspector card for new users
+  - onboarding actions jump directly to `Import SSH Config`, `New Session`, and `Security Notes`
+  - dismissed onboarding state is persisted locally so the card does not keep returning
+- Simplified Chinese polish:
+  - added translations for the first-run onboarding card and security-notes prompt
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`
+
 ## v0.1.24 (2026-05-11)
 
 Release type: Stable

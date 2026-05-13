@@ -2,14 +2,14 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-05-10
+Last updated: 2026-05-12
 
 ## Current Release State
 
-- Stable release: `v0.1.23`
-- Active branch: `feature/editor-workbench-ui`
-- Branch baseline: `origin/feature/editor-workbench-ui`
-- Priority direction: keep editor-workbench branch shippable while resuming self-use runtime hardening and workflow quality
+- Stable release: `v0.1.24`
+- Active branch: `master`
+- Branch baseline: `origin/master`
+- Priority direction: `v0.1.25` first-run onboarding release prep and feedback-driven polish
 
 ## P0 Matrix
 
@@ -62,6 +62,11 @@ Last updated: 2026-05-10
    - post-refactor `pnpm run smoke:ui` passed with `PASS 45 / FAIL 0 / SKIP 0`
    - post-refactor `pnpm run smoke:ui:packaged` passed with `PASS 45 / FAIL 0 / SKIP 0`
    - master follow-up `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-11 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json`
+0. v0.1.25 first-run onboarding release prep:
+   - first-run empty workspace now offers `Import SSH Config`, `New Session`, and `Security Notes` from the Sessions inspector
+   - dismissed onboarding state persists locally so the card does not return after the user closes it
+   - Simplified Chinese translations were added for the onboarding card and security-notes prompt
+   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-12 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling
@@ -230,12 +235,12 @@ Last updated: 2026-05-10
 
 ## Immediate Next Target
 
-1. `UI-WB-HANDOFF`: push or PR `feature/editor-workbench-ui` with current workspace and packaged smoke evidence
-2. `UI-WB-FEEDBACK`: collect real-usage feedback on the refreshed workbench shell
-3. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy
-4. `F8`: Operation Center follow-up (broader cancel/retry coverage)
-5. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore)
-6. `P0-E1`/`P0-E2`: startup and large-transfer performance follow-up
+1. Prepare and publish `v0.1.25`.
+2. Watch installation, trust-prompt, and first-connect feedback.
+3. Convert repeated launch feedback into GitHub issues and Release FAQ updates.
+4. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy.
+5. `F8`: Operation Center follow-up (broader cancel/retry coverage).
+6. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore).
 
 ## Not Done Yet (Top Blocking Items)
 
