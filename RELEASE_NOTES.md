@@ -106,6 +106,7 @@ Release type: In development
 - SSH config import polish:
   - import preview now shows new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy before changes are applied
   - duplicate strategy selection includes the full import plan so users can decide whether to skip, overwrite, or create renamed copies with more context
+  - successful SSH config and session JSON imports can now open the first imported session immediately
   - `IdentityFile` parsing now expands common OpenSSH tokens such as `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
 
 ### Validation
@@ -113,7 +114,7 @@ Release type: In development
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
 - Latest workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`
 
 ## v0.1.22 (2026-04-12)
 

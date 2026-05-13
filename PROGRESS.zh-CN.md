@@ -10,7 +10,7 @@ Last updated: 2026-05-13
 - 远端：`origin/master`
 - 当前方向：SSH config 导入打磨、首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
 
@@ -28,7 +28,7 @@ Last updated: 2026-05-13
 - 运维工具：
   - 服务器健康面板。
   - Local / Remote / Dynamic SOCKS5 端口转发管理。
-  - `~/.ssh/config` 导入基线，并补充导入预览统计和 OpenSSH `IdentityFile` token 展开。
+  - `~/.ssh/config` 导入基线，并补充导入预览统计、导入后打开首个会话和 OpenSSH `IdentityFile` token 展开。
 - UI 和多语言：
   - 深色 editor-workbench 风格主界面。
   - SFTP Explorer rail、terminal stage、Inspector rail 和底部 transfer panel。

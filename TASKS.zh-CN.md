@@ -9,7 +9,7 @@ Last updated: 2026-05-13
 - 当前分支：`master`
 - 当前方向：SSH config 导入打磨、首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 
@@ -48,6 +48,7 @@ Last updated: 2026-05-13
 5. SSH config 导入打磨：
    - 导入预览显示新增会话、重复目标、私钥会话、目标分组和重复处理策略。
    - 重复处理策略选择时展示当前导入计划。
+   - SSH config 和会话 JSON 导入成功后可以立即打开第一个导入的会话。
    - `IdentityFile` 支持展开常见 OpenSSH token。
 
 ## 下一批建议任务

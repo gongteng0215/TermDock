@@ -6,7 +6,7 @@ Last updated: 2026-05-13
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.24`
+- Stable release shipped: `v0.1.25`
 - Active branch: `master`
 - Active focus: SSH config import polish and first-connect conversion
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
@@ -29,13 +29,13 @@ Last updated: 2026-05-13
 - Master branch now also includes richer recoverable global error routing so high-frequency errors can jump directly to `Hotkeys`, `Port Fwd`, `Retry Center`, settings, `Operation Center`, or bug-report export instead of generic diagnostics only
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
 - Master branch now includes first-run session onboarding with `Import SSH Config`, `New Session`, and `Security Notes` actions for empty workspaces
-- Master branch now includes SSH config import preview stats plus OpenSSH `IdentityFile` token expansion for more reliable first-run imports
+- Master branch now includes SSH config import preview stats, post-import open-first-session action, and OpenSSH `IdentityFile` token expansion for more reliable first-run imports
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
 - Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-05-13: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
+- Latest master validation on 2026-05-13: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -112,11 +112,12 @@ Last updated: 2026-05-13
 - SSH config import polish:
   - preview now summarizes new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy
   - duplicate strategy selection shows the current import plan before any session data is written
+  - SSH config and session JSON imports can open the first imported session immediately after completion
   - `IdentityFile` now expands common OpenSSH tokens `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
 - Verification:
   - `pnpm run typecheck`: passed
   - `pnpm run build`: passed
-  - `pnpm run smoke:ui`: `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`
+  - `pnpm run smoke:ui`: `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`
 
 ## Completed in v0.1.18
 

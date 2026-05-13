@@ -6,7 +6,7 @@ Last updated: 2026-05-13
 
 ## Current Release State
 
-- Stable release: `v0.1.24`
+- Stable release: `v0.1.25`
 - Active branch: `master`
 - Branch baseline: `origin/master`
 - Priority direction: SSH config import polish and first-connect conversion
@@ -66,10 +66,11 @@ Last updated: 2026-05-13
    - first-run empty workspace now offers `Import SSH Config`, `New Session`, and `Security Notes` from the Sessions inspector
    - dismissed onboarding state persists locally so the card does not return after the user closes it
    - Simplified Chinese translations were added for the onboarding card and security-notes prompt
-   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-13 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`
+   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-13 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T03-13-00-631Z/summary.json`
 0. SSH config import polish:
    - import preview now summarizes new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy before writing changes
    - duplicate strategy selection shows the current import plan
+   - successful SSH config and session JSON imports can open the first imported session immediately
    - `IdentityFile` now expands common OpenSSH tokens `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages

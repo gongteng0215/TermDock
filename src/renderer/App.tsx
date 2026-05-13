@@ -5532,6 +5532,9 @@ export function App() {
   const [form, setForm] = useState<SessionCreateInput>(EMPTY_FORM);
   const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [pendingOpenImportedSessionId, setPendingOpenImportedSessionId] = useState<string | null>(
+    null
+  );
   const [isTerminalEditorFocusMode, setIsTerminalEditorFocusMode] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [activeSessionGroupKey, setActiveSessionGroupKey] = useState<string | null>(null);
@@ -14409,6 +14412,28 @@ export function App() {
           title: "SSH Config Import"
         }
       );
+      if (firstImportedSessionId && (createdCount > 0 || updatedCount > 0)) {
+        const nextAction = await showAppChoice(
+          "Open the first imported session now?",
+          [
+            {
+              value: "open",
+              label: "Open First Imported"
+            },
+            {
+              value: "done",
+              label: "Done"
+            }
+          ],
+          {
+            title: "SSH Config Import",
+            cancelLabel: "Done"
+          }
+        );
+        if (nextAction === "open") {
+          setPendingOpenImportedSessionId(firstImportedSessionId);
+        }
+      }
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
       if (operationJobId) {
@@ -14693,6 +14718,28 @@ export function App() {
           title: "Import Sessions JSON"
         }
       );
+      if (firstImportedSessionId && (createdCount > 0 || updatedCount > 0)) {
+        const nextAction = await showAppChoice(
+          "Open the first imported session now?",
+          [
+            {
+              value: "open",
+              label: "Open First Imported"
+            },
+            {
+              value: "done",
+              label: "Done"
+            }
+          ],
+          {
+            title: "Import Sessions JSON",
+            cancelLabel: "Done"
+          }
+        );
+        if (nextAction === "open") {
+          setPendingOpenImportedSessionId(firstImportedSessionId);
+        }
+      }
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
       if (operationJobId) {
@@ -15231,6 +15278,27 @@ export function App() {
     },
     [queueStartupCommandsForTab, terminalApi]
   );
+
+  useEffect(() => {
+    if (!pendingOpenImportedSessionId) {
+      return;
+    }
+    const session = sessions.find((entry) => entry.id === pendingOpenImportedSessionId);
+    if (!session) {
+      return;
+    }
+    setPendingOpenImportedSessionId(null);
+    setSelectedSessionId(session.id);
+    setSelectedSessionIds([session.id]);
+    setActiveSessionGroupKey(session.groupId?.trim() || null);
+    const tabId = openTerminalTab(session);
+    if (tabId) {
+      pushAppHintMessage(`Opening imported session: ${session.name}`, {
+        level: "info",
+        durationMs: 3600
+      });
+    }
+  }, [openTerminalTab, pendingOpenImportedSessionId, pushAppHintMessage, sessions]);
 
   const runSessionQuickProfile = useCallback(
     async (session: SessionRecord, profile: SessionQuickProfile): Promise<void> => {
