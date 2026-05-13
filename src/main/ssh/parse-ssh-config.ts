@@ -221,7 +221,7 @@ function parseOptionDirective(
     if (!token) {
       return null;
     }
-    const normalized = expandHomePath(unquoteToken(token).trim());
+    const normalized = unquoteToken(token).trim();
     if (!normalized) {
       return null;
     }
@@ -261,7 +261,15 @@ function buildCandidates(
     const hostName = state.hostName ?? aliasDeclaration.alias;
     const username = state.username ?? fallbackUser;
     const port = state.port ?? 22;
-    const identityFile = state.identityFile;
+    const identityFile = state.identityFile
+      ? expandIdentityFilePath(state.identityFile, {
+          hostAlias: aliasDeclaration.alias,
+          hostName,
+          localUsername: fallbackUser,
+          port,
+          username
+        })
+      : undefined;
     const authType: SessionAuthType = identityFile ? "privateKey" : "password";
     candidates.push({
       hostAlias: aliasDeclaration.alias,
@@ -476,6 +484,39 @@ function expandHomePath(pathValue: string): string {
     return join(homedir(), pathValue.slice(2));
   }
   return pathValue;
+}
+
+function expandIdentityFilePath(
+  pathValue: string,
+  context: {
+    hostAlias: string;
+    hostName: string;
+    localUsername: string;
+    port: number;
+    username: string;
+  }
+): string {
+  const expandedTokens = pathValue.replace(/%(%|d|h|n|p|r|u)/g, (_match, token: string) => {
+    switch (token) {
+      case "%":
+        return "%";
+      case "d":
+        return homedir();
+      case "h":
+        return context.hostName;
+      case "n":
+        return context.hostAlias;
+      case "p":
+        return String(context.port);
+      case "r":
+        return context.username;
+      case "u":
+        return context.localUsername;
+      default:
+        return `%${token}`;
+    }
+  });
+  return expandHomePath(expandedTokens);
 }
 
 function hasGlobToken(value: string): boolean {

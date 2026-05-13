@@ -9,7 +9,7 @@ Last updated: 2026-05-13
 - Stable release: `v0.1.24`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: `v0.1.25` first-run onboarding release prep and feedback-driven polish
+- Priority direction: SSH config import polish and first-connect conversion
 
 ## P0 Matrix
 
@@ -66,7 +66,11 @@ Last updated: 2026-05-13
    - first-run empty workspace now offers `Import SSH Config`, `New Session`, and `Security Notes` from the Sessions inspector
    - dismissed onboarding state persists locally so the card does not return after the user closes it
    - Simplified Chinese translations were added for the onboarding card and security-notes prompt
-   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-12 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`
+   - latest `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-13 with `PASS 47 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`
+0. SSH config import polish:
+   - import preview now summarizes new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy before writing changes
+   - duplicate strategy selection shows the current import plan
+   - `IdentityFile` now expands common OpenSSH tokens `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling
@@ -235,9 +239,9 @@ Last updated: 2026-05-13
 
 ## Immediate Next Target
 
-1. Prepare and publish `v0.1.25`.
+1. Validate SSH config import with real local config samples.
 2. Watch installation, trust-prompt, and first-connect feedback.
-3. Convert repeated launch feedback into GitHub issues and Release FAQ updates.
+3. Convert repeated launch/import feedback into GitHub issues and Release FAQ updates.
 4. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy.
 5. `F8`: Operation Center follow-up (broader cancel/retry coverage).
 6. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore).

@@ -7,9 +7,9 @@ Last updated: 2026-05-13
 ## 当前发布状态
 
 - 当前分支：`master`
-- 当前方向：`v0.1.25` 首次启动引导发布准备、反馈驱动打磨。
+- 当前方向：SSH config 导入打磨、首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-12T14-10-00-910Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`，结果为 `PASS 47 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 
@@ -45,10 +45,14 @@ Last updated: 2026-05-13
 4. 首次启动引导：
    - 空工作区显示导入 SSH 配置、新建会话和安全说明入口。
    - 关闭状态本地保存，避免重复打扰。
+5. SSH config 导入打磨：
+   - 导入预览显示新增会话、重复目标、私钥会话、目标分组和重复处理策略。
+   - 重复处理策略选择时展示当前导入计划。
+   - `IdentityFile` 支持展开常见 OpenSSH token。
 
 ## 下一批建议任务
 
-1. 准备并发布 `v0.1.25`。
+1. 用真实本地 SSH config 样例验证导入体验。
 2. 观察安装、信任提示和首次连接反馈。
 3. 根据首批评论补充 Release FAQ。
 4. 如果反馈稳定，再选择一个小功能或修复进入下一个版本。

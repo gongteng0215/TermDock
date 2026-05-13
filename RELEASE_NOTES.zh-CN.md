@@ -103,11 +103,17 @@
 
 ### 主要变化
 
-- 下一批变化会记录在这里。
+- SSH config 导入打磨：
+  - 导入预览现在会在写入前显示新增会话数、重复目标数、私钥会话数、目标分组和重复处理策略。
+  - 选择重复处理策略时会展示完整导入计划，用户能更清楚地选择跳过、覆盖或创建重命名副本。
+  - `IdentityFile` 解析现在会展开常见 OpenSSH token，例如 `%d`、`%u`、`%r`、`%h`、`%n`、`%p` 和 `%%`。
 
 ### 验证
 
-- 待验证。
+- Type check 通过：`pnpm run typecheck`
+- Build 通过：`pnpm run build`
+- 最新 workspace smoke 通过：`PASS 47 / FAIL 0 / SKIP 0`
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T02-57-33-387Z/summary.json`
 
 ## 历史版本索引
 

@@ -840,6 +840,14 @@ interface SessionJsonImportParseResult {
   warnings: string[];
 }
 
+interface SshConfigImportPreviewStats {
+  duplicateCount: number;
+  importableCount: number;
+  newCount: number;
+  privateKeyCount: number;
+  warningCount: number;
+}
+
 type TransferConflictStrategy = "overwrite" | "skip" | "rename";
 
 interface UploadPathEntry {
@@ -2496,6 +2504,52 @@ function formatSshConfigPreview(result: SshConfigParseResult): string {
       lines.push(`... ${result.warnings.length - 10} more warnings`);
     }
   }
+  return lines.join("\n");
+}
+
+function buildSshConfigImportPreviewStats(
+  result: SshConfigParseResult,
+  existingConnectionKeys: Set<string>
+): SshConfigImportPreviewStats {
+  let duplicateCount = 0;
+  let privateKeyCount = 0;
+  for (const candidate of result.candidates) {
+    if (
+      existingConnectionKeys.has(
+        buildSessionConnectionKey(candidate.host, candidate.port, candidate.username)
+      )
+    ) {
+      duplicateCount += 1;
+    }
+    if (candidate.authType === "privateKey") {
+      privateKeyCount += 1;
+    }
+  }
+  return {
+    duplicateCount,
+    importableCount: result.candidates.length,
+    newCount: Math.max(0, result.candidates.length - duplicateCount),
+    privateKeyCount,
+    warningCount: result.warnings.length
+  };
+}
+
+function formatSshConfigImportPlan(
+  result: SshConfigParseResult,
+  stats: SshConfigImportPreviewStats,
+  targetGroup: string,
+  duplicateStrategy: "skip" | "overwrite" | "rename"
+): string {
+  const lines = formatSshConfigPreview(result).split("\n");
+  lines.splice(
+    2,
+    0,
+    `New sessions: ${stats.newCount}`,
+    `Duplicate targets: ${stats.duplicateCount}`,
+    `Private-key sessions: ${stats.privateKeyCount}`,
+    `Target group: ${targetGroup || "Ungrouped"}`,
+    `Duplicate strategy: ${duplicateStrategy}`
+  );
   return lines.join("\n");
 }
 
@@ -14149,18 +14203,19 @@ export function App() {
         return;
       }
 
-      await showAppAlert("Review parsed hosts below before importing.", {
-        title: "SSH Config Preview",
-        confirmLabel: "Continue",
-        detailText: formatSshConfigPreview(parsed)
-      });
-
+      const existingConnectionKeys = new Set(
+        sessions.map((session) =>
+          buildSessionConnectionKey(session.host, session.port, session.username)
+        )
+      );
+      const previewStats = buildSshConfigImportPreviewStats(parsed, existingConnectionKeys);
       const targetGroupInput = await showAppPrompt(
         "Set target group for imported sessions. Leave empty for Ungrouped.",
         activeSessionGroup?.groupName ?? "",
         {
-          title: "Import Target Group",
-          confirmLabel: "Continue"
+          title: "SSH Config Import",
+          confirmLabel: previewStats.duplicateCount > 0 ? "Choose Duplicates" : "Review Import",
+          multiline: false
         }
       );
       if (targetGroupInput === null) {
@@ -14170,19 +14225,9 @@ export function App() {
       const targetRemarkPrefix = `Imported from ${parsed.filePath}`;
 
       let duplicateStrategy: "skip" | "overwrite" | "rename" = "skip";
-      const existingConnectionKeys = new Set(
-        sessions.map((session) =>
-          buildSessionConnectionKey(session.host, session.port, session.username)
-        )
-      );
-      const duplicateCount = parsed.candidates.filter((candidate) =>
-        existingConnectionKeys.has(
-          buildSessionConnectionKey(candidate.host, candidate.port, candidate.username)
-        )
-      ).length;
-      if (duplicateCount > 0) {
+      if (previewStats.duplicateCount > 0) {
         const selectedStrategy = await showAppChoice(
-          `Found ${duplicateCount} duplicate connection target(s). Choose how to handle duplicates.`,
+          `Found ${previewStats.duplicateCount} duplicate connection target(s). Choose how to handle duplicates.`,
           [
             {
               value: "skip",
@@ -14199,13 +14244,34 @@ export function App() {
           ],
           {
             title: "Duplicate Strategy",
-            cancelLabel: "Cancel"
+            cancelLabel: "Cancel",
+            detailText: formatSshConfigImportPlan(parsed, previewStats, targetGroup, "skip")
           }
         );
         if (!selectedStrategy) {
           return;
         }
         duplicateStrategy = selectedStrategy as "skip" | "overwrite" | "rename";
+      }
+
+      const confirmed = await showAppConfirm(
+        `Import ${parsed.candidates.length} host entr${
+          parsed.candidates.length === 1 ? "y" : "ies"
+        } from ${getPathBaseName(parsed.filePath)}?`,
+        {
+          title: "SSH Config Preview",
+          confirmLabel: "Import",
+          cancelLabel: "Cancel",
+          detailText: formatSshConfigImportPlan(
+            parsed,
+            previewStats,
+            targetGroup,
+            duplicateStrategy
+          )
+        }
+      );
+      if (!confirmed) {
+        return;
       }
 
       operationJobId = startOperationCenterAppJob({
