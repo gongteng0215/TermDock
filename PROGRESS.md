@@ -2,7 +2,7 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 
 ## Snapshot
 

@@ -2,7 +2,7 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
-## v0.1.25 (2026-05-12)
+## v0.1.25 (2026-05-13)
 
 Release type: Stable candidate
 

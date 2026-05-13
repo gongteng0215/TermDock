@@ -1,6 +1,6 @@
 {
   "name": "termdock",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
