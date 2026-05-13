@@ -11,6 +11,7 @@ Use this index to keep English and Simplified Chinese docs paired.
 | [README](../README.md) | [README.zh-CN](../README.zh-CN.md) |
 | [Security](../SECURITY.md) | [Security.zh-CN](../SECURITY.zh-CN.md) |
 | [Contributing](../CONTRIBUTING.md) | [Contributing.zh-CN](../CONTRIBUTING.zh-CN.md) |
+| [SSH Config Import](SSH_CONFIG_IMPORT.md) | [SSH Config Import.zh-CN](SSH_CONFIG_IMPORT.zh-CN.md) |
 | [Install And Launch Troubleshooting](INSTALL_TROUBLESHOOTING.md) | [Install And Launch Troubleshooting.zh-CN](INSTALL_TROUBLESHOOTING.zh-CN.md) |
 | [Feedback Triage](FEEDBACK_TRIAGE.md) | [Feedback Triage.zh-CN](FEEDBACK_TRIAGE.zh-CN.md) |
 | [GitHub Labels](GITHUB_LABELS.md) | [GitHub Labels.zh-CN](GITHUB_LABELS.zh-CN.md) |

@@ -4,7 +4,7 @@
 
 TermDock helps you manage remote servers in one place: multi-tab SSH terminal, SFTP file transfer, server health monitoring, port forwarding, dangerous-command guardrails, transfer retry center, and diagnostics export.
 
-[中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release Notes](RELEASE_NOTES.md)
+[中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [SSH Config Import](docs/SSH_CONFIG_IMPORT.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release Notes](RELEASE_NOTES.md)
 
 ![TermDock terminal workspace](docs/assets/screenshots/preview/terminal-workspace.png)
 
@@ -80,7 +80,7 @@ If the app cannot be installed or opened, see [Install And Launch Troubleshootin
 - Session create/edit/delete/test
 - Folder-style session grouping, search, favorites, and recency sorting
 - Multi-tab xterm terminal with reconnect flow
-- SSH config import from `~/.ssh/config` with preview and duplicate handling
+- SSH config import from `~/.ssh/config` with preview, duplicate handling, and post-import open action
 - Session templates and quick startup command profiles
 
 ### SFTP Transfer
@@ -153,7 +153,7 @@ docs/assets    README screenshots and product assets
 ## Status
 
 - Current validation: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed.
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`).
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
 - Current packaging targets: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`).
 
 For detailed progress, release validation, and planning notes, see:
@@ -165,6 +165,7 @@ For detailed progress, release validation, and planning notes, see:
 - [Packaged Smoke Runbook](PACKAGED_SMOKE.md) / [中文](PACKAGED_SMOKE.zh-CN.md)
 - [Release Signing Runbook](RELEASE_SIGNING.md) / [中文](RELEASE_SIGNING.zh-CN.md)
 - [UI Compact Rules](UI_COMPACT_RULES.md) / [中文](UI_COMPACT_RULES.zh-CN.md)
+- [SSH Config Import](docs/SSH_CONFIG_IMPORT.md) / [中文](docs/SSH_CONFIG_IMPORT.zh-CN.md)
 - [Install And Launch Troubleshooting](docs/INSTALL_TROUBLESHOOTING.md) / [中文](docs/INSTALL_TROUBLESHOOTING.zh-CN.md)
 - [Feedback Triage](docs/FEEDBACK_TRIAGE.md) / [中文](docs/FEEDBACK_TRIAGE.zh-CN.md)
 - [GitHub Labels](docs/GITHUB_LABELS.md) / [中文](docs/GITHUB_LABELS.zh-CN.md)

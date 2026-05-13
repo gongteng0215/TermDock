@@ -4,7 +4,7 @@
 
 TermDock 把日常服务器操作放在一个桌面应用里：多标签 SSH 终端、SFTP 文件传输、服务器健康监控、端口转发、危险命令保护、失败重试中心和诊断导出。
 
-[English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [安全说明](SECURITY.zh-CN.md) · [参与贡献](CONTRIBUTING.zh-CN.md) · [更新记录](RELEASE_NOTES.zh-CN.md)
+[English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [SSH 配置导入](docs/SSH_CONFIG_IMPORT.zh-CN.md) · [安全说明](SECURITY.zh-CN.md) · [参与贡献](CONTRIBUTING.zh-CN.md) · [更新记录](RELEASE_NOTES.zh-CN.md)
 
 ![TermDock 终端工作台](docs/assets/screenshots/preview/terminal-workspace.png)
 
@@ -80,7 +80,7 @@ TermDock 当前主要面向 macOS 和 Windows 11。
 - 会话创建、编辑、删除、测试
 - 会话分组、搜索、收藏和最近使用排序
 - 多标签 xterm 终端和重连流程
-- 从 `~/.ssh/config` 导入 SSH 配置，支持预览和重复项处理
+- 从 `~/.ssh/config` 导入 SSH 配置，支持预览、重复项处理和导入后直接打开
 - 会话模板和启动命令快捷配置
 
 ### SFTP 文件传输
@@ -153,7 +153,7 @@ docs/assets    README 截图和产品素材
 ## 当前状态
 
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 均通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-11T13-10-47-081Z/summary.json` (`PASS 47 / FAIL 0 / SKIP 0`)。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T03-59-55-116Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`)。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 
 更细的进度、验证和计划见：
@@ -165,6 +165,7 @@ docs/assets    README 截图和产品素材
 - [打包 Smoke Runbook](PACKAGED_SMOKE.zh-CN.md) / [English](PACKAGED_SMOKE.md)
 - [签名发布 Runbook](RELEASE_SIGNING.zh-CN.md) / [English](RELEASE_SIGNING.md)
 - [紧凑 UI 规则](UI_COMPACT_RULES.zh-CN.md) / [English](UI_COMPACT_RULES.md)
+- [SSH 配置导入](docs/SSH_CONFIG_IMPORT.zh-CN.md) / [English](docs/SSH_CONFIG_IMPORT.md)
 - [安装和启动故障排查](docs/INSTALL_TROUBLESHOOTING.zh-CN.md) / [English](docs/INSTALL_TROUBLESHOOTING.md)
 - [反馈处理流程](docs/FEEDBACK_TRIAGE.zh-CN.md) / [English](docs/FEEDBACK_TRIAGE.md)
 - [GitHub Labels](docs/GITHUB_LABELS.zh-CN.md) / [English](docs/GITHUB_LABELS.md)

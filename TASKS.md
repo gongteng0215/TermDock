@@ -72,6 +72,7 @@ Last updated: 2026-05-13
    - duplicate strategy selection shows the current import plan
    - successful SSH config and session JSON imports can open the first imported session immediately
    - `IdentityFile` now expands common OpenSSH tokens `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
+   - paired English/Simplified Chinese SSH config import guide now documents the import flow, supported fields, duplicate handling, and limitations
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling

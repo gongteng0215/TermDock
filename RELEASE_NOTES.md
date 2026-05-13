@@ -108,6 +108,8 @@ Release type: In development
   - duplicate strategy selection includes the full import plan so users can decide whether to skip, overwrite, or create renamed copies with more context
   - successful SSH config and session JSON imports can now open the first imported session immediately
   - `IdentityFile` parsing now expands common OpenSSH tokens such as `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
+- Documentation:
+  - added a paired English/Simplified Chinese SSH config import guide and linked it from the README and documentation index
 
 ### Validation
 

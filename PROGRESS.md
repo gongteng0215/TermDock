@@ -30,6 +30,7 @@ Last updated: 2026-05-13
 - Master branch now also treats SFTP create-directory "already exists" failures as idempotent success and wraps long error-bar messages instead of forcing horizontal scroll
 - Master branch now includes first-run session onboarding with `Import SSH Config`, `New Session`, and `Security Notes` actions for empty workspaces
 - Master branch now includes SSH config import preview stats, post-import open-first-session action, and OpenSSH `IdentityFile` token expansion for more reliable first-run imports
+- Master branch now includes a paired English/Simplified Chinese SSH config import guide linked from the README and documentation index
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
