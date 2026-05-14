@@ -6,6 +6,11 @@ import type {
   SessionUpdateInput
 } from "../shared/session";
 import type {
+  SessionMigrationExportResult,
+  SessionMigrationImportInput,
+  SessionMigrationImportResult
+} from "../shared/session-migration";
+import type {
   SftpDirectoryListResult,
   SftpEntryKind,
   SftpTransferRunOptions,
@@ -36,6 +41,12 @@ interface TermDockApi {
     update: (id: string, patch: SessionUpdateInput) => Promise<SessionRecord>;
     remove: (id: string) => Promise<void>;
     parseSshConfig: (filePath?: string) => Promise<SshConfigParseResult>;
+    exportEncryptedMigration: (input: {
+      passphrase: string;
+      appVersion: string;
+      includePrivateKeyFiles: boolean;
+    }) => Promise<SessionMigrationExportResult>;
+    importEncryptedMigration: (input: SessionMigrationImportInput) => Promise<SessionMigrationImportResult>;
   };
   system: {
     pickPrivateKey: () => Promise<string | null>;

@@ -9,6 +9,11 @@ import type {
   SessionUpdateInput
 } from "../shared/session.js";
 import type {
+  SessionMigrationExportResult,
+  SessionMigrationImportInput,
+  SessionMigrationImportResult
+} from "../shared/session-migration.js";
+import type {
   SftpDirectoryListResult,
   SftpEntryKind,
   SftpTransferRunOptions,
@@ -50,7 +55,15 @@ const api = {
       ipcRenderer.invoke("sessions:update", id, patch) as Promise<SessionRecord>,
     remove: (id: string) => ipcRenderer.invoke("sessions:delete", id) as Promise<void>,
     parseSshConfig: (filePath?: string) =>
-      ipcRenderer.invoke("sessions:parseSshConfig", filePath) as Promise<SshConfigParseResult>
+      ipcRenderer.invoke("sessions:parseSshConfig", filePath) as Promise<SshConfigParseResult>,
+    exportEncryptedMigration: (input: {
+      passphrase: string;
+      appVersion: string;
+      includePrivateKeyFiles: boolean;
+    }) =>
+      ipcRenderer.invoke("sessions:exportEncryptedMigration", input) as Promise<SessionMigrationExportResult>,
+    importEncryptedMigration: (input: SessionMigrationImportInput) =>
+      ipcRenderer.invoke("sessions:importEncryptedMigration", input) as Promise<SessionMigrationImportResult>
   },
   system: {
     pickPrivateKey: () =>

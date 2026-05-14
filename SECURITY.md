@@ -14,6 +14,7 @@ TermDock is an SSH/SFTP desktop client, so credential handling and local data bo
 
 - TermDock stores connection secrets through the app credential layer, using OS secure storage where available.
 - Session and group JSON exports intentionally exclude decrypted credentials.
+- Encrypted migration exports can include passwords, private-key passphrases, and optional private-key file contents. They are encrypted with a user-provided passphrase and should be treated like a sensitive backup.
 - Imported session data should be reviewed before saving, especially when it comes from another machine or team member.
 
 ## Diagnostics

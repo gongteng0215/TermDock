@@ -6,7 +6,17 @@ import type {
   SessionTestConnectionResult,
   SessionUpdateInput
 } from "../../shared/session.js";
+import type {
+  SessionMigrationExportInput,
+  SessionMigrationExportResult,
+  SessionMigrationImportInput,
+  SessionMigrationImportResult
+} from "../../shared/session-migration.js";
 import type { CredentialStore } from "../security/credential-store.js";
+import {
+  exportEncryptedSessionMigration,
+  importEncryptedSessionMigration
+} from "../session/session-migration.js";
 import { parseSshConfigFile } from "../ssh/parse-ssh-config.js";
 import { testSshConnection } from "../ssh/test-connection.js";
 import { SessionStore } from "../storage/session-store.js";
@@ -51,5 +61,18 @@ export function registerSessionHandlers(
     "sessions:parseSshConfig",
     async (_event, filePath?: string): Promise<SshConfigParseResult> =>
       parseSshConfigFile(filePath)
+  );
+  ipcMain.handle(
+    "sessions:exportEncryptedMigration",
+    async (_event, input: Omit<SessionMigrationExportInput, "sessions">): Promise<SessionMigrationExportResult> =>
+      exportEncryptedSessionMigration(credentialStore, {
+        ...input,
+        sessions: await store.list()
+      })
+  );
+  ipcMain.handle(
+    "sessions:importEncryptedMigration",
+    async (_event, input: SessionMigrationImportInput): Promise<SessionMigrationImportResult> =>
+      importEncryptedSessionMigration(input)
   );
 }

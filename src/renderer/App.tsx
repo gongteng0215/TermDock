@@ -18,6 +18,10 @@ import type {
   SessionUpdateInput
 } from "../shared/session";
 import type {
+  SessionMigrationImportCandidate,
+  SessionMigrationPlainPayload
+} from "../shared/session-migration";
+import type {
   SftpDirectoryListResult,
   SftpEntry,
   SftpTransferEvent
@@ -841,6 +845,12 @@ interface SessionJsonImportParseResult {
   warnings: string[];
 }
 
+interface SessionMigrationImportParseResult {
+  candidates: SessionMigrationImportCandidate[];
+  warnings: string[];
+  source: SessionMigrationPlainPayload;
+}
+
 interface SshConfigImportPreviewStats {
   duplicateCount: number;
   importableCount: number;
@@ -998,6 +1008,7 @@ interface AppPromptDialogState extends AppDialogBaseState {
   cancelLabel: string;
   value: string;
   multiline?: boolean;
+  inputType?: "text" | "password";
 }
 
 interface AppChoiceDialogOption {
@@ -1038,6 +1049,7 @@ interface AppPromptDialogOptions {
   confirmLabel?: string;
   cancelLabel?: string;
   multiline?: boolean;
+  inputType?: "text" | "password";
 }
 
 interface AppChoiceDialogOptions {
@@ -2231,6 +2243,83 @@ function formatSessionJsonImportPreview(result: SessionJsonImportParseResult): s
   }
   if (result.candidates.length > previewRows.length) {
     lines.push(`... ${result.candidates.length - previewRows.length} more entries`);
+  }
+  if (result.warnings.length > 0) {
+    lines.push("");
+    lines.push("Warnings:");
+    for (const warning of result.warnings.slice(0, 20)) {
+      lines.push(`- ${warning}`);
+    }
+    if (result.warnings.length > 20) {
+      lines.push(`... ${result.warnings.length - 20} more warnings`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function buildSessionMigrationImportResult(
+  payload: SessionMigrationPlainPayload,
+  warnings: string[]
+): SessionMigrationImportParseResult {
+  const candidates = payload.sessions
+    .map((session): SessionMigrationImportCandidate => {
+      const authType: SessionCreateInput["authType"] =
+        session.authType === "privateKey" && session.privateKeyPath.trim()
+          ? "privateKey"
+          : "password";
+      return {
+        name: session.name.trim(),
+        host: session.host.trim(),
+        port: session.port,
+        username: session.username.trim(),
+        authType,
+        privateKeyPath: authType === "privateKey" ? session.privateKeyPath.trim() : "",
+        groupId: session.groupId.trim(),
+        remark: session.remark.trim(),
+        favorite: session.favorite,
+        secret: session.secret
+      };
+    })
+    .filter((session) => session.name && session.host && session.username);
+  return {
+    candidates,
+    warnings,
+    source: payload
+  };
+}
+
+function formatSessionMigrationImportPreview(result: SessionMigrationImportParseResult): string {
+  const lines: string[] = [];
+  const passwordCount = result.candidates.filter(
+    (candidate) => candidate.authType === "password" && candidate.secret
+  ).length;
+  const privateKeyCount = result.candidates.filter(
+    (candidate) => candidate.authType === "privateKey" && candidate.privateKeyPath
+  ).length;
+  const privateKeySecretCount = result.candidates.filter(
+    (candidate) => candidate.authType === "privateKey" && candidate.secret
+  ).length;
+  lines.push(`Importable sessions: ${result.candidates.length}`);
+  lines.push(`Encrypted passwords restored: ${passwordCount}`);
+  lines.push(`Private-key sessions: ${privateKeyCount}`);
+  lines.push(`Private-key passphrases restored: ${privateKeySecretCount}`);
+  lines.push(`Source app version: ${result.source.appVersion || "-"}`);
+  lines.push(`Exported at: ${result.source.exportedAtIso || "-"}`);
+  lines.push("");
+  for (const candidate of result.candidates.slice(0, 40)) {
+    const authLabel =
+      candidate.authType === "privateKey" && candidate.privateKeyPath
+        ? `key=${candidate.privateKeyPath}${candidate.secret ? ", passphrase restored" : ""}`
+        : candidate.secret
+          ? "password restored"
+          : "password missing";
+    const groupLabel = candidate.groupId || "Ungrouped";
+    lines.push(
+      `- ${candidate.name}: ${candidate.username}@${candidate.host}:${candidate.port} [${groupLabel}] (${authLabel})`
+    );
+  }
+  if (result.candidates.length > 40) {
+    lines.push(`... ${result.candidates.length - 40} more entries`);
   }
   if (result.warnings.length > 0) {
     lines.push("");
@@ -7956,7 +8045,8 @@ export function App() {
         confirmLabel: tr(options?.confirmLabel ?? "OK"),
         cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
         value: defaultValue,
-        multiline: options?.multiline
+        multiline: options?.multiline,
+        inputType: options?.inputType
       };
       const result = await openAppDialog(dialog, null);
       return typeof result === "string" ? result : null;
@@ -14790,6 +14880,461 @@ export function App() {
     showAppAlert,
     showAppChoice,
     showAppConfirm,
+    startOperationCenterAppJob,
+    systemApi,
+    writeAppLog
+  ]);
+
+  const exportEncryptedSessionMigration = useCallback(async () => {
+    let operationJobId: string | null = null;
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!systemApi?.saveTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (sessions.length === 0) {
+        await showAppAlert("No sessions available to export.", {
+          title: "Encrypted Migration Export"
+        });
+        return;
+      }
+      const passphrase = await showAppPrompt(
+        "Enter a migration passphrase. You will need it to import this file.",
+        "",
+        {
+          title: "Encrypted Migration Export",
+          confirmLabel: "Continue",
+          inputType: "password"
+        }
+      );
+      if (passphrase === null) {
+        return;
+      }
+      if (passphrase.length < 8) {
+        await showAppAlert("Migration passphrase must be at least 8 characters.", {
+          title: "Encrypted Migration Export"
+        });
+        return;
+      }
+      const confirmPassphrase = await showAppPrompt("Confirm migration passphrase.", "", {
+        title: "Encrypted Migration Export",
+        confirmLabel: "Export",
+        inputType: "password"
+      });
+      if (confirmPassphrase === null) {
+        return;
+      }
+      if (confirmPassphrase !== passphrase) {
+        await showAppAlert("Passphrases do not match.", {
+          title: "Encrypted Migration Export"
+        });
+        return;
+      }
+      const includeKeyFiles = await showAppConfirm(
+        "Include private key file contents in the encrypted migration file?",
+        {
+          title: "Encrypted Migration Export",
+          confirmLabel: "Include Keys",
+          cancelLabel: "Paths Only",
+          detailText:
+            "Including private key files makes migration work on another computer, but anyone with this file and passphrase can use those keys. Passwords and private-key passphrases are always encrypted in this migration file."
+        }
+      );
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "Encrypted Migration Export",
+        description: `Encrypting ${sessions.length} session${sessions.length === 1 ? "" : "s"} for migration.`
+      });
+      const result = await sessionsApi.exportEncryptedMigration({
+        passphrase,
+        appVersion: APP_VERSION,
+        includePrivateKeyFiles: includeKeyFiles
+      });
+      const exportText = `${JSON.stringify(result.file, null, 2)}\n`;
+      const generatedAtIso = result.file.exportedAtIso;
+      const saved = await systemApi.saveTextFile({
+        title: "Export Encrypted Migration",
+        defaultFileName: `termdock-session-migration-${generatedAtIso.replace(/[:]/g, "-")}.tdmigration`,
+        text: exportText,
+        filters: [
+          {
+            name: "TermDock Migration",
+            extensions: ["tdmigration", "json"]
+          }
+        ]
+      });
+      if (saved.canceled || !saved.outputPath) {
+        if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
+        }
+        return;
+      }
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Encrypted ${result.file.summary.sessionCount} session${result.file.summary.sessionCount === 1 ? "" : "s"} with ${result.file.summary.passwordSecretCount} password secret(s), ${result.file.summary.privateKeySecretCount} private-key passphrase(s), and ${result.file.summary.embeddedPrivateKeyFileCount} embedded private key file(s).`,
+          outputPath: saved.outputPath
+        });
+      }
+      const copiedPath = await copyTextToClipboard(saved.outputPath);
+      const warningText =
+        result.warnings.length > 0 ? `\n\nWarnings:\n${result.warnings.join("\n")}` : "";
+      await showAppAlert(
+        copiedPath
+          ? `Encrypted migration exported.\nPath copied to clipboard:\n${saved.outputPath}${warningText}`
+          : `Encrypted migration exported:\n${saved.outputPath}${warningText}`,
+        {
+          title: "Encrypted Migration Export"
+        }
+      );
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
+      setError(message);
+      writeAppLog("error", "renderer:sessions", "Failed to export encrypted migration.", caughtError);
+    }
+  }, [
+    finishOperationCenterAppJob,
+    removeOperationCenterAppJob,
+    sessions.length,
+    sessionsApi,
+    showAppAlert,
+    showAppConfirm,
+    showAppPrompt,
+    startOperationCenterAppJob,
+    systemApi,
+    writeAppLog
+  ]);
+
+  const importEncryptedSessionMigration = useCallback(async () => {
+    let operationJobId: string | null = null;
+    try {
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!systemApi?.pickAndReadTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selected = await systemApi.pickAndReadTextFile({
+        title: "Import Encrypted Migration",
+        buttonLabel: "Import",
+        filters: [
+          {
+            name: "TermDock Migration",
+            extensions: ["tdmigration", "json"]
+          },
+          {
+            name: "All Files",
+            extensions: ["*"]
+          }
+        ]
+      });
+      if (selected.canceled || !selected.filePath) {
+        return;
+      }
+      const passphrase = await showAppPrompt("Enter the migration passphrase.", "", {
+        title: "Import Encrypted Migration",
+        confirmLabel: "Decrypt",
+        inputType: "password"
+      });
+      if (passphrase === null) {
+        return;
+      }
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "Encrypted Migration Import",
+        description: `Decrypting ${getPathBaseName(selected.filePath)}.`
+      });
+      const decrypted = await sessionsApi.importEncryptedMigration({
+        passphrase,
+        fileText: selected.text,
+        restorePrivateKeyFiles: false
+      });
+      const parsedImport = buildSessionMigrationImportResult(
+        decrypted.payload,
+        decrypted.warnings
+      );
+      if (parsedImport.candidates.length === 0) {
+        await showAppAlert("No importable sessions found in this migration file.", {
+          title: "Import Encrypted Migration"
+        });
+        if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
+        }
+        return;
+      }
+      await showAppAlert("Review decrypted sessions before import.", {
+        title: "Encrypted Migration Preview",
+        confirmLabel: "Continue",
+        detailText: formatSessionMigrationImportPreview(parsedImport)
+      });
+      const groupMode = await showAppChoice(
+        "Choose target group strategy for imported sessions.",
+        [
+          { value: "keepSource", label: "Keep Group from File" },
+          { value: "forceCurrent", label: "Force Active Group" },
+          { value: "ungrouped", label: "Move to Ungrouped" }
+        ],
+        {
+          title: "Group Strategy"
+        }
+      );
+      if (!groupMode) {
+        if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
+        }
+        return;
+      }
+      const forcedGroup =
+        groupMode === "forceCurrent" ? (activeSessionGroup?.groupName?.trim() ?? "") : "";
+      const existingConnectionKeys = new Set(
+        sessions.map((session) =>
+          buildSessionConnectionKey(session.host, session.port, session.username)
+        )
+      );
+      const duplicateCount = parsedImport.candidates.filter((candidate) =>
+        existingConnectionKeys.has(
+          buildSessionConnectionKey(candidate.host, candidate.port, candidate.username)
+        )
+      ).length;
+      let duplicateStrategy: "skip" | "overwrite" | "rename" = "skip";
+      if (duplicateCount > 0) {
+        const choice = await showAppChoice(
+          `Found ${duplicateCount} duplicate connection target(s). Choose duplicate strategy.`,
+          [
+            { value: "skip", label: "Skip Duplicates" },
+            { value: "overwrite", label: "Overwrite Existing" },
+            { value: "rename", label: "Create Renamed Copies" }
+          ],
+          {
+            title: "Duplicate Strategy"
+          }
+        );
+        if (!choice) {
+          if (operationJobId) {
+            removeOperationCenterAppJob(operationJobId);
+          }
+          return;
+        }
+        duplicateStrategy = choice as "skip" | "overwrite" | "rename";
+      }
+      const confirmed = await showAppConfirm(
+        `Import ${parsedImport.candidates.length} session(s) from encrypted migration?\nGroup strategy: ${groupMode}\nDuplicate strategy: ${duplicateStrategy}`,
+        {
+          title: "Import Encrypted Migration",
+          confirmLabel: "Import",
+          cancelLabel: "Cancel"
+        }
+      );
+      if (!confirmed) {
+        if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
+        }
+        return;
+      }
+      const restoredImport = await sessionsApi.importEncryptedMigration({
+        passphrase,
+        fileText: selected.text,
+        restorePrivateKeyFiles: true
+      });
+      const finalImport = buildSessionMigrationImportResult(restoredImport.payload, [
+        ...parsedImport.warnings,
+        ...restoredImport.warnings
+      ]);
+
+      const localSessions = [...sessions];
+      const sessionByConnection = new Map<string, SessionRecord>();
+      for (const session of localSessions) {
+        const key = buildSessionConnectionKey(session.host, session.port, session.username);
+        if (!sessionByConnection.has(key)) {
+          sessionByConnection.set(key, session);
+        }
+      }
+      const usedNames = new Set(localSessions.map((session) => session.name.trim().toLowerCase()));
+      const allocateImportName = (baseName: string): string => {
+        const base = baseName.trim() || "Imported Session";
+        if (!usedNames.has(base.toLowerCase())) {
+          usedNames.add(base.toLowerCase());
+          return base;
+        }
+        let suffix = 1;
+        while (usedNames.has(`${base} (${suffix})`.toLowerCase())) {
+          suffix += 1;
+        }
+        const next = `${base} (${suffix})`;
+        usedNames.add(next.toLowerCase());
+        return next;
+      };
+
+      const importedGroupNames = new Set<string>();
+      let createdCount = 0;
+      let updatedCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+      let restoredSecretCount = 0;
+      let firstImportedSessionId: string | null = null;
+      const sourceRemarkPrefix = `Imported encrypted migration: ${selected.filePath}`;
+
+      for (const candidate of finalImport.candidates) {
+        const connectionKey = buildSessionConnectionKey(
+          candidate.host,
+          candidate.port,
+          candidate.username
+        );
+        const existing = sessionByConnection.get(connectionKey) ?? null;
+        if (existing && duplicateStrategy === "skip") {
+          skippedCount += 1;
+          continue;
+        }
+        const groupId =
+          groupMode === "keepSource"
+            ? candidate.groupId.trim()
+            : groupMode === "forceCurrent"
+              ? forcedGroup
+              : "";
+        if (groupId) {
+          importedGroupNames.add(groupId);
+        }
+        const remarkParts = [candidate.remark.trim(), sourceRemarkPrefix].filter(Boolean);
+        const remark = remarkParts.join(" | ");
+
+        if (existing && duplicateStrategy === "overwrite") {
+          try {
+            const updated = await sessionsApi.update(existing.id, {
+              name: candidate.name,
+              host: candidate.host,
+              port: candidate.port,
+              username: candidate.username,
+              authType: candidate.authType,
+              privateKeyPath:
+                candidate.authType === "privateKey" ? candidate.privateKeyPath : "",
+              groupId,
+              remark,
+              favorite: candidate.favorite,
+              secret: candidate.secret
+            });
+            updatedCount += 1;
+            if (candidate.secret) {
+              restoredSecretCount += 1;
+            }
+            if (!firstImportedSessionId) {
+              firstImportedSessionId = updated.id;
+            }
+            const index = localSessions.findIndex((entry) => entry.id === updated.id);
+            if (index >= 0) {
+              localSessions[index] = updated;
+            }
+            sessionByConnection.set(connectionKey, updated);
+            usedNames.add(updated.name.trim().toLowerCase());
+          } catch {
+            failedCount += 1;
+          }
+          continue;
+        }
+
+        const shouldRename = existing && duplicateStrategy === "rename";
+        const nextName = shouldRename
+          ? allocateImportName(`${candidate.name} imported`)
+          : allocateImportName(candidate.name);
+        try {
+          const created = await sessionsApi.create({
+            name: nextName,
+            host: candidate.host,
+            port: candidate.port,
+            username: candidate.username,
+            authType: candidate.authType,
+            privateKeyPath:
+              candidate.authType === "privateKey" ? candidate.privateKeyPath : "",
+            groupId,
+            remark,
+            favorite: candidate.favorite,
+            secret: candidate.secret
+          });
+          createdCount += 1;
+          if (candidate.secret) {
+            restoredSecretCount += 1;
+          }
+          if (!firstImportedSessionId) {
+            firstImportedSessionId = created.id;
+          }
+          localSessions.unshift(created);
+          if (!sessionByConnection.has(connectionKey)) {
+            sessionByConnection.set(connectionKey, created);
+          }
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      if (importedGroupNames.size > 0) {
+        setSessionGroupsState((prev) => ({
+          groups: normalizeSessionGroups([...prev.groups, ...Array.from(importedGroupNames)])
+        }));
+      }
+      if (createdCount > 0 || updatedCount > 0) {
+        setSessions(localSessions);
+        if (firstImportedSessionId) {
+          setSelectedSessionId(firstImportedSessionId);
+        }
+      }
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Created ${createdCount}, updated ${updatedCount}, skipped ${skippedCount}, failed ${failedCount}, restored secrets ${restoredSecretCount}, warnings ${finalImport.warnings.length}.`
+        });
+      }
+      await showAppAlert(
+        `Import completed.\nCreated: ${createdCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}\nFailed: ${failedCount}\nRestored secrets: ${restoredSecretCount}\nWarnings: ${finalImport.warnings.length}`,
+        {
+          title: "Import Encrypted Migration"
+        }
+      );
+      if (firstImportedSessionId && (createdCount > 0 || updatedCount > 0)) {
+        const nextAction = await showAppChoice(
+          "Open the first imported session now?",
+          [
+            {
+              value: "open",
+              label: "Open First Imported"
+            },
+            {
+              value: "done",
+              label: "Done"
+            }
+          ],
+          {
+            title: "Import Encrypted Migration",
+            cancelLabel: "Done"
+          }
+        );
+        if (nextAction === "open") {
+          setPendingOpenImportedSessionId(firstImportedSessionId);
+        }
+      }
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", {
+          detail: message
+        });
+      }
+      setError(message);
+      writeAppLog("error", "renderer:sessions", "Failed to import encrypted migration.", caughtError);
+    }
+  }, [
+    activeSessionGroup?.groupName,
+    finishOperationCenterAppJob,
+    removeOperationCenterAppJob,
+    sessions,
+    sessionsApi,
+    showAppAlert,
+    showAppChoice,
+    showAppConfirm,
+    showAppPrompt,
     startOperationCenterAppJob,
     systemApi,
     writeAppLog
@@ -23583,10 +24128,24 @@ export function App() {
       }
     });
     sessionContextActions.push({
+      id: "import-encrypted-migration",
+      label: tr("Import Encrypted Migration..."),
+      run: () => {
+        void importEncryptedSessionMigration();
+      }
+    });
+    sessionContextActions.push({
       id: "export-all-sessions",
       label: tr("Export All Sessions..."),
       run: () => {
         void exportAllSessionsWithGroups();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-encrypted-migration",
+      label: tr("Export Encrypted Migration..."),
+      run: () => {
+        void exportEncryptedSessionMigration();
       }
     });
     sessionContextActions.push({
@@ -23694,10 +24253,24 @@ export function App() {
       }
     });
     sessionContextActions.push({
+      id: "import-encrypted-migration",
+      label: tr("Import Encrypted Migration..."),
+      run: () => {
+        void importEncryptedSessionMigration();
+      }
+    });
+    sessionContextActions.push({
       id: "export-all-sessions",
       label: tr("Export All Sessions..."),
       run: () => {
         void exportAllSessionsWithGroups();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-encrypted-migration",
+      label: tr("Export Encrypted Migration..."),
+      run: () => {
+        void exportEncryptedSessionMigration();
       }
     });
     sessionContextActions.push({
@@ -23798,10 +24371,24 @@ export function App() {
       }
     });
     sessionContextActions.push({
+      id: "import-encrypted-migration",
+      label: tr("Import Encrypted Migration..."),
+      run: () => {
+        void importEncryptedSessionMigration();
+      }
+    });
+    sessionContextActions.push({
       id: "export-all-sessions",
       label: tr("Export All Sessions..."),
       run: () => {
         void exportAllSessionsWithGroups();
+      }
+    });
+    sessionContextActions.push({
+      id: "export-encrypted-migration",
+      label: tr("Export Encrypted Migration..."),
+      run: () => {
+        void exportEncryptedSessionMigration();
       }
     });
     sessionContextActions.push({
@@ -27355,6 +27942,7 @@ export function App() {
                   ref={(element) => {
                     appDialogInputRef.current = element;
                   }}
+                  type={appDialog.inputType ?? "text"}
                   value={appDialogInput}
                 />
               )

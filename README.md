@@ -117,6 +117,7 @@ TermDock is designed as a local desktop app. It does not require a cloud account
 - Session data is stored locally.
 - Credentials use secure OS storage through the app credential layer where available.
 - Session and group exports exclude decrypted credentials.
+- Encrypted migration exports can include passwords and optional private-key files when protected by your passphrase. See [Session Migration](docs/SESSION_MIGRATION.md).
 - Diagnostics and bug reports are generated locally for you to inspect before sharing.
 
 See [SECURITY.md](SECURITY.md) for details and current limitations.
