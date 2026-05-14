@@ -2,14 +2,15 @@
 
 [English](TASKS.md)
 
-Last updated: 2026-05-13
+Last updated: 2026-05-14
 
 ## 当前发布状态
 
+- 当前稳定版：`v0.1.26`
 - 当前分支：`master`
 - 当前方向：SSH config 导入打磨、首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-13T06-05-42-619Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 
@@ -56,13 +57,17 @@ Last updated: 2026-05-13
 6. 首次连接 SSH 诊断：
    - SSH 连接和测试连接错误现在会针对常见认证、私钥文件、DNS、端口、超时、网络、host key、握手和远端关闭场景显示清晰原因、下一步建议和原始错误。
    - 英文 / 简体中文故障排查文档已覆盖首次连接失败和 SSH config 导入后的检查项。
+7. v0.1.26 发布准备：
+   - Release notes 已从 `Unreleased` 提升为 `v0.1.26`。
+   - package version 已提升到 `0.1.26`。
+   - 最终 `pnpm run typecheck`、`pnpm run build` 和 `pnpm run smoke:ui` gates 已通过，结果为 `PASS 48 / FAIL 0 / SKIP 0`，artifact 为 `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`。
 
 ## 下一批建议任务
 
-1. 用真实本地 SSH config 样例验证导入体验。
-2. 观察安装、信任提示和首次连接反馈。
-3. 根据首批评论补充 Release FAQ。
-4. 如果反馈稳定，再选择一个小功能或修复进入下一个版本。
+1. 推送 `v0.1.26` tag 并等待 GitHub Actions 生成 release assets。
+2. 验证 release assets 和 Release 页面描述。
+3. 观察安装、信任提示和首次连接反馈。
+4. 根据首批评论补充 Release FAQ。
 
 ## 详细任务历史
 

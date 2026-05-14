@@ -2,11 +2,11 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-05-13
+Last updated: 2026-05-14
 
 ## Current Release State
 
-- Stable release: `v0.1.25`
+- Stable release: `v0.1.26`
 - Active branch: `master`
 - Branch baseline: `origin/master`
 - Priority direction: SSH config import polish and first-connect conversion
@@ -78,6 +78,10 @@ Last updated: 2026-05-13
 0. First-connect SSH diagnostics:
    - SSH connection and test-connection errors now include a plain-language reason, next-step suggestion, and raw error for common auth, key-file, DNS, port, timeout, network, host-key, handshake, and remote-close cases
    - paired English/Simplified Chinese troubleshooting docs now cover first-connect failures and SSH config import follow-up checks
+0. v0.1.26 release prep:
+   - release notes promoted from `Unreleased` to `v0.1.26`
+   - package version bumped to `0.1.26`
+   - final `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` gates passed with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling

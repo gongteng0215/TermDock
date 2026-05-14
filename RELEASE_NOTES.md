@@ -2,6 +2,32 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## v0.1.26 (2026-05-14)
+
+Release type: Stable candidate
+
+### Highlights
+
+- SSH config import polish:
+  - import preview now shows new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy before changes are applied
+  - duplicate strategy selection includes the full import plan so users can decide whether to skip, overwrite, or create renamed copies with more context
+  - successful SSH config and session JSON imports can now open the first imported session immediately
+  - `IdentityFile` parsing now expands common OpenSSH tokens such as `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
+  - import preview now warns when an expanded `IdentityFile` path does not exist or is not a regular file on the current machine
+  - import preview now warns when common unsupported OpenSSH directives such as `ProxyJump`, `ProxyCommand`, `LocalForward`, `RemoteForward`, `DynamicForward`, `CertificateFile`, or `IdentitiesOnly` require manual follow-up
+- First-connect diagnostics:
+  - SSH connection and test-connection failures now show a plain-language reason, next-step suggestion, and raw error for common auth, key-file, DNS, port, timeout, network, host-key, handshake, and remote-close failures
+- Documentation:
+  - added a paired English/Simplified Chinese SSH config import guide and linked it from the README and documentation index
+  - added a paired English/Simplified Chinese SSH connection troubleshooting guide for first-connect failures
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`
+
 ## v0.1.25 (2026-05-13)
 
 Release type: Stable candidate
@@ -96,32 +122,6 @@ Release type: Stable
 - Latest multilingual workspace smoke passed: `PASS 47 / FAIL 0 / SKIP 0`
 - Latest multilingual workspace smoke artifact: `artifacts/smoke/2026-05-10T14-23-35-255Z/summary.json`
 - Latest packaged smoke artifact: `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`
-
-## Unreleased (master)
-
-Release type: In development
-
-### Highlights
-
-- SSH config import polish:
-  - import preview now shows new sessions, duplicate targets, private-key sessions, target group, and duplicate strategy before changes are applied
-  - duplicate strategy selection includes the full import plan so users can decide whether to skip, overwrite, or create renamed copies with more context
-  - successful SSH config and session JSON imports can now open the first imported session immediately
-  - `IdentityFile` parsing now expands common OpenSSH tokens such as `%d`, `%u`, `%r`, `%h`, `%n`, `%p`, and `%%`
-  - import preview now warns when an expanded `IdentityFile` path does not exist or is not a regular file on the current machine
-  - import preview now warns when common unsupported OpenSSH directives such as `ProxyJump`, `ProxyCommand`, `LocalForward`, `RemoteForward`, `DynamicForward`, `CertificateFile`, or `IdentitiesOnly` require manual follow-up
-- First-connect diagnostics:
-  - SSH connection and test-connection failures now show a plain-language reason, next-step suggestion, and raw error for common auth, key-file, DNS, port, timeout, network, host-key, handshake, and remote-close failures
-- Documentation:
-  - added a paired English/Simplified Chinese SSH config import guide and linked it from the README and documentation index
-  - added a paired English/Simplified Chinese SSH connection troubleshooting guide for first-connect failures
-
-### Validation
-
-- Type check passed: `pnpm run typecheck`
-- Build passed: `pnpm run build`
-- Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-13T06-05-42-619Z/summary.json`
 
 ## v0.1.22 (2026-04-12)
 
