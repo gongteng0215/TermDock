@@ -4,8 +4,6 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 
-import { app } from "electron";
-
 import type {
   SessionMigrationEncryptedFile,
   SessionMigrationExportInput,
@@ -115,7 +113,9 @@ export async function importEncryptedSessionMigration(
   const payload = await decryptMigrationPayload(passphrase, parsed);
   const warnings: string[] = [];
   const shouldRestorePrivateKeyFiles = input.restorePrivateKeyFiles === true;
-  const importedKeyDirectory = join(app.getPath("userData"), SESSION_MIGRATION_PRIVATE_KEY_DIR);
+  const importedKeyDirectory = shouldRestorePrivateKeyFiles
+    ? join(getMigrationUserDataDirectory(input.userDataDirectory), SESSION_MIGRATION_PRIVATE_KEY_DIR)
+    : "";
   let keyIndex = 0;
 
   const sessions = [];
@@ -335,6 +335,13 @@ function expandHomePath(filePath: string): string {
     return join(homedir(), filePath.slice(2));
   }
   return filePath;
+}
+
+function getMigrationUserDataDirectory(overrideDirectory?: string): string {
+  if (overrideDirectory?.trim()) {
+    return overrideDirectory.trim();
+  }
+  throw new Error("Migration user data directory is required when restoring private key files.");
 }
 
 function toErrorMessage(error: unknown): string {

@@ -21,6 +21,7 @@ Release type: In development
 
 - Type check passed: `pnpm run typecheck`
 - Build passed: `pnpm run build`
+- Session migration targeted test passed: `pnpm run test:session-migration`
 - Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
 - Latest workspace smoke artifact: `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
 

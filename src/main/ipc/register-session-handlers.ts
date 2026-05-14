@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { app, ipcMain } from "electron";
 
 import type {
   SessionCreateInput,
@@ -73,6 +73,9 @@ export function registerSessionHandlers(
   ipcMain.handle(
     "sessions:importEncryptedMigration",
     async (_event, input: SessionMigrationImportInput): Promise<SessionMigrationImportResult> =>
-      importEncryptedSessionMigration(input)
+      importEncryptedSessionMigration({
+        ...input,
+        userDataDirectory: input.userDataDirectory ?? app.getPath("userData")
+      })
   );
 }

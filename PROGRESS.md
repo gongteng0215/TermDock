@@ -146,6 +146,7 @@ Last updated: 2026-05-14
 - Verification:
   - `pnpm run typecheck`: passed
   - `pnpm run build`: passed
+  - `pnpm run test:session-migration`: passed
   - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
 
 ## Completed in v0.1.18

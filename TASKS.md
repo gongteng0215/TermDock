@@ -88,6 +88,7 @@ Last updated: 2026-05-14
    - import preview decrypts without writing private-key files; embedded key files are restored only after confirmation
    - restored private-key files are written into TermDock app data rather than overwriting source-machine paths
    - paired English/Simplified Chinese session migration docs explain plain JSON export versus encrypted migration
+   - targeted `pnpm run test:session-migration` now covers encrypted export, wrong-passphrase failure, preview without key restore, confirmed key restore, renderer-safe payload stripping, and paths-only migration
    - `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages

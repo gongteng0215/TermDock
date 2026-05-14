@@ -66,6 +66,7 @@ export interface SessionMigrationImportInput {
   passphrase: string;
   fileText: string;
   restorePrivateKeyFiles?: boolean;
+  userDataDirectory?: string;
 }
 
 export interface SessionMigrationImportResult {
