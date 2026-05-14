@@ -8,9 +8,9 @@ Last updated: 2026-05-14
 
 - 当前稳定版：`v0.1.26`
 - 当前分支：`master`
-- 当前方向：SSH config 导入打磨、首次连接转化优化。
+- 当前方向：加密会话迁移验证、首次导入和首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 
@@ -61,11 +61,18 @@ Last updated: 2026-05-14
    - Release notes 已从 `Unreleased` 提升为 `v0.1.26`。
    - package version 已提升到 `0.1.26`。
    - 最终 `pnpm run typecheck`、`pnpm run build` 和 `pnpm run smoke:ui` gates 已通过，结果为 `PASS 48 / FAIL 0 / SKIP 0`，artifact 为 `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`。
+8. 加密会话迁移：
+   - `Export Encrypted Migration...` / `导出加密迁移包...` 和 `Import Encrypted Migration...` / `导入加密迁移包...` 已支持 passphrase 保护的 `.tdmigration` 文件。
+   - 加密迁移包可以包含已保存密码、私钥 passphrase 和可选私钥文件内容。
+   - 导入预览只解密展示，不会写入私钥文件；嵌入私钥只会在用户确认导入后恢复。
+   - 恢复出的私钥文件写入 TermDock app data，不覆盖来源机器上的原始路径。
+   - 英文 / 简体中文会话迁移文档已说明普通 JSON 导出和加密迁移包的差异。
+   - `pnpm run typecheck`、`pnpm run build` 和 `pnpm run smoke:ui` 已通过，结果为 `PASS 48 / FAIL 0 / SKIP 0`，artifact 为 `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`。
 
 ## 下一批建议任务
 
-1. 推送 `v0.1.26` tag 并等待 GitHub Actions 生成 release assets。
-2. 验证 release assets 和 Release 页面描述。
+1. 手动验证加密迁移包在同机和跨机器路径下的导出 / 导入体验。
+2. 给加密迁移包补 targeted smoke 或集成测试。
 3. 观察安装、信任提示和首次连接反馈。
 4. 根据首批评论补充 Release FAQ。
 

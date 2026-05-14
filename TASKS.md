@@ -9,7 +9,7 @@ Last updated: 2026-05-14
 - Stable release: `v0.1.26`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: SSH config import polish and first-connect conversion
+- Priority direction: encrypted session migration validation and first-import/first-connect conversion
 
 ## P0 Matrix
 
@@ -82,6 +82,13 @@ Last updated: 2026-05-14
    - release notes promoted from `Unreleased` to `v0.1.26`
    - package version bumped to `0.1.26`
    - final `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` gates passed with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`
+0. Encrypted session migration:
+   - `Export Encrypted Migration...` and `Import Encrypted Migration...` actions now support passphrase-protected `.tdmigration` files
+   - encrypted migration can include saved passwords, private-key passphrases, and optional private-key file contents
+   - import preview decrypts without writing private-key files; embedded key files are restored only after confirmation
+   - restored private-key files are written into TermDock app data rather than overwriting source-machine paths
+   - paired English/Simplified Chinese session migration docs explain plain JSON export versus encrypted migration
+   - `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling

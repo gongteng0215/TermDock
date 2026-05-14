@@ -2,6 +2,28 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## Unreleased (master)
+
+Release type: In development
+
+### Highlights
+
+- Encrypted session migration:
+  - added `Export Encrypted Migration...` and `Import Encrypted Migration...` session actions
+  - encrypted `.tdmigration` files can include saved passwords, private-key passphrases, and optional private-key file contents behind a user-provided passphrase
+  - import preview decrypts without restoring private-key files; embedded key files are restored only after the user confirms import
+  - restored private-key files are written into TermDock app data instead of overwriting source-machine paths
+  - decrypted private-key file contents stay in the main process and are not returned to the renderer
+- Documentation:
+  - added paired English/Simplified Chinese session migration docs and linked them from README, Security, and the documentation index
+
+### Validation
+
+- Type check passed: `pnpm run typecheck`
+- Build passed: `pnpm run build`
+- Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
+
 ## v0.1.26 (2026-05-14)
 
 Release type: Stable candidate

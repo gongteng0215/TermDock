@@ -2,6 +2,28 @@
 
 [English](RELEASE_NOTES.md)
 
+## Unreleased (master)
+
+发布类型：开发中
+
+### 主要变化
+
+- 加密会话迁移：
+  - 新增 `Export Encrypted Migration...` / `导出加密迁移包...` 和 `Import Encrypted Migration...` / `导入加密迁移包...` 会话动作。
+  - 加密 `.tdmigration` 文件可以在用户提供的 passphrase 保护下包含已保存密码、私钥 passphrase 和可选私钥文件内容。
+  - 导入预览只解密展示，不会恢复私钥文件；只有用户确认导入后才会写入嵌入的私钥文件。
+  - 恢复出的私钥文件会写入 TermDock app data，不会覆盖来源机器上的原始路径。
+  - 解密后的私钥文件内容只在主进程处理，不会返回 renderer。
+- 文档：
+  - 新增英文 / 简体中文配套会话迁移文档，并从 README、安全说明和文档索引链接。
+
+### 验证
+
+- Type check 通过：`pnpm run typecheck`
+- Build 通过：`pnpm run build`
+- 最新 workspace smoke 通过：`PASS 48 / FAIL 0 / SKIP 0`
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
+
 ## v0.1.26 (2026-05-14)
 
 发布类型：稳定候选版

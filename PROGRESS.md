@@ -8,7 +8,7 @@ Last updated: 2026-05-14
 
 - Stable release shipped: `v0.1.26`
 - Active branch: `master`
-- Active focus: SSH config import polish and first-connect conversion
+- Active focus: encrypted session migration and first-import/first-connect conversion
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -34,12 +34,13 @@ Last updated: 2026-05-14
 - Master branch now warns during SSH config import when common unsupported OpenSSH directives need manual follow-up
 - Master branch now includes a paired English/Simplified Chinese SSH config import guide linked from the README and documentation index
 - Master branch now includes first-connect SSH error diagnostics with reason/suggestion/raw-error output plus a paired troubleshooting guide
+- Master branch now includes encrypted `.tdmigration` session migration with passphrase-protected passwords, private-key passphrases, optional embedded private-key files, and paired English/Simplified Chinese migration docs
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
 - Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-05-14: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
+- Latest master validation on 2026-05-14: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -131,6 +132,21 @@ Last updated: 2026-05-14
   - `pnpm run typecheck`: passed
   - `pnpm run build`: passed
   - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`
+
+## Completed on master after v0.1.26
+
+- Encrypted session migration:
+  - `Export Encrypted Migration...` writes passphrase-protected `.tdmigration` files
+  - migration files can include saved passwords, private-key passphrases, and optional private-key file contents
+  - `Import Encrypted Migration...` decrypts into a preview first, then restores embedded key files only after confirmation
+  - restored key files are written into TermDock app data rather than overwriting original source-machine paths
+  - private-key file contents stay in the main process and are not returned to the renderer
+- Documentation:
+  - paired English/Simplified Chinese session migration docs now explain plain JSON export versus encrypted migration files
+- Verification:
+  - `pnpm run typecheck`: passed
+  - `pnpm run build`: passed
+  - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
 
 ## Completed in v0.1.18
 

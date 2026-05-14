@@ -9,9 +9,9 @@ Last updated: 2026-05-14
 - 当前主分支：`master`
 - 远端：`origin/master`
 - 当前稳定版：`v0.1.26`
-- 当前方向：SSH config 导入打磨、首次连接转化优化。
+- 当前方向：加密会话迁移、首次导入和首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
 
@@ -32,11 +32,13 @@ Last updated: 2026-05-14
   - `~/.ssh/config` 导入基线，并补充导入预览统计、导入后打开首个会话和 OpenSSH `IdentityFile` token 展开。
   - SSH config 导入预览会提示当前机器上缺失的 `IdentityFile` 路径。
   - SSH config 导入预览会对常见暂不支持的 OpenSSH 指令给出 warning，提醒导入后手动处理。
+  - 加密 `.tdmigration` 会话迁移支持用用户 passphrase 保护已保存密码、私钥 passphrase 和可选私钥文件内容。
 - 首次连接诊断：
   - SSH 连接和测试连接失败时会显示更清晰的原因、下一步建议和原始错误。
 - 文档：
   - 新增英文 / 简体中文 SSH 配置导入指南，并从 README 和文档索引链接。
   - 新增英文 / 简体中文 SSH 连接故障排查指南。
+  - 新增英文 / 简体中文会话迁移指南，说明普通 JSON 导出和加密迁移包的安全边界。
 - UI 和多语言：
   - 深色 editor-workbench 风格主界面。
   - SFTP Explorer rail、terminal stage、Inspector rail 和底部 transfer panel。
@@ -61,8 +63,8 @@ Last updated: 2026-05-14
 
 ## 下一步优先级
 
-1. 推送 `v0.1.26` tag，等待 GitHub Actions 生成 release assets。
-2. 验证 release assets 和 Release 页面描述。
+1. 手动验证加密迁移包在同机和跨机器路径下的导出 / 导入体验。
+2. 给加密迁移包补 targeted smoke 或集成测试。
 3. 继续观察安装、信任提示和首次连接反馈。
 4. 根据真实反馈决定下一项小修复，而不是立即启动大型新功能。
 
