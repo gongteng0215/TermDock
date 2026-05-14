@@ -40,7 +40,7 @@ Last updated: 2026-05-14
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
 - Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-05-14: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
+- Latest master validation on 2026-05-14: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete
@@ -147,7 +147,7 @@ Last updated: 2026-05-14
   - `pnpm run typecheck`: passed
   - `pnpm run build`: passed
   - `pnpm run test:session-migration`: passed
-  - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
+  - `pnpm run smoke:ui`: `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`
 
 ## Completed in v0.1.18
 

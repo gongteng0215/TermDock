@@ -23,7 +23,7 @@
 - Build 通过：`pnpm run build`
 - 会话迁移 targeted test 通过：`pnpm run test:session-migration`
 - 最新 workspace smoke 通过：`PASS 48 / FAIL 0 / SKIP 0`
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`
 
 ## v0.1.26 (2026-05-14)
 

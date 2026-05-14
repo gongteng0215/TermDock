@@ -108,6 +108,7 @@ function createMarkdownReport({
   lines.push("", "## Covered areas");
   lines.push("- Sessions explorer context menus (blank/group/session)");
   lines.push("- SSH config import preview and post-import open-first-session action");
+  lines.push("- Session export/import menu entries, including encrypted migration actions");
   lines.push("- Group open/back navigation");
   lines.push("- Same-session keyboard-open dedupe");
   lines.push("- Session list double-click fresh-tab behavior");
@@ -844,8 +845,19 @@ async function main() {
       const exportGroups = page
         .locator(".sftp-context-menu__item:has-text('Export All Groups...')")
         .first();
+      const importEncryptedMigration = page
+        .locator(".sftp-context-menu__item:has-text('Import Encrypted Migration...')")
+        .first();
+      const exportEncryptedMigration = page
+        .locator(".sftp-context-menu__item:has-text('Export Encrypted Migration...')")
+        .first();
 
-      if (!(await isVisible(exportSessions)) || !(await isVisible(exportGroups))) {
+      if (
+        !(await isVisible(exportSessions)) ||
+        !(await isVisible(exportGroups)) ||
+        !(await isVisible(importEncryptedMigration)) ||
+        !(await isVisible(exportEncryptedMigration))
+      ) {
         throw new Error("export actions not found in root context menu");
       }
 

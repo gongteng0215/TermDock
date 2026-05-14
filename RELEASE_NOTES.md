@@ -23,7 +23,7 @@ Release type: In development
 - Build passed: `pnpm run build`
 - Session migration targeted test passed: `pnpm run test:session-migration`
 - Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`
+- Latest workspace smoke artifact: `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`
 
 ## v0.1.26 (2026-05-14)
 

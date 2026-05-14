@@ -11,7 +11,7 @@ Last updated: 2026-05-14
 - 当前稳定版：`v0.1.26`
 - 当前方向：加密会话迁移、首次导入和首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
 
@@ -64,7 +64,7 @@ Last updated: 2026-05-14
 ## 下一步优先级
 
 1. 手动验证加密迁移包在同机和跨机器路径下的导出 / 导入体验。
-2. 给加密迁移包补 UI smoke 覆盖菜单入口和导入预览。
+2. 给加密迁移包补更深的 UI smoke 覆盖导入预览和确认导入流程。
 3. 继续观察安装、信任提示和首次连接反馈。
 4. 根据真实反馈决定下一项小修复，而不是立即启动大型新功能。
 

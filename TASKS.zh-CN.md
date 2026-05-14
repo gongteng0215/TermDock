@@ -10,7 +10,7 @@ Last updated: 2026-05-14
 - 当前分支：`master`
 - 当前方向：加密会话迁移验证、首次导入和首次连接转化优化。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 
 ## P0 状态摘要
 
@@ -68,12 +68,13 @@ Last updated: 2026-05-14
    - 恢复出的私钥文件写入 TermDock app data，不覆盖来源机器上的原始路径。
    - 英文 / 简体中文会话迁移文档已说明普通 JSON 导出和加密迁移包的差异。
    - targeted `pnpm run test:session-migration` 已覆盖加密导出、错误 passphrase 失败、预览不恢复私钥、确认后恢复私钥、renderer-safe payload stripping 和 paths-only migration。
-   - `pnpm run typecheck`、`pnpm run build` 和 `pnpm run smoke:ui` 已通过，结果为 `PASS 48 / FAIL 0 / SKIP 0`，artifact 为 `artifacts/smoke/2026-05-14T07-36-10-928Z/summary.json`。
+   - `pnpm run smoke:ui` 现在会断言加密迁移导入 / 导出菜单入口可见。
+   - `pnpm run typecheck`、`pnpm run build` 和 `pnpm run smoke:ui` 已通过，结果为 `PASS 48 / FAIL 0 / SKIP 0`，artifact 为 `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`。
 
 ## 下一批建议任务
 
 1. 手动验证加密迁移包在同机和跨机器路径下的导出 / 导入体验。
-2. 给加密迁移包补 UI smoke 覆盖菜单入口和导入预览。
+2. 给加密迁移包补更深的 UI smoke 覆盖导入预览和确认导入流程。
 3. 观察安装、信任提示和首次连接反馈。
 4. 根据首批评论补充 Release FAQ。
 
