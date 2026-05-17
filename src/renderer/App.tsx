@@ -2,6 +2,8 @@ import {
   DragEvent,
   FormEvent,
   MouseEvent as ReactMouseEvent,
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -30,8 +32,6 @@ import type {
   CreatePortForwardInput,
   PortForwardEventRecord,
   PortForwardRecord,
-  ServerHealthSnapshot,
-  ServerProcessSnapshot,
   TerminalConnectionStatus
 } from "../shared/terminal";
 import { formatSshConnectionError } from "../shared/ssh-error-diagnostics";
@@ -78,23 +78,23 @@ import {
   ServerHealthInspectorSection,
   SessionsInspectorSection
 } from "./components/workbench-panels";
-import { CommandSnippetManagerModal } from "./components/command-snippet-manager-modal";
 import { SettingsModalShell } from "./components/settings-modal-shell";
+import { SettingsModalContent } from "./components/settings-modal-content";
 import {
-  ConnectionSettingsSection,
-  DiagnosticsSettingsSection,
-  FileOpeningSettingsSection,
-  HotkeySettingsSection,
-  PortForwardingSettingsSection,
-  ServerHealthSettingsSection,
-  SftpSettingsSection,
-  WorkspaceSettingsSection
-} from "./components/settings-sections";
+  WorkbenchContextMenu,
+  type WorkbenchContextMenuAction
+} from "./components/workbench-context-menus";
 import {
-  CommandHistoryManagerModal,
-  OperationCenterModal,
-  RetryCenterModal
-} from "./components/workbench-modals";
+  buildConnectionSettingsSectionProps,
+  buildDiagnosticsSettingsSectionProps,
+  buildFileOpeningSettingsSectionProps,
+  buildHotkeySettingsSectionProps,
+  buildPortForwardingSettingsSectionProps,
+  buildSafetySettingsSectionProps,
+  buildServerHealthSettingsSectionProps,
+  buildSftpSettingsSectionProps,
+  buildWorkspaceSettingsSectionProps
+} from "./settings-section-props";
 import {
   WorkbenchExplorerSidebar,
   WorkbenchInspectorSidebar
@@ -125,9 +125,6 @@ import {
 } from "./i18n";
 import {
   createDefaultDangerousCommandGuardPreferences,
-  findDangerousCommandGroupAssignment,
-  formatDangerousCommandSourceLabel,
-  inspectDangerousCommandText,
   listDangerousCommandBuiltinRules,
   listDangerousCommandEnvironmentTemplates,
   listDangerousCommandExecutionSources,
@@ -135,18 +132,42 @@ import {
   MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS,
   MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS,
   normalizeDangerousCommandGuardPreferences,
-  shouldInspectDangerousCommandWrite,
-  summarizeDangerousCommandCustomPatterns,
   type DangerousCommandApprovalRequest,
   type DangerousCommandBuiltinRuleId,
   type DangerousCommandEnvironmentTemplateId,
   type DangerousCommandExecutionSource,
   type DangerousCommandGuardPreferences,
-  type DangerousCommandInspectionResult,
   type DangerousCommandPersistentApproval,
   type DangerousCommandPersistentApprovalScopeId,
   type DangerousCommandPolicyPackId
 } from "./dangerous-command-guard";
+import { useCommandHistoryViewModels } from "./use-command-history-view-models";
+import {
+  formatDangerousCommandTemporaryApprovalScopeLabel,
+  useDangerousCommandApprovalFlow
+} from "./use-dangerous-command-approval-flow";
+import { useDangerousCommandSettingsViewModels } from "./use-dangerous-command-settings-view-models";
+import { usePortForwardingViewModels } from "./use-port-forwarding-view-models";
+import { useServerHealthMonitor } from "./use-server-health-monitor";
+import { useSessionGroupingViewModels } from "./use-session-grouping-view-models";
+import {
+  usePendingTransferRestoreRuntime,
+  useSftpTransferBatchNotifications,
+  useSftpTransferQueueRuntime
+} from "./use-sftp-transfer-runtime";
+
+const LazyCommandSnippetManagerModal = lazy(async () => ({
+  default: (await import("./components/command-snippet-manager-modal")).CommandSnippetManagerModal
+}));
+const LazyCommandHistoryManagerModal = lazy(async () => ({
+  default: (await import("./components/workbench-modals")).CommandHistoryManagerModal
+}));
+const LazyOperationCenterModal = lazy(async () => ({
+  default: (await import("./components/workbench-modals")).OperationCenterModal
+}));
+const LazyRetryCenterModal = lazy(async () => ({
+  default: (await import("./components/workbench-modals")).RetryCenterModal
+}));
 
 const EMPTY_FORM: SessionCreateInput = {
   name: "",
@@ -594,9 +615,6 @@ function createDefaultHotkeyPreferences(): HotkeyPreferences {
   };
 }
 
-const SERVER_HEALTH_POLL_INTERVAL_MS = 5000;
-const SERVER_PROCESS_POLL_INTERVAL_MS = 10000;
-
 type ServerHealthDetailTab = "overview" | "disk" | "network" | "processes" | "services";
 
 interface SftpTransferItem extends SftpTransferEvent {
@@ -616,27 +634,6 @@ interface SftpTransferHistoryItem {
   updatedAt: number;
   attemptCount: number;
   message?: string;
-}
-
-interface ServerHealthDerivedMetrics {
-  cpuUsagePercent: number;
-  memoryUsagePercent: number;
-  diskUsagePercent: number;
-  rxBytesPerSecond: number;
-  txBytesPerSecond: number;
-}
-
-interface ServerHealthTabState {
-  snapshot: ServerHealthSnapshot | null;
-  metrics: ServerHealthDerivedMetrics | null;
-  loading: boolean;
-  error: string | null;
-}
-
-interface ServerProcessTabState {
-  snapshot: ServerProcessSnapshot | null;
-  loading: boolean;
-  error: string | null;
 }
 
 interface PortForwardFormState {
@@ -936,32 +933,6 @@ interface TransferDockNotice {
   message: string;
 }
 
-interface DangerousCommandApprovalState {
-  id: string;
-  request: DangerousCommandApprovalRequest;
-  sourceLabel: string;
-  contextSummary: string;
-  ruleSummary: string;
-}
-
-type DangerousCommandApprovalScopeId = "tab" | "sessionGroup";
-
-interface DangerousCommandTemporaryApproval {
-  id: string;
-  scope: DangerousCommandApprovalScopeId;
-  tabId: string | null;
-  tabTitle: string;
-  sessionGroupName: string | null;
-  source: DangerousCommandExecutionSource;
-  sourceLabel: string;
-  commandText: string;
-  preview: string;
-  severity: DangerousCommandInspectionResult["severity"];
-  appliedPolicyPackId: DangerousCommandInspectionResult["appliedPolicyPackId"];
-  appliedEnvironmentTemplateId: DangerousCommandInspectionResult["appliedEnvironmentTemplateId"];
-  createdAt: number;
-}
-
 interface DangerousCommandPolicyBundleRecord {
   id: string;
   name: string;
@@ -974,12 +945,6 @@ interface DangerousCommandPolicyBundleSyncState {
   filePath: string;
   lastPulledAtIso: string | null;
   lastPushedAtIso: string | null;
-}
-
-interface GuardedTerminalWriteOptions {
-  source: DangerousCommandExecutionSource;
-  commandText?: string;
-  skipDangerousCommandCheck?: boolean;
 }
 
 type AppDialogMode = "alert" | "confirm" | "prompt" | "choice";
@@ -1034,6 +999,7 @@ interface AppAlertDialogOptions {
   title?: string;
   confirmLabel?: string;
   detailText?: string;
+  translateDetailText?: boolean;
 }
 
 interface AppConfirmDialogOptions {
@@ -2227,9 +2193,17 @@ function parseSessionJsonImportCandidates(payload: unknown): SessionJsonImportPa
   };
 }
 
-function formatSessionJsonImportPreview(result: SessionJsonImportParseResult): string {
+function formatSessionJsonImportPreview(
+  result: SessionJsonImportParseResult,
+  language: AppLanguage = "en"
+): string {
   const lines: string[] = [];
-  lines.push(`Importable sessions: ${result.candidates.length}`);
+  const tr = (value: string) => translateAppText(language, value);
+  lines.push(
+    language === "zh-CN"
+      ? `可导入会话：${result.candidates.length}`
+      : `Importable sessions: ${result.candidates.length}`
+  );
   const previewRows = result.candidates.slice(0, 40);
   for (const candidate of previewRows) {
     const authLabel =
@@ -2238,20 +2212,28 @@ function formatSessionJsonImportPreview(result: SessionJsonImportParseResult): s
         : "password";
     const groupLabel = candidate.groupId || "Ungrouped";
     lines.push(
-      `- ${candidate.name}: ${candidate.username}@${candidate.host}:${candidate.port} [${groupLabel}] (${authLabel})`
+      `- ${candidate.name}: ${candidate.username}@${candidate.host}:${candidate.port} [${tr(groupLabel)}] (${tr(authLabel)})`
     );
   }
   if (result.candidates.length > previewRows.length) {
-    lines.push(`... ${result.candidates.length - previewRows.length} more entries`);
+    lines.push(
+      language === "zh-CN"
+        ? `... 还有 ${result.candidates.length - previewRows.length} 条记录`
+        : `... ${result.candidates.length - previewRows.length} more entries`
+    );
   }
   if (result.warnings.length > 0) {
     lines.push("");
-    lines.push("Warnings:");
+    lines.push(language === "zh-CN" ? "警告：" : "Warnings:");
     for (const warning of result.warnings.slice(0, 20)) {
-      lines.push(`- ${warning}`);
+      lines.push(`- ${tr(warning)}`);
     }
     if (result.warnings.length > 20) {
-      lines.push(`... ${result.warnings.length - 20} more warnings`);
+      lines.push(
+        language === "zh-CN"
+          ? `... 还有 ${result.warnings.length - 20} 条警告`
+          : `... ${result.warnings.length - 20} more warnings`
+      );
     }
   }
   return lines.join("\n");
@@ -2566,10 +2548,14 @@ function formatHistoryTimestamp(timestamp: number): string {
   return value.toLocaleString();
 }
 
-function formatSshConfigPreview(result: SshConfigParseResult): string {
+function formatSshConfigPreview(
+  result: SshConfigParseResult,
+  language: AppLanguage = "en"
+): string {
   const lines: string[] = [];
-  lines.push(`File: ${result.filePath}`);
-  lines.push(`Parsed hosts: ${result.candidates.length}`);
+  const tr = (value: string) => translateAppText(language, value);
+  lines.push(language === "zh-CN" ? `文件：${result.filePath}` : `File: ${result.filePath}`);
+  lines.push(language === "zh-CN" ? `解析到的主机：${result.candidates.length}` : `Parsed hosts: ${result.candidates.length}`);
   lines.push("");
   const previewRows = result.candidates.slice(0, 30);
   for (const candidate of previewRows) {
@@ -2578,20 +2564,28 @@ function formatSshConfigPreview(result: SshConfigParseResult): string {
         ? `key=${candidate.privateKeyPath}`
         : "password";
     lines.push(
-      `- ${candidate.name}: ${candidate.username}@${candidate.host}:${candidate.port} (${authLabel})`
+      `- ${candidate.name}: ${candidate.username}@${candidate.host}:${candidate.port} (${tr(authLabel)})`
     );
   }
   if (result.candidates.length > previewRows.length) {
-    lines.push(`... ${result.candidates.length - previewRows.length} more host entries`);
+    lines.push(
+      language === "zh-CN"
+        ? `... 还有 ${result.candidates.length - previewRows.length} 个 Host 条目`
+        : `... ${result.candidates.length - previewRows.length} more host entries`
+    );
   }
   if (result.warnings.length > 0) {
     lines.push("");
-    lines.push("Warnings:");
+    lines.push(language === "zh-CN" ? "警告：" : "Warnings:");
     for (const warning of result.warnings.slice(0, 10)) {
       lines.push(`- ${warning}`);
     }
     if (result.warnings.length > 10) {
-      lines.push(`... ${result.warnings.length - 10} more warnings`);
+      lines.push(
+        language === "zh-CN"
+          ? `... 还有 ${result.warnings.length - 10} 条警告`
+          : `... ${result.warnings.length - 10} more warnings`
+      );
     }
   }
   return lines.join("\n");
@@ -2628,17 +2622,31 @@ function formatSshConfigImportPlan(
   result: SshConfigParseResult,
   stats: SshConfigImportPreviewStats,
   targetGroup: string,
-  duplicateStrategy: "skip" | "overwrite" | "rename"
+  duplicateStrategy: "skip" | "overwrite" | "rename",
+  language: AppLanguage = "en"
 ): string {
-  const lines = formatSshConfigPreview(result).split("\n");
+  const tr = (value: string) => translateAppText(language, value);
+  const duplicateStrategyLabel =
+    language === "zh-CN"
+      ? ({
+          skip: "跳过重复项",
+          overwrite: "覆盖现有会话",
+          rename: "创建重命名副本"
+        })[duplicateStrategy]
+      : duplicateStrategy;
+  const lines = formatSshConfigPreview(result, language).split("\n");
   lines.splice(
     2,
     0,
-    `New sessions: ${stats.newCount}`,
-    `Duplicate targets: ${stats.duplicateCount}`,
-    `Private-key sessions: ${stats.privateKeyCount}`,
-    `Target group: ${targetGroup || "Ungrouped"}`,
-    `Duplicate strategy: ${duplicateStrategy}`
+    language === "zh-CN" ? `新建会话：${stats.newCount}` : `New sessions: ${stats.newCount}`,
+    language === "zh-CN" ? `重复目标：${stats.duplicateCount}` : `Duplicate targets: ${stats.duplicateCount}`,
+    language === "zh-CN" ? `私钥会话：${stats.privateKeyCount}` : `Private-key sessions: ${stats.privateKeyCount}`,
+    language === "zh-CN"
+      ? `目标分组：${tr(targetGroup || "Ungrouped")}`
+      : `Target group: ${targetGroup || "Ungrouped"}`,
+    language === "zh-CN"
+      ? `重复项策略：${duplicateStrategyLabel}`
+      : `Duplicate strategy: ${duplicateStrategy}`
   );
   return lines.join("\n");
 }
@@ -2761,53 +2769,6 @@ function formatServerUptime(seconds: number): string {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes}m`;
-}
-
-function deriveServerHealthMetrics(
-  current: ServerHealthSnapshot,
-  previous: ServerHealthSnapshot | null
-): ServerHealthDerivedMetrics {
-  const memoryUsagePercent =
-    current.memoryTotalBytes > 0
-      ? (current.memoryUsedBytes / current.memoryTotalBytes) * 100
-      : 0;
-  const diskUsagePercent =
-    current.diskTotalBytes > 0 ? (current.diskUsedBytes / current.diskTotalBytes) * 100 : 0;
-
-  let cpuUsagePercent = 0;
-  let rxBytesPerSecond = 0;
-  let txBytesPerSecond = 0;
-  if (previous && previous.tabId === current.tabId) {
-    const totalTicksDelta = current.cpuTotalTicks - previous.cpuTotalTicks;
-    const idleTicksDelta = current.cpuIdleTicks - previous.cpuIdleTicks;
-    if (totalTicksDelta > 0) {
-      cpuUsagePercent = ((totalTicksDelta - idleTicksDelta) / totalTicksDelta) * 100;
-    }
-
-    const currentMillis = new Date(current.collectedAt).getTime();
-    const previousMillis = new Date(previous.collectedAt).getTime();
-    const elapsedSeconds = (currentMillis - previousMillis) / 1000;
-    if (elapsedSeconds > 0) {
-      const rxDelta = current.networkRxBytes - previous.networkRxBytes;
-      const txDelta = current.networkTxBytes - previous.networkTxBytes;
-      rxBytesPerSecond = rxDelta > 0 ? rxDelta / elapsedSeconds : 0;
-      txBytesPerSecond = txDelta > 0 ? txDelta / elapsedSeconds : 0;
-    }
-  }
-
-  return {
-    cpuUsagePercent: Number.isFinite(cpuUsagePercent)
-      ? Math.max(0, Math.min(100, cpuUsagePercent))
-      : 0,
-    memoryUsagePercent: Number.isFinite(memoryUsagePercent)
-      ? Math.max(0, Math.min(100, memoryUsagePercent))
-      : 0,
-    diskUsagePercent: Number.isFinite(diskUsagePercent)
-      ? Math.max(0, Math.min(100, diskUsagePercent))
-      : 0,
-    rxBytesPerSecond: Number.isFinite(rxBytesPerSecond) ? Math.max(0, rxBytesPerSecond) : 0,
-    txBytesPerSecond: Number.isFinite(txBytesPerSecond) ? Math.max(0, txBytesPerSecond) : 0
-  };
 }
 
 async function getLocalPathsFromDroppedFiles(
@@ -3723,67 +3684,6 @@ function readDangerousCommandPolicyBundleSyncState(): DangerousCommandPolicyBund
   } catch {
     return normalizeDangerousCommandPolicyBundleSyncState(null);
   }
-}
-
-function createDangerousCommandTemporaryApprovalFromRequest(
-  request: DangerousCommandApprovalRequest,
-  sourceLabel: string,
-  tabTitle: string,
-  scope: DangerousCommandApprovalScopeId
-): DangerousCommandTemporaryApproval | null {
-  if (scope === "sessionGroup" && !request.result.sessionGroupName) {
-    return null;
-  }
-  return {
-    id: `danger-approval-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    scope,
-    tabId: scope === "tab" ? request.tabId : null,
-    tabTitle: tabTitle.trim() || `Tab ${request.tabId}`,
-    sessionGroupName: scope === "sessionGroup" ? request.result.sessionGroupName : null,
-    source: request.source,
-    sourceLabel,
-    commandText: request.result.commandText,
-    preview: request.result.preview,
-    severity: request.result.severity,
-    appliedPolicyPackId: request.result.appliedPolicyPackId,
-    appliedEnvironmentTemplateId: request.result.appliedEnvironmentTemplateId,
-    createdAt: Date.now()
-  };
-}
-
-function matchesDangerousCommandTemporaryApproval(
-  approval: DangerousCommandTemporaryApproval,
-  request: DangerousCommandApprovalRequest
-): boolean {
-  if (approval.source !== request.source) {
-    return false;
-  }
-  if (approval.commandText !== request.result.commandText) {
-    return false;
-  }
-  if (approval.appliedPolicyPackId !== request.result.appliedPolicyPackId) {
-    return false;
-  }
-  if (approval.appliedEnvironmentTemplateId !== request.result.appliedEnvironmentTemplateId) {
-    return false;
-  }
-  if (approval.scope === "tab") {
-    return approval.tabId === request.tabId;
-  }
-  return (
-    approval.scope === "sessionGroup" &&
-    approval.sessionGroupName !== null &&
-    approval.sessionGroupName === request.result.sessionGroupName
-  );
-}
-
-function formatDangerousCommandTemporaryApprovalScopeLabel(
-  approval: DangerousCommandTemporaryApproval
-): string {
-  if (approval.scope === "sessionGroup") {
-    return approval.sessionGroupName ? `Group ${approval.sessionGroupName}` : "Group";
-  }
-  return approval.tabTitle.trim() ? `Tab ${approval.tabTitle.trim()}` : "This Tab";
 }
 
 function createDangerousCommandPersistentApprovalFromRequest(
@@ -5500,13 +5400,26 @@ export function App() {
   const sftpApi = bridge?.sftp ?? null;
   const isMacPlatform = /mac/i.test(navigator.platform);
   const [appLanguage, setAppLanguage] = useState<AppLanguage>(() => readAppLanguagePreference());
+  const appLanguageRef = useRef<AppLanguage>(appLanguage);
+  appLanguageRef.current = appLanguage;
   const i18n = useMemo(() => getI18n(appLanguage), [appLanguage]);
   const appRootRef = useRef<HTMLDivElement | null>(null);
   const localizationFrameRef = useRef<number | null>(null);
+  const smokeImportSshConfigHandlerRef = useRef<(() => void) | null>(null);
+  const smokeImportSessionsJsonHandlerRef = useRef<(() => void) | null>(null);
+  const smokeImportEncryptedMigrationHandlerRef = useRef<(() => void) | null>(null);
   const tr = useCallback((value: string) => translateAppText(appLanguage, value), [appLanguage]);
   const selectedLanguageOption = useMemo(
     () => APP_LANGUAGE_OPTIONS.find((option) => option.id === appLanguage) ?? APP_LANGUAGE_OPTIONS[0],
     [appLanguage]
+  );
+  const trMultiline = useCallback(
+    (value: string) =>
+      value
+        .split("\n")
+        .map((line) => tr(line))
+        .join("\n"),
+    [tr]
   );
   const hotkeyModifierOptions = useMemo(
     () => getHotkeyModifierOptions(isMacPlatform),
@@ -5880,8 +5793,6 @@ export function App() {
     name: string;
     kind: SftpEntry["kind"];
   } | null>(null);
-  const [serverHealthByTab, setServerHealthByTab] = useState<Record<string, ServerHealthTabState>>({});
-  const [serverProcessByTab, setServerProcessByTab] = useState<Record<string, ServerProcessTabState>>({});
   const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
   const [serverHealthDetailTab, setServerHealthDetailTab] =
     useState<ServerHealthDetailTab>("overview");
@@ -5912,8 +5823,6 @@ export function App() {
   const pausedDownloadTabsRef = useRef<Record<string, true>>({});
   const schedulePausedUploadTabsRef = useRef<Record<string, true>>({});
   const schedulePausedDownloadTabsRef = useRef<Record<string, true>>({});
-  const serverHealthByTabRef = useRef<Record<string, ServerHealthTabState>>(serverHealthByTab);
-  const serverProcessByTabRef = useRef<Record<string, ServerProcessTabState>>(serverProcessByTab);
   const portForwardBusyRef = useRef<boolean>(portForwardBusy);
   const activeSessionIdRef = useRef<string | null>(null);
   const intentionalTabCloseIdsRef = useRef<Set<string>>(new Set());
@@ -5945,22 +5854,11 @@ export function App() {
   const appDialogInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const appDialogResolverRef = useRef<((value: unknown) => void) | null>(null);
   const appDialogCancelValueRef = useRef<unknown>(undefined);
-  const dangerousCommandApprovalResolverRef = useRef<((value: boolean) => void) | null>(null);
-  const dangerousCommandTemporaryApprovalsRef = useRef<DangerousCommandTemporaryApproval[]>([]);
-  const dangerousCommandPreferencesSignatureRef = useRef(
-    JSON.stringify(dangerousCommandGuardPreferences)
-  );
   const appHintTimerRef = useRef<number | null>(null);
   const hotkeyRowRefs = useRef<Map<HotkeyActionId, HTMLDivElement | null>>(new Map());
   const hotkeyConflictHighlightTimerRef = useRef<number | null>(null);
-  const serverHealthRequestInFlightTabsRef = useRef<Set<string>>(new Set());
-  const serverProcessRequestInFlightTabsRef = useRef<Set<string>>(new Set());
-  const serverHealthRequestIdsRef = useRef<Map<string, number>>(new Map());
-  const serverProcessRequestIdsRef = useRef<Map<string, number>>(new Map());
   const portForwardListRequestIdsRef = useRef<Map<string, number>>(new Map());
   const portForwardEventRequestIdsRef = useRef<Map<string, number>>(new Map());
-  const uploadBatchNoticeRef = useRef<Set<string>>(new Set());
-  const downloadBatchNoticeRef = useRef<Set<string>>(new Set());
   const canceledUploadBatchIdsRef = useRef<Set<string>>(new Set());
   const canceledDownloadBatchIdsRef = useRef<Set<string>>(new Set());
   const transferDockNoticeTimerRef = useRef<number | null>(null);
@@ -5968,7 +5866,31 @@ export function App() {
   const runStartupCommandsOnTabRef = useRef<
     (tabId: string, commands: string[]) => Promise<void>
   >(async () => undefined);
-  const pendingTransferRestoreNoticeShownRef = useRef(false);
+  const {
+    refreshServerHealth,
+    refreshServerProcesses,
+    removeServerMonitorTabState,
+    resetServerHealth,
+    resetServerProcesses,
+    serverHealth,
+    serverHealthByTabRef,
+    serverHealthError,
+    serverHealthLoading,
+    serverHealthMetrics,
+    serverProcessByTabRef,
+    serverProcessError,
+    serverProcessLoading,
+    serverProcessSnapshot
+  } = useServerHealthMonitor({
+    activeTabId,
+    activeTabIdRef,
+    connectedTabIdsRef,
+    disconnectReportFingerprintByTabRef,
+    isServerHealthDetailOpen,
+    runningDownloadIdsRef,
+    runningUploadIdsRef,
+    terminalApi
+  });
   const activeRemoteOpenFileIssue = activeTabId ? remoteOpenFileIssuesByTab[activeTabId] ?? null : null;
   const sftpError = activeTabId
     ? activeRemoteOpenFileIssue?.message ?? sftpErrorsByTab[activeTabId] ?? null
@@ -6029,11 +5951,6 @@ export function App() {
   const [transferDockNotice, setTransferDockNotice] = useState<TransferDockNotice | null>(null);
   const [appDialog, setAppDialog] = useState<AppDialogState | null>(null);
   const [appDialogInput, setAppDialogInput] = useState("");
-  const [dangerousCommandApproval, setDangerousCommandApproval] =
-    useState<DangerousCommandApprovalState | null>(null);
-  const [dangerousCommandTemporaryApprovals, setDangerousCommandTemporaryApprovals] = useState<
-    DangerousCommandTemporaryApproval[]
-  >([]);
   const [appHintMessage, setAppHintMessage] = useState<{
     level: "info" | "warn";
     message: string;
@@ -6042,25 +5959,101 @@ export function App() {
     sessionIds: string[];
     targetGroup: string;
   } | null>(null);
-
-  const selectedSession = useMemo(
-    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
-    [sessions, selectedSessionId]
+  const clearAppHintMessage = useCallback(() => {
+    if (appHintTimerRef.current !== null) {
+      window.clearTimeout(appHintTimerRef.current);
+      appHintTimerRef.current = null;
+    }
+    setAppHintMessage(null);
+  }, []);
+  const pushAppHintMessage = useCallback(
+    (message: string, options?: { level?: "info" | "warn"; durationMs?: number }) => {
+      const normalized = message.replace(/\s+/g, " ").trim();
+      if (!normalized) {
+        return;
+      }
+      const bounded =
+        normalized.length > 220 ? `${normalized.slice(0, 217)}...` : normalized;
+      if (appHintTimerRef.current !== null) {
+        window.clearTimeout(appHintTimerRef.current);
+        appHintTimerRef.current = null;
+      }
+      setAppHintMessage({
+        level: options?.level ?? "info",
+        message: bounded
+      });
+      const durationMs =
+        typeof options?.durationMs === "number" && Number.isFinite(options.durationMs)
+          ? Math.max(1200, Math.trunc(options.durationMs))
+          : 3600;
+      appHintTimerRef.current = window.setTimeout(() => {
+        appHintTimerRef.current = null;
+        setAppHintMessage(null);
+      }, durationMs);
+    },
+    []
   );
+  const buildDangerousCommandApprovalContext = useCallback(
+    (request: DangerousCommandApprovalRequest) => {
+      const uniqueRuleLabels = Array.from(new Set(request.result.matches.map((match) => match.label)));
+      const activeWorkspaceProfile = getWorkspaceProfileOption(
+        workspaceProfilePreferencesRef.current.profileId
+      );
+      return {
+        contextSummary: [
+          workspaceProfilePreferencesRef.current.profileId !== "none"
+            ? `workspace ${
+                getI18n(readAppLanguagePreference()).settings.workspace.profileOptions[
+                  activeWorkspaceProfile.id as WorkspaceProfileI18nKey
+                ].shortLabel
+              }`
+            : null,
+          request.result.sessionGroupName ? `group ${request.result.sessionGroupName}` : null,
+          `pack ${request.result.appliedPolicyPackLabel}`,
+          `env ${request.result.appliedEnvironmentTemplateLabel}`
+        ]
+          .filter(Boolean)
+          .join(" | "),
+        ruleSummary: uniqueRuleLabels.join(" | ")
+      };
+    },
+    []
+  );
+  const findMatchingDangerousCommandPersistentApproval = useCallback(
+    (request: DangerousCommandApprovalRequest): boolean =>
+      dangerousCommandGuardPreferencesRef.current.persistentApprovals.some((approval) =>
+        matchesDangerousCommandPersistentApproval(approval, request)
+      ),
+    []
+  );
+  const {
+    approveDangerousCommandWithScope,
+    clearDangerousCommandTemporaryApprovals,
+    dangerousCommandApproval,
+    dangerousCommandTemporaryApprovals,
+    dismissDangerousCommandApprovalsForClosedTabs,
+    guardedTerminalWrite,
+    removeDangerousCommandTemporaryApproval,
+    requestDangerousCommandApproval,
+    resolveDangerousCommandApproval
+  } = useDangerousCommandApprovalFlow({
+    buildApprovalContext: buildDangerousCommandApprovalContext,
+    dangerousCommandGuardPreferences,
+    findMatchingPersistentApproval: findMatchingDangerousCommandPersistentApproval,
+    maxTemporaryApprovals: MAX_DANGEROUS_COMMAND_TEMP_APPROVALS,
+    pushAppHintMessage,
+    sessionsRef,
+    setError,
+    systemApi,
+    terminalApi,
+    terminalTabsRef
+  });
+
   const activeTerminalTab = useMemo(
     () => terminalTabs.find((tab) => tab.id === activeTabId) ?? null,
     [activeTabId, terminalTabs]
   );
   const isActiveTabConnected = !!(activeTabId && connectedTabIdsRef.current.has(activeTabId));
-  const activeServerHealthState = activeTabId ? serverHealthByTab[activeTabId] ?? null : null;
-  const activeServerProcessState = activeTabId ? serverProcessByTab[activeTabId] ?? null : null;
-  const serverHealth = activeServerHealthState?.snapshot ?? null;
-  const serverHealthMetrics = activeServerHealthState?.metrics ?? null;
-  const serverHealthLoading = activeServerHealthState?.loading ?? false;
-  const serverHealthError = activeServerHealthState?.error ?? null;
-  const serverProcessSnapshot = activeServerProcessState?.snapshot ?? null;
-  const serverProcessLoading = activeServerProcessState?.loading ?? false;
-  const serverProcessError = activeServerProcessState?.error ?? null;
   const activeUploadPauseReason =
     activeTabId && pausedUploadTabs[activeTabId]
       ? "disconnected"
@@ -6119,32 +6112,6 @@ export function App() {
   const commandSnippetScopedValueCount = useMemo(
     () => Object.keys(commandSnippetScopedValues).length,
     [commandSnippetScopedValues]
-  );
-  const dangerousCommandCustomPatternSummary = useMemo(
-    () =>
-      summarizeDangerousCommandCustomPatterns(dangerousCommandGuardPreferences.customPatternsText),
-    [dangerousCommandGuardPreferences.customPatternsText]
-  );
-  const enabledDangerousCommandSourceCount = useMemo(
-    () =>
-      DANGEROUS_COMMAND_EXECUTION_SOURCES.filter(
-        (source) => dangerousCommandGuardPreferences.sourceStates[source.id]
-      ).length,
-    [dangerousCommandGuardPreferences.sourceStates]
-  );
-  const selectedDangerousCommandPolicyPack = useMemo(
-    () =>
-      DANGEROUS_COMMAND_POLICY_PACKS.find(
-        (pack) => pack.id === dangerousCommandGuardPreferences.policyPackId
-      ) ?? DANGEROUS_COMMAND_POLICY_PACKS[0],
-    [dangerousCommandGuardPreferences.policyPackId]
-  );
-  const selectedDangerousCommandEnvironmentTemplate = useMemo(
-    () =>
-      DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
-        (template) => template.id === dangerousCommandGuardPreferences.environmentTemplateId
-      ) ?? DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES[0],
-    [dangerousCommandGuardPreferences.environmentTemplateId]
   );
   const workspaceProfileLabels = i18n.settings.workspace.profileOptions;
   const selectedWorkspaceProfile = useMemo(
@@ -6258,85 +6225,63 @@ export function App() {
       ) ?? TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS[2] ?? TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS[0],
     [terminalEditorFocusPreferences.cursorId]
   );
-  const enabledDangerousCommandBuiltinRuleCount = useMemo(
-    () =>
-      DANGEROUS_COMMAND_BUILTIN_RULES.filter(
-        (rule) => dangerousCommandGuardPreferences.builtinRuleStates[rule.id]
-      ).length,
-    [dangerousCommandGuardPreferences.builtinRuleStates]
-  );
-  const activeDangerousCommandSupplementalRules = useMemo(
-    () => [
-      ...selectedDangerousCommandPolicyPack.extraRules.map((rule) => ({
-        ...rule,
-        sourceLabel: selectedDangerousCommandPolicyPack.label
-      })),
-      ...selectedDangerousCommandEnvironmentTemplate.extraRules.map((rule) => ({
-        ...rule,
-        sourceLabel: selectedDangerousCommandEnvironmentTemplate.label
-      }))
-    ],
-    [selectedDangerousCommandEnvironmentTemplate, selectedDangerousCommandPolicyPack]
-  );
-  const activeTabSessionGroupName = useMemo(() => {
-    if (!activeTabId) {
-      return null;
-    }
-    const tab = terminalTabs.find((entry) => entry.id === activeTabId) ?? null;
-    if (!tab) {
-      return null;
-    }
-    const session = sessions.find((entry) => entry.id === tab.sessionId) ?? null;
-    const groupName = session?.groupId?.trim() ?? "";
-    return groupName || null;
-  }, [activeTabId, sessions, terminalTabs]);
-  const visibleTerminalCommandHistoryEntries = useMemo(() => {
-    const normalizedQuery = terminalCommandHistoryQuery.trim().toLowerCase();
-    return terminalCommandHistoryEntries.filter((entry) => {
-      if (terminalCommandHistoryScope === "activeTab" && activeTabId) {
-        if (entry.tabId !== activeTabId) {
-          return false;
-        }
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
-      return entry.command.toLowerCase().includes(normalizedQuery);
-    });
-  }, [activeTabId, terminalCommandHistoryEntries, terminalCommandHistoryQuery, terminalCommandHistoryScope]);
-  const inspectorTerminalCommandHistoryEntries = useMemo(
-    () => visibleTerminalCommandHistoryEntries.slice(0, COMMAND_HISTORY_INSPECTOR_PREVIEW_LIMIT),
-    [visibleTerminalCommandHistoryEntries]
-  );
-  const hiddenInspectorCommandHistoryCount = Math.max(
-    0,
-    visibleTerminalCommandHistoryEntries.length - inspectorTerminalCommandHistoryEntries.length
-  );
-  const selectedCommandHistoryIdSet = useMemo(
-    () => new Set(commandHistorySelection),
-    [commandHistorySelection]
-  );
-  const visibleCommandHistoryIds = useMemo(
-    () => visibleTerminalCommandHistoryEntries.map((entry) => entry.id),
-    [visibleTerminalCommandHistoryEntries]
-  );
-  const allVisibleCommandHistorySelected =
-    visibleCommandHistoryIds.length > 0 &&
-    visibleCommandHistoryIds.every((entryId) => selectedCommandHistoryIdSet.has(entryId));
-  const visibleTerminalCommandHistoryEntryViews = useMemo(
-    () =>
-      visibleTerminalCommandHistoryEntries.map((entry) => ({
-        id: entry.id,
-        command: entry.command,
-        selected: selectedCommandHistoryIdSet.has(entry.id),
-        metaLabel: `${formatHistoryTimestamp(entry.executedAt)} | ${formatTerminalCommandHistorySourceLabel(entry.source)}`,
-        title: i18n.commandHistoryManager.entryTitle(
-          entry.command,
-          formatTerminalCommandHistorySourceLabel(entry.source)
-        )
-      })),
-    [i18n, selectedCommandHistoryIdSet, visibleTerminalCommandHistoryEntries]
-  );
+  const {
+    activeGroupSessions,
+    activeSessionGroup,
+    activeTabSessionGroupName,
+    filteredSessions,
+    groupedSessions,
+    selectedGroupKeySet,
+    selectedGroupNames,
+    selectedGroups,
+    selectedSession,
+    selectedSessionIdSet,
+    selectedSessionsInActiveGroup,
+    sessionBadgeText,
+    sessionContextTarget,
+    sessionGroupOptions
+  } = useSessionGroupingViewModels({
+    activeSessionGroupKey,
+    activeTabId,
+    persistedGroupNames: sessionGroupsState.groups,
+    selectedGroupKeys,
+    selectedSessionId,
+    selectedSessionIds,
+    sessionContextSessionId:
+      sessionContextMenu?.target.type === "session"
+        ? sessionContextMenu.target.sessionId
+        : null,
+    sessionFavoritesOnly,
+    sessionFilterQuery,
+    sessionSortMode,
+    sessions,
+    terminalTabs
+  });
+  const {
+    allVisibleCommandHistorySelected,
+    hiddenInspectorCommandHistoryCount,
+    inspectorTerminalCommandHistoryEntries,
+    selectedCommandHistoryContextEntry,
+    visibleCommandHistoryEntryById,
+    visibleCommandHistoryIds,
+    visibleTerminalCommandHistoryEntries,
+    visibleTerminalCommandHistoryEntryViews
+  } = useCommandHistoryViewModels({
+    activeTabId,
+    buildEntryMetaLabel: (entry) =>
+      `${formatHistoryTimestamp(entry.executedAt)} | ${formatTerminalCommandHistorySourceLabel(entry.source)}`,
+    buildEntryTitle: (entry) =>
+      i18n.commandHistoryManager.entryTitle(
+        entry.command,
+        formatTerminalCommandHistorySourceLabel(entry.source)
+      ),
+    commandHistoryContextEntryId: commandHistoryContextMenu?.entryId ?? null,
+    entries: terminalCommandHistoryEntries,
+    previewLimit: COMMAND_HISTORY_INSPECTOR_PREVIEW_LIMIT,
+    query: terminalCommandHistoryQuery,
+    scope: terminalCommandHistoryScope,
+    selection: commandHistorySelection
+  });
   const copyTerminalCommandHistoryEntry = useCallback(
     async (entry: TerminalCommandHistoryEntry) => {
       try {
@@ -6351,75 +6296,6 @@ export function App() {
     },
     []
   );
-  const guardedTerminalWrite = async (
-    tabId: string,
-    data: string,
-    options: GuardedTerminalWriteOptions
-  ): Promise<boolean> => {
-    if (!terminalApi) {
-      setError("Terminal bridge unavailable. Restart `pnpm dev`.");
-      return false;
-    }
-    const normalizedCommandText =
-      typeof options.commandText === "string" && options.commandText.trim()
-        ? options.commandText.trim()
-        : data.replace(/[\r\n]+$/g, "").trim();
-    if (
-      !options.skipDangerousCommandCheck &&
-      shouldInspectDangerousCommandWrite(options.source, data, dangerousCommandGuardPreferences) &&
-      normalizedCommandText
-    ) {
-      const inspection = inspectDangerousCommandText(
-        normalizedCommandText,
-        dangerousCommandGuardPreferences,
-        {
-          sessionGroupName: getSessionGroupNameForTab(tabId)
-        }
-      );
-      if (inspection) {
-        const approved = await requestDangerousCommandApproval({
-          tabId,
-          source: options.source,
-          result: inspection
-        });
-        if (!approved) {
-          pushAppHintMessage(
-            `Blocked ${formatDangerousCommandSourceLabel(options.source)} command: ${inspection.preview}`,
-            {
-              level: inspection.severity === "critical" ? "warn" : "info",
-              durationMs: 5200
-            }
-          );
-          void systemApi?.writeLog("warn", "renderer:dangerous-command", "Dangerous command blocked.", {
-            tabId,
-            source: options.source,
-            command: inspection.commandText,
-            matches: inspection.matches,
-            sessionGroupName: inspection.sessionGroupName,
-            appliedPolicyPackId: inspection.appliedPolicyPackId,
-            appliedEnvironmentTemplateId: inspection.appliedEnvironmentTemplateId
-          });
-          return false;
-        }
-        void systemApi?.writeLog(
-          "warn",
-          "renderer:dangerous-command",
-          "Dangerous command approved for one-time execution.",
-          {
-            tabId,
-            source: options.source,
-            command: inspection.commandText,
-            matches: inspection.matches,
-            sessionGroupName: inspection.sessionGroupName,
-            appliedPolicyPackId: inspection.appliedPolicyPackId,
-            appliedEnvironmentTemplateId: inspection.appliedEnvironmentTemplateId
-          }
-        );
-      }
-    }
-    await terminalApi.write(tabId, data);
-    return true;
-  };
   const runTerminalCommandHistoryEntry = useCallback(
     async (entry: TerminalCommandHistoryEntry) => {
       if (!terminalApi) {
@@ -6733,16 +6609,6 @@ export function App() {
     }
     setCommandHistoryContextMenu(null);
   }, [isCommandSnippetManagerOpen]);
-  const selectedCommandHistoryContextEntry = useMemo(() => {
-    if (!commandHistoryContextMenu || !commandHistoryContextMenu.entryId) {
-      return null;
-    }
-    return (
-      terminalCommandHistoryEntries.find(
-        (entry) => entry.id === commandHistoryContextMenu.entryId
-      ) ?? null
-    );
-  }, [commandHistoryContextMenu, terminalCommandHistoryEntries]);
   const activeSessionTransferConflictStrategy = useMemo(() => {
     if (!activeSessionId) {
       return null;
@@ -6938,379 +6804,84 @@ export function App() {
     setDisconnectReportTimeRange(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.timeRange);
     setDisconnectReportQuery(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.query);
   }, []);
-  const activePortForwardPresets = useMemo(() => {
-    if (!activeSessionId) {
-      return [];
-    }
-    return portForwardPresets
-      .filter((preset) => preset.sessionId === activeSessionId)
-      .sort((left, right) => right.updatedAt - left.updatedAt);
-  }, [activeSessionId, portForwardPresets]);
-  const activePortForwardEventHistory = useMemo(() => {
-    if (!activeSessionId) {
-      return [];
-    }
-    return portForwardEventHistory
-      .filter((entry) => entry.sessionId === activeSessionId)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  }, [activeSessionId, portForwardEventHistory]);
-  const portForwardEventErrorCodeOptions = useMemo(() => {
-    const codes = new Set<string>();
-    for (const entry of activePortForwardEventHistory) {
-      const code = entry.errorCode?.trim();
-      if (code) {
-        codes.add(code);
-      }
-    }
-    return ["all", ...Array.from(codes).sort((left, right) => left.localeCompare(right))];
-  }, [activePortForwardEventHistory]);
-  const visiblePortForwardEventHistory = useMemo(() => {
-    let filtered = activePortForwardEventHistory;
-    if (portForwardEventFilter === "errors") {
-      filtered = filtered.filter((entry) => entry.level === "error");
-    } else if (portForwardEventFilter === "lifecycle") {
-      filtered = filtered.filter(
-        (entry) => entry.type === "created" || entry.type === "removed"
-      );
-    } else if (portForwardEventFilter === "status") {
-      filtered = filtered.filter(
-        (entry) => entry.type === "statusDegraded" || entry.type === "statusRecovered"
-      );
-    }
-    const cutoffMs = resolvePortForwardEventTimeRangeCutoff(
-      portForwardEventTimeRange,
-      Date.now()
-    );
-    if (cutoffMs !== null) {
-      filtered = filtered.filter((entry) => {
-        const eventTimeMs = new Date(entry.createdAt).getTime();
-        return Number.isFinite(eventTimeMs) && eventTimeMs >= cutoffMs;
-      });
-    }
-    const normalizedErrorCode = portForwardEventErrorCode.trim().toLowerCase();
-    if (normalizedErrorCode && normalizedErrorCode !== "all") {
-      filtered = filtered.filter(
-        (entry) => (entry.errorCode ?? "").trim().toLowerCase() === normalizedErrorCode
-      );
-    }
-    const normalizedCorrelationQuery = portForwardEventCorrelationQuery.trim().toLowerCase();
-    if (!normalizedCorrelationQuery) {
-      return filtered;
-    }
-    return filtered.filter((entry) => {
-      const correlation = (entry.correlationKey ?? "").toLowerCase();
-      const connection = (entry.connectionId ?? "").toLowerCase();
-      return (
-        correlation.includes(normalizedCorrelationQuery) ||
-        connection.includes(normalizedCorrelationQuery)
-      );
-    });
-  }, [
+  const {
     activePortForwardEventHistory,
-    portForwardEventErrorCode,
+    activePortForwardPresets,
+    hasCustomizedPortForwardEventView,
+    portForwardActiveTabSummary,
+    portForwardAnalyticsView,
+    portForwardEventErrorCodeOptions,
+    portForwardEventSummaryLabel,
+    portForwardEventViews,
+    portForwardPresetViews,
+    portForwardRecordViews,
+    portForwardVisibleEventAnalytics,
+    resetPortForwardEventViewFilters,
+    visiblePortForwardEventHistory
+  } = usePortForwardingViewModels({
+    activeSessionId,
+    activeTabTitle: activeTerminalTab?.title ?? null,
+    defaultEventViewPreferences: DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES,
+    formatPercent,
+    formatPortForwardEventCorrelation,
+    formatPortForwardEventSummary,
+    formatPortForwardEventType,
+    formatPortForwardPreset,
+    formatPortForwardRecord,
+    formatPortForwardTimestamp,
+    getPortForwardStatusLabel,
+    isActiveTabConnected,
     portForwardEventCorrelationQuery,
+    portForwardEventErrorCode,
     portForwardEventFilter,
-    portForwardEventTimeRange
-  ]);
-  const portForwardVisibleEventAnalytics = useMemo(() => {
-    const levelCounts: Record<PortForwardEventRecord["level"], number> = {
-      info: 0,
-      error: 0
-    };
-    const typeCounts: Record<PortForwardEventRecord["type"], number> = {
-      created: 0,
-      removed: 0,
-      statusRecovered: 0,
-      statusDegraded: 0
-    };
-    const errorCodeCounts = new Map<string, number>();
-    const correlationCounts = new Map<string, number>();
-    let earliestTimestampMs: number | null = null;
-    let latestTimestampMs: number | null = null;
-    for (const event of visiblePortForwardEventHistory) {
-      levelCounts[event.level] += 1;
-      typeCounts[event.type] += 1;
-      const errorCode = event.errorCode?.trim();
-      if (errorCode) {
-        errorCodeCounts.set(errorCode, (errorCodeCounts.get(errorCode) ?? 0) + 1);
-      }
-      const correlation = event.correlationKey?.trim();
-      if (correlation) {
-        correlationCounts.set(correlation, (correlationCounts.get(correlation) ?? 0) + 1);
-      }
-      const timestampMs = new Date(event.createdAt).getTime();
-      if (!Number.isFinite(timestampMs)) {
-        continue;
-      }
-      if (earliestTimestampMs === null || timestampMs < earliestTimestampMs) {
-        earliestTimestampMs = timestampMs;
-      }
-      if (latestTimestampMs === null || timestampMs > latestTimestampMs) {
-        latestTimestampMs = timestampMs;
-      }
-    }
-    const topErrorCodes = Array.from(errorCodeCounts.entries())
-      .map(([code, count]) => ({ code, count }))
-      .sort((left, right) => {
-        if (right.count !== left.count) {
-          return right.count - left.count;
-        }
-        return left.code.localeCompare(right.code);
-      })
-      .slice(0, 5);
-    const topCorrelations = Array.from(correlationCounts.entries())
-      .map(([correlationKey, count]) => ({ correlationKey, count }))
-      .sort((left, right) => {
-        if (right.count !== left.count) {
-          return right.count - left.count;
-        }
-        return left.correlationKey.localeCompare(right.correlationKey);
-      })
-      .slice(0, 5);
-    const totalVisible = visiblePortForwardEventHistory.length;
-    const totalErrors = levelCounts.error;
-    const errorRatioPercent = totalVisible > 0 ? (totalErrors / totalVisible) * 100 : 0;
-    return {
-      totalVisible,
-      totalErrors,
-      errorRatioPercent,
-      levelCounts,
-      typeCounts,
-      topErrorCodes,
-      topCorrelations,
-      earliestVisibleAt: earliestTimestampMs ? new Date(earliestTimestampMs).toISOString() : "",
-      latestVisibleAt: latestTimestampMs ? new Date(latestTimestampMs).toISOString() : ""
-    };
-  }, [visiblePortForwardEventHistory]);
-  const hasCustomizedPortForwardEventView =
-    portForwardEventFilter !== DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.filter ||
-    portForwardEventTimeRange !== DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.timeRange ||
-    portForwardEventErrorCode !== DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.errorCode ||
-    portForwardEventCorrelationQuery.trim().length > 0;
-  const resetPortForwardEventViewFilters = useCallback(() => {
-    setPortForwardEventFilter(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.filter);
-    setPortForwardEventTimeRange(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.timeRange);
-    setPortForwardEventErrorCode(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.errorCode);
-    setPortForwardEventCorrelationQuery(DEFAULT_PORT_FORWARD_EVENT_VIEW_PREFERENCES.correlationQuery);
-  }, []);
-  const portForwardActiveTabSummary = activeTerminalTab
-    ? `${activeTerminalTab.title} (${isActiveTabConnected ? "connected" : "disconnected"})`
-    : "None";
-  const portForwardPresetViews = useMemo(
-    () =>
-      activePortForwardPresets.map((preset) => ({
-        id: preset.id,
-        name: preset.name,
-        summary: formatPortForwardPreset(preset),
-        updatedAtLabel: new Date(preset.updatedAt).toLocaleString(),
-        autoRestore: preset.autoRestore
-      })),
-    [activePortForwardPresets]
-  );
-  const portForwardRecordViews = useMemo(
-    () =>
-      portForwards.map((forward) => ({
-        id: forward.id,
-        title: formatPortForwardRecord(forward),
-        statusLabel: getPortForwardStatusLabel(forward),
-        statusTone: (forward.status === "degraded" ? "degraded" : "active") as
-          | "active"
-          | "degraded",
-        createdAtLabel: new Date(forward.createdAt).toLocaleString(),
-        connectionsLabel: `Connections ${forward.totalConnections} (failed ${forward.failedConnections})`,
-        lastActivityLabel: forward.lastActivityAt
-          ? formatPortForwardTimestamp(forward.lastActivityAt)
-          : null,
-        lastErrorLabel: forward.lastError
-          ? `Last error (${formatPortForwardTimestamp(forward.lastErrorAt)}): ${forward.lastError}`
-          : null
-      })),
-    [portForwards]
-  );
-  const portForwardEventViews = useMemo(
-    () =>
-      visiblePortForwardEventHistory.map((event) => ({
-        id: event.id,
-        title: `${formatPortForwardEventType(event.type)} ${formatPortForwardEventSummary(event)}`,
-        meta: `${formatPortForwardTimestamp(event.createdAt)} | ${event.level.toUpperCase()}`,
-        correlation: formatPortForwardEventCorrelation(event) || null,
-        message: event.message,
-        isError: event.level === "error"
-      })),
-    [visiblePortForwardEventHistory]
-  );
-  const portForwardAnalyticsView = useMemo(
-    () => ({
-      errorRatioLabel: formatPercent(portForwardVisibleEventAnalytics.errorRatioPercent),
-      errorsLabel: `Errors ${portForwardVisibleEventAnalytics.totalErrors}/${portForwardVisibleEventAnalytics.totalVisible}`,
-      typeBreakdownPrimary: `created ${portForwardVisibleEventAnalytics.typeCounts.created} | removed ${portForwardVisibleEventAnalytics.typeCounts.removed}`,
-      typeBreakdownSecondary: `degraded ${portForwardVisibleEventAnalytics.typeCounts.statusDegraded} | recovered ${portForwardVisibleEventAnalytics.typeCounts.statusRecovered}`,
-      topErrorCodesLabel:
-        portForwardVisibleEventAnalytics.topErrorCodes.length > 0
-          ? portForwardVisibleEventAnalytics.topErrorCodes
-              .map((entry) => `${entry.code} (${entry.count})`)
-              .join(" | ")
-          : "No error code data",
-      topCorrelationsLabel:
-        portForwardVisibleEventAnalytics.topCorrelations.length > 0
-          ? portForwardVisibleEventAnalytics.topCorrelations
-              .map((entry) => `${entry.correlationKey} (${entry.count})`)
-              .join(" | ")
-          : "No correlation key data"
-    }),
-    [portForwardVisibleEventAnalytics]
-  );
-  const portForwardEventSummaryLabel = `Session history ${activePortForwardEventHistory.length}, visible ${visiblePortForwardEventHistory.length}${
-    portForwardEventTimeRange !== "all" ? `, range ${portForwardEventTimeRange}` : ""
-  }${portForwardEventErrorCode !== "all" ? `, code ${portForwardEventErrorCode}` : ""}`;
-  const sessionContextTarget = useMemo(() => {
-    const target = sessionContextMenu?.target;
-    if (!target || target.type !== "session") {
-      return null;
-    }
-    return sessions.find((session) => session.id === target.sessionId) ?? null;
-  }, [sessionContextMenu, sessions]);
-  const sessionGroupOptions = useMemo(() => {
-    const allGroups = [
-      ...sessionGroupsState.groups,
-      ...sessions.map((session) => session.groupId ?? "")
-    ];
-    return normalizeSessionGroups(allGroups);
-  }, [sessionGroupsState.groups, sessions]);
-  const filteredSessions = useMemo(() => {
-    const normalizedQuery = sessionFilterQuery.trim().toLowerCase();
-    const filtered = sessions.filter((session) => {
-      if (sessionFavoritesOnly && !session.favorite) {
-        return false;
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
-      return [
-        session.name,
-        session.host,
-        session.username,
-        String(session.port),
-        session.groupId ?? "",
-        session.remark ?? ""
-      ].some((value) => value.toLowerCase().includes(normalizedQuery));
-    });
-    return sortSessionsForMode(filtered, sessionSortMode);
-  }, [sessionFavoritesOnly, sessionFilterQuery, sessionSortMode, sessions]);
-  const groupedSessions = useMemo(() => {
-    const sessionsByGroup = new Map<string, SessionRecord[]>();
-    for (const session of filteredSessions) {
-      const groupValue = session.groupId?.trim() ?? "";
-      const groupKey = groupValue || "__ungrouped__";
-      const existingSessions = sessionsByGroup.get(groupKey);
-      if (existingSessions) {
-        existingSessions.push(session);
-      } else {
-        sessionsByGroup.set(groupKey, [session]);
-      }
-    }
-
-    const groups: Array<{
-      key: string;
-      label: string;
-      groupName: string;
-      sessions: SessionRecord[];
-    }> = [];
-    const seenGroupKeys = new Set<string>();
-    const appendGroup = (groupKey: string, label: string, groupName: string) => {
-      if (seenGroupKeys.has(groupKey)) {
-        return;
-      }
-      seenGroupKeys.add(groupKey);
-      groups.push({
-        key: groupKey,
-        label,
-        groupName,
-        sessions: sessionsByGroup.get(groupKey) ?? []
-      });
-    };
-
-    for (const groupName of sessionGroupOptions) {
-      appendGroup(groupName, groupName, groupName);
-    }
-
-    for (const groupKey of sessionsByGroup.keys()) {
-      if (groupKey === "__ungrouped__") {
-        continue;
-      }
-      appendGroup(groupKey, groupKey, groupKey);
-    }
-
-    const hasUngroupedInAllSessions = sessions.some(
-      (session) => (session.groupId?.trim() ?? "") === ""
-    );
-    if (sessionsByGroup.has("__ungrouped__") || hasUngroupedInAllSessions) {
-      appendGroup("__ungrouped__", "Ungrouped", "");
-    }
-
-    groups.sort((left, right) => {
-      if (left.key === "__ungrouped__" && right.key !== "__ungrouped__") {
-        return 1;
-      }
-      if (left.key !== "__ungrouped__" && right.key === "__ungrouped__") {
-        return -1;
-      }
-      return left.label.localeCompare(right.label, undefined, { sensitivity: "base" });
-    });
-    return groups;
-  }, [filteredSessions, sessionGroupOptions, sessions]);
-  const sessionBadgeText = useMemo(() => {
-    if (filteredSessions.length === sessions.length) {
-      return `${sessions.length}`;
-    }
-    return `${filteredSessions.length}/${sessions.length}`;
-  }, [filteredSessions.length, sessions.length]);
-  const activeSessionGroup = useMemo(() => {
-    if (!activeSessionGroupKey) {
-      return null;
-    }
-    return groupedSessions.find((group) => group.key === activeSessionGroupKey) ?? null;
-  }, [activeSessionGroupKey, groupedSessions]);
-  const dangerousCommandSettingsTargetGroupName = useMemo(() => {
-    if (activeTabSessionGroupName) {
-      return activeTabSessionGroupName;
-    }
-    const selectedGroupName = activeSessionGroup?.groupName?.trim() ?? "";
-    return selectedGroupName || null;
-  }, [activeSessionGroup, activeTabSessionGroupName]);
-  const activeDangerousCommandGroupAssignment = useMemo(
-    () =>
-      findDangerousCommandGroupAssignment(
-        dangerousCommandGuardPreferences,
-        dangerousCommandSettingsTargetGroupName
-      ),
-    [dangerousCommandGuardPreferences, dangerousCommandSettingsTargetGroupName]
-  );
-  const dangerousCommandGroupAssignmentLimitReached =
-    !activeDangerousCommandGroupAssignment &&
-    dangerousCommandGuardPreferences.groupAssignments.length >=
-      MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS;
-  const activeGroupSessions = useMemo(
-    () => activeSessionGroup?.sessions ?? [],
-    [activeSessionGroup]
-  );
-  const selectedGroupKeySet = useMemo(() => new Set(selectedGroupKeys), [selectedGroupKeys]);
-  const selectedSessionIdSet = useMemo(() => new Set(selectedSessionIds), [selectedSessionIds]);
-  const selectedGroups = useMemo(
-    () => groupedSessions.filter((group) => selectedGroupKeySet.has(group.key)),
-    [groupedSessions, selectedGroupKeySet]
-  );
-  const selectedGroupNames = useMemo(
-    () =>
-      selectedGroups
-        .filter((group) => group.groupName.trim().length > 0)
-        .map((group) => group.groupName),
-    [selectedGroups]
-  );
-  const selectedSessionsInActiveGroup = useMemo(
-    () => activeGroupSessions.filter((session) => selectedSessionIdSet.has(session.id)),
-    [activeGroupSessions, selectedSessionIdSet]
-  );
+    portForwardEventHistory,
+    portForwardEventTimeRange,
+    portForwardPresets,
+    portForwards,
+    resolvePortForwardEventTimeRangeCutoff,
+    setPortForwardEventCorrelationQuery,
+    setPortForwardEventErrorCode,
+    setPortForwardEventFilter,
+    setPortForwardEventTimeRange
+  });
+  const {
+    activeDangerousCommandGroupAssignment,
+    dangerousCommandBuiltinRuleViews,
+    dangerousCommandCustomPatternSummary,
+    dangerousCommandEnvironmentTemplateViews,
+    dangerousCommandExecutionSourceViews,
+    dangerousCommandGroupAssignmentLimitReached,
+    dangerousCommandGroupAssignmentViews,
+    dangerousCommandPersistentApprovalViews,
+    dangerousCommandPolicyBundleLastPulledLabel,
+    dangerousCommandPolicyBundleLastPushedLabel,
+    dangerousCommandPolicyBundleViews,
+    dangerousCommandPolicyPackViews,
+    dangerousCommandSettingsTargetGroupName,
+    dangerousCommandSupplementalRuleViews,
+    dangerousCommandTargetGroupHint,
+    dangerousCommandTemporaryApprovalViews,
+    enabledDangerousCommandBuiltinRuleCount,
+    enabledDangerousCommandSourceCount,
+    selectedDangerousCommandEnvironmentTemplate,
+    selectedDangerousCommandPolicyPack
+  } = useDangerousCommandSettingsViewModels({
+    activeSessionGroupName: activeSessionGroup?.groupName ?? null,
+    activeTabSessionGroupName,
+    builtinRules: DANGEROUS_COMMAND_BUILTIN_RULES,
+    environmentTemplates: DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES,
+    executionSources: DANGEROUS_COMMAND_EXECUTION_SOURCES,
+    formatPersistentApprovalScopeLabel:
+      formatDangerousCommandPersistentApprovalScopeLabel,
+    formatTemporaryApprovalScopeLabel:
+      formatDangerousCommandTemporaryApprovalScopeLabel,
+    maxGroupAssignmentCount: MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS,
+    policyBundles: dangerousCommandPolicyBundles,
+    policyBundleSyncState: dangerousCommandPolicyBundleSyncState,
+    policyPacks: DANGEROUS_COMMAND_POLICY_PACKS,
+    preferences: dangerousCommandGuardPreferences,
+    temporaryApprovals: dangerousCommandTemporaryApprovals
+  });
   const writeAppLog = useCallback(
     (
       level: "debug" | "info" | "warn" | "error",
@@ -7822,175 +7393,11 @@ export function App() {
     },
     []
   );
-  const clearAppHintMessage = useCallback(() => {
-    if (appHintTimerRef.current !== null) {
-      window.clearTimeout(appHintTimerRef.current);
-      appHintTimerRef.current = null;
-    }
-    setAppHintMessage(null);
-  }, []);
-  const pushAppHintMessage = useCallback(
-    (message: string, options?: { level?: "info" | "warn"; durationMs?: number }) => {
-      const normalized = message.replace(/\s+/g, " ").trim();
-      if (!normalized) {
-        return;
-      }
-      const bounded =
-        normalized.length > 220 ? `${normalized.slice(0, 217)}...` : normalized;
-      if (appHintTimerRef.current !== null) {
-        window.clearTimeout(appHintTimerRef.current);
-        appHintTimerRef.current = null;
-      }
-      setAppHintMessage({
-        level: options?.level ?? "info",
-        message: bounded
-      });
-      const durationMs =
-        typeof options?.durationMs === "number" && Number.isFinite(options.durationMs)
-          ? Math.max(1200, Math.trunc(options.durationMs))
-          : 3600;
-      appHintTimerRef.current = window.setTimeout(() => {
-        appHintTimerRef.current = null;
-        setAppHintMessage(null);
-      }, durationMs);
-    },
-    []
-  );
-  const removeDangerousCommandTemporaryApproval = useCallback((approvalId: string) => {
-    setDangerousCommandTemporaryApprovals((prev) =>
-      prev.filter((approval) => approval.id !== approvalId)
-    );
-  }, []);
-  const clearDangerousCommandTemporaryApprovals = useCallback(
-    (reason?: "settings-changed" | "manual") => {
-      const hadApprovals = dangerousCommandTemporaryApprovalsRef.current.length > 0;
-      if (!hadApprovals) {
-        return;
-      }
-      setDangerousCommandTemporaryApprovals([]);
-      if (reason === "settings-changed") {
-        pushAppHintMessage("Cleared temporary dangerous-command approvals after Safety settings changed.", {
-          level: "info",
-          durationMs: 4200
-        });
-      }
-    },
-    [pushAppHintMessage]
-  );
   const removeDangerousCommandPersistentApproval = useCallback((approvalId: string) => {
     setDangerousCommandGuardPreferences((prev) => ({
       ...prev,
       persistentApprovals: prev.persistentApprovals.filter((approval) => approval.id !== approvalId)
     }));
-  }, []);
-  const resolveDangerousCommandApproval = useCallback((approved: boolean) => {
-    const resolver = dangerousCommandApprovalResolverRef.current;
-    dangerousCommandApprovalResolverRef.current = null;
-    setDangerousCommandApproval(null);
-    if (resolver) {
-      resolver(approved);
-    }
-  }, []);
-  const approveDangerousCommandWithScope = useCallback(
-    (scope: DangerousCommandApprovalScopeId) => {
-      const currentApproval = dangerousCommandApproval;
-      if (!currentApproval) {
-        resolveDangerousCommandApproval(true);
-        return;
-      }
-      const tabTitle =
-        terminalTabsRef.current.find((tab) => tab.id === currentApproval.request.tabId)?.title ?? "";
-      const nextApproval = createDangerousCommandTemporaryApprovalFromRequest(
-        currentApproval.request,
-        currentApproval.sourceLabel,
-        tabTitle,
-        scope
-      );
-      if (!nextApproval) {
-        resolveDangerousCommandApproval(true);
-        return;
-      }
-      setDangerousCommandTemporaryApprovals((prev) => {
-        const filtered = prev.filter(
-          (approval) => !matchesDangerousCommandTemporaryApproval(approval, currentApproval.request)
-        );
-        const next = [nextApproval, ...filtered];
-        return next.slice(0, MAX_DANGEROUS_COMMAND_TEMP_APPROVALS);
-      });
-      pushAppHintMessage(
-        `Approved exact command for ${formatDangerousCommandTemporaryApprovalScopeLabel(nextApproval)}.`,
-        {
-          level: currentApproval.request.result.severity === "critical" ? "warn" : "info",
-          durationMs: 4600
-        }
-      );
-      resolveDangerousCommandApproval(true);
-    },
-    [dangerousCommandApproval, pushAppHintMessage, resolveDangerousCommandApproval]
-  );
-  const requestDangerousCommandApproval = useCallback(
-    async (request: DangerousCommandApprovalRequest): Promise<boolean> => {
-      if (dangerousCommandApprovalResolverRef.current) {
-        dangerousCommandApprovalResolverRef.current(false);
-      }
-      const matchingPersistentApproval =
-        dangerousCommandGuardPreferencesRef.current.persistentApprovals.find((approval) =>
-          matchesDangerousCommandPersistentApproval(approval, request)
-        ) ?? null;
-      if (matchingPersistentApproval) {
-        return true;
-      }
-      const matchingTemporaryApproval = dangerousCommandTemporaryApprovalsRef.current.find((approval) =>
-        matchesDangerousCommandTemporaryApproval(approval, request)
-      );
-      if (matchingTemporaryApproval) {
-        return true;
-      }
-      const uniqueRuleLabels = Array.from(new Set(request.result.matches.map((match) => match.label)));
-      const activeWorkspaceProfile = getWorkspaceProfileOption(
-        workspaceProfilePreferencesRef.current.profileId
-      );
-      const contextSummary = [
-        workspaceProfilePreferencesRef.current.profileId !== "none"
-          ? `workspace ${
-              getI18n(readAppLanguagePreference()).settings.workspace.profileOptions[
-                activeWorkspaceProfile.id as WorkspaceProfileI18nKey
-              ].shortLabel
-            }`
-          : null,
-        request.result.sessionGroupName ? `group ${request.result.sessionGroupName}` : null,
-        `pack ${request.result.appliedPolicyPackLabel}`,
-        `env ${request.result.appliedEnvironmentTemplateLabel}`
-      ]
-        .filter(Boolean)
-        .join(" | ");
-      setDangerousCommandApproval({
-        id: `danger-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-        request,
-        sourceLabel: formatDangerousCommandSourceLabel(request.source),
-        contextSummary,
-        ruleSummary: uniqueRuleLabels.join(" | ")
-      });
-      return new Promise((resolve) => {
-        dangerousCommandApprovalResolverRef.current = resolve;
-      });
-    },
-    []
-  );
-  useEffect(() => {
-    const nextSignature = JSON.stringify(dangerousCommandGuardPreferences);
-    if (dangerousCommandPreferencesSignatureRef.current !== nextSignature) {
-      dangerousCommandPreferencesSignatureRef.current = nextSignature;
-      clearDangerousCommandTemporaryApprovals("settings-changed");
-    }
-  }, [clearDangerousCommandTemporaryApprovals, dangerousCommandGuardPreferences]);
-  useEffect(() => {
-    return () => {
-      if (dangerousCommandApprovalResolverRef.current) {
-        dangerousCommandApprovalResolverRef.current(false);
-        dangerousCommandApprovalResolverRef.current = null;
-      }
-    };
   }, []);
   const showAppAlert = useCallback(
     async (message: string, options?: AppAlertDialogOptions): Promise<void> => {
@@ -8003,7 +7410,10 @@ export function App() {
           title: title || tr("Notice"),
           message: translatedMessage,
           confirmLabel: tr(options?.confirmLabel ?? "OK"),
-          detailText: options.detailText
+          detailText:
+            options?.translateDetailText && options.detailText
+              ? trMultiline(options.detailText)
+              : options?.detailText
         };
         await openAppDialog(dialog, undefined);
         return;
@@ -8014,7 +7424,7 @@ export function App() {
         durationMs: hasDetailText ? 5600 : 3600
       });
     },
-    [openAppDialog, pushAppHintMessage, tr]
+    [openAppDialog, pushAppHintMessage, tr, trMultiline]
   );
   const showAppConfirm = useCallback(
     async (message: string, options?: AppConfirmDialogOptions): Promise<boolean> => {
@@ -8025,12 +7435,12 @@ export function App() {
         confirmLabel: tr(options?.confirmLabel ?? "Confirm"),
         cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
         danger: options?.danger,
-        detailText: options?.detailText ? tr(options.detailText) : undefined
+        detailText: options?.detailText ? trMultiline(options.detailText) : undefined
       };
       const result = await openAppDialog(dialog, false);
       return result === true;
     },
-    [openAppDialog, tr]
+    [openAppDialog, tr, trMultiline]
   );
   const showAppPrompt = useCallback(
     async (
@@ -9371,7 +8781,7 @@ export function App() {
         message: tr(message),
         confirmLabel: "",
         cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
-        detailText: options?.detailText ? tr(options.detailText) : undefined,
+        detailText: options?.detailText ? trMultiline(options.detailText) : undefined,
         options: choices.map((choice) => ({
           ...choice,
           label: tr(choice.label)
@@ -9380,7 +8790,7 @@ export function App() {
       const result = await openAppDialog(dialog, null);
       return typeof result === "string" ? result : null;
     },
-    [openAppDialog, tr]
+    [openAppDialog, tr, trMultiline]
   );
   const clearDangerousCommandPersistentApprovals = useCallback(async () => {
     const currentApprovals = dangerousCommandGuardPreferencesRef.current.persistentApprovals;
@@ -9920,6 +9330,16 @@ export function App() {
     },
     [sftpTransfers]
   );
+  useSftpTransferBatchNotifications({
+    activeDownloadBatchProgress,
+    activeTabId,
+    activeUploadBatchProgress,
+    buildBatchFailureDetailText,
+    setDownloadBatchByTab,
+    setUploadBatchByTab,
+    showTransferDockNotice,
+    writeAppLog
+  });
   const canClearFinishedUploads =
     !!activeTabId &&
     (activeUploadQueueStats.completed +
@@ -11246,418 +10666,48 @@ export function App() {
     [ensureRemoteDirectoryForUpload]
   );
 
-  const syncScheduledTransferPauseState = useCallback(() => {
-    if (!sftpTransferPreferences.scheduleWindowEnabled) {
-      setSchedulePausedUploadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
-      setSchedulePausedDownloadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
-      return true;
-    }
-    const windowOpen = isWithinSftpTransferScheduleWindow(sftpTransferPreferences);
-    if (windowOpen) {
-      setSchedulePausedUploadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
-      setSchedulePausedDownloadTabs((prev) => (Object.keys(prev).length > 0 ? {} : prev));
-      return true;
-    }
-
-    const nextPausedUploadTabs: Record<string, true> = {};
-    for (const job of uploadQueueRef.current) {
-      nextPausedUploadTabs[job.tabId] = true;
-    }
-
-    const nextPausedDownloadTabs: Record<string, true> = {};
-    for (const job of downloadQueueRef.current) {
-      nextPausedDownloadTabs[job.tabId] = true;
-    }
-
-    setSchedulePausedUploadTabs((prev) => {
-      const prevKeys = Object.keys(prev);
-      const nextKeys = Object.keys(nextPausedUploadTabs);
-      if (
-        prevKeys.length === nextKeys.length &&
-        prevKeys.every((key) => key in nextPausedUploadTabs)
-      ) {
-        return prev;
-      }
-      return nextPausedUploadTabs;
+  const { drainDownloadQueue, drainUploadQueue, syncScheduledTransferPauseState } =
+    useSftpTransferQueueRuntime({
+      applySftpTransferEvent,
+      claimUploadDirectoryBarrier,
+      connectedTabIdsRef,
+      downloadQueueRef,
+      ensureRemoteDirectoryForUpload,
+      findNextSftpTransferWindowTransition,
+      getEffectiveUploadConcurrencyForTab,
+      getSftpChannelOpenRetryDelayMs,
+      invalidateUploadDirectoryBranchForTab,
+      isDrainingDownloadQueueRef,
+      isDrainingUploadQueueRef,
+      isRemotePathMissingError,
+      isSftpChannelOpenFailureError,
+      isTabNotConnectedError,
+      isTransferCanceledMessage,
+      isWithinSftpTransferScheduleWindow,
+      markUploadDirectoryReady,
+      noteUploadChannelBackpressureForTab,
+      noteUploadSuccessForTab,
+      normalizeRemoteDirectoryPath,
+      readyUploadDirectoriesRef,
+      releaseUploadDirectoryBarrier,
+      resolveSftpTransferRateLimitBytesPerSecond,
+      runningDownloadIdsRef,
+      runningUploadCountsByTabRef,
+      runningUploadIdsRef,
+      setPausedDownloadTabs,
+      setPausedUploadTabs,
+      setSchedulePausedDownloadTabs,
+      setSchedulePausedUploadTabs,
+      setSftpError,
+      sftpApi,
+      sftpTransferPreferences,
+      transferWindowEvaluationIntervalMs: SFTP_TRANSFER_WINDOW_EVALUATION_INTERVAL_MS,
+      uploadChannelOpenRetryLimit: SFTP_UPLOAD_CHANNEL_OPEN_RETRY_LIMIT,
+      uploadQueueRef,
+      uploadQueueRetryTimerRef,
+      warmingUploadDirectoriesRef,
+      writeAppLog
     });
-    setSchedulePausedDownloadTabs((prev) => {
-      const prevKeys = Object.keys(prev);
-      const nextKeys = Object.keys(nextPausedDownloadTabs);
-      if (
-        prevKeys.length === nextKeys.length &&
-        prevKeys.every((key) => key in nextPausedDownloadTabs)
-      ) {
-        return prev;
-      }
-      return nextPausedDownloadTabs;
-    });
-    return false;
-  }, [sftpTransferPreferences]);
-
-  const drainUploadQueue = useCallback(() => {
-    if (!sftpApi || isDrainingUploadQueueRef.current) {
-      return;
-    }
-    if (uploadQueueRetryTimerRef.current !== null) {
-      window.clearTimeout(uploadQueueRetryTimerRef.current);
-      uploadQueueRetryTimerRef.current = null;
-    }
-    if (!syncScheduledTransferPauseState()) {
-      return;
-    }
-    isDrainingUploadQueueRef.current = true;
-    try {
-      while (runningUploadIdsRef.current.size < sftpTransferPreferences.uploadConcurrency) {
-        const now = Date.now();
-        let earliestRetryAt: number | null = null;
-        const nextIndex = uploadQueueRef.current.findIndex((job) => {
-          if (!connectedTabIdsRef.current.has(job.tabId)) {
-            return false;
-          }
-          if (typeof job.notBeforeAt === "number" && job.notBeforeAt > now) {
-            earliestRetryAt =
-              earliestRetryAt === null ? job.notBeforeAt : Math.min(earliestRetryAt, job.notBeforeAt);
-            return false;
-          }
-          const runningCount = runningUploadCountsByTabRef.current.get(job.tabId) ?? 0;
-          if (runningCount >= getEffectiveUploadConcurrencyForTab(job.tabId)) {
-            return false;
-          }
-          const normalizedDirectory = normalizeRemoteDirectoryPath(job.remoteDirectory);
-          if (!normalizedDirectory) {
-            return true;
-          }
-          const readyDirectories = readyUploadDirectoriesRef.current.get(job.tabId);
-          if (readyDirectories?.has(normalizedDirectory)) {
-            return true;
-          }
-          const warmingDirectories = warmingUploadDirectoriesRef.current.get(job.tabId);
-          return !warmingDirectories?.has(normalizedDirectory);
-        });
-        if (nextIndex < 0) {
-          if (earliestRetryAt !== null) {
-            const delayMs = Math.max(0, earliestRetryAt - now);
-            uploadQueueRetryTimerRef.current = window.setTimeout(() => {
-              uploadQueueRetryTimerRef.current = null;
-              drainUploadQueue();
-            }, delayMs);
-          }
-          break;
-        }
-        const [nextJob] = uploadQueueRef.current.splice(nextIndex, 1);
-        const directoryBarrierKey = claimUploadDirectoryBarrier(nextJob.tabId, nextJob.remoteDirectory);
-        runningUploadIdsRef.current.set(nextJob.transferId, nextJob.tabId);
-        runningUploadCountsByTabRef.current.set(
-          nextJob.tabId,
-          (runningUploadCountsByTabRef.current.get(nextJob.tabId) ?? 0) + 1
-        );
-        void (async () => {
-          await ensureRemoteDirectoryForUpload(nextJob.tabId, nextJob.remoteDirectory);
-          await sftpApi.uploadFileToPath(
-            nextJob.tabId,
-            nextJob.transferId,
-            nextJob.localPath,
-            nextJob.remotePath,
-            {
-              rateLimitBytesPerSecond: resolveSftpTransferRateLimitBytesPerSecond(
-                sftpTransferPreferences.uploadRateLimitKiBps
-              )
-            }
-          );
-          markUploadDirectoryReady(nextJob.tabId, directoryBarrierKey);
-          noteUploadSuccessForTab(nextJob.tabId);
-        })()
-          .catch((caughtError) => {
-            const message = (caughtError as Error)?.message ?? "Upload failed.";
-            if (isTransferCanceledMessage(message)) {
-              return;
-            }
-            if (isRemotePathMissingError(message)) {
-              const retryCount = nextJob.missingDirectoryRetryCount ?? 0;
-              if (retryCount < 1) {
-                invalidateUploadDirectoryBranchForTab(nextJob.tabId, nextJob.remoteDirectory);
-                uploadQueueRef.current.unshift({
-                  ...nextJob,
-                  missingDirectoryRetryCount: retryCount + 1,
-                  notBeforeAt: Date.now() + 150
-                });
-                applySftpTransferEvent({
-                  tabId: nextJob.tabId,
-                  transferId: nextJob.transferId,
-                  direction: "upload",
-                  status: "queued",
-                  batchId: nextJob.batchId,
-                  name: nextJob.name,
-                  localPath: nextJob.localPath,
-                  remotePath: nextJob.remotePath,
-                  transferredBytes: 0,
-                  totalBytes: 0,
-                  message: "retrying after remote directory refresh"
-                });
-                writeAppLog(
-                  "warn",
-                  "renderer:sftp-transfer",
-                  "Upload hit missing remote path. Cleared the affected remote-directory branch and requeued once.",
-                  {
-                    tabId: nextJob.tabId,
-                    transferId: nextJob.transferId,
-                    remoteDirectory: nextJob.remoteDirectory,
-                    remotePath: nextJob.remotePath
-                  }
-                );
-                return;
-              }
-            }
-            if (isSftpChannelOpenFailureError(message)) {
-              const retryCount = nextJob.channelOpenRetryCount ?? 0;
-              if (retryCount < SFTP_UPLOAD_CHANNEL_OPEN_RETRY_LIMIT) {
-                const backoffMs = getSftpChannelOpenRetryDelayMs(retryCount);
-                noteUploadChannelBackpressureForTab(nextJob.tabId, message);
-                uploadQueueRef.current.unshift({
-                  ...nextJob,
-                  channelOpenRetryCount: retryCount + 1,
-                  notBeforeAt: Date.now() + backoffMs
-                });
-                applySftpTransferEvent({
-                  tabId: nextJob.tabId,
-                  transferId: nextJob.transferId,
-                  direction: "upload",
-                  status: "queued",
-                  batchId: nextJob.batchId,
-                  name: nextJob.name,
-                  localPath: nextJob.localPath,
-                  remotePath: nextJob.remotePath,
-                  transferredBytes: 0,
-                  totalBytes: 0,
-                  message: `retrying after SSH channel-open backpressure (${retryCount + 1}/${SFTP_UPLOAD_CHANNEL_OPEN_RETRY_LIMIT})`
-                });
-                writeAppLog(
-                  "warn",
-                  "renderer:sftp-transfer",
-                  "Upload hit SSH channel-open backpressure. Requeued with backoff.",
-                  {
-                    tabId: nextJob.tabId,
-                    transferId: nextJob.transferId,
-                    remotePath: nextJob.remotePath,
-                    retryCount: retryCount + 1,
-                    backoffMs,
-                    message
-                  }
-                );
-                uploadQueueRetryTimerRef.current = window.setTimeout(() => {
-                  uploadQueueRetryTimerRef.current = null;
-                  drainUploadQueue();
-                }, backoffMs);
-                return;
-              }
-            }
-            if (isTabNotConnectedError(message)) {
-              connectedTabIdsRef.current.delete(nextJob.tabId);
-              setPausedUploadTabs((prev) => {
-                if (prev[nextJob.tabId]) {
-                  return prev;
-                }
-                return {
-                  ...prev,
-                  [nextJob.tabId]: true
-                };
-              });
-              uploadQueueRef.current.unshift({
-                ...nextJob,
-                notBeforeAt: undefined
-              });
-              setSftpError(
-                "Terminal tab disconnected. Reconnect to resume queued uploads.",
-                nextJob.tabId
-              );
-              return;
-            }
-            setPausedUploadTabs((prev) => {
-              if (!prev[nextJob.tabId]) {
-                return prev;
-              }
-              const next = { ...prev };
-              delete next[nextJob.tabId];
-              return next;
-            });
-            setSftpError(message, nextJob.tabId);
-            applySftpTransferEvent({
-              tabId: nextJob.tabId,
-              transferId: nextJob.transferId,
-              direction: "upload",
-              status: "failed",
-              batchId: nextJob.batchId,
-              name: nextJob.name,
-              localPath: nextJob.localPath,
-              remotePath: nextJob.remotePath,
-              transferredBytes: 0,
-              totalBytes: 0,
-              message
-            });
-          })
-          .finally(() => {
-            runningUploadIdsRef.current.delete(nextJob.transferId);
-            const nextRunningCount = (runningUploadCountsByTabRef.current.get(nextJob.tabId) ?? 1) - 1;
-            if (nextRunningCount <= 0) {
-              runningUploadCountsByTabRef.current.delete(nextJob.tabId);
-            } else {
-              runningUploadCountsByTabRef.current.set(nextJob.tabId, nextRunningCount);
-            }
-            releaseUploadDirectoryBarrier(nextJob.tabId, directoryBarrierKey);
-            drainUploadQueue();
-          });
-      }
-    } finally {
-      isDrainingUploadQueueRef.current = false;
-    }
-  }, [
-    applySftpTransferEvent,
-    ensureRemoteDirectoryForUpload,
-    claimUploadDirectoryBarrier,
-    getEffectiveUploadConcurrencyForTab,
-    invalidateUploadDirectoryBranchForTab,
-    markUploadDirectoryReady,
-    noteUploadChannelBackpressureForTab,
-    noteUploadSuccessForTab,
-    releaseUploadDirectoryBarrier,
-    sftpApi,
-    sftpTransferPreferences.uploadConcurrency,
-    sftpTransferPreferences.uploadRateLimitKiBps,
-    syncScheduledTransferPauseState,
-    writeAppLog
-  ]);
-
-  const drainDownloadQueue = useCallback(() => {
-    if (!sftpApi || isDrainingDownloadQueueRef.current) {
-      return;
-    }
-    if (!syncScheduledTransferPauseState()) {
-      return;
-    }
-    isDrainingDownloadQueueRef.current = true;
-    try {
-      while (runningDownloadIdsRef.current.size < sftpTransferPreferences.downloadConcurrency) {
-        const nextIndex = downloadQueueRef.current.findIndex((job) =>
-          connectedTabIdsRef.current.has(job.tabId)
-        );
-        if (nextIndex < 0) {
-          break;
-        }
-        const [nextJob] = downloadQueueRef.current.splice(nextIndex, 1);
-        runningDownloadIdsRef.current.set(nextJob.transferId, nextJob.tabId);
-        void sftpApi
-          .downloadFile(
-            nextJob.tabId,
-            nextJob.transferId,
-            nextJob.remotePath,
-            nextJob.localPath,
-            {
-              rateLimitBytesPerSecond: resolveSftpTransferRateLimitBytesPerSecond(
-                sftpTransferPreferences.downloadRateLimitKiBps
-              )
-            }
-          )
-          .catch((caughtError) => {
-            const message = (caughtError as Error)?.message ?? "Download failed.";
-            if (isTransferCanceledMessage(message)) {
-              return;
-            }
-            if (isTabNotConnectedError(message)) {
-              connectedTabIdsRef.current.delete(nextJob.tabId);
-              setPausedDownloadTabs((prev) => {
-                if (prev[nextJob.tabId]) {
-                  return prev;
-                }
-                return {
-                  ...prev,
-                  [nextJob.tabId]: true
-                };
-              });
-              downloadQueueRef.current.unshift(nextJob);
-              setSftpError(
-                "Terminal tab disconnected. Reconnect to resume queued downloads.",
-                nextJob.tabId
-              );
-              return;
-            }
-            setPausedDownloadTabs((prev) => {
-              if (!prev[nextJob.tabId]) {
-                return prev;
-              }
-              const next = { ...prev };
-              delete next[nextJob.tabId];
-              return next;
-            });
-            setSftpError(message, nextJob.tabId);
-            applySftpTransferEvent({
-              tabId: nextJob.tabId,
-              transferId: nextJob.transferId,
-              direction: "download",
-              status: "failed",
-              batchId: nextJob.batchId,
-              name: nextJob.name,
-              localPath: nextJob.localPath,
-              remotePath: nextJob.remotePath,
-              transferredBytes: 0,
-              totalBytes: 0,
-              message
-            });
-          })
-          .finally(() => {
-            runningDownloadIdsRef.current.delete(nextJob.transferId);
-            drainDownloadQueue();
-          });
-      }
-    } finally {
-      isDrainingDownloadQueueRef.current = false;
-    }
-  }, [
-    applySftpTransferEvent,
-    sftpApi,
-    sftpTransferPreferences.downloadConcurrency,
-    sftpTransferPreferences.downloadRateLimitKiBps,
-    syncScheduledTransferPauseState
-  ]);
-
-  useEffect(() => {
-    let boundaryTimerId: number | null = null;
-    const clearBoundaryTimer = () => {
-      if (boundaryTimerId !== null) {
-        window.clearTimeout(boundaryTimerId);
-        boundaryTimerId = null;
-      }
-    };
-    const scheduleBoundaryEvaluation = () => {
-      clearBoundaryTimer();
-      const nextTransition = findNextSftpTransferWindowTransition(sftpTransferPreferences);
-      if (!nextTransition) {
-        return;
-      }
-      const delayMs = Math.max(250, nextTransition.at.getTime() - Date.now() + 250);
-      boundaryTimerId = window.setTimeout(() => {
-        boundaryTimerId = null;
-        evaluateTransferScheduleWindow();
-      }, delayMs);
-    };
-    const evaluateTransferScheduleWindow = () => {
-      const windowOpen = syncScheduledTransferPauseState();
-      if (windowOpen) {
-        drainUploadQueue();
-        drainDownloadQueue();
-      }
-      scheduleBoundaryEvaluation();
-    };
-
-    evaluateTransferScheduleWindow();
-    const timerId = window.setInterval(
-      evaluateTransferScheduleWindow,
-      SFTP_TRANSFER_WINDOW_EVALUATION_INTERVAL_MS
-    );
-    return () => {
-      clearBoundaryTimer();
-      window.clearInterval(timerId);
-    };
-  }, [drainDownloadQueue, drainUploadQueue, sftpTransferPreferences, syncScheduledTransferPauseState]);
 
   const loadSftpDirectory = useCallback(
     async (
@@ -11716,300 +10766,6 @@ export function App() {
       disconnectReportFingerprintByTabRef.current.delete(tabId);
     }
   }, []);
-
-  const invalidateServerHealthRequest = useCallback((tabId: string) => {
-    const nextRequestId = (serverHealthRequestIdsRef.current.get(tabId) ?? 0) + 1;
-    serverHealthRequestIdsRef.current.set(tabId, nextRequestId);
-    serverHealthRequestInFlightTabsRef.current.delete(tabId);
-  }, []);
-
-  const invalidateServerProcessRequest = useCallback((tabId: string) => {
-    const nextRequestId = (serverProcessRequestIdsRef.current.get(tabId) ?? 0) + 1;
-    serverProcessRequestIdsRef.current.set(tabId, nextRequestId);
-    serverProcessRequestInFlightTabsRef.current.delete(tabId);
-  }, []);
-
-  const resetServerHealth = useCallback(
-    (options?: { tabId?: string | null; message?: string | null }) => {
-      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
-      if (!targetTabId) {
-        return;
-      }
-      invalidateServerHealthRequest(targetTabId);
-      const nextState: ServerHealthTabState = {
-        snapshot: null,
-        metrics: null,
-        loading: false,
-        error: options?.message ?? null
-      };
-      setServerHealthByTab((prev) => {
-        const previous = prev[targetTabId];
-        if (
-          previous &&
-          previous.snapshot === null &&
-          previous.metrics === null &&
-          previous.loading === false &&
-          previous.error === nextState.error
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [targetTabId]: nextState
-        };
-      });
-    },
-    [invalidateServerHealthRequest]
-  );
-
-  const resetServerProcesses = useCallback(
-    (options?: { tabId?: string | null; message?: string | null }) => {
-      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
-      if (!targetTabId) {
-        return;
-      }
-      invalidateServerProcessRequest(targetTabId);
-      const nextState: ServerProcessTabState = {
-        snapshot: null,
-        loading: false,
-        error: options?.message ?? null
-      };
-      setServerProcessByTab((prev) => {
-        const previous = prev[targetTabId];
-        if (
-          previous &&
-          previous.snapshot === null &&
-          previous.loading === false &&
-          previous.error === nextState.error
-        ) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [targetTabId]: nextState
-        };
-      });
-    },
-    [invalidateServerProcessRequest]
-  );
-
-  const removeServerMonitorTabState = useCallback(
-    (tabId: string) => {
-      const targetTabId = tabId.trim();
-      if (!targetTabId) {
-        return;
-      }
-      invalidateServerHealthRequest(targetTabId);
-      invalidateServerProcessRequest(targetTabId);
-      setServerHealthByTab((prev) => {
-        if (!(targetTabId in prev)) {
-          return prev;
-        }
-        const next = { ...prev };
-        delete next[targetTabId];
-        return next;
-      });
-      setServerProcessByTab((prev) => {
-        if (!(targetTabId in prev)) {
-          return prev;
-        }
-        const next = { ...prev };
-        delete next[targetTabId];
-        return next;
-      });
-      clearDisconnectReportFingerprintsForTabIds([targetTabId]);
-    },
-    [
-      clearDisconnectReportFingerprintsForTabIds,
-      invalidateServerHealthRequest,
-      invalidateServerProcessRequest
-    ]
-  );
-
-  const refreshServerHealth = useCallback(
-    async (options?: { tabId?: string; silent?: boolean }) => {
-      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
-      if (!targetTabId) {
-        return;
-      }
-      if (!terminalApi) {
-        resetServerHealth({
-          tabId: targetTabId,
-          message: "Terminal bridge unavailable. Restart `pnpm dev`."
-        });
-        return;
-      }
-      if (!connectedTabIdsRef.current.has(targetTabId)) {
-        resetServerHealth({
-          tabId: targetTabId,
-          message: "Terminal tab is not connected."
-        });
-        return;
-      }
-      const isSilent = options?.silent === true;
-      if (serverHealthRequestInFlightTabsRef.current.has(targetTabId)) {
-        return;
-      }
-      if (isSilent) {
-        const hasActiveUpload = Array.from(runningUploadIdsRef.current.values()).some(
-          (tabId) => tabId === targetTabId
-        );
-        const hasActiveDownload = Array.from(runningDownloadIdsRef.current.values()).some(
-          (tabId) => tabId === targetTabId
-        );
-        if (hasActiveUpload || hasActiveDownload) {
-          return;
-        }
-      }
-
-      const previousSnapshot = serverHealthByTabRef.current[targetTabId]?.snapshot ?? null;
-      const requestId = (serverHealthRequestIdsRef.current.get(targetTabId) ?? 0) + 1;
-      serverHealthRequestIdsRef.current.set(targetTabId, requestId);
-      serverHealthRequestInFlightTabsRef.current.add(targetTabId);
-      setServerHealthByTab((prev) => {
-        const previous = prev[targetTabId];
-        return {
-          ...prev,
-          [targetTabId]: {
-            snapshot: previous?.snapshot ?? null,
-            metrics: previous?.metrics ?? null,
-            loading: true,
-            error: isSilent ? previous?.error ?? null : null
-          }
-        };
-      });
-      try {
-        const snapshot = await terminalApi.getServerHealth(targetTabId);
-        if (
-          serverHealthRequestIdsRef.current.get(targetTabId) !== requestId ||
-          !connectedTabIdsRef.current.has(targetTabId)
-        ) {
-          return;
-        }
-        const nextMetrics = deriveServerHealthMetrics(snapshot, previousSnapshot);
-        setServerHealthByTab((prev) => {
-          return {
-            ...prev,
-            [targetTabId]: {
-              snapshot,
-              metrics: nextMetrics,
-              loading: false,
-              error: null
-            }
-          };
-        });
-      } catch (caughtError) {
-        if (serverHealthRequestIdsRef.current.get(targetTabId) !== requestId) {
-          return;
-        }
-        const message = (caughtError as Error).message;
-        setServerHealthByTab((prev) => {
-          const previous = prev[targetTabId];
-          return {
-            ...prev,
-            [targetTabId]: {
-              snapshot: previous?.snapshot ?? null,
-              metrics: previous?.metrics ?? null,
-              loading: false,
-              error: message
-            }
-          };
-        });
-      } finally {
-        serverHealthRequestInFlightTabsRef.current.delete(targetTabId);
-      }
-    },
-    [resetServerHealth, terminalApi]
-  );
-
-  const refreshServerProcesses = useCallback(
-    async (options?: { tabId?: string; silent?: boolean }) => {
-      const targetTabId = (options?.tabId ?? activeTabIdRef.current ?? "").trim();
-      if (!targetTabId) {
-        return;
-      }
-      if (!terminalApi) {
-        resetServerProcesses({
-          tabId: targetTabId,
-          message: "Terminal bridge unavailable. Restart `pnpm dev`."
-        });
-        return;
-      }
-      if (!connectedTabIdsRef.current.has(targetTabId)) {
-        resetServerProcesses({
-          tabId: targetTabId,
-          message: "Terminal tab is not connected."
-        });
-        return;
-      }
-      const isSilent = options?.silent === true;
-      if (serverProcessRequestInFlightTabsRef.current.has(targetTabId)) {
-        return;
-      }
-      if (isSilent) {
-        const hasActiveUpload = Array.from(runningUploadIdsRef.current.values()).some(
-          (tabId) => tabId === targetTabId
-        );
-        const hasActiveDownload = Array.from(runningDownloadIdsRef.current.values()).some(
-          (tabId) => tabId === targetTabId
-        );
-        if (hasActiveUpload || hasActiveDownload) {
-          return;
-        }
-      }
-
-      const requestId = (serverProcessRequestIdsRef.current.get(targetTabId) ?? 0) + 1;
-      serverProcessRequestIdsRef.current.set(targetTabId, requestId);
-      serverProcessRequestInFlightTabsRef.current.add(targetTabId);
-      setServerProcessByTab((prev) => {
-        const previous = prev[targetTabId];
-        return {
-          ...prev,
-          [targetTabId]: {
-            snapshot: previous?.snapshot ?? null,
-            loading: true,
-            error: isSilent ? previous?.error ?? null : null
-          }
-        };
-      });
-      try {
-        const snapshot = await terminalApi.getServerProcesses(targetTabId);
-        if (
-          serverProcessRequestIdsRef.current.get(targetTabId) !== requestId ||
-          !connectedTabIdsRef.current.has(targetTabId)
-        ) {
-          return;
-        }
-        setServerProcessByTab((prev) => ({
-          ...prev,
-          [targetTabId]: {
-            snapshot,
-            loading: false,
-            error: null
-          }
-        }));
-      } catch (caughtError) {
-        if (serverProcessRequestIdsRef.current.get(targetTabId) !== requestId) {
-          return;
-        }
-        const message = (caughtError as Error).message;
-        setServerProcessByTab((prev) => {
-          const previous = prev[targetTabId];
-          return {
-            ...prev,
-            [targetTabId]: {
-              snapshot: previous?.snapshot ?? null,
-              loading: false,
-              error: message
-            }
-          };
-        });
-      } finally {
-        serverProcessRequestInFlightTabsRef.current.delete(targetTabId);
-      }
-    },
-    [resetServerProcesses, terminalApi]
-  );
 
   const closeSftpContextMenu = useCallback(() => {
     setSftpContextMenu(null);
@@ -12150,10 +10906,6 @@ export function App() {
   }, [activeTabId]);
 
   useEffect(() => {
-    dangerousCommandTemporaryApprovalsRef.current = dangerousCommandTemporaryApprovals;
-  }, [dangerousCommandTemporaryApprovals]);
-
-  useEffect(() => {
     workspaceProfilePreferencesRef.current = workspaceProfilePreferences;
   }, [workspaceProfilePreferences]);
 
@@ -12168,62 +10920,6 @@ export function App() {
   useEffect(() => {
     transferHistoryRef.current = transferHistory;
   }, [transferHistory]);
-
-  useEffect(() => {
-    const snapshot = collectPendingTransferRestoreSnapshot();
-    const shouldPreservePendingRestore =
-      !pendingTransferRestoreResolved &&
-      pendingTransferRestoreItems.length > 0 &&
-      snapshot.length === 0;
-    if (shouldPreservePendingRestore) {
-      return;
-    }
-    if (!arePendingTransferRestoreItemsEqual(pendingTransferRestoreItems, snapshot)) {
-      setPendingTransferRestoreItems(snapshot);
-    }
-    try {
-      if (snapshot.length === 0) {
-        window.localStorage.removeItem(SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY);
-      } else {
-        window.localStorage.setItem(
-          SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY,
-          JSON.stringify(snapshot)
-        );
-      }
-    } catch {
-      // Ignore storage failures; runtime state still applies.
-    }
-  }, [
-    collectPendingTransferRestoreSnapshot,
-    pendingTransferRestoreItems,
-    pendingTransferRestoreResolved,
-    sftpTransfers,
-    terminalTabs
-  ]);
-
-  useEffect(() => {
-    if (pendingTransferRestoreResolved || pendingTransferRestoreItems.length === 0) {
-      pendingTransferRestoreNoticeShownRef.current = false;
-      return;
-    }
-    if (pendingTransferRestoreNoticeShownRef.current) {
-      return;
-    }
-    const targetTabId = activeTabIdRef.current ?? terminalTabsRef.current[0]?.id ?? "";
-    if (!targetTabId) {
-      return;
-    }
-    pendingTransferRestoreNoticeShownRef.current = true;
-    showTransferDockNotice(
-      targetTabId,
-      "warn",
-      `Detected ${pendingTransferRestoreItems.length} pending transfer task(s) from previous run.`
-    );
-  }, [
-    pendingTransferRestoreItems.length,
-    pendingTransferRestoreResolved,
-    showTransferDockNotice
-  ]);
 
   useEffect(() => {
     portForwardsRef.current = allPortForwards;
@@ -12252,14 +10948,6 @@ export function App() {
   useEffect(() => {
     schedulePausedDownloadTabsRef.current = schedulePausedDownloadTabs;
   }, [schedulePausedDownloadTabs]);
-
-  useEffect(() => {
-    serverHealthByTabRef.current = serverHealthByTab;
-  }, [serverHealthByTab]);
-
-  useEffect(() => {
-    serverProcessByTabRef.current = serverProcessByTab;
-  }, [serverProcessByTab]);
 
   useEffect(() => {
     portForwardBusyRef.current = portForwardBusy;
@@ -12940,73 +11628,6 @@ export function App() {
   }, [activeTabId, loadSftpDirectory, sftpApi]);
 
   useEffect(() => {
-    if (!activeTabId) {
-      return;
-    }
-    if (!connectedTabIdsRef.current.has(activeTabId)) {
-      return;
-    }
-    void refreshServerHealth({
-      tabId: activeTabId
-    });
-  }, [activeTabId, refreshServerHealth]);
-
-  useEffect(() => {
-    if (!isServerHealthDetailOpen) {
-      return;
-    }
-    if (!activeTabId) {
-      return;
-    }
-    if (!connectedTabIdsRef.current.has(activeTabId)) {
-      return;
-    }
-    void refreshServerProcesses({
-      tabId: activeTabId
-    });
-  }, [
-    activeTabId,
-    isServerHealthDetailOpen,
-    refreshServerProcesses,
-  ]);
-
-  useEffect(() => {
-    if (!activeTabId || !terminalApi) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      if (!connectedTabIdsRef.current.has(activeTabId)) {
-        return;
-      }
-      void refreshServerHealth({
-        tabId: activeTabId,
-        silent: true
-      });
-    }, SERVER_HEALTH_POLL_INTERVAL_MS);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [activeTabId, refreshServerHealth, terminalApi]);
-
-  useEffect(() => {
-    if (!isServerHealthDetailOpen || !activeTabId || !terminalApi) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      if (!connectedTabIdsRef.current.has(activeTabId)) {
-        return;
-      }
-      void refreshServerProcesses({
-        tabId: activeTabId,
-        silent: true
-      });
-    }, SERVER_PROCESS_POLL_INTERVAL_MS);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [activeTabId, isServerHealthDetailOpen, refreshServerProcesses, terminalApi]);
-
-  useEffect(() => {
     if (uploadQueueRetryTimerRef.current !== null) {
       window.clearTimeout(uploadQueueRetryTimerRef.current);
       uploadQueueRetryTimerRef.current = null;
@@ -13022,13 +11643,7 @@ export function App() {
     runningUploadCountsByTabRef.current.clear();
     adaptiveUploadConcurrencyByTabRef.current.clear();
     adaptiveUploadConcurrencyRecoveryByTabRef.current.clear();
-    serverHealthRequestInFlightTabsRef.current.clear();
-    serverProcessRequestInFlightTabsRef.current.clear();
-    serverHealthRequestIdsRef.current.clear();
-    serverProcessRequestIdsRef.current.clear();
     disconnectReportFingerprintByTabRef.current.clear();
-    setServerHealthByTab({});
-    setServerProcessByTab({});
     setPortForwardRecordsByTab({});
     setPortForwardStatusMessagesByTab({});
     setPausedUploadTabs({});
@@ -13312,113 +11927,6 @@ export function App() {
       stopListening();
     };
   }, [activeTabId, applySftpTransferEvent, loadSftpDirectory, sftpApi, sftpDirectory?.cwd, writeAppLog]);
-
-  useEffect(() => {
-    if (!activeTabId || !activeUploadBatchProgress || !activeUploadBatchProgress.done) {
-      return;
-    }
-    const batchId = activeUploadBatchProgress.batchId;
-    if (uploadBatchNoticeRef.current.has(batchId)) {
-      return;
-    }
-    uploadBatchNoticeRef.current.add(batchId);
-    const { completed, failed, canceled, total } = activeUploadBatchProgress;
-    const detailParts = [`${completed}/${total} completed`];
-    if (failed > 0) {
-      detailParts.push(`${failed} failed`);
-    }
-    if (canceled > 0) {
-      detailParts.push(`${canceled} canceled`);
-    }
-    const summaryMessage = `Upload batch finished: ${detailParts.join(", ")}.`;
-    const failureDetailText = buildBatchFailureDetailText(activeTabId, batchId, "upload", failed);
-    writeAppLog(failed > 0 ? "warn" : "info", "renderer:sftp-batch", "Upload batch finished.", {
-      tabId: activeTabId,
-      batchId,
-      completed,
-      failed,
-      canceled,
-      total
-    });
-    if (failureDetailText) {
-      writeAppLog("warn", "renderer:sftp-batch", "Upload batch failure details.", {
-        tabId: activeTabId,
-        batchId,
-        detailText: failureDetailText
-      });
-    }
-    showTransferDockNotice(
-      activeTabId,
-      failed > 0 ? "warn" : "info",
-      failed > 0 ? `${summaryMessage} Open Retry Center for failed items.` : summaryMessage,
-      failed > 0 ? 12000 : 5000
-    );
-    setUploadBatchByTab((prev) => {
-      const current = prev[activeTabId];
-      if (!current || current.batchId !== batchId) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[activeTabId];
-      return next;
-    });
-  }, [activeTabId, activeUploadBatchProgress, buildBatchFailureDetailText, showTransferDockNotice, writeAppLog]);
-
-  useEffect(() => {
-    if (!activeTabId || !activeDownloadBatchProgress || !activeDownloadBatchProgress.done) {
-      return;
-    }
-    const batchId = activeDownloadBatchProgress.batchId;
-    if (downloadBatchNoticeRef.current.has(batchId)) {
-      return;
-    }
-    downloadBatchNoticeRef.current.add(batchId);
-    const { completed, failed, canceled, total } = activeDownloadBatchProgress;
-    const detailParts = [`${completed}/${total} completed`];
-    if (failed > 0) {
-      detailParts.push(`${failed} failed`);
-    }
-    if (canceled > 0) {
-      detailParts.push(`${canceled} canceled`);
-    }
-    const summaryMessage = `Download batch finished: ${detailParts.join(", ")}.`;
-    const failureDetailText = buildBatchFailureDetailText(activeTabId, batchId, "download", failed);
-    writeAppLog(
-      failed > 0 ? "warn" : "info",
-      "renderer:sftp-batch",
-      "Download batch finished.",
-      {
-        tabId: activeTabId,
-        batchId,
-        completed,
-        failed,
-        canceled,
-        total
-      }
-    );
-    if (failureDetailText) {
-      writeAppLog("warn", "renderer:sftp-batch", "Download batch failure details.", {
-        tabId: activeTabId,
-        batchId,
-        detailText: failureDetailText
-      });
-    }
-    showTransferDockNotice(
-      activeTabId,
-      failed > 0 ? "warn" : "info",
-      failed > 0 ? `${summaryMessage} Open Retry Center for failed items.` : summaryMessage,
-      failed > 0 ? 12000 : 5000
-    );
-    setDownloadBatchByTab((prev) => {
-      const current = prev[activeTabId];
-      if (!current || current.batchId !== batchId) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[activeTabId];
-      return next;
-    });
-  }, [activeDownloadBatchProgress, activeTabId, buildBatchFailureDetailText, showTransferDockNotice, writeAppLog]);
 
   useEffect(() => {
     if (!sftpContextMenu) {
@@ -13730,11 +12238,6 @@ export function App() {
   }, [activeSessionGroupKey, groupedSessions]);
 
   useEffect(() => {
-    drainUploadQueue();
-    drainDownloadQueue();
-  }, [drainDownloadQueue, drainUploadQueue]);
-
-  useEffect(() => {
     return () => {
       if (appDialogResolverRef.current) {
         appDialogResolverRef.current(appDialogCancelValueRef.current);
@@ -13749,8 +12252,6 @@ export function App() {
       isDrainingDownloadQueueRef.current = false;
       ensuredRemoteDirectoriesRef.current.clear();
       ensuringRemoteDirectoriesRef.current.clear();
-      uploadBatchNoticeRef.current.clear();
-      downloadBatchNoticeRef.current.clear();
       canceledUploadBatchIdsRef.current.clear();
       canceledDownloadBatchIdsRef.current.clear();
     };
@@ -14311,6 +12812,7 @@ export function App() {
       const targetRemarkPrefix = `Imported from ${parsed.filePath}`;
 
       let duplicateStrategy: "skip" | "overwrite" | "rename" = "skip";
+      const dialogLanguage = appLanguageRef.current;
       if (previewStats.duplicateCount > 0) {
         const selectedStrategy = await showAppChoice(
           `Found ${previewStats.duplicateCount} duplicate connection target(s). Choose how to handle duplicates.`,
@@ -14331,7 +12833,13 @@ export function App() {
           {
             title: "Duplicate Strategy",
             cancelLabel: "Cancel",
-            detailText: formatSshConfigImportPlan(parsed, previewStats, targetGroup, "skip")
+            detailText: formatSshConfigImportPlan(
+              parsed,
+              previewStats,
+              targetGroup,
+              "skip",
+              dialogLanguage
+            )
           }
         );
         if (!selectedStrategy) {
@@ -14352,7 +12860,8 @@ export function App() {
             parsed,
             previewStats,
             targetGroup,
-            duplicateStrategy
+            duplicateStrategy,
+            dialogLanguage
           )
         }
       );
@@ -14561,23 +13070,89 @@ export function App() {
     }
   }, [importParsedSshConfigSessions, sessionsApi, systemApi, writeAppLog]);
 
-  useEffect(() => {
+  smokeImportSshConfigHandlerRef.current = () => {
     const smokeWindow = window as typeof window & {
-      __termdockSmokeImportSshConfig?: () => void;
       __termdockSmokeSshConfigResult?: SshConfigParseResult;
     };
-    smokeWindow.__termdockSmokeImportSshConfig = () => {
-      const parsed = smokeWindow.__termdockSmokeSshConfigResult;
-      if (parsed) {
-        void importParsedSshConfigSessions(parsed);
-        return;
-      }
-      void importSessionsFromSshConfig();
+    const parsed = smokeWindow.__termdockSmokeSshConfigResult;
+    if (parsed) {
+      void importParsedSshConfigSessions(parsed);
+      return;
+    }
+    void importSessionsFromSshConfig();
+  };
+
+  smokeImportSessionsJsonHandlerRef.current = () => {
+    void importSessionsFromJson();
+  };
+
+  smokeImportEncryptedMigrationHandlerRef.current = () => {
+    void importEncryptedSessionMigration();
+  };
+
+  const consumeSmokePickedTextFile = useCallback(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const smokeWindow = window as typeof window & {
+      __termdockSmokePickedTextFile?: {
+        filePath?: string | null;
+        text?: string | null;
+      } | null;
     };
-    return () => {
-      delete smokeWindow.__termdockSmokeImportSshConfig;
+    const selected = smokeWindow.__termdockSmokePickedTextFile;
+    if (!selected || typeof selected.filePath !== "string" || !selected.filePath.trim()) {
+      return null;
+    }
+    smokeWindow.__termdockSmokePickedTextFile = null;
+    return {
+      canceled: false,
+      filePath: selected.filePath,
+      text: typeof selected.text === "string" ? selected.text : ""
     };
-  }, [importParsedSshConfigSessions, importSessionsFromSshConfig]);
+  }, []);
+
+  const isSmokeMigrationSentinel = useCallback((value: string) => value === "__TERMDOCK_SMOKE_MIGRATION__", []);
+
+  const buildSmokeSessionMigrationImportResult = useCallback(
+    (): { payload: SessionMigrationPlainPayload; warnings: string[] } => ({
+      payload: {
+        exportedAtIso: new Date().toISOString(),
+        appVersion: "smoke",
+        sessionCount: 2,
+        includesPasswords: true,
+        includesPrivateKeyFiles: false,
+        sessions: [
+          {
+            name: "smoke-group-session",
+            host: "127.0.0.1",
+            port: 59999,
+            username: "smoke",
+            authType: "password",
+            privateKeyPath: "",
+            groupId: "smoke-group",
+            remark: "smoke migration preview",
+            favorite: false,
+            secret: "smoke-restored-password"
+          },
+          {
+            name: "smoke-ungrouped-session",
+            host: "127.0.0.1",
+            port: 59999,
+            username: "smoke",
+            authType: "password",
+            privateKeyPath: "",
+            groupId: "",
+            remark: "smoke migration preview",
+            favorite: false,
+            secret: "smoke-restored-password"
+          }
+        ]
+      },
+      warnings: []
+    }),
+    []
+  );
 
   const importSessionsFromJson = useCallback(async () => {
     let operationJobId: string | null = null;
@@ -14585,23 +13160,26 @@ export function App() {
       if (!sessionsApi) {
         throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
       }
-      if (!systemApi?.pickAndReadTextFile) {
+      const smokeSelected = consumeSmokePickedTextFile();
+      if (!systemApi?.pickAndReadTextFile && !smokeSelected) {
         throw new Error("System bridge unavailable. Restart `pnpm dev`.");
       }
-      const selected = await systemApi.pickAndReadTextFile({
-        title: "Import Sessions JSON",
-        buttonLabel: "Import",
-        filters: [
-          {
-            name: "JSON",
-            extensions: ["json"]
-          },
-          {
-            name: "All Files",
-            extensions: ["*"]
-          }
-        ]
-      });
+      const selected =
+        smokeSelected ??
+        (await systemApi!.pickAndReadTextFile({
+          title: "Import Sessions JSON",
+          buttonLabel: "Import",
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"]
+            },
+            {
+              name: "All Files",
+              extensions: ["*"]
+            }
+          ]
+        }));
       if (selected.canceled || !selected.filePath) {
         return;
       }
@@ -14636,7 +13214,8 @@ export function App() {
       await showAppAlert("Review parsed sessions before import.", {
         title: "Sessions JSON Preview",
         confirmLabel: "Continue",
-        detailText: formatSessionJsonImportPreview(parsedImport)
+        detailText: formatSessionJsonImportPreview(parsedImport, appLanguageRef.current),
+        translateDetailText: true
       });
       const groupMode = await showAppChoice(
         "Choose target group strategy for imported sessions.",
@@ -14874,6 +13453,7 @@ export function App() {
     }
   }, [
     activeSessionGroup?.groupName,
+    consumeSmokePickedTextFile,
     finishOperationCenterAppJob,
     sessions,
     sessionsApi,
@@ -15017,23 +13597,26 @@ export function App() {
       if (!sessionsApi) {
         throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
       }
-      if (!systemApi?.pickAndReadTextFile) {
+      const smokeSelected = consumeSmokePickedTextFile();
+      if (!systemApi?.pickAndReadTextFile && !smokeSelected) {
         throw new Error("System bridge unavailable. Restart `pnpm dev`.");
       }
-      const selected = await systemApi.pickAndReadTextFile({
-        title: "Import Encrypted Migration",
-        buttonLabel: "Import",
-        filters: [
-          {
-            name: "TermDock Migration",
-            extensions: ["tdmigration", "json"]
-          },
-          {
-            name: "All Files",
-            extensions: ["*"]
-          }
-        ]
-      });
+      const selected =
+        smokeSelected ??
+        (await systemApi!.pickAndReadTextFile({
+          title: "Import Encrypted Migration",
+          buttonLabel: "Import",
+          filters: [
+            {
+              name: "TermDock Migration",
+              extensions: ["tdmigration", "json"]
+            },
+            {
+              name: "All Files",
+              extensions: ["*"]
+            }
+          ]
+        }));
       if (selected.canceled || !selected.filePath) {
         return;
       }
@@ -15050,11 +13633,13 @@ export function App() {
         title: "Encrypted Migration Import",
         description: `Decrypting ${getPathBaseName(selected.filePath)}.`
       });
-      const decrypted = await sessionsApi.importEncryptedMigration({
-        passphrase,
-        fileText: selected.text,
-        restorePrivateKeyFiles: false
-      });
+      const decrypted = isSmokeMigrationSentinel(selected.text)
+        ? buildSmokeSessionMigrationImportResult()
+        : await sessionsApi.importEncryptedMigration({
+            passphrase,
+            fileText: selected.text,
+            restorePrivateKeyFiles: false
+          });
       const parsedImport = buildSessionMigrationImportResult(
         decrypted.payload,
         decrypted.warnings
@@ -15071,7 +13656,8 @@ export function App() {
       await showAppAlert("Review decrypted sessions before import.", {
         title: "Encrypted Migration Preview",
         confirmLabel: "Continue",
-        detailText: formatSessionMigrationImportPreview(parsedImport)
+        detailText: formatSessionMigrationImportPreview(parsedImport),
+        translateDetailText: true
       });
       const groupMode = await showAppChoice(
         "Choose target group strategy for imported sessions.",
@@ -15137,11 +13723,13 @@ export function App() {
         }
         return;
       }
-      const restoredImport = await sessionsApi.importEncryptedMigration({
-        passphrase,
-        fileText: selected.text,
-        restorePrivateKeyFiles: true
-      });
+      const restoredImport = isSmokeMigrationSentinel(selected.text)
+        ? buildSmokeSessionMigrationImportResult()
+        : await sessionsApi.importEncryptedMigration({
+            passphrase,
+            fileText: selected.text,
+            restorePrivateKeyFiles: true
+          });
       const finalImport = buildSessionMigrationImportResult(restoredImport.payload, [
         ...parsedImport.warnings,
         ...restoredImport.warnings
@@ -15327,10 +13915,13 @@ export function App() {
     }
   }, [
     activeSessionGroup?.groupName,
+    consumeSmokePickedTextFile,
     finishOperationCenterAppJob,
+    buildSmokeSessionMigrationImportResult,
     removeOperationCenterAppJob,
     sessions,
     sessionsApi,
+    isSmokeMigrationSentinel,
     showAppAlert,
     showAppChoice,
     showAppConfirm,
@@ -15339,6 +13930,29 @@ export function App() {
     systemApi,
     writeAppLog
   ]);
+
+  useEffect(() => {
+    const smokeWindow = window as typeof window & {
+      __termdockSmokeImportSshConfig?: () => void;
+      __termdockSmokeSshConfigResult?: SshConfigParseResult;
+      __termdockSmokeImportSessionsJson?: () => void;
+      __termdockSmokeImportEncryptedMigration?: () => void;
+    };
+    smokeWindow.__termdockSmokeImportSshConfig = () => {
+      smokeImportSshConfigHandlerRef.current?.();
+    };
+    smokeWindow.__termdockSmokeImportSessionsJson = () => {
+      smokeImportSessionsJsonHandlerRef.current?.();
+    };
+    smokeWindow.__termdockSmokeImportEncryptedMigration = () => {
+      smokeImportEncryptedMigrationHandlerRef.current?.();
+    };
+    return () => {
+      delete smokeWindow.__termdockSmokeImportSshConfig;
+      delete smokeWindow.__termdockSmokeImportSessionsJson;
+      delete smokeWindow.__termdockSmokeImportEncryptedMigration;
+    };
+  }, []);
 
   const exportAllSessionsWithGroups = useCallback(async () => {
     let operationJobId: string | null = null;
@@ -17358,14 +15972,7 @@ export function App() {
       return;
     }
     const tabIdSet = new Set(uniqueTabIds);
-    setDangerousCommandTemporaryApprovals((prev) =>
-      prev.filter(
-        (approval) => approval.scope !== "tab" || !approval.tabId || !tabIdSet.has(approval.tabId)
-      )
-    );
-    if (dangerousCommandApproval && tabIdSet.has(dangerousCommandApproval.request.tabId)) {
-      resolveDangerousCommandApproval(false);
-    }
+    dismissDangerousCommandApprovalsForClosedTabs(uniqueTabIds);
 
     for (const tabId of uniqueTabIds) {
       intentionalTabCloseIdsRef.current.add(tabId);
@@ -17512,12 +16119,11 @@ export function App() {
     });
   }, [
     applySftpTransferEvent,
-    dangerousCommandApproval,
+    dismissDangerousCommandApprovalsForClosedTabs,
     drainDownloadQueue,
     drainUploadQueue,
     clearPortForwardTabState,
     removeServerMonitorTabState,
-    resolveDangerousCommandApproval,
     systemApi,
     terminalApi
   ]);
@@ -22018,162 +20624,30 @@ export function App() {
     showTransferDockNotice
   ]);
 
-  const clearPendingTransferRestoreQueue = useCallback(
-    (markResolved = true) => {
-      setPendingTransferRestoreItems([]);
-      if (markResolved) {
-        setPendingTransferRestoreResolved(true);
-      }
-      try {
-        window.localStorage.removeItem(SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY);
-      } catch {
-        // Ignore storage failures; runtime state still applies.
-      }
-    },
-    []
-  );
-
-  const discardPendingTransferRestoreQueue = useCallback(async () => {
-    if (pendingTransferRestoreItems.length === 0) {
-      clearPendingTransferRestoreQueue(true);
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Discard ${pendingTransferRestoreItems.length} saved pending transfer task(s) from previous run?`,
-      {
-        title: "Discard Pending Queue",
-        confirmLabel: "Discard",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    clearPendingTransferRestoreQueue(true);
-    if (activeTabId) {
-      showTransferDockNotice(activeTabId, "warn", "Discarded saved pending transfer queue.");
-    }
-  }, [
+  const {
+    clearPendingTransferRestoreQueue,
+    discardPendingTransferRestoreQueue,
+    restorePendingTransferRestoreQueue
+  } = usePendingTransferRestoreRuntime({
     activeTabId,
-    clearPendingTransferRestoreQueue,
-    pendingTransferRestoreItems.length,
-    showAppConfirm,
-    showTransferDockNotice
-  ]);
-
-  const restorePendingTransferRestoreQueue = useCallback(async () => {
-    if (pendingTransferRestoreItems.length === 0) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Restore ${pendingTransferRestoreItems.length} saved pending transfer task(s)? Missing sessions will be skipped.`,
-      {
-        title: "Restore Pending Queue",
-        confirmLabel: "Restore",
-        cancelLabel: "Cancel"
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    const uploadTargetsByTab = new Map<
-      string,
-      Array<{
-        name: string;
-        localPath: string;
-        remotePath: string;
-      }>
-    >();
-    const downloadTargetsByTab = new Map<string, DownloadTargetEntry[]>();
-    let skippedMissingSessions = 0;
-    let skippedInvalidEntries = 0;
-    let openedTabs = 0;
-
-    for (const item of pendingTransferRestoreItems) {
-      const session = sessionsRef.current.find((entry) => entry.id === item.sessionId) ?? null;
-      if (!session) {
-        skippedMissingSessions += 1;
-        continue;
-      }
-      const localPath = item.localPath.trim();
-      const remotePath = item.remotePath.trim();
-      const name = item.name.trim();
-      if (!localPath || !remotePath || !name) {
-        skippedInvalidEntries += 1;
-        continue;
-      }
-
-      let tabId = terminalTabsRef.current.find((tab) => tab.sessionId === session.id)?.id ?? null;
-      if (!tabId) {
-        const openedTabId = openTerminalTab(session);
-        if (!openedTabId) {
-          skippedInvalidEntries += 1;
-          continue;
-        }
-        tabId = openedTabId;
-        openedTabs += 1;
-      }
-
-      if (item.direction === "upload") {
-        const targets = uploadTargetsByTab.get(tabId) ?? [];
-        if (
-          !targets.some(
-            (entry) =>
-              entry.localPath.trim() === localPath && entry.remotePath.trim() === remotePath
-          )
-        ) {
-          targets.push({
-            name,
-            localPath,
-            remotePath
-          });
-        }
-        uploadTargetsByTab.set(tabId, targets);
-      } else {
-        const targets = downloadTargetsByTab.get(tabId) ?? [];
-        if (
-          !targets.some(
-            (entry) =>
-              entry.localPath.trim() === localPath && entry.remotePath.trim() === remotePath
-          )
-        ) {
-          targets.push({
-            name,
-            localPath,
-            remotePath
-          });
-        }
-        downloadTargetsByTab.set(tabId, targets);
-      }
-    }
-
-    let queuedUploads = 0;
-    let queuedDownloads = 0;
-    for (const [tabId, targets] of uploadTargetsByTab.entries()) {
-      queuedUploads += enqueueUploadTargets(tabId, targets, { suppressEmptyError: true });
-    }
-    for (const [tabId, targets] of downloadTargetsByTab.entries()) {
-      queuedDownloads += enqueueDownloadTargets(tabId, targets, { suppressEmptyError: true });
-    }
-
-    clearPendingTransferRestoreQueue(true);
-    await showAppAlert(
-      `Restore completed.\nQueued uploads: ${queuedUploads}\nQueued downloads: ${queuedDownloads}\nOpened tabs: ${openedTabs}\nSkipped missing sessions: ${skippedMissingSessions}\nSkipped invalid entries: ${skippedInvalidEntries}`,
-      {
-        title: "Restore Pending Queue"
-      }
-    );
-  }, [
-    clearPendingTransferRestoreQueue,
+    arePendingTransferRestoreItemsEqual,
+    collectPendingTransferRestoreSnapshot,
     enqueueDownloadTargets,
     enqueueUploadTargets,
     openTerminalTab,
     pendingTransferRestoreItems,
+    pendingTransferRestoreResolved,
+    sessionsRef,
+    setPendingTransferRestoreItems,
+    setPendingTransferRestoreResolved,
+    sftpTransfersDependency: sftpTransfers,
     showAppAlert,
-    showAppConfirm
-  ]);
+    showAppConfirm,
+    showTransferDockNotice,
+    storageKey: SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY,
+    terminalTabsDependency: terminalTabs,
+    terminalTabsRef
+  });
 
   const reconnectOperationTabById = useCallback(
     async (tabId: string): Promise<boolean> => {
@@ -24670,6 +23144,430 @@ export function App() {
       }
     });
   }
+  const commandHistoryContextMenuActions: WorkbenchContextMenuAction[] =
+    selectedCommandHistoryContextEntry
+      ? [
+          {
+            id: "run",
+            label: "Run",
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              void runTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
+            }
+          },
+          {
+            id: "copy",
+            label: "Copy",
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              void copyTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
+            }
+          },
+          {
+            id: "delete",
+            label: "Delete",
+            danger: true,
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              deleteTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry.id);
+            }
+          },
+          {
+            id: "close",
+            label: "Close",
+            onSelect: closeCommandHistoryContextMenu
+          }
+        ]
+      : [
+          {
+            id: "add",
+            label: "Add",
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              void addTerminalCommandHistoryEntry();
+            }
+          },
+          {
+            id: "import",
+            label: "Import",
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              void importTerminalCommandHistory();
+            }
+          },
+          {
+            id: "export",
+            label: "Export",
+            disabled: terminalCommandHistoryEntries.length === 0,
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              void exportTerminalCommandHistory();
+            }
+          },
+          {
+            id: "run-snippet",
+            label: "Run Snippet",
+            disabled: totalCommandSnippetCount === 0,
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              openCommandSnippetManager();
+            }
+          },
+          {
+            id: "snippet-manager",
+            label: "Snippet Manager",
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              void openCommandSnippetManager();
+            }
+          },
+          {
+            id: "manage",
+            label: "Manage",
+            onSelect: () => {
+              closeCommandHistoryContextMenu();
+              openCommandHistoryManager();
+            }
+          },
+          {
+            id: "close",
+            label: "Close",
+            onSelect: closeCommandHistoryContextMenu
+          }
+        ];
+  const sftpToolbarMenuActions: WorkbenchContextMenuAction[] = sftpToolbarActions.map(
+    (action) => ({
+      id: action.id,
+      label: action.label,
+      disabled: action.disabled,
+      danger: action.id === "delete-selected",
+      onSelect: () => runSftpToolbarAction(action)
+    })
+  );
+  const sftpEntryContextMenuActions: WorkbenchContextMenuAction[] = sftpContextActions.map(
+    (action) => ({
+      id: action.id,
+      label: action.label,
+      disabled: action.disabled,
+      onSelect: () => runSftpContextAction(action)
+    })
+  );
+  const sessionContextMenuItems: WorkbenchContextMenuAction[] = sessionContextActions.map(
+    (action) => ({
+      id: action.id,
+      label: action.label,
+      disabled: action.disabled,
+      danger: action.danger,
+      onSelect: () => runSessionContextAction(action)
+    })
+  );
+  const connectionSettingsSectionProps = buildConnectionSettingsSectionProps({
+    autoReconnect: connectionPreferences.autoReconnect,
+    onAutoReconnectChange: setAutoReconnect,
+    onReconnectDelayChange: setReconnectDelaySeconds,
+    reconnectDelaySeconds: connectionPreferences.reconnectDelaySeconds
+  });
+  const workspaceSettingsSectionProps = buildWorkspaceSettingsSectionProps({
+    cursorOptions: TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
+    editorFocusAutoLayoutEnabled: terminalEditorFocusPreferences.autoLayoutEnabled,
+    fontOptions: TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
+    labels: i18n.settings.workspace,
+    languageOptions: APP_LANGUAGE_OPTIONS,
+    onLanguageSelect: setAppLanguage,
+    onCursorSelectAction: setTerminalEditorFocusCursorId,
+    onEditorFocusAutoLayoutEnabledChange: setTerminalEditorAutoLayoutEnabled,
+    onFontSelectAction: setTerminalEditorFocusFontId,
+    onRhythmSelectAction: setTerminalEditorFocusRhythmId,
+    onSyncDangerousCommandSafetyChange: setWorkspaceProfileDangerousCommandSync,
+    onThemeSelectAction: setTerminalEditorFocusThemeId,
+    onTypographySelectAction: setTerminalEditorFocusTypographyId,
+    onWorkspaceProfileSelectAction: setWorkspaceProfileId,
+    rhythmOptions: TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
+    selectedCursorId: terminalEditorFocusPreferences.cursorId,
+    selectedCursorLabel: selectedTerminalEditorFocusCursor.label,
+    selectedFontId: terminalEditorFocusPreferences.fontId,
+    selectedFontLabel: selectedTerminalEditorFocusFont.label,
+    selectedLanguage: appLanguage,
+    selectedLanguageLabel: selectedLanguageOption.label,
+    selectedRhythmId: terminalEditorFocusPreferences.rhythmId,
+    selectedRhythmLabel: selectedTerminalEditorFocusRhythm.label,
+    selectedThemeId: terminalEditorFocusPreferences.themeId,
+    selectedThemeLabel: selectedTerminalEditorFocusTheme.label,
+    selectedTypographyId: terminalEditorFocusPreferences.typographyId,
+    selectedTypographyLabel: selectedTerminalEditorFocusTypography.label,
+    selectedWorkspaceProfileId: workspaceProfilePreferences.profileId,
+    selectedWorkspaceProfileLabel: selectedWorkspaceProfile.label,
+    syncDangerousCommandSafety: workspaceProfilePreferences.syncDangerousCommandSafety,
+    themeOptions: TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
+    typographyOptions: TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
+    workspaceProfileCards: workspaceProfileCardViews
+  });
+  const safetySettingsSectionProps = buildSafetySettingsSectionProps({
+    activeTargetGroupAssignmentName:
+      activeDangerousCommandGroupAssignment?.groupName ?? null,
+    builtinRuleViews: dangerousCommandBuiltinRuleViews,
+    customPatternCount: dangerousCommandCustomPatternSummary.activePatterns,
+    customPatternInvalidLineCount: dangerousCommandCustomPatternSummary.invalidLines,
+    customPatternsText: dangerousCommandGuardPreferences.customPatternsText,
+    enabled: dangerousCommandGuardPreferences.enabled,
+    enabledBuiltinRuleCount: enabledDangerousCommandBuiltinRuleCount,
+    enabledSourceCount: enabledDangerousCommandSourceCount,
+    environmentTemplateViews: dangerousCommandEnvironmentTemplateViews,
+    executionSourceViews: dangerousCommandExecutionSourceViews,
+    groupAssignmentLimitReached: dangerousCommandGroupAssignmentLimitReached,
+    groupAssignmentViews: dangerousCommandGroupAssignmentViews,
+    maxGroupOverrideCount: MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS,
+    maxPersistentApprovalCount: MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS,
+    maxPolicyBundleCount: MAX_DANGEROUS_COMMAND_POLICY_BUNDLES,
+    maxTemporaryApprovalCount: MAX_DANGEROUS_COMMAND_TEMP_APPROVALS,
+    onApplyPolicyBundleAction: applyDangerousCommandPolicyBundle,
+    onBuiltinRuleEnabledChangeAction: setDangerousCommandBuiltinRuleEnabled,
+    onChangePolicyBundleSyncTargetAction:
+      changeDangerousCommandPolicyBundleSyncTarget,
+    onClearPersistentApprovalsAction: clearDangerousCommandPersistentApprovals,
+    onClearPolicyBundleSyncTargetAction:
+      clearDangerousCommandPolicyBundleSyncTarget,
+    onClearTemporaryApprovalsAction: clearDangerousCommandTemporaryApprovals,
+    onCustomPatternsTextChange: setDangerousCommandCustomPatternsText,
+    onDeleteGroupAssignmentAction: deleteDangerousCommandGroupAssignment,
+    onDeletePersistentApprovalAction: removeDangerousCommandPersistentApproval,
+    onDeletePolicyBundleAction: deleteDangerousCommandPolicyBundle,
+    onDeleteTargetGroupOverrideGroupName:
+      activeDangerousCommandGroupAssignment?.groupName ?? null,
+    onDeleteTemporaryApproval: removeDangerousCommandTemporaryApproval,
+    onEnvironmentTemplateSelectAction:
+      applyDangerousCommandEnvironmentTemplate,
+    onExecutionSourceEnabledChangeAction: setDangerousCommandSourceEnabled,
+    onExportPolicyBundleAction: exportDangerousCommandPolicyBundle,
+    onExportPolicyBundlesAction: exportDangerousCommandPolicyBundles,
+    onGuardEnabledChange: setDangerousCommandGuardEnabled,
+    onImportPolicyBundlesAction: importDangerousCommandPolicyBundles,
+    onPolicyPackSelectAction: setDangerousCommandPolicyPackId,
+    onPullPolicyBundlesFromSyncAction:
+      pullDangerousCommandPolicyBundlesFromSync,
+    onPushPolicyBundlesToSyncAction:
+      pushDangerousCommandPolicyBundlesToSync,
+    onResetSafetyRules: resetDangerousCommandGuardPreferences,
+    onSaveCurrentPolicyBundleAction: saveCurrentDangerousCommandPolicyBundle,
+    onSaveTargetGroupOverrideAction: saveDangerousCommandGroupAssignment,
+    persistentApprovalViews: dangerousCommandPersistentApprovalViews,
+    policyBundleLastPulledLabel: dangerousCommandPolicyBundleLastPulledLabel,
+    policyBundleLastPushedLabel: dangerousCommandPolicyBundleLastPushedLabel,
+    policyBundleSyncBusyAction: dangerousCommandPolicyBundleSyncBusyAction,
+    policyBundleSyncFilePath: dangerousCommandPolicyBundleSyncState.filePath,
+    policyBundleViews: dangerousCommandPolicyBundleViews,
+    policyPackViews: dangerousCommandPolicyPackViews,
+    savedGroupOverrideCount: dangerousCommandGuardPreferences.groupAssignments.length,
+    selectedEnvironmentTemplateExtraRuleCount:
+      selectedDangerousCommandEnvironmentTemplate.extraRules.length,
+    selectedEnvironmentTemplateLabel:
+      selectedDangerousCommandEnvironmentTemplate.label,
+    selectedPolicyPackExtraRuleCount:
+      selectedDangerousCommandPolicyPack.extraRules.length,
+    selectedPolicyPackLabel: selectedDangerousCommandPolicyPack.label,
+    selectedWorkspaceProfileLabel: selectedWorkspaceProfile.label,
+    storedPolicyBundleCount: dangerousCommandPolicyBundles.length,
+    supplementalRuleViews: dangerousCommandSupplementalRuleViews,
+    syncDangerousCommandSafety:
+      workspaceProfilePreferences.syncDangerousCommandSafety,
+    targetGroupHint: dangerousCommandTargetGroupHint,
+    targetGroupName: dangerousCommandSettingsTargetGroupName,
+    temporaryApprovalViews: dangerousCommandTemporaryApprovalViews,
+    totalBuiltinRuleCount: DANGEROUS_COMMAND_BUILTIN_RULES.length,
+    totalExecutionSourceCount: DANGEROUS_COMMAND_EXECUTION_SOURCES.length
+  });
+  const hotkeySettingsSectionProps = buildHotkeySettingsSectionProps({
+    hotkeyConflictCursorIndex,
+    hotkeyConflicts: hotkeyConflictViews,
+    hotkeyKeyPlaceholder: HOTKEY_KEY_PLACEHOLDER,
+    hotkeyModifierOptions,
+    hotkeyRows: hotkeySettingRowViews,
+    onBindingEnabledChangeAction: setHotkeyBindingEnabled,
+    onBindingKeyChangeAction: setHotkeyBindingKey,
+    onBindingModifierChangeAction: setHotkeyBindingModifier,
+    onExportHotkeysAction: exportHotkeyPreferences,
+    onFocusConflictAtIndex: focusHotkeyConflictAtIndex,
+    onFocusNextConflict: focusNextHotkeyConflict,
+    onFocusPreviousConflict: focusPreviousHotkeyConflict,
+    onImportHotkeysAction: importHotkeyPreferences,
+    onRegisterRowRefAction: registerHotkeyRowRef,
+    onResetHotkeys: () => setHotkeyPreferences(createDefaultHotkeyPreferences()),
+    onResolveConflicts: resolveHotkeyConflicts
+  });
+  const serverHealthSettingsSectionProps = buildServerHealthSettingsSectionProps({
+    cpuWarnPercent: serverHealthAlertPreferences.cpuWarnPercent,
+    diskWarnPercent: serverHealthAlertPreferences.diskWarnPercent,
+    enabled: serverHealthAlertPreferences.enabled,
+    memoryWarnPercent: serverHealthAlertPreferences.memoryWarnPercent,
+    onEnabledChange: setServerHealthAlertEnabled,
+    onThresholdChange: setServerHealthAlertThreshold
+  });
+  const fileOpeningSettingsSectionProps = buildFileOpeningSettingsSectionProps({
+    isMacPlatform,
+    onBrowseProgramAction: pickPreferredOpenProgram,
+    onPreferredProgramPathChange: setPreferredOpenProgramPath,
+    preferredProgramPath: fileOpenPreferences.preferredProgramPath
+  });
+  const sftpSettingsSectionProps = buildSftpSettingsSectionProps({
+    activeSessionConflictHint: sftpActiveSessionConflictHint,
+    canClearAllDefaults:
+      !!activeSessionTransferConflictStrategy?.upload ||
+      !!activeSessionTransferConflictStrategy?.download,
+    canClearDownloadDefault: !!activeSessionTransferConflictStrategy?.download,
+    canClearUploadDefault: !!activeSessionTransferConflictStrategy?.upload,
+    concurrencyHint: sftpConcurrencyHint,
+    downloadConcurrency: sftpTransferPreferences.downloadConcurrency,
+    downloadRateLimitKiBps: sftpTransferPreferences.downloadRateLimitKiBps,
+    hasActiveSessionConflictControls: !!activeSessionId,
+    maxConcurrency: MAX_SFTP_TRANSFER_CONCURRENCY,
+    maxPolicyPackCount: MAX_SFTP_TRANSFER_POLICY_PACKS,
+    maxRateLimitKiBps: MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS,
+    maxRetryBatchConfirmThreshold: MAX_RETRY_BATCH_CONFIRM_THRESHOLD,
+    minRetryBatchConfirmThreshold: MIN_RETRY_BATCH_CONFIRM_THRESHOLD,
+    onApplyPolicyPackAction: applySftpTransferPolicyPack,
+    onApplySchedulePreset: applySftpTransferSchedulePreset,
+    onChangePolicyPackSyncTargetAction:
+      changeSftpTransferPolicyPackSyncTarget,
+    onClearAllDefaults: clearActiveSessionConflictDefaults,
+    onClearDownloadDefault: clearActiveSessionDownloadConflictDefault,
+    onClearPolicyPackSyncTargetAction:
+      clearSftpTransferPolicyPackSyncTarget,
+    onClearUploadDefault: clearActiveSessionUploadConflictDefault,
+    onDeletePolicyPackAction: deleteSftpTransferPolicyPack,
+    onDownloadConcurrencyChange: setDownloadConcurrency,
+    onDownloadRateLimitChange: setDownloadRateLimitKiBps,
+    onExportAllPolicyPacksAction: exportSftpTransferPolicyPacks,
+    onExportPolicyPackAction: exportSftpTransferPolicyPack,
+    onImportPolicyPacksAction: importSftpTransferPolicyPacks,
+    onPolicyPackAutoPullOnLaunchChange: setSftpTransferPolicyPackAutoPullOnLaunch,
+    onPolicyPackAutoPushOnChangeChange: setSftpTransferPolicyPackAutoPushOnChange,
+    onPullPolicyPacksFromSyncAction: pullSftpTransferPolicyPacksFromSync,
+    onPushPolicyPacksToSyncAction: pushSftpTransferPolicyPacksToSync,
+    onRetryBatchConfirmThresholdChange: setRetryBatchConfirmThresholdFromInput,
+    onSaveCurrentPolicyPackAction: saveCurrentSftpTransferPolicyPack,
+    onScheduleWindowEnabledChange: setSftpTransferScheduleWindowEnabled,
+    onScheduleWindowEndChange: setSftpTransferScheduleWindowEnd,
+    onScheduleWindowStartChange: setSftpTransferScheduleWindowStart,
+    onToggleScheduleDay: toggleSftpTransferScheduleWindowDay,
+    onUploadConcurrencyChange: setUploadConcurrency,
+    onUploadRateLimitChange: setUploadRateLimitKiBps,
+    policyPackAutoPullOnLaunch: sftpTransferPolicyPackSyncState.autoPullOnLaunch,
+    policyPackAutoPushOnChange: sftpTransferPolicyPackSyncState.autoPushOnChange,
+    policyPackLastSyncLabel: sftpTransferPolicyPackLastSyncLabel,
+    policyPackSyncBusyAction: sftpTransferPolicyPackSyncBusyAction,
+    policyPackSyncFilePath: sftpTransferPolicyPackSyncState.filePath,
+    policyPackViews: sftpTransferPolicyPackViews,
+    rateLimitHint: sftpRateLimitHint,
+    retryBatchConfirmThreshold,
+    retryThresholdHint: sftpRetryThresholdHint,
+    scheduleDayOptions: sftpScheduleDayViews,
+    scheduleHint: sftpScheduleHint,
+    schedulePresetViews: sftpSchedulePresetViews,
+    scheduleWindowEnabled: sftpTransferPreferences.scheduleWindowEnabled,
+    scheduleWindowEndValue: formatSftpScheduleTimeInputValue(
+      sftpTransferPreferences.scheduleWindowEndMinutes
+    ),
+    scheduleWindowStartValue: formatSftpScheduleTimeInputValue(
+      sftpTransferPreferences.scheduleWindowStartMinutes
+    ),
+    storedPolicyPackCount: sftpTransferPolicyPacks.length,
+    uploadConcurrency: sftpTransferPreferences.uploadConcurrency,
+    uploadRateLimitKiBps: sftpTransferPreferences.uploadRateLimitKiBps
+  });
+  const portForwardingSettingsSectionProps =
+    buildPortForwardingSettingsSectionProps({
+    activeEventHistoryCount: activePortForwardEventHistory.length,
+    activeTabSummary: portForwardActiveTabSummary,
+    analyticsView: portForwardAnalyticsView,
+    eventCorrelationQuery: portForwardEventCorrelationQuery,
+    eventErrorCode: portForwardEventErrorCode,
+    eventErrorCodeOptions: portForwardEventErrorCodeOptions,
+    eventFilter: portForwardEventFilter,
+    eventSummaryLabel: portForwardEventSummaryLabel,
+    eventTimeRange: portForwardEventTimeRange,
+    eventViews: portForwardEventViews,
+    formBindHost: portForwardForm.bindHost,
+    formBindPort: portForwardForm.bindPort,
+    formTargetHost: portForwardForm.targetHost,
+    formTargetPort: portForwardForm.targetPort,
+    formType: portForwardForm.type,
+    forwardViews: portForwardRecordViews,
+    hasActiveSession: !!activeSessionId,
+    hasActiveTab: !!activeTabId,
+    hasCustomizedEventView: hasCustomizedPortForwardEventView,
+    isActiveTabConnected,
+    onClearSessionHistoryAction: clearSessionPortForwardHistory,
+    onClearVisibleHistoryAction: clearVisiblePortForwardHistory,
+    onCreateForwardAction: createPortForward,
+    onEventCorrelationQueryChange: setPortForwardEventCorrelationQuery,
+    onEventErrorCodeChange: setPortForwardEventErrorCode,
+    onEventFilterChange: (value: string) =>
+      setPortForwardEventFilter(value as PortForwardEventFilter),
+    onEventTimeRangeChange: (value: string) =>
+      setPortForwardEventTimeRange(value as PortForwardEventTimeRange),
+    onExportAnalyticsCsvAction: exportPortForwardEventAnalyticsCsv,
+    onExportAnalyticsJsonAction: exportPortForwardEventAnalyticsJson,
+    onExportSnapshotAction: exportPortForwardSnapshot,
+    onExportVisibleCsvAction: exportVisiblePortForwardEventsCsv,
+    onExportVisibleJsonAction: exportVisiblePortForwardEventsJson,
+    onFormBindHostChange: setPortForwardFormBindHost,
+    onFormBindPortChange: setPortForwardFormBindPort,
+    onFormTargetHostChange: setPortForwardFormTargetHost,
+    onFormTargetPortChange: setPortForwardFormTargetPort,
+    onFormTypeChange: setPortForwardFormType,
+    onPresetApply: applyActivePortForwardPreset,
+    onPresetAutoRestoreChange: setPortForwardPresetAutoRestore,
+    onPresetDelete: deleteActivePortForwardPreset,
+    onPresetFillForm: fillPortForwardFormFromActivePreset,
+    onRefresh: refreshActivePortForwards,
+    onRefreshDiagnostics: refreshActivePortForwardDiagnostics,
+    onRemoveForward: removeVisiblePortForward,
+    onResetEventFilters: resetPortForwardEventViewFilters,
+    onSavePresetAction: savePortForwardPreset,
+    portForwardBusy,
+    portForwardStatusMessage,
+    presetViews: portForwardPresetViews,
+    visibleEventHistoryCount: visiblePortForwardEventHistory.length
+  });
+  const diagnosticsSettingsSectionProps = buildDiagnosticsSettingsSectionProps({
+    disconnectCaptureEnabled: disconnectReportCapturePreferences.enabled,
+    disconnectCaptureHint: diagnosticsDisconnectCaptureHint,
+    disconnectEmptyStateLabel: diagnosticsDisconnectEmptyStateLabel,
+    disconnectQuery: disconnectReportQuery,
+    disconnectReportViews: diagnosticsDisconnectReportViews,
+    disconnectScope: disconnectReportScope,
+    disconnectTimeRange: disconnectReportTimeRange,
+    disconnectTotalCount: disconnectReports.length,
+    disconnectTrigger: disconnectReportTriggerFilter,
+    disconnectVisibleCount: visibleDisconnectReports.length,
+    hasCustomizedDisconnectView: hasCustomizedDisconnectReportView,
+    isExportingBugReport,
+    logDirectoryPath: diagnosticsLogDirectoryPath,
+    logFilePath: diagnosticsLogFilePath,
+    onClearAllDisconnectsAction: clearDisconnectReportsHistory,
+    onClearVisibleDisconnectsAction: clearVisibleDisconnectReportsHistory,
+    onCopyDisconnectReportJson: copyVisibleDisconnectReportJsonById,
+    onCopyLatestVisibleDisconnectAction: copyLatestVisibleDisconnectReport,
+    onCopyLogFilePathAction: copyLogFilePath,
+    onDisconnectCaptureEnabledChange: setDisconnectReportCaptureEnabled,
+    onDisconnectQueryChange: setDisconnectReportQueryValue,
+    onDisconnectScopeChange: (value: string) => {
+      setDisconnectReportScope(value as DisconnectReportScope);
+    },
+    onDisconnectTimeRangeChange: (value: string) => {
+      setDisconnectReportTimeRange(value as DisconnectReportTimeRange);
+    },
+    onDisconnectTriggerChange: (value: string) => {
+      setDisconnectReportTriggerFilter(value as DisconnectReportTriggerFilter);
+    },
+    onExportBugReportAction: exportBugReportBundle,
+    onExportDisconnectCsvAction: exportDisconnectReportsCsv,
+    onExportDisconnectJsonAction: exportDisconnectReportsJson,
+    onFocusDisconnectTab: focusVisibleDisconnectReportTab,
+    onOpenLogDirectoryAction: openLogDirectory,
+    onRefreshLogInfo: refreshDiagnosticsLogInfo,
+    onResetDisconnectFilters: resetDisconnectReportViewFilters
+  });
 
   return (
     <div className={isMacPlatform ? "app app--mac" : "app app--windows"} ref={appRootRef}>
@@ -25644,7 +24542,9 @@ export function App() {
         </div>
       ) : null}
 
-      <OperationCenterModal
+      {isOperationCenterOpen ? (
+        <Suspense fallback={null}>
+          <LazyOperationCenterModal
         canRetryAllFailedTransfers={canRetryAllFailedTransfers}
         canRetryFailedDownloads={canRetryFailedDownloads}
         canRetryFailedUploads={canRetryFailedUploads}
@@ -25710,9 +24610,13 @@ export function App() {
         timelineItems={operationCenterTimelineItems}
         transferTabSummaries={operationCenterTransferTabSummaries}
         uploadSummary={operationCenterUploadSummary}
-      />
+          />
+        </Suspense>
+      ) : null}
 
-      <RetryCenterModal
+      {isRetryCenterOpen ? (
+        <Suspense fallback={null}>
+          <LazyRetryCenterModal
         analytics={retryCenterAnalytics}
         autoUseLastRetryScope={retryCenterAutoUseLastRetryScope}
         canClearAllEntries={canClearAllRetryCenterEntries}
@@ -25841,9 +24745,13 @@ export function App() {
             parseRetryBatchConfirmThreshold(value, prev)
           );
         }}
-      />
+          />
+        </Suspense>
+      ) : null}
 
-      <CommandHistoryManagerModal
+      {isCommandHistoryManagerOpen ? (
+        <Suspense fallback={null}>
+          <LazyCommandHistoryManagerModal
         allVisibleSelected={allVisibleCommandHistorySelected}
         canClearSelection={commandHistorySelection.length > 0}
         canExport={terminalCommandHistoryEntries.length > 0}
@@ -25859,7 +24767,7 @@ export function App() {
         onDeleteSelected={deleteSelectedCommandHistoryEntries}
         onDeleteVisible={deleteVisibleCommandHistoryEntries}
         onEditEntry={(entryId) => {
-          const entry = visibleTerminalCommandHistoryEntries.find((item) => item.id === entryId);
+          const entry = visibleCommandHistoryEntryById.get(entryId);
           if (!entry) {
             return;
           }
@@ -25872,7 +24780,7 @@ export function App() {
           void importTerminalCommandHistory();
         }}
         onPasteEntry={(entryId) => {
-          const entry = visibleTerminalCommandHistoryEntries.find((item) => item.id === entryId);
+          const entry = visibleCommandHistoryEntryById.get(entryId);
           if (!entry) {
             return;
           }
@@ -25884,9 +24792,13 @@ export function App() {
         selectedCount={commandHistorySelection.length}
         totalCount={terminalCommandHistoryEntries.length}
         visibleCount={visibleTerminalCommandHistoryEntries.length}
-      />
+          />
+        </Suspense>
+      ) : null}
 
-      <CommandSnippetManagerModal
+      {isCommandSnippetManagerOpen ? (
+        <Suspense fallback={null}>
+          <LazyCommandSnippetManagerModal
         buildParameterToken={buildCommandSnippetParameterToken}
         formatScopeLabel={formatCommandSnippetVariableScopeLabel}
         getPatternError={getCommandSnippetParameterPatternError}
@@ -25965,213 +24877,52 @@ export function App() {
         totalPromptSetCount={totalCommandSnippetPromptSetCount}
         totalSnippetCount={totalCommandSnippetCount}
         unusedParameterKeys={selectedCommandSnippetUnusedParameterKeys}
-      />
+          />
+        </Suspense>
+      ) : null}
 
       {commandHistoryContextMenu ? (
-        <div
-          className="sftp-context-menu"
-          onContextMenu={(event) => event.preventDefault()}
+        <WorkbenchContextMenu
+          actions={commandHistoryContextMenuActions}
+          height={selectedCommandHistoryContextEntry ? 152 : 192}
           ref={commandHistoryContextMenuRef}
-          style={{
-            left: `${Math.max(8, Math.min(commandHistoryContextMenu.x, window.innerWidth - 196))}px`,
-            top: `${Math.max(
-              8,
-              Math.min(
-                commandHistoryContextMenu.y,
-                window.innerHeight - (selectedCommandHistoryContextEntry ? 152 : 192)
-              )
-            )}px`
-          }}
-        >
-          {selectedCommandHistoryContextEntry ? (
-            <>
-              <button
-                className="sftp-context-menu__item"
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  void runTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
-                }}
-                type="button"
-              >
-                Run
-              </button>
-              <button
-                className="sftp-context-menu__item"
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  void copyTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
-                }}
-                type="button"
-              >
-                Copy
-              </button>
-              <button
-                className="sftp-context-menu__item is-danger"
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  deleteTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry.id);
-                }}
-                type="button"
-              >
-                Delete
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                className="sftp-context-menu__item"
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  void addTerminalCommandHistoryEntry();
-                }}
-                type="button"
-              >
-                Add
-              </button>
-              <button
-                className="sftp-context-menu__item"
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  void importTerminalCommandHistory();
-                }}
-                type="button"
-              >
-                Import
-              </button>
-              <button
-                className="sftp-context-menu__item"
-                disabled={terminalCommandHistoryEntries.length === 0}
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  void exportTerminalCommandHistory();
-                }}
-                type="button"
-              >
-                Export
-              </button>
-              <button
-                className="sftp-context-menu__item"
-                disabled={totalCommandSnippetCount === 0}
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  openCommandSnippetManager();
-                }}
-                type="button"
-              >
-                Run Snippet
-              </button>
-              <button
-                className="sftp-context-menu__item"
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  void openCommandSnippetManager();
-                }}
-                type="button"
-              >
-                Snippet Manager
-              </button>
-              <button
-                className="sftp-context-menu__item"
-                onClick={() => {
-                  closeCommandHistoryContextMenu();
-                  openCommandHistoryManager();
-                }}
-                type="button"
-              >
-                Manage
-              </button>
-            </>
-          )}
-          <button
-            className="sftp-context-menu__item"
-            onClick={closeCommandHistoryContextMenu}
-            type="button"
-          >
-            Close
-          </button>
-        </div>
+          width={196}
+          x={commandHistoryContextMenu.x}
+          y={commandHistoryContextMenu.y}
+        />
       ) : null}
 
       {sftpToolbarMenu ? (
-        <div
-          className="sftp-context-menu"
-          onContextMenu={(event) => event.preventDefault()}
+        <WorkbenchContextMenu
+          actions={sftpToolbarMenuActions}
+          height={sftpToolbarActions.length * 26 + 16}
           ref={sftpToolbarMenuRef}
-          style={{
-            left: `${Math.max(8, Math.min(sftpToolbarMenu.x, window.innerWidth - 236))}px`,
-            top: `${Math.max(
-              8,
-              Math.min(sftpToolbarMenu.y, window.innerHeight - (sftpToolbarActions.length * 26 + 16))
-            )}px`
-          }}
-        >
-          {sftpToolbarActions.map((action) => (
-            <button
-              className={
-                action.id === "delete-selected"
-                  ? "sftp-context-menu__item is-danger"
-                  : "sftp-context-menu__item"
-              }
-              disabled={action.disabled}
-              key={action.id}
-              onClick={() => runSftpToolbarAction(action)}
-              type="button"
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
+          width={236}
+          x={sftpToolbarMenu.x}
+          y={sftpToolbarMenu.y}
+        />
       ) : null}
 
       {sftpContextMenu ? (
-        <div
-          className="sftp-context-menu"
-          onContextMenu={(event) => event.preventDefault()}
+        <WorkbenchContextMenu
+          actions={sftpEntryContextMenuActions}
+          height={232}
           ref={sftpContextMenuRef}
-          style={{
-            left: `${Math.max(8, Math.min(sftpContextMenu.x, window.innerWidth - 196))}px`,
-            top: `${Math.max(8, Math.min(sftpContextMenu.y, window.innerHeight - 232))}px`
-          }}
-        >
-          {sftpContextActions.map((action) => (
-            <button
-              className="sftp-context-menu__item"
-              disabled={action.disabled}
-              key={action.id}
-              onClick={() => runSftpContextAction(action)}
-              type="button"
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
+          width={196}
+          x={sftpContextMenu.x}
+          y={sftpContextMenu.y}
+        />
       ) : null}
 
-      {sessionContextMenu && sessionContextActions.length > 0 ? (
-        <div
-          className="sftp-context-menu"
-          onContextMenu={(event) => event.preventDefault()}
+      {sessionContextMenu && sessionContextMenuItems.length > 0 ? (
+        <WorkbenchContextMenu
+          actions={sessionContextMenuItems}
+          height={sessionContextActions.length * 26 + 16}
           ref={sessionContextMenuRef}
-          style={{
-            left: `${Math.max(8, Math.min(sessionContextMenu.x, window.innerWidth - 236))}px`,
-            top: `${Math.max(
-              8,
-              Math.min(sessionContextMenu.y, window.innerHeight - (sessionContextActions.length * 26 + 16))
-            )}px`
-          }}
-        >
-          {sessionContextActions.map((action) => (
-            <button
-              className={action.danger ? "sftp-context-menu__item is-danger" : "sftp-context-menu__item"}
-              disabled={action.disabled}
-              key={action.id}
-              onClick={() => runSessionContextAction(action)}
-              type="button"
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
+          width={236}
+          x={sessionContextMenu.x}
+          y={sessionContextMenu.y}
+        />
       ) : null}
 
       <SettingsModalShell
@@ -26186,1073 +24937,18 @@ export function App() {
         titleLabel={i18n.settings.title}
         versionLabel={i18n.settings.version(APP_VERSION)}
       >
-                {activeSettingsSection === "connection" ? (
-                  <ConnectionSettingsSection
-                    autoReconnect={connectionPreferences.autoReconnect}
-                    onAutoReconnectChange={setAutoReconnect}
-                    onReconnectDelayChange={setReconnectDelaySeconds}
-                    reconnectDelaySeconds={connectionPreferences.reconnectDelaySeconds}
-                  />
-                ) : null}
-
-                {activeSettingsSection === "workspace" ? (
-                  <WorkspaceSettingsSection
-                    cursorOptions={TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS}
-                    editorFocusAutoLayoutEnabled={terminalEditorFocusPreferences.autoLayoutEnabled}
-                    fontOptions={TERMINAL_EDITOR_FOCUS_FONT_OPTIONS}
-                    labels={i18n.settings.workspace}
-                    languageOptions={APP_LANGUAGE_OPTIONS}
-                    onCursorSelect={(cursorId) =>
-                      setTerminalEditorFocusCursorId(cursorId as TerminalEditorFocusCursorId)
-                    }
-                    onEditorFocusAutoLayoutEnabledChange={setTerminalEditorAutoLayoutEnabled}
-                    onFontSelect={(fontId) =>
-                      setTerminalEditorFocusFontId(fontId as TerminalEditorFocusFontId)
-                    }
-                    onRhythmSelect={(rhythmId) =>
-                      setTerminalEditorFocusRhythmId(rhythmId as TerminalEditorFocusRhythmId)
-                    }
-                    onSyncDangerousCommandSafetyChange={setWorkspaceProfileDangerousCommandSync}
-                    onThemeSelect={(themeId) =>
-                      setTerminalEditorFocusThemeId(themeId as TerminalEditorFocusThemeId)
-                    }
-                    onTypographySelect={(typographyId) =>
-                      setTerminalEditorFocusTypographyId(
-                        typographyId as TerminalEditorFocusTypographyId
-                      )
-                    }
-                    onWorkspaceProfileSelect={(profileId) =>
-                      setWorkspaceProfileId(profileId as WorkspaceProfileId)
-                    }
-                    onLanguageSelect={setAppLanguage}
-                    rhythmOptions={TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS}
-                    selectedCursorId={terminalEditorFocusPreferences.cursorId}
-                    selectedCursorLabel={selectedTerminalEditorFocusCursor.label}
-                    selectedFontId={terminalEditorFocusPreferences.fontId}
-                    selectedFontLabel={selectedTerminalEditorFocusFont.label}
-                    selectedLanguage={appLanguage}
-                    selectedLanguageLabel={selectedLanguageOption.label}
-                    selectedRhythmId={terminalEditorFocusPreferences.rhythmId}
-                    selectedRhythmLabel={selectedTerminalEditorFocusRhythm.label}
-                    selectedThemeId={terminalEditorFocusPreferences.themeId}
-                    selectedThemeLabel={selectedTerminalEditorFocusTheme.label}
-                    selectedTypographyId={terminalEditorFocusPreferences.typographyId}
-                    selectedTypographyLabel={selectedTerminalEditorFocusTypography.label}
-                    selectedWorkspaceProfileId={workspaceProfilePreferences.profileId}
-                    selectedWorkspaceProfileLabel={selectedWorkspaceProfile.label}
-                    syncDangerousCommandSafety={
-                      workspaceProfilePreferences.syncDangerousCommandSafety
-                    }
-                    themeOptions={TERMINAL_EDITOR_FOCUS_THEME_OPTIONS}
-                    typographyOptions={TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS}
-                    workspaceProfileCards={workspaceProfileCardViews}
-                  />
-                ) : null}
-
-                {activeSettingsSection === "safety" ? (
-                  <>
-                    <label className="settings-checkbox">
-                      <input
-                        checked={dangerousCommandGuardPreferences.enabled}
-                        onChange={(event) =>
-                          setDangerousCommandGuardEnabled(event.target.checked)
-                        }
-                        type="checkbox"
-                      />
-                      <span>Enable dangerous command guardrails before terminal execution</span>
-                    </label>
-                    <p className="hint">
-                      Uses the fixed bottom approval bar. Covers keyboard Enter, multiline paste,
-                      command history run, snippets, quick profiles, and startup commands.
-                    </p>
-                    <p className="hint">
-                      Workspace profile: {selectedWorkspaceProfile.label}
-                      {" | "}Safety sync{" "}
-                      {workspaceProfilePreferences.syncDangerousCommandSafety ? "on" : "off"}
-                    </p>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Execution Sources</h4>
-                        <p className="hint">
-                          Enable or disable guard inspection per execution path. Paste-style sources
-                          still only inspect multiline writes, while keyboard inspection still
-                          triggers when Enter submits the buffered command.
-                        </p>
-                      </div>
-                      <p className="hint">
-                        Enabled sources {enabledDangerousCommandSourceCount}/
-                        {DANGEROUS_COMMAND_EXECUTION_SOURCES.length}
-                      </p>
-                      <div className="settings-safety-rules">
-                        {DANGEROUS_COMMAND_EXECUTION_SOURCES.map((source) => (
-                          <label className="settings-checkbox settings-safety-rule" key={source.id}>
-                            <input
-                              checked={dangerousCommandGuardPreferences.sourceStates[source.id]}
-                              disabled={!dangerousCommandGuardPreferences.enabled}
-                              onChange={(event) =>
-                                setDangerousCommandSourceEnabled(source.id, event.target.checked)
-                              }
-                              type="checkbox"
-                            />
-                            <span className="settings-safety-rule__content">
-                              <span className="settings-safety-rule__title">{source.label}</span>
-                              <span className="hint settings-safety-rule__meta">
-                                {source.description}
-                              </span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Policy Pack</h4>
-                        <p className="hint">
-                          Adds curated workflow-specific guardrails on top of the built-in system
-                          rules without replacing your custom patterns.
-                          {workspaceProfilePreferences.syncDangerousCommandSafety
-                            ? " Workspace-profile sync is on, so this global selection follows the current workspace profile."
-                            : ""}
-                        </p>
-                      </div>
-                      <div className="settings-safety-preset-grid">
-                        {DANGEROUS_COMMAND_POLICY_PACKS.map((pack) => (
-                          <button
-                            className={
-                              pack.id === dangerousCommandGuardPreferences.policyPackId
-                                ? "settings-safety-preset is-active"
-                                : "settings-safety-preset"
-                            }
-                            disabled={
-                              !dangerousCommandGuardPreferences.enabled ||
-                              workspaceProfilePreferences.syncDangerousCommandSafety
-                            }
-                            key={pack.id}
-                            onClick={() => setDangerousCommandPolicyPackId(pack.id)}
-                            type="button"
-                          >
-                            <span className="settings-safety-preset__title">{pack.label}</span>
-                            <span className="hint settings-safety-preset__meta">
-                              {pack.description}
-                            </span>
-                            <span className="settings-safety-preset__count">
-                              {pack.extraRules.length} extra rule(s)
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Environment Template</h4>
-                        <p className="hint">
-                          Selecting a template also snaps the policy pack to the recommended
-                          baseline for that environment. Custom patterns stay untouched.
-                          {workspaceProfilePreferences.syncDangerousCommandSafety
-                            ? " Workspace-profile sync is on, so this global selection follows the current workspace profile."
-                            : ""}
-                        </p>
-                      </div>
-                      <div className="settings-safety-preset-grid">
-                        {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.map((template) => (
-                          <button
-                            className={
-                              template.id === dangerousCommandGuardPreferences.environmentTemplateId
-                                ? "settings-safety-preset is-active"
-                                : "settings-safety-preset"
-                            }
-                            disabled={
-                              !dangerousCommandGuardPreferences.enabled ||
-                              workspaceProfilePreferences.syncDangerousCommandSafety
-                            }
-                            key={template.id}
-                            onClick={() => applyDangerousCommandEnvironmentTemplate(template.id)}
-                            type="button"
-                          >
-                            <span className="settings-safety-preset__title">{template.label}</span>
-                            <span className="hint settings-safety-preset__meta">
-                              {template.description}
-                            </span>
-                            <span className="settings-safety-preset__count">
-                              Recommended pack:{" "}
-                              {
-                                DANGEROUS_COMMAND_POLICY_PACKS.find(
-                                  (pack) => pack.id === template.recommendedPolicyPackId
-                                )?.label
-                              }
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <p className="hint">
-                      Workspace {selectedWorkspaceProfile.label} |{" "}
-                      Active sources {enabledDangerousCommandSourceCount}/
-                      {DANGEROUS_COMMAND_EXECUTION_SOURCES.length} | built-in rules{" "}
-                      {enabledDangerousCommandBuiltinRuleCount}/{DANGEROUS_COMMAND_BUILTIN_RULES.length} |
-                      {" "}policy pack{" "}
-                      {selectedDangerousCommandPolicyPack.label} (
-                      {selectedDangerousCommandPolicyPack.extraRules.length} extra) | environment{" "}
-                      {selectedDangerousCommandEnvironmentTemplate.label} (
-                      {selectedDangerousCommandEnvironmentTemplate.extraRules.length} extra)
-                    </p>
-                    {activeDangerousCommandSupplementalRules.length > 0 ? (
-                      <div className="settings-safety-rules settings-safety-rules--supplemental">
-                        {activeDangerousCommandSupplementalRules.map((rule) => (
-                          <div className="settings-safety-rule settings-safety-rule--readonly" key={`${rule.sourceLabel}-${rule.id}`}>
-                            <span className="settings-safety-rule__content">
-                              <span className="settings-safety-rule__title">
-                                {rule.label}
-                                <span
-                                  className={
-                                    rule.severity === "critical"
-                                      ? "settings-safety-rule__badge is-critical"
-                                      : "settings-safety-rule__badge"
-                                  }
-                                >
-                                  {rule.severity}
-                                </span>
-                              </span>
-                              <span className="hint settings-safety-rule__meta">
-                                {rule.description}
-                              </span>
-                              <span className="hint settings-safety-rule__meta">
-                                Source: {rule.sourceLabel}
-                              </span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="hint">
-                        No extra policy-pack or environment-template rules are active right now.
-                      </p>
-                    )}
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Session Group Overrides</h4>
-                        <p className="hint">
-                          Save pack/template combinations per session group. When a terminal tab
-                          belongs to a saved group, that override replaces the global pack/template
-                          for inspection on that tab only.
-                        </p>
-                      </div>
-                      <p className="hint">
-                        Target group: {dangerousCommandSettingsTargetGroupName ?? "None"}.
-                        {" "}
-                        {activeTabSessionGroupName
-                          ? "Using the active tab session group."
-                          : activeSessionGroup?.groupName
-                            ? "Using the group currently selected in Sessions."
-                            : "Focus a grouped tab or select a group in Sessions to save an override."}
-                      </p>
-                      <p className="hint">
-                        Saved overrides {dangerousCommandGuardPreferences.groupAssignments.length}/
-                        {MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS}
-                      </p>
-                      <div className="modal__actions">
-                        <button
-                          className="secondary-button"
-                          disabled={
-                            !dangerousCommandGuardPreferences.enabled ||
-                            !dangerousCommandSettingsTargetGroupName ||
-                            dangerousCommandGroupAssignmentLimitReached
-                          }
-                          onClick={() =>
-                            saveDangerousCommandGroupAssignment(dangerousCommandSettingsTargetGroupName)
-                          }
-                          type="button"
-                        >
-                          {activeDangerousCommandGroupAssignment
-                            ? "Update Target Group Override"
-                            : "Save Current Pack For Target Group"}
-                        </button>
-                        {activeDangerousCommandGroupAssignment ? (
-                          <button
-                            className="secondary-button"
-                            disabled={!dangerousCommandGuardPreferences.enabled}
-                            onClick={() =>
-                              deleteDangerousCommandGroupAssignment(
-                                activeDangerousCommandGroupAssignment.groupName
-                              )
-                            }
-                            type="button"
-                          >
-                            Remove Target Group Override
-                          </button>
-                        ) : null}
-                      </div>
-                      {dangerousCommandGroupAssignmentLimitReached ? (
-                        <p className="hint">
-                          Override limit reached. Remove an existing group override before adding a
-                          new one.
-                        </p>
-                      ) : null}
-                      {dangerousCommandGuardPreferences.groupAssignments.length > 0 ? (
-                        <div className="settings-safety-rules settings-safety-rules--supplemental">
-                          {dangerousCommandGuardPreferences.groupAssignments.map((assignment) => (
-                            <div
-                              className="settings-safety-rule settings-safety-rule--readonly"
-                              key={assignment.groupName}
-                            >
-                              <span className="settings-safety-rule__content">
-                                <span className="settings-safety-rule__title">
-                                  {assignment.groupName}
-                                </span>
-                                <span className="hint settings-safety-rule__meta">
-                                  Policy pack:{" "}
-                                  {DANGEROUS_COMMAND_POLICY_PACKS.find(
-                                    (pack) => pack.id === assignment.policyPackId
-                                  )?.label ?? assignment.policyPackId}
-                                  {" | "}environment:{" "}
-                                  {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
-                                    (template) => template.id === assignment.environmentTemplateId
-                                  )?.label ?? assignment.environmentTemplateId}
-                                </span>
-                                {dangerousCommandSettingsTargetGroupName &&
-                                assignment.groupName.toLowerCase() ===
-                                  dangerousCommandSettingsTargetGroupName.toLowerCase() ? (
-                                  <span className="hint settings-safety-rule__meta">
-                                    Current settings target group
-                                  </span>
-                                ) : null}
-                              </span>
-                              <div className="settings-safety-rule__actions">
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  disabled={!dangerousCommandGuardPreferences.enabled}
-                                  onClick={() =>
-                                    deleteDangerousCommandGroupAssignment(assignment.groupName)
-                                  }
-                                  type="button"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="hint">
-                          No session-group overrides saved yet. Ungrouped sessions keep using the
-                          global pack/template selection.
-                        </p>
-                      )}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Temporary Approval Scopes</h4>
-                        <p className="hint">
-                          Runtime-only exact-command approvals created from the bottom approval bar.
-                          `Allow In Tab` is removed when that tab closes. `Allow In Group` stays
-                          active until Safety settings change, the app restarts, or you clear it
-                          here.
-                        </p>
-                      </div>
-                      <p className="hint">
-                        Active temporary approvals {dangerousCommandTemporaryApprovals.length}/
-                        {MAX_DANGEROUS_COMMAND_TEMP_APPROVALS}
-                      </p>
-                      <div className="modal__actions">
-                        <button
-                          className="secondary-button"
-                          disabled={dangerousCommandTemporaryApprovals.length === 0}
-                          onClick={() => clearDangerousCommandTemporaryApprovals("manual")}
-                          type="button"
-                        >
-                          Clear All Temporary Approvals
-                        </button>
-                      </div>
-                      {dangerousCommandTemporaryApprovals.length > 0 ? (
-                        <div className="settings-safety-rules settings-safety-rules--supplemental">
-                          {dangerousCommandTemporaryApprovals.map((approval) => (
-                            <div
-                              className="settings-safety-rule settings-safety-rule--readonly"
-                              key={approval.id}
-                            >
-                              <span className="settings-safety-rule__content">
-                                <span className="settings-safety-rule__title">
-                                  {approval.preview || approval.commandText}
-                                  <span
-                                    className={
-                                      approval.severity === "critical"
-                                        ? "settings-safety-rule__badge is-critical"
-                                        : "settings-safety-rule__badge"
-                                    }
-                                  >
-                                    {approval.severity}
-                                  </span>
-                                </span>
-                                <span className="hint settings-safety-rule__meta">
-                                  Scope: {formatDangerousCommandTemporaryApprovalScopeLabel(approval)}
-                                  {" | "}source: {approval.sourceLabel}
-                                </span>
-                                <span className="hint settings-safety-rule__meta">
-                                  Pack:{" "}
-                                  {DANGEROUS_COMMAND_POLICY_PACKS.find(
-                                    (pack) => pack.id === approval.appliedPolicyPackId
-                                  )?.label ?? approval.appliedPolicyPackId}
-                                  {" | "}environment:{" "}
-                                  {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
-                                    (template) => template.id === approval.appliedEnvironmentTemplateId
-                                  )?.label ?? approval.appliedEnvironmentTemplateId}
-                                </span>
-                                <span className="hint settings-safety-rule__meta">
-                                  Approved {new Date(approval.createdAt).toLocaleString()}
-                                </span>
-                              </span>
-                              <div className="settings-safety-rule__actions">
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  onClick={() => removeDangerousCommandTemporaryApproval(approval.id)}
-                                  type="button"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="hint">
-                          No temporary approval scopes are active right now.
-                        </p>
-                      )}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Persistent Approval Policies</h4>
-                        <p className="hint">
-                          Saved exact-command allow rules from the bottom approval bar. These stay
-                          active across app restart and travel with Safety bundles. Matching still
-                          requires the same command text, execution source, policy pack, and
-                          environment template.
-                        </p>
-                      </div>
-                      <p className="hint">
-                        Saved persistent policies{" "}
-                        {dangerousCommandGuardPreferences.persistentApprovals.length}/
-                        {MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS}
-                      </p>
-                      <div className="modal__actions">
-                        <button
-                          className="secondary-button"
-                          disabled={dangerousCommandGuardPreferences.persistentApprovals.length === 0}
-                          onClick={() => {
-                            void clearDangerousCommandPersistentApprovals();
-                          }}
-                          type="button"
-                        >
-                          Clear All Persistent Policies
-                        </button>
-                      </div>
-                      {dangerousCommandGuardPreferences.persistentApprovals.length > 0 ? (
-                        <div className="settings-safety-rules settings-safety-rules--supplemental">
-                          {dangerousCommandGuardPreferences.persistentApprovals.map((approval) => (
-                            <div
-                              className="settings-safety-rule settings-safety-rule--readonly"
-                              key={approval.id}
-                            >
-                              <span className="settings-safety-rule__content">
-                                <span className="settings-safety-rule__title">
-                                  {approval.preview || approval.commandText}
-                                  <span
-                                    className={
-                                      approval.severity === "critical"
-                                        ? "settings-safety-rule__badge is-critical"
-                                        : "settings-safety-rule__badge"
-                                    }
-                                  >
-                                    {approval.severity}
-                                  </span>
-                                </span>
-                                <span className="hint settings-safety-rule__meta">
-                                  Scope: {formatDangerousCommandPersistentApprovalScopeLabel(approval)}
-                                  {" | "}source: {formatDangerousCommandSourceLabel(approval.source)}
-                                </span>
-                                <span className="hint settings-safety-rule__meta">
-                                  Pack:{" "}
-                                  {DANGEROUS_COMMAND_POLICY_PACKS.find(
-                                    (pack) => pack.id === approval.appliedPolicyPackId
-                                  )?.label ?? approval.appliedPolicyPackId}
-                                  {" | "}environment:{" "}
-                                  {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
-                                    (template) => template.id === approval.appliedEnvironmentTemplateId
-                                  )?.label ?? approval.appliedEnvironmentTemplateId}
-                                </span>
-                                <span className="hint settings-safety-rule__meta">
-                                  Saved {new Date(approval.createdAtIso).toLocaleString()}
-                                </span>
-                              </span>
-                              <div className="settings-safety-rule__actions">
-                                <button
-                                  className="secondary-button secondary-button--small"
-                                  onClick={() => removeDangerousCommandPersistentApproval(approval.id)}
-                                  type="button"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="hint">
-                          No persistent approval policies saved yet.
-                        </p>
-                      )}
-                    </div>
-                    <div className="settings-safety-preset-section">
-                      <div className="settings-safety-preset-header">
-                        <h4 className="settings-group__title">Shared Policy Bundles</h4>
-                        <p className="hint">
-                          Save the current Safety settings as reusable JSON bundles, then import,
-                          export, apply, or sync them across machines and teammates through a
-                          shared JSON file. This baseline is manual push/pull only; auto-watch and
-                          permission-aware distribution are still out of scope.
-                        </p>
-                      </div>
-                      <p className="hint">
-                        Stored bundles {dangerousCommandPolicyBundles.length}/
-                        {MAX_DANGEROUS_COMMAND_POLICY_BUNDLES}
-                      </p>
-                      <p className="hint">
-                        Sync file:{" "}
-                        {dangerousCommandPolicyBundleSyncState.filePath ? (
-                          <code>{dangerousCommandPolicyBundleSyncState.filePath}</code>
-                        ) : (
-                          "Not linked yet."
-                        )}
-                      </p>
-                      {(dangerousCommandPolicyBundleSyncState.lastPulledAtIso ||
-                        dangerousCommandPolicyBundleSyncState.lastPushedAtIso) && (
-                        <p className="hint">
-                          Last pull:{" "}
-                          {dangerousCommandPolicyBundleSyncState.lastPulledAtIso
-                            ? new Date(
-                                dangerousCommandPolicyBundleSyncState.lastPulledAtIso
-                              ).toLocaleString()
-                            : "never"}
-                          {" | "}last push:{" "}
-                          {dangerousCommandPolicyBundleSyncState.lastPushedAtIso
-                            ? new Date(
-                                dangerousCommandPolicyBundleSyncState.lastPushedAtIso
-                              ).toLocaleString()
-                            : "never"}
-                        </p>
-                      )}
-                      <div className="modal__actions">
-                        <button
-                          className="secondary-button"
-                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
-                          onClick={() => {
-                            void saveCurrentDangerousCommandPolicyBundle();
-                          }}
-                          type="button"
-                        >
-                          Save Current As Bundle
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
-                          onClick={() => {
-                            void importDangerousCommandPolicyBundles();
-                          }}
-                          type="button"
-                        >
-                          Import Bundles...
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={
-                            dangerousCommandPolicyBundles.length === 0 ||
-                            dangerousCommandPolicyBundleSyncBusyAction !== null
-                          }
-                          onClick={() => {
-                            void exportDangerousCommandPolicyBundles();
-                          }}
-                          type="button"
-                        >
-                          Export All Bundles...
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
-                          onClick={() => {
-                            void pullDangerousCommandPolicyBundlesFromSync();
-                          }}
-                          type="button"
-                        >
-                          {dangerousCommandPolicyBundleSyncBusyAction === "pull"
-                            ? "Pulling..."
-                            : dangerousCommandPolicyBundleSyncState.filePath
-                              ? "Pull Sync"
-                              : "Pull Sync..."}
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
-                          onClick={() => {
-                            void pushDangerousCommandPolicyBundlesToSync();
-                          }}
-                          type="button"
-                        >
-                          {dangerousCommandPolicyBundleSyncBusyAction === "push"
-                            ? "Pushing..."
-                            : dangerousCommandPolicyBundleSyncState.filePath
-                              ? "Push Sync"
-                              : "Push Sync..."}
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={dangerousCommandPolicyBundleSyncBusyAction !== null}
-                          onClick={() => {
-                            void changeDangerousCommandPolicyBundleSyncTarget();
-                          }}
-                          type="button"
-                        >
-                          {dangerousCommandPolicyBundleSyncBusyAction === "change"
-                            ? "Choosing..."
-                            : dangerousCommandPolicyBundleSyncState.filePath
-                              ? "Change Sync File..."
-                              : "Choose Sync File..."}
-                        </button>
-                        <button
-                          className="secondary-button"
-                          disabled={
-                            !dangerousCommandPolicyBundleSyncState.filePath ||
-                            dangerousCommandPolicyBundleSyncBusyAction !== null
-                          }
-                          onClick={() => {
-                            void clearDangerousCommandPolicyBundleSyncTarget();
-                          }}
-                          type="button"
-                        >
-                          Clear Sync File
-                        </button>
-                      </div>
-                      {dangerousCommandPolicyBundles.length > 0 ? (
-                        <div className="settings-safety-rules settings-safety-rules--supplemental">
-                          {dangerousCommandPolicyBundles.map((bundle) => {
-                            const bundlePatternSummary = summarizeDangerousCommandCustomPatterns(
-                              bundle.preferences.customPatternsText
-                            );
-                            const bundleEnabledSources = DANGEROUS_COMMAND_EXECUTION_SOURCES.filter(
-                              (source) => bundle.preferences.sourceStates[source.id]
-                            ).length;
-                            return (
-                              <div
-                                className="settings-safety-rule settings-safety-rule--readonly"
-                                key={bundle.id}
-                              >
-                                <span className="settings-safety-rule__content">
-                                  <span className="settings-safety-rule__title">{bundle.name}</span>
-                                  <span className="hint settings-safety-rule__meta">
-                                    {bundle.description || "No description."}
-                                  </span>
-                                  <span className="hint settings-safety-rule__meta">
-                                    Pack:{" "}
-                                    {DANGEROUS_COMMAND_POLICY_PACKS.find(
-                                      (pack) => pack.id === bundle.preferences.policyPackId
-                                    )?.label ?? bundle.preferences.policyPackId}
-                                    {" | "}environment:{" "}
-                                    {DANGEROUS_COMMAND_ENVIRONMENT_TEMPLATES.find(
-                                      (template) =>
-                                        template.id === bundle.preferences.environmentTemplateId
-                                    )?.label ?? bundle.preferences.environmentTemplateId}
-                                  </span>
-                                  <span className="hint settings-safety-rule__meta">
-                                    Sources {bundleEnabledSources}/
-                                    {DANGEROUS_COMMAND_EXECUTION_SOURCES.length}
-                                    {" | "}group overrides{" "}
-                                    {bundle.preferences.groupAssignments.length}
-                                    {" | "}persistent policies{" "}
-                                    {bundle.preferences.persistentApprovals.length}
-                                    {" | "}custom patterns{" "}
-                                    {bundlePatternSummary.activePatterns}
-                                  </span>
-                                  <span className="hint settings-safety-rule__meta">
-                                    Updated {new Date(bundle.updatedAtIso).toLocaleString()}
-                                  </span>
-                                </span>
-                                <div className="settings-safety-rule__actions">
-                                  <button
-                                    className="secondary-button secondary-button--small"
-                                    onClick={() => {
-                                      void applyDangerousCommandPolicyBundle(bundle.id);
-                                    }}
-                                    type="button"
-                                  >
-                                    Apply
-                                  </button>
-                                  <button
-                                    className="secondary-button secondary-button--small"
-                                    onClick={() => {
-                                      void exportDangerousCommandPolicyBundle(bundle.id);
-                                    }}
-                                    type="button"
-                                  >
-                                    Export
-                                  </button>
-                                  <button
-                                    className="secondary-button secondary-button--small"
-                                    onClick={() => {
-                                      void deleteDangerousCommandPolicyBundle(bundle.id);
-                                    }}
-                                    type="button"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="hint">
-                          No shared safety bundles saved yet. Save the current Safety configuration
-                          to create your first reusable bundle.
-                        </p>
-                      )}
-                    </div>
-                    <div className="settings-safety-rules">
-                      {DANGEROUS_COMMAND_BUILTIN_RULES.map((rule) => (
-                        <label className="settings-checkbox settings-safety-rule" key={rule.id}>
-                          <input
-                            checked={dangerousCommandGuardPreferences.builtinRuleStates[rule.id]}
-                            disabled={!dangerousCommandGuardPreferences.enabled}
-                            onChange={(event) =>
-                              setDangerousCommandBuiltinRuleEnabled(rule.id, event.target.checked)
-                            }
-                            type="checkbox"
-                          />
-                          <span className="settings-safety-rule__content">
-                            <span className="settings-safety-rule__title">
-                              {rule.label}
-                              <span
-                                className={
-                                  rule.severity === "critical"
-                                    ? "settings-safety-rule__badge is-critical"
-                                    : "settings-safety-rule__badge"
-                                }
-                              >
-                                {rule.severity}
-                              </span>
-                            </span>
-                            <span className="hint settings-safety-rule__meta">
-                              {rule.description}
-                            </span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    <label>
-                      Custom Patterns
-                      <textarea
-                        className="settings-safety__textarea"
-                        disabled={!dangerousCommandGuardPreferences.enabled}
-                        onChange={(event) =>
-                          setDangerousCommandCustomPatternsText(event.target.value)
-                        }
-                        placeholder={"One pattern per line\nPlain text or /regex/flags"}
-                        rows={5}
-                        value={dangerousCommandGuardPreferences.customPatternsText}
-                      />
-                    </label>
-                    <p className="hint">
-                      Active custom patterns {dangerousCommandCustomPatternSummary.activePatterns},
-                      invalid lines {dangerousCommandCustomPatternSummary.invalidLines}. Invalid
-                      lines are ignored.
-                    </p>
-                    <div className="modal__actions">
-                      <button
-                        className="secondary-button"
-                        onClick={resetDangerousCommandGuardPreferences}
-                        type="button"
-                      >
-                        Reset Safety Rules
-                      </button>
-                    </div>
-                  </>
-                ) : null}
-
-                {activeSettingsSection === "hotkeys" ? (
-                  <HotkeySettingsSection
-                    hotkeyConflictCursorIndex={hotkeyConflictCursorIndex}
-                    hotkeyConflicts={hotkeyConflictViews}
-                    hotkeyKeyPlaceholder={HOTKEY_KEY_PLACEHOLDER}
-                    hotkeyModifierOptions={hotkeyModifierOptions}
-                    hotkeyRows={hotkeySettingRowViews}
-                    onBindingEnabledChange={(actionId, value) =>
-                      setHotkeyBindingEnabled(actionId as HotkeyActionId, value)
-                    }
-                    onBindingKeyChange={(actionId, value) =>
-                      setHotkeyBindingKey(actionId as HotkeyActionId, value)
-                    }
-                    onBindingModifierChange={(actionId, modifier) =>
-                      setHotkeyBindingModifier(actionId as HotkeyActionId, modifier as HotkeyModifier)
-                    }
-                    onExportHotkeys={() => {
-                      void exportHotkeyPreferences();
-                    }}
-                    onFocusConflictAtIndex={focusHotkeyConflictAtIndex}
-                    onFocusNextConflict={focusNextHotkeyConflict}
-                    onFocusPreviousConflict={focusPreviousHotkeyConflict}
-                    onImportHotkeys={() => {
-                      void importHotkeyPreferences();
-                    }}
-                    onRegisterRowRef={(actionId, element) => {
-                      registerHotkeyRowRef(actionId as HotkeyActionId, element);
-                    }}
-                    onResetHotkeys={() => setHotkeyPreferences(createDefaultHotkeyPreferences())}
-                    onResolveConflicts={resolveHotkeyConflicts}
-                  />
-                ) : null}
-
-                {activeSettingsSection === "serverHealth" ? (
-                  <ServerHealthSettingsSection
-                    cpuWarnPercent={serverHealthAlertPreferences.cpuWarnPercent}
-                    diskWarnPercent={serverHealthAlertPreferences.diskWarnPercent}
-                    enabled={serverHealthAlertPreferences.enabled}
-                    memoryWarnPercent={serverHealthAlertPreferences.memoryWarnPercent}
-                    onEnabledChange={setServerHealthAlertEnabled}
-                    onThresholdChange={setServerHealthAlertThreshold}
-                  />
-                ) : null}
-
-                {activeSettingsSection === "fileOpening" ? (
-                  <FileOpeningSettingsSection
-                    isMacPlatform={isMacPlatform}
-                    onBrowseProgram={() => {
-                      void pickPreferredOpenProgram();
-                    }}
-                    onPreferredProgramPathChange={setPreferredOpenProgramPath}
-                    preferredProgramPath={fileOpenPreferences.preferredProgramPath}
-                  />
-                ) : null}
-
-                {activeSettingsSection === "sftp" ? (
-                  <SftpSettingsSection
-                    activeSessionConflictHint={sftpActiveSessionConflictHint}
-                    canClearAllDefaults={
-                      !!activeSessionTransferConflictStrategy?.upload ||
-                      !!activeSessionTransferConflictStrategy?.download
-                    }
-                    canClearDownloadDefault={!!activeSessionTransferConflictStrategy?.download}
-                    canClearUploadDefault={!!activeSessionTransferConflictStrategy?.upload}
-                    concurrencyHint={sftpConcurrencyHint}
-                    downloadConcurrency={sftpTransferPreferences.downloadConcurrency}
-                    downloadRateLimitKiBps={sftpTransferPreferences.downloadRateLimitKiBps}
-                    hasActiveSessionConflictControls={!!activeSessionId}
-                    maxConcurrency={MAX_SFTP_TRANSFER_CONCURRENCY}
-                    maxPolicyPackCount={MAX_SFTP_TRANSFER_POLICY_PACKS}
-                    maxRateLimitKiBps={MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS}
-                    maxRetryBatchConfirmThreshold={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
-                    minRetryBatchConfirmThreshold={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
-                    onApplyPolicyPack={(packId) => {
-                      void applySftpTransferPolicyPack(packId);
-                    }}
-                    onApplySchedulePreset={applySftpTransferSchedulePreset}
-                    onChangePolicyPackSyncTarget={() => {
-                      void changeSftpTransferPolicyPackSyncTarget();
-                    }}
-                    onClearAllDefaults={clearActiveSessionConflictDefaults}
-                    onClearDownloadDefault={clearActiveSessionDownloadConflictDefault}
-                    onClearPolicyPackSyncTarget={() => {
-                      void clearSftpTransferPolicyPackSyncTarget();
-                    }}
-                    onClearUploadDefault={clearActiveSessionUploadConflictDefault}
-                    onDeletePolicyPack={(packId) => {
-                      void deleteSftpTransferPolicyPack(packId);
-                    }}
-                    onDownloadConcurrencyChange={setDownloadConcurrency}
-                    onDownloadRateLimitChange={setDownloadRateLimitKiBps}
-                    onExportAllPolicyPacks={() => {
-                      void exportSftpTransferPolicyPacks();
-                    }}
-                    onExportPolicyPack={(packId) => {
-                      void exportSftpTransferPolicyPack(packId);
-                    }}
-                    onImportPolicyPacks={() => {
-                      void importSftpTransferPolicyPacks();
-                    }}
-                    onPolicyPackAutoPullOnLaunchChange={setSftpTransferPolicyPackAutoPullOnLaunch}
-                    onPolicyPackAutoPushOnChangeChange={setSftpTransferPolicyPackAutoPushOnChange}
-                    onPullPolicyPacksFromSync={() => {
-                      void pullSftpTransferPolicyPacksFromSync();
-                    }}
-                    onPushPolicyPacksToSync={() => {
-                      void pushSftpTransferPolicyPacksToSync();
-                    }}
-                    onRetryBatchConfirmThresholdChange={setRetryBatchConfirmThresholdFromInput}
-                    onSaveCurrentPolicyPack={() => {
-                      void saveCurrentSftpTransferPolicyPack();
-                    }}
-                    onScheduleWindowEnabledChange={setSftpTransferScheduleWindowEnabled}
-                    onScheduleWindowEndChange={setSftpTransferScheduleWindowEnd}
-                    onScheduleWindowStartChange={setSftpTransferScheduleWindowStart}
-                    onToggleScheduleDay={toggleSftpTransferScheduleWindowDay}
-                    onUploadConcurrencyChange={setUploadConcurrency}
-                    onUploadRateLimitChange={setUploadRateLimitKiBps}
-                    policyPackAutoPullOnLaunch={sftpTransferPolicyPackSyncState.autoPullOnLaunch}
-                    policyPackAutoPushOnChange={sftpTransferPolicyPackSyncState.autoPushOnChange}
-                    policyPackLastSyncLabel={sftpTransferPolicyPackLastSyncLabel}
-                    policyPackSyncBusyAction={sftpTransferPolicyPackSyncBusyAction}
-                    policyPackSyncFilePath={sftpTransferPolicyPackSyncState.filePath}
-                    policyPackViews={sftpTransferPolicyPackViews}
-                    rateLimitHint={sftpRateLimitHint}
-                    retryBatchConfirmThreshold={retryBatchConfirmThreshold}
-                    retryThresholdHint={sftpRetryThresholdHint}
-                    scheduleDayOptions={sftpScheduleDayViews}
-                    scheduleHint={sftpScheduleHint}
-                    schedulePresetViews={sftpSchedulePresetViews}
-                    scheduleWindowEnabled={sftpTransferPreferences.scheduleWindowEnabled}
-                    scheduleWindowEndValue={formatSftpScheduleTimeInputValue(
-                      sftpTransferPreferences.scheduleWindowEndMinutes
-                    )}
-                    scheduleWindowStartValue={formatSftpScheduleTimeInputValue(
-                      sftpTransferPreferences.scheduleWindowStartMinutes
-                    )}
-                    storedPolicyPackCount={sftpTransferPolicyPacks.length}
-                    uploadConcurrency={sftpTransferPreferences.uploadConcurrency}
-                    uploadRateLimitKiBps={sftpTransferPreferences.uploadRateLimitKiBps}
-                  />
-                ) : null}
-
-                {activeSettingsSection === "portForwarding" ? (
-                  <PortForwardingSettingsSection
-                    activeEventHistoryCount={activePortForwardEventHistory.length}
-                    activeTabSummary={portForwardActiveTabSummary}
-                    analyticsView={portForwardAnalyticsView}
-                    eventCorrelationQuery={portForwardEventCorrelationQuery}
-                    eventErrorCode={portForwardEventErrorCode}
-                    eventErrorCodeOptions={portForwardEventErrorCodeOptions}
-                    eventFilter={portForwardEventFilter}
-                    eventSummaryLabel={portForwardEventSummaryLabel}
-                    eventTimeRange={portForwardEventTimeRange}
-                    eventViews={portForwardEventViews}
-                    formBindHost={portForwardForm.bindHost}
-                    formBindPort={portForwardForm.bindPort}
-                    formTargetHost={portForwardForm.targetHost}
-                    formTargetPort={portForwardForm.targetPort}
-                    formType={portForwardForm.type}
-                    forwardViews={portForwardRecordViews}
-                    hasActiveSession={!!activeSessionId}
-                    hasActiveTab={!!activeTabId}
-                    hasCustomizedEventView={hasCustomizedPortForwardEventView}
-                    isActiveTabConnected={isActiveTabConnected}
-                    onClearSessionHistory={() => {
-                      void clearSessionPortForwardHistory();
-                    }}
-                    onClearVisibleHistory={() => {
-                      void clearVisiblePortForwardHistory();
-                    }}
-                    onCreateForward={() => {
-                      void createPortForward();
-                    }}
-                    onEventCorrelationQueryChange={setPortForwardEventCorrelationQuery}
-                    onEventErrorCodeChange={setPortForwardEventErrorCode}
-                    onEventFilterChange={(value) =>
-                      setPortForwardEventFilter(value as PortForwardEventFilter)
-                    }
-                    onEventTimeRangeChange={(value) =>
-                      setPortForwardEventTimeRange(value as PortForwardEventTimeRange)
-                    }
-                    onExportAnalyticsCsv={() => {
-                      void exportPortForwardEventAnalyticsCsv();
-                    }}
-                    onExportAnalyticsJson={() => {
-                      void exportPortForwardEventAnalyticsJson();
-                    }}
-                    onExportSnapshot={() => {
-                      void exportPortForwardSnapshot();
-                    }}
-                    onExportVisibleCsv={() => {
-                      void exportVisiblePortForwardEventsCsv();
-                    }}
-                    onExportVisibleJson={() => {
-                      void exportVisiblePortForwardEventsJson();
-                    }}
-                    onFormBindHostChange={setPortForwardFormBindHost}
-                    onFormBindPortChange={setPortForwardFormBindPort}
-                    onFormTargetHostChange={setPortForwardFormTargetHost}
-                    onFormTargetPortChange={setPortForwardFormTargetPort}
-                    onFormTypeChange={setPortForwardFormType}
-                    onPresetApply={applyActivePortForwardPreset}
-                    onPresetAutoRestoreChange={setPortForwardPresetAutoRestore}
-                    onPresetDelete={deleteActivePortForwardPreset}
-                    onPresetFillForm={fillPortForwardFormFromActivePreset}
-                    onRefresh={refreshActivePortForwards}
-                    onRefreshDiagnostics={refreshActivePortForwardDiagnostics}
-                    onRemoveForward={removeVisiblePortForward}
-                    onResetEventFilters={resetPortForwardEventViewFilters}
-                    onSavePreset={() => {
-                      void savePortForwardPreset();
-                    }}
-                    portForwardBusy={portForwardBusy}
-                    portForwardStatusMessage={portForwardStatusMessage}
-                    presetViews={portForwardPresetViews}
-                    visibleEventHistoryCount={visiblePortForwardEventHistory.length}
-                  />
-                ) : null}
-
-                {activeSettingsSection === "diagnostics" ? (
-                  <DiagnosticsSettingsSection
-                    disconnectCaptureEnabled={disconnectReportCapturePreferences.enabled}
-                    disconnectCaptureHint={diagnosticsDisconnectCaptureHint}
-                    disconnectEmptyStateLabel={diagnosticsDisconnectEmptyStateLabel}
-                    disconnectQuery={disconnectReportQuery}
-                    disconnectReportViews={diagnosticsDisconnectReportViews}
-                    disconnectScope={disconnectReportScope}
-                    disconnectTimeRange={disconnectReportTimeRange}
-                    disconnectTotalCount={disconnectReports.length}
-                    disconnectTrigger={disconnectReportTriggerFilter}
-                    disconnectVisibleCount={visibleDisconnectReports.length}
-                    hasCustomizedDisconnectView={hasCustomizedDisconnectReportView}
-                    isExportingBugReport={isExportingBugReport}
-                    logDirectoryPath={diagnosticsLogDirectoryPath}
-                    logFilePath={diagnosticsLogFilePath}
-                    onClearAllDisconnects={() => {
-                      void clearDisconnectReportsHistory();
-                    }}
-                    onClearVisibleDisconnects={() => {
-                      void clearVisibleDisconnectReportsHistory();
-                    }}
-                    onCopyDisconnectReportJson={copyVisibleDisconnectReportJsonById}
-                    onCopyLatestVisibleDisconnect={() => {
-                      void copyLatestVisibleDisconnectReport();
-                    }}
-                    onCopyLogFilePath={() => {
-                      void copyLogFilePath();
-                    }}
-                    onDisconnectCaptureEnabledChange={setDisconnectReportCaptureEnabled}
-                    onDisconnectQueryChange={setDisconnectReportQueryValue}
-                    onDisconnectScopeChange={(value) => {
-                      setDisconnectReportScope(value as DisconnectReportScope);
-                    }}
-                    onDisconnectTimeRangeChange={(value) => {
-                      setDisconnectReportTimeRange(value as DisconnectReportTimeRange);
-                    }}
-                    onDisconnectTriggerChange={(value) => {
-                      setDisconnectReportTriggerFilter(value as DisconnectReportTriggerFilter);
-                    }}
-                    onExportBugReport={() => {
-                      void exportBugReportBundle();
-                    }}
-                    onExportDisconnectCsv={() => {
-                      void exportDisconnectReportsCsv();
-                    }}
-                    onExportDisconnectJson={() => {
-                      void exportDisconnectReportsJson();
-                    }}
-                    onFocusDisconnectTab={focusVisibleDisconnectReportTab}
-                    onOpenLogDirectory={() => {
-                      void openLogDirectory();
-                    }}
-                    onRefreshLogInfo={refreshDiagnosticsLogInfo}
-                    onResetDisconnectFilters={resetDisconnectReportViewFilters}
-                  />
-                ) : null}
+        <SettingsModalContent
+          activeSectionId={activeSettingsSection}
+          connectionSectionProps={connectionSettingsSectionProps}
+          diagnosticsSectionProps={diagnosticsSettingsSectionProps}
+          fileOpeningSectionProps={fileOpeningSettingsSectionProps}
+          hotkeySectionProps={hotkeySettingsSectionProps}
+          portForwardingSectionProps={portForwardingSettingsSectionProps}
+          safetySectionProps={safetySettingsSectionProps}
+          serverHealthSectionProps={serverHealthSettingsSectionProps}
+          sftpSectionProps={sftpSettingsSectionProps}
+          workspaceSectionProps={workspaceSettingsSectionProps}
+        />
       </SettingsModalShell>
 
       {isCreateModalOpen ? (

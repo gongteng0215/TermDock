@@ -67,6 +67,142 @@ interface FileOpeningSettingsSectionProps {
   onBrowseProgram: () => void;
 }
 
+interface SafetyExecutionSourceView {
+  id: string;
+  label: string;
+  description: string;
+  checked: boolean;
+}
+
+interface SafetyPolicyPackView {
+  id: string;
+  label: string;
+  description: string;
+  extraRuleCount: number;
+  isActive: boolean;
+}
+
+interface SafetyEnvironmentTemplateView {
+  id: string;
+  label: string;
+  description: string;
+  recommendedPolicyPackLabel: string;
+  extraRuleCount: number;
+  isActive: boolean;
+}
+
+interface SafetySupplementalRuleView {
+  id: string;
+  label: string;
+  description: string;
+  severity: string;
+  sourceLabel: string;
+}
+
+interface SafetyGroupAssignmentView {
+  groupName: string;
+  policyPackLabel: string;
+  environmentTemplateLabel: string;
+  isCurrentTarget: boolean;
+}
+
+interface SafetyApprovalView {
+  id: string;
+  title: string;
+  severity: string;
+  scopeLabel: string;
+  sourceLabel: string;
+  policyPackLabel: string;
+  environmentTemplateLabel: string;
+  createdAtLabel: string;
+}
+
+interface SafetyPolicyBundleView {
+  id: string;
+  name: string;
+  description: string;
+  policyPackLabel: string;
+  environmentTemplateLabel: string;
+  enabledSourceCount: number;
+  totalSourceCount: number;
+  groupOverrideCount: number;
+  persistentPolicyCount: number;
+  customPatternCount: number;
+  updatedAtLabel: string;
+}
+
+interface SafetyBuiltinRuleView {
+  id: string;
+  label: string;
+  description: string;
+  severity: string;
+  checked: boolean;
+}
+
+interface SafetySettingsSectionProps {
+  enabled: boolean;
+  selectedWorkspaceProfileLabel: string;
+  syncDangerousCommandSafety: boolean;
+  enabledSourceCount: number;
+  totalExecutionSourceCount: number;
+  executionSourceViews: SafetyExecutionSourceView[];
+  policyPackViews: SafetyPolicyPackView[];
+  environmentTemplateViews: SafetyEnvironmentTemplateView[];
+  selectedPolicyPackLabel: string;
+  selectedPolicyPackExtraRuleCount: number;
+  selectedEnvironmentTemplateLabel: string;
+  selectedEnvironmentTemplateExtraRuleCount: number;
+  supplementalRuleViews: SafetySupplementalRuleView[];
+  targetGroupName: string | null;
+  targetGroupHint: string;
+  activeTargetGroupAssignmentName: string | null;
+  savedGroupOverrideCount: number;
+  maxGroupOverrideCount: number;
+  groupAssignmentLimitReached: boolean;
+  groupAssignmentViews: SafetyGroupAssignmentView[];
+  temporaryApprovalViews: SafetyApprovalView[];
+  maxTemporaryApprovalCount: number;
+  persistentApprovalViews: SafetyApprovalView[];
+  maxPersistentApprovalCount: number;
+  policyBundleViews: SafetyPolicyBundleView[];
+  storedPolicyBundleCount: number;
+  maxPolicyBundleCount: number;
+  policyBundleSyncFilePath: string | null;
+  policyBundleLastPulledLabel: string | null;
+  policyBundleLastPushedLabel: string | null;
+  policyBundleSyncBusyAction: string | null;
+  builtinRuleViews: SafetyBuiltinRuleView[];
+  enabledBuiltinRuleCount: number;
+  totalBuiltinRuleCount: number;
+  customPatternsText: string;
+  customPatternCount: number;
+  customPatternInvalidLineCount: number;
+  onGuardEnabledChange: (value: boolean) => void;
+  onExecutionSourceEnabledChange: (sourceId: string, value: boolean) => void;
+  onPolicyPackSelect: (packId: string) => void;
+  onEnvironmentTemplateSelect: (templateId: string) => void;
+  onSaveTargetGroupOverride: () => void;
+  onDeleteTargetGroupOverride: () => void;
+  onDeleteGroupAssignment: (groupName: string) => void;
+  onClearTemporaryApprovals: () => void;
+  onDeleteTemporaryApproval: (approvalId: string) => void;
+  onClearPersistentApprovals: () => void;
+  onDeletePersistentApproval: (approvalId: string) => void;
+  onSaveCurrentPolicyBundle: () => void;
+  onImportPolicyBundles: () => void;
+  onExportPolicyBundles: () => void;
+  onPullPolicyBundlesFromSync: () => void;
+  onPushPolicyBundlesToSync: () => void;
+  onChangePolicyBundleSyncTarget: () => void;
+  onClearPolicyBundleSyncTarget: () => void;
+  onApplyPolicyBundle: (bundleId: string) => void;
+  onExportPolicyBundle: (bundleId: string) => void;
+  onDeletePolicyBundle: (bundleId: string) => void;
+  onBuiltinRuleEnabledChange: (ruleId: string, value: boolean) => void;
+  onCustomPatternsTextChange: (value: string) => void;
+  onResetSafetyRules: () => void;
+}
+
 interface HotkeyModifierOptionView {
   value: string;
   label: string;
@@ -554,6 +690,646 @@ export function WorkspaceSettingsSection({
           selectedCursorLabel
         )}
       </p>
+    </>
+  );
+}
+
+export function SafetySettingsSection({
+  enabled,
+  selectedWorkspaceProfileLabel,
+  syncDangerousCommandSafety,
+  enabledSourceCount,
+  totalExecutionSourceCount,
+  executionSourceViews,
+  policyPackViews,
+  environmentTemplateViews,
+  selectedPolicyPackLabel,
+  selectedPolicyPackExtraRuleCount,
+  selectedEnvironmentTemplateLabel,
+  selectedEnvironmentTemplateExtraRuleCount,
+  supplementalRuleViews,
+  targetGroupName,
+  targetGroupHint,
+  activeTargetGroupAssignmentName,
+  savedGroupOverrideCount,
+  maxGroupOverrideCount,
+  groupAssignmentLimitReached,
+  groupAssignmentViews,
+  temporaryApprovalViews,
+  maxTemporaryApprovalCount,
+  persistentApprovalViews,
+  maxPersistentApprovalCount,
+  policyBundleViews,
+  storedPolicyBundleCount,
+  maxPolicyBundleCount,
+  policyBundleSyncFilePath,
+  policyBundleLastPulledLabel,
+  policyBundleLastPushedLabel,
+  policyBundleSyncBusyAction,
+  builtinRuleViews,
+  enabledBuiltinRuleCount,
+  totalBuiltinRuleCount,
+  customPatternsText,
+  customPatternCount,
+  customPatternInvalidLineCount,
+  onGuardEnabledChange,
+  onExecutionSourceEnabledChange,
+  onPolicyPackSelect,
+  onEnvironmentTemplateSelect,
+  onSaveTargetGroupOverride,
+  onDeleteTargetGroupOverride,
+  onDeleteGroupAssignment,
+  onClearTemporaryApprovals,
+  onDeleteTemporaryApproval,
+  onClearPersistentApprovals,
+  onDeletePersistentApproval,
+  onSaveCurrentPolicyBundle,
+  onImportPolicyBundles,
+  onExportPolicyBundles,
+  onPullPolicyBundlesFromSync,
+  onPushPolicyBundlesToSync,
+  onChangePolicyBundleSyncTarget,
+  onClearPolicyBundleSyncTarget,
+  onApplyPolicyBundle,
+  onExportPolicyBundle,
+  onDeletePolicyBundle,
+  onBuiltinRuleEnabledChange,
+  onCustomPatternsTextChange,
+  onResetSafetyRules
+}: SafetySettingsSectionProps) {
+  const policySelectionDisabled = !enabled || syncDangerousCommandSafety;
+  return (
+    <>
+      <label className="settings-checkbox">
+        <input
+          checked={enabled}
+          onChange={(event) => onGuardEnabledChange(event.target.checked)}
+          type="checkbox"
+        />
+        <span>Enable dangerous command guardrails before terminal execution</span>
+      </label>
+      <p className="hint">
+        Uses the fixed bottom approval bar. Covers keyboard Enter, multiline paste, command
+        history run, snippets, quick profiles, and startup commands.
+      </p>
+      <p className="hint">
+        Workspace profile: {selectedWorkspaceProfileLabel}
+        {" | "}Safety sync {syncDangerousCommandSafety ? "on" : "off"}
+      </p>
+
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">Execution Sources</h4>
+          <p className="hint">
+            Enable or disable guard inspection per execution path. Paste-style sources still only
+            inspect multiline writes, while keyboard inspection still triggers when Enter submits
+            the buffered command.
+          </p>
+        </div>
+        <p className="hint">
+          Enabled sources {enabledSourceCount}/{totalExecutionSourceCount}
+        </p>
+        <div className="settings-safety-rules">
+          {executionSourceViews.map((source) => (
+            <label className="settings-checkbox settings-safety-rule" key={source.id}>
+              <input
+                checked={source.checked}
+                disabled={!enabled}
+                onChange={(event) =>
+                  onExecutionSourceEnabledChange(source.id, event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span className="settings-safety-rule__content">
+                <span className="settings-safety-rule__title">{source.label}</span>
+                <span className="hint settings-safety-rule__meta">{source.description}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">Policy Pack</h4>
+          <p className="hint">
+            Adds curated workflow-specific guardrails on top of the built-in system rules without
+            replacing your custom patterns.
+            {syncDangerousCommandSafety
+              ? " Workspace-profile sync is on, so this global selection follows the current workspace profile."
+              : ""}
+          </p>
+        </div>
+        <div className="settings-safety-preset-grid">
+          {policyPackViews.map((pack) => (
+            <button
+              className={
+                pack.isActive
+                  ? "settings-safety-preset is-active"
+                  : "settings-safety-preset"
+              }
+              disabled={policySelectionDisabled}
+              key={pack.id}
+              onClick={() => onPolicyPackSelect(pack.id)}
+              type="button"
+            >
+              <span className="settings-safety-preset__title">{pack.label}</span>
+              <span className="hint settings-safety-preset__meta">{pack.description}</span>
+              <span className="settings-safety-preset__count">
+                {pack.extraRuleCount} extra rule(s)
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">Environment Template</h4>
+          <p className="hint">
+            Selecting a template also snaps the policy pack to the recommended baseline for that
+            environment. Custom patterns stay untouched.
+            {syncDangerousCommandSafety
+              ? " Workspace-profile sync is on, so this global selection follows the current workspace profile."
+              : ""}
+          </p>
+        </div>
+        <div className="settings-safety-preset-grid">
+          {environmentTemplateViews.map((template) => (
+            <button
+              className={
+                template.isActive
+                  ? "settings-safety-preset is-active"
+                  : "settings-safety-preset"
+              }
+              disabled={policySelectionDisabled}
+              key={template.id}
+              onClick={() => onEnvironmentTemplateSelect(template.id)}
+              type="button"
+            >
+              <span className="settings-safety-preset__title">{template.label}</span>
+              <span className="hint settings-safety-preset__meta">{template.description}</span>
+              <span className="settings-safety-preset__count">
+                Recommended pack: {template.recommendedPolicyPackLabel}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="hint">
+        Workspace {selectedWorkspaceProfileLabel}
+        {" | "}Active sources {enabledSourceCount}/{totalExecutionSourceCount}
+        {" | "}built-in rules {enabledBuiltinRuleCount}/{totalBuiltinRuleCount}
+        {" | "}policy pack {selectedPolicyPackLabel} ({selectedPolicyPackExtraRuleCount} extra)
+        {" | "}environment {selectedEnvironmentTemplateLabel} (
+        {selectedEnvironmentTemplateExtraRuleCount} extra)
+      </p>
+      {supplementalRuleViews.length > 0 ? (
+        <div className="settings-safety-rules settings-safety-rules--supplemental">
+          {supplementalRuleViews.map((rule) => (
+            <div className="settings-safety-rule settings-safety-rule--readonly" key={rule.id}>
+              <span className="settings-safety-rule__content">
+                <span className="settings-safety-rule__title">
+                  {rule.label}
+                  <span
+                    className={
+                      rule.severity === "critical"
+                        ? "settings-safety-rule__badge is-critical"
+                        : "settings-safety-rule__badge"
+                    }
+                  >
+                    {rule.severity}
+                  </span>
+                </span>
+                <span className="hint settings-safety-rule__meta">{rule.description}</span>
+                <span className="hint settings-safety-rule__meta">
+                  Source: {rule.sourceLabel}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="hint">No extra policy-pack or environment-template rules are active right now.</p>
+      )}
+
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">Session Group Overrides</h4>
+          <p className="hint">
+            Save pack/template combinations per session group. When a terminal tab belongs to a
+            saved group, that override replaces the global pack/template for inspection on that tab
+            only.
+          </p>
+        </div>
+        <p className="hint">
+          Target group: {targetGroupName ?? "None"}. {targetGroupHint}
+        </p>
+        <p className="hint">
+          Saved overrides {savedGroupOverrideCount}/{maxGroupOverrideCount}
+        </p>
+        <div className="modal__actions">
+          <button
+            className="secondary-button"
+            disabled={!enabled || !targetGroupName || groupAssignmentLimitReached}
+            onClick={onSaveTargetGroupOverride}
+            type="button"
+          >
+            {activeTargetGroupAssignmentName
+              ? "Update Target Group Override"
+              : "Save Current Pack For Target Group"}
+          </button>
+          {activeTargetGroupAssignmentName ? (
+            <button
+              className="secondary-button"
+              disabled={!enabled}
+              onClick={onDeleteTargetGroupOverride}
+              type="button"
+            >
+              Remove Target Group Override
+            </button>
+          ) : null}
+        </div>
+        {groupAssignmentLimitReached ? (
+          <p className="hint">
+            Override limit reached. Remove an existing group override before adding a new one.
+          </p>
+        ) : null}
+        {groupAssignmentViews.length > 0 ? (
+          <div className="settings-safety-rules settings-safety-rules--supplemental">
+            {groupAssignmentViews.map((assignment) => (
+              <div
+                className="settings-safety-rule settings-safety-rule--readonly"
+                key={assignment.groupName}
+              >
+                <span className="settings-safety-rule__content">
+                  <span className="settings-safety-rule__title">{assignment.groupName}</span>
+                  <span className="hint settings-safety-rule__meta">
+                    Policy pack: {assignment.policyPackLabel}
+                    {" | "}environment: {assignment.environmentTemplateLabel}
+                  </span>
+                  {assignment.isCurrentTarget ? (
+                    <span className="hint settings-safety-rule__meta">
+                      Current settings target group
+                    </span>
+                  ) : null}
+                </span>
+                <div className="settings-safety-rule__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!enabled}
+                    onClick={() => onDeleteGroupAssignment(assignment.groupName)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="hint">
+            No session-group overrides saved yet. Ungrouped sessions keep using the global
+            pack/template selection.
+          </p>
+        )}
+      </div>
+
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">Temporary Approval Scopes</h4>
+          <p className="hint">
+            Runtime-only exact-command approvals created from the bottom approval bar. `Allow In
+            Tab` is removed when that tab closes. `Allow In Group` stays active until Safety
+            settings change, the app restarts, or you clear it here.
+          </p>
+        </div>
+        <p className="hint">
+          Active temporary approvals {temporaryApprovalViews.length}/{maxTemporaryApprovalCount}
+        </p>
+        <div className="modal__actions">
+          <button
+            className="secondary-button"
+            disabled={temporaryApprovalViews.length === 0}
+            onClick={onClearTemporaryApprovals}
+            type="button"
+          >
+            Clear All Temporary Approvals
+          </button>
+        </div>
+        {temporaryApprovalViews.length > 0 ? (
+          <div className="settings-safety-rules settings-safety-rules--supplemental">
+            {temporaryApprovalViews.map((approval) => (
+              <div className="settings-safety-rule settings-safety-rule--readonly" key={approval.id}>
+                <span className="settings-safety-rule__content">
+                  <span className="settings-safety-rule__title">
+                    {approval.title}
+                    <span
+                      className={
+                        approval.severity === "critical"
+                          ? "settings-safety-rule__badge is-critical"
+                          : "settings-safety-rule__badge"
+                      }
+                    >
+                      {approval.severity}
+                    </span>
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Scope: {approval.scopeLabel}
+                    {" | "}source: {approval.sourceLabel}
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Pack: {approval.policyPackLabel}
+                    {" | "}environment: {approval.environmentTemplateLabel}
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Approved {approval.createdAtLabel}
+                  </span>
+                </span>
+                <div className="settings-safety-rule__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={() => onDeleteTemporaryApproval(approval.id)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="hint">No temporary approval scopes are active right now.</p>
+        )}
+      </div>
+
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">Persistent Approval Policies</h4>
+          <p className="hint">
+            Saved exact-command allow rules from the bottom approval bar. These stay active across
+            app restart and travel with Safety bundles. Matching still requires the same command
+            text, execution source, policy pack, and environment template.
+          </p>
+        </div>
+        <p className="hint">
+          Saved persistent policies {persistentApprovalViews.length}/{maxPersistentApprovalCount}
+        </p>
+        <div className="modal__actions">
+          <button
+            className="secondary-button"
+            disabled={persistentApprovalViews.length === 0}
+            onClick={onClearPersistentApprovals}
+            type="button"
+          >
+            Clear All Persistent Policies
+          </button>
+        </div>
+        {persistentApprovalViews.length > 0 ? (
+          <div className="settings-safety-rules settings-safety-rules--supplemental">
+            {persistentApprovalViews.map((approval) => (
+              <div className="settings-safety-rule settings-safety-rule--readonly" key={approval.id}>
+                <span className="settings-safety-rule__content">
+                  <span className="settings-safety-rule__title">
+                    {approval.title}
+                    <span
+                      className={
+                        approval.severity === "critical"
+                          ? "settings-safety-rule__badge is-critical"
+                          : "settings-safety-rule__badge"
+                      }
+                    >
+                      {approval.severity}
+                    </span>
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Scope: {approval.scopeLabel}
+                    {" | "}source: {approval.sourceLabel}
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Pack: {approval.policyPackLabel}
+                    {" | "}environment: {approval.environmentTemplateLabel}
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Saved {approval.createdAtLabel}
+                  </span>
+                </span>
+                <div className="settings-safety-rule__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={() => onDeletePersistentApproval(approval.id)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="hint">No persistent approval policies saved yet.</p>
+        )}
+      </div>
+
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">Shared Policy Bundles</h4>
+          <p className="hint">
+            Save the current Safety settings as reusable JSON bundles, then import, export, apply,
+            or sync them across machines and teammates through a shared JSON file. This baseline is
+            manual push/pull only; auto-watch and permission-aware distribution are still out of
+            scope.
+          </p>
+        </div>
+        <p className="hint">
+          Stored bundles {storedPolicyBundleCount}/{maxPolicyBundleCount}
+        </p>
+        <p className="hint">
+          Sync file:{" "}
+          {policyBundleSyncFilePath ? <code>{policyBundleSyncFilePath}</code> : "Not linked yet."}
+        </p>
+        {policyBundleLastPulledLabel || policyBundleLastPushedLabel ? (
+          <p className="hint">
+            Last pull: {policyBundleLastPulledLabel ?? "never"}
+            {" | "}last push: {policyBundleLastPushedLabel ?? "never"}
+          </p>
+        ) : null}
+        <div className="modal__actions">
+          <button
+            className="secondary-button"
+            disabled={policyBundleSyncBusyAction !== null}
+            onClick={onSaveCurrentPolicyBundle}
+            type="button"
+          >
+            Save Current As Bundle
+          </button>
+          <button
+            className="secondary-button"
+            disabled={policyBundleSyncBusyAction !== null}
+            onClick={onImportPolicyBundles}
+            type="button"
+          >
+            Import Bundles...
+          </button>
+          <button
+            className="secondary-button"
+            disabled={storedPolicyBundleCount === 0 || policyBundleSyncBusyAction !== null}
+            onClick={onExportPolicyBundles}
+            type="button"
+          >
+            Export All Bundles...
+          </button>
+          <button
+            className="secondary-button"
+            disabled={policyBundleSyncBusyAction !== null}
+            onClick={onPullPolicyBundlesFromSync}
+            type="button"
+          >
+            {policyBundleSyncBusyAction === "pull"
+              ? "Pulling..."
+              : policyBundleSyncFilePath
+                ? "Pull Sync"
+                : "Pull Sync..."}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={policyBundleSyncBusyAction !== null}
+            onClick={onPushPolicyBundlesToSync}
+            type="button"
+          >
+            {policyBundleSyncBusyAction === "push"
+              ? "Pushing..."
+              : policyBundleSyncFilePath
+                ? "Push Sync"
+                : "Push Sync..."}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={policyBundleSyncBusyAction !== null}
+            onClick={onChangePolicyBundleSyncTarget}
+            type="button"
+          >
+            {policyBundleSyncBusyAction === "change"
+              ? "Choosing..."
+              : policyBundleSyncFilePath
+                ? "Change Sync File..."
+                : "Choose Sync File..."}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!policyBundleSyncFilePath || policyBundleSyncBusyAction !== null}
+            onClick={onClearPolicyBundleSyncTarget}
+            type="button"
+          >
+            Clear Sync File
+          </button>
+        </div>
+        {policyBundleViews.length > 0 ? (
+          <div className="settings-safety-rules settings-safety-rules--supplemental">
+            {policyBundleViews.map((bundle) => (
+              <div className="settings-safety-rule settings-safety-rule--readonly" key={bundle.id}>
+                <span className="settings-safety-rule__content">
+                  <span className="settings-safety-rule__title">{bundle.name}</span>
+                  <span className="hint settings-safety-rule__meta">
+                    {bundle.description || "No description."}
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Pack: {bundle.policyPackLabel}
+                    {" | "}environment: {bundle.environmentTemplateLabel}
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Sources {bundle.enabledSourceCount}/{bundle.totalSourceCount}
+                    {" | "}group overrides {bundle.groupOverrideCount}
+                    {" | "}persistent policies {bundle.persistentPolicyCount}
+                    {" | "}custom patterns {bundle.customPatternCount}
+                  </span>
+                  <span className="hint settings-safety-rule__meta">
+                    Updated {bundle.updatedAtLabel}
+                  </span>
+                </span>
+                <div className="settings-safety-rule__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={() => onApplyPolicyBundle(bundle.id)}
+                    type="button"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={() => onExportPolicyBundle(bundle.id)}
+                    type="button"
+                  >
+                    Export
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={() => onDeletePolicyBundle(bundle.id)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="hint">
+            No shared safety bundles saved yet. Save the current Safety configuration to create
+            your first reusable bundle.
+          </p>
+        )}
+      </div>
+
+      <div className="settings-safety-rules">
+        {builtinRuleViews.map((rule) => (
+          <label className="settings-checkbox settings-safety-rule" key={rule.id}>
+            <input
+              checked={rule.checked}
+              disabled={!enabled}
+              onChange={(event) => onBuiltinRuleEnabledChange(rule.id, event.target.checked)}
+              type="checkbox"
+            />
+            <span className="settings-safety-rule__content">
+              <span className="settings-safety-rule__title">
+                {rule.label}
+                <span
+                  className={
+                    rule.severity === "critical"
+                      ? "settings-safety-rule__badge is-critical"
+                      : "settings-safety-rule__badge"
+                  }
+                >
+                  {rule.severity}
+                </span>
+              </span>
+              <span className="hint settings-safety-rule__meta">{rule.description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      <label>
+        Custom Patterns
+        <textarea
+          className="settings-safety__textarea"
+          disabled={!enabled}
+          onChange={(event) => onCustomPatternsTextChange(event.target.value)}
+          placeholder={"One pattern per line\nPlain text or /regex/flags"}
+          rows={5}
+          value={customPatternsText}
+        />
+      </label>
+      <p className="hint">
+        Active custom patterns {customPatternCount}, invalid lines {customPatternInvalidLineCount}.
+        Invalid lines are ignored.
+      </p>
+      <div className="modal__actions">
+        <button className="secondary-button" onClick={onResetSafetyRules} type="button">
+          Reset Safety Rules
+        </button>
+      </div>
     </>
   );
 }

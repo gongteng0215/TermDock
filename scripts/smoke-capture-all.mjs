@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, join, relative, resolve } from "node:path";
 
@@ -108,7 +108,7 @@ function createMarkdownReport({
   lines.push("", "## Covered areas");
   lines.push("- Sessions explorer context menus (blank/group/session)");
   lines.push("- SSH config import preview and post-import open-first-session action");
-  lines.push("- Session export/import menu entries, including encrypted migration actions");
+  lines.push("- Session export/import menu entries plus encrypted migration export/import preview");
   lines.push("- Group open/back navigation");
   lines.push("- Same-session keyboard-open dedupe");
   lines.push("- Session list double-click fresh-tab behavior");
@@ -211,6 +211,37 @@ async function waitForAny(page, selectors, timeout = 5000) {
   return null;
 }
 
+async function waitForSmokeHook(page, hookName, timeout = 5000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeout) {
+    const available = await page.evaluate((name) => typeof window[name] === "function", hookName);
+    if (available) {
+      return true;
+    }
+    await page.waitForTimeout(80);
+  }
+  return false;
+}
+
+async function describeVisibleUi(page) {
+  const [modals, hints, errors] = await Promise.all([
+    page.locator(".modal.app-dialog").evaluateAll((elements) =>
+      elements.map((element) => element.textContent?.replace(/\s+/g, " ").trim() ?? "")
+    ),
+    page.locator(".app-hint-message, .app-inline-hint-panel, .app-error-bar").evaluateAll((elements) =>
+      elements.map((element) => element.textContent?.replace(/\s+/g, " ").trim() ?? "")
+    ),
+    page.locator(".global-error-bar, .error-banner").evaluateAll((elements) =>
+      elements.map((element) => element.textContent?.replace(/\s+/g, " ").trim() ?? "")
+    )
+  ]);
+  return {
+    modals: modals.filter(Boolean),
+    hints: hints.filter(Boolean),
+    errors: errors.filter(Boolean)
+  };
+}
+
 async function isVisible(locator) {
   return (await locator.count()) > 0 && (await locator.first().isVisible());
 }
@@ -277,6 +308,22 @@ async function restoreEnglishInterface(page) {
   await page.waitForTimeout(260);
 }
 
+async function waitForInterfaceLanguage(page, language, timeout = 5_000) {
+  const expectedSettingsLabel = language === "zh-CN" ? "打开设置" : "Open settings";
+  await waitForCondition(
+    async () => {
+      const localizedSettingsTrigger = page
+        .locator(`button[aria-label='${expectedSettingsLabel}']`)
+        .first();
+      return isVisible(localizedSettingsTrigger);
+    },
+    {
+      timeout,
+      description: `interface language ${language}`
+    }
+  );
+}
+
 async function closeMenusAndDialogs(page, { closeTopLevelModals = false } = {}) {
   if (!page) {
     return;
@@ -286,11 +333,11 @@ async function closeMenusAndDialogs(page, { closeTopLevelModals = false } = {}) 
     if ((await appDialog.count()) > 0) {
       const primary = page
         .locator(
-          ".modal.app-dialog .primary-button:has-text('OK'), .modal.app-dialog .primary-button:has-text('Done'), .modal.app-dialog .primary-button:has-text('Save'), .modal.app-dialog .primary-button:has-text('Add'), .modal.app-dialog .primary-button:has-text('Create')"
+          ".modal.app-dialog .primary-button:has-text('OK'), .modal.app-dialog .primary-button:has-text('确定'), .modal.app-dialog .primary-button:has-text('Done'), .modal.app-dialog .primary-button:has-text('完成'), .modal.app-dialog .primary-button:has-text('Save'), .modal.app-dialog .primary-button:has-text('保存'), .modal.app-dialog .primary-button:has-text('Add'), .modal.app-dialog .primary-button:has-text('添加'), .modal.app-dialog .primary-button:has-text('Create'), .modal.app-dialog .primary-button:has-text('创建')"
         )
         .first();
       const secondary = page
-        .locator(".modal.app-dialog .secondary-button:has-text('Cancel')")
+        .locator(".modal.app-dialog .secondary-button:has-text('Cancel'), .modal.app-dialog .secondary-button:has-text('取消')")
         .first();
       if (await isVisible(primary)) {
         await primary.click();
@@ -400,6 +447,18 @@ async function waitForFileContents(targetPath, expectedText, timeout = 10_000) {
       description: `file contents for ${targetPath}`
     }
   );
+}
+
+async function removeLocalPathIfPresent(targetPath) {
+  if (!targetPath || !String(targetPath).trim()) {
+    return;
+  }
+  await rm(targetPath, {
+    force: true,
+    recursive: true
+  }).catch(() => {
+    // Best effort cleanup for smoke-created local files.
+  });
 }
 
 async function getActiveTabId(page) {
@@ -570,6 +629,7 @@ async function main() {
   let remoteOpenConflictLocalPath = "";
   let remoteOpenReloadedLocalPath = "";
   let remoteOpenTabId = "";
+  const smokeCreatedLocalPaths = new Set();
   await writeFile(uploadSourcePath, uploadSourceContents, "utf8");
   await mkdir(throttledUploadSourceDir, { recursive: true });
   await Promise.all(
@@ -768,6 +828,70 @@ async function main() {
           bridge.system.pickSshConfigFile = async () =>
             window.__termdockSmokePickedSshConfigPath ?? null;
           bridge.sessions.parseSshConfig = async () => window.__termdockSmokeSshConfigResult;
+          bridge.sessions.exportEncryptedMigration = async (input) => ({
+            file: {
+              format: "termdock-session-migration",
+              version: 1,
+              exportedAtIso: new Date().toISOString(),
+              appVersion: input?.appVersion ?? "smoke",
+              crypto: {
+                kdf: "scrypt",
+                cipher: "aes-256-gcm",
+                salt: "c21va2Utc2FsdA==",
+                iv: "c21va2UtaXY=",
+                authTag: "c21va2UtdGFn"
+              },
+              summary: {
+                sessionCount: 2,
+                passwordSecretCount: 2,
+                privateKeySecretCount: 0,
+                embeddedPrivateKeyFileCount: input?.includePrivateKeyFiles ? 1 : 0
+              },
+              ciphertext: "smoke-ciphertext"
+            },
+            warnings: []
+          });
+          bridge.sessions.importEncryptedMigration = async (input) => {
+            if (input?.passphrase !== "smoke migration passphrase") {
+              throw new Error("Could not decrypt migration file. Check the passphrase and file contents.");
+            }
+            return {
+              payload: {
+                exportedAtIso: new Date().toISOString(),
+                appVersion: "smoke",
+                sessionCount: 2,
+                includesPasswords: true,
+                includesPrivateKeyFiles: false,
+                sessions: [
+                  {
+                    name: "smoke-group-session",
+                    host: "127.0.0.1",
+                    port: 59999,
+                    username: "smoke",
+                    authType: "password",
+                    privateKeyPath: "",
+                    groupId: "smoke-group",
+                    remark: "smoke migration preview",
+                    favorite: false,
+                    secret: "smoke-restored-password"
+                  },
+                  {
+                    name: "smoke-ungrouped-session",
+                    host: "127.0.0.1",
+                    port: 59999,
+                    username: "smoke",
+                    authType: "password",
+                    privateKeyPath: "",
+                    groupId: "",
+                    remark: "smoke migration preview",
+                    favorite: false,
+                    secret: "smoke-restored-password"
+                  }
+                ]
+              },
+              warnings: []
+            };
+          };
           bridge.system.saveTextFile = async (options) => {
             const base =
               typeof options?.defaultFileName === "string" && options.defaultFileName.trim().length > 0
@@ -781,6 +905,10 @@ async function main() {
               outputPath,
               text
             };
+            if (!Array.isArray(window.__termdockSmokeCreatedLocalPaths)) {
+              window.__termdockSmokeCreatedLocalPaths = [];
+            }
+            window.__termdockSmokeCreatedLocalPaths.push(outputPath);
             return {
               canceled: false,
               outputPath
@@ -810,6 +938,7 @@ async function main() {
             }
             window.__termdockSmokeOpenedLocalPaths.push(localPath);
           };
+          window.__termdockSmokeCreatedLocalPaths = [];
           window.__termdockSmokeOpenedLocalPaths = [];
           return true;
         } catch {
@@ -874,6 +1003,80 @@ async function main() {
       return fileName;
     });
 
+    await runStep("encrypted session migration import preview", async () => {
+      await page.evaluate(() => {
+        window.__termdockSmokePickedTextFile = {
+          filePath: "C:/tmp/termdock-smoke-import.tdmigration",
+          text: "__TERMDOCK_SMOKE_MIGRATION__"
+        };
+      });
+      const hookReady = await waitForSmokeHook(page, "__termdockSmokeImportEncryptedMigration");
+      if (!hookReady) {
+        throw new Error("encrypted migration import smoke hook is unavailable");
+      }
+      const hookStarted = await page.evaluate(() => {
+        if (typeof window.__termdockSmokeImportEncryptedMigration !== "function") {
+          return false;
+        }
+        window.__termdockSmokeImportEncryptedMigration();
+        return true;
+      });
+      if (!hookStarted) {
+        throw new Error("encrypted migration import smoke hook did not start");
+      }
+
+      const importPassphraseDialog = page
+        .locator(".modal.app-dialog", { hasText: "Enter the migration passphrase." })
+        .first();
+      try {
+        await importPassphraseDialog.waitFor({ state: "visible", timeout: 5_000 });
+      } catch (error) {
+        const visibleUi = await describeVisibleUi(page);
+        throw new Error(
+          `encrypted migration passphrase prompt missing; ui=${JSON.stringify(visibleUi)}; cause=${asErrorMessage(error)}`
+        );
+      }
+      await importPassphraseDialog.locator(".app-dialog__input").first().fill("smoke migration passphrase");
+      await importPassphraseDialog.locator(".primary-button:has-text('Decrypt')").first().click();
+
+      const previewDialog = page
+        .locator(".modal.app-dialog", { hasText: "Encrypted Migration Preview" })
+        .first();
+      await previewDialog.waitFor({ state: "visible", timeout: 8_000 });
+      const previewText = await previewDialog.textContent();
+      for (const expected of [
+        "Importable sessions:",
+        "Encrypted passwords restored:",
+        "smoke-group-session",
+        "password restored"
+      ]) {
+        if (!previewText?.includes(expected)) {
+          throw new Error(`encrypted migration preview missing "${expected}"`);
+        }
+      }
+      const previewShot = await recordShot(page, "encrypted-migration-import-preview");
+      await previewDialog.locator(".primary-button:has-text('Continue')").first().click();
+
+      const groupDialog = page
+        .locator(".modal.app-dialog", { hasText: "Group Strategy" })
+        .first();
+      await groupDialog.waitFor({ state: "visible", timeout: 5_000 });
+      const groupText = await groupDialog.textContent();
+      for (const expected of [
+        "Choose target group strategy for imported sessions.",
+        "Keep Group from File",
+        "Force Active Group",
+        "Move to Ungrouped"
+      ]) {
+        if (!groupText?.includes(expected)) {
+          throw new Error(`encrypted migration group choice missing "${expected}"`);
+        }
+      }
+      await groupDialog.locator(".secondary-button:has-text('Cancel')").first().click();
+      await page.waitForTimeout(220);
+      return previewShot;
+    });
+
     await runStep("group context menu and open group", async () => {
       const folderRow = page.locator(".session-folder-list__item").first();
       if (!(await isVisible(folderRow))) {
@@ -911,6 +1114,10 @@ async function main() {
       const tabLocator = page.locator(".terminal-tabs .tab");
       const beforeTabs = await tabLocator.count();
 
+      const hookReady = await waitForSmokeHook(page, "__termdockSmokeImportSshConfig");
+      if (!hookReady) {
+        throw new Error("SSH config import smoke hook is unavailable");
+      }
       const hookStarted = await page.evaluate(() => {
         if (typeof window.__termdockSmokeImportSshConfig !== "function") {
           return false;
@@ -919,7 +1126,7 @@ async function main() {
         return true;
       });
       if (!hookStarted) {
-        throw new Error("SSH config import smoke hook is unavailable");
+        throw new Error("SSH config import smoke hook did not start");
       }
 
       const targetGroupDialog = page.locator(".modal.app-dialog", { hasText: "SSH Config Import" }).first();
@@ -1645,6 +1852,7 @@ async function main() {
       await waitForFileContents(join(fixture.rootDir, fixture.remoteSeedFileName), remoteConflictContents, 15_000);
       const fileName = await recordShot(page, "remote-open-file-conflict");
       remoteOpenConflictLocalPath = localTempPath;
+      smokeCreatedLocalPaths.add(localTempPath);
       return `local=${toReportPath(localTempPath)}, remote=${fixture.remoteSeedPath}, shot=${fileName}`;
     });
 
@@ -1696,6 +1904,7 @@ async function main() {
         throw new Error("remote-open-file reload reused stale local draft path");
       }
       remoteOpenReloadedLocalPath = reopenedLocalPath;
+      smokeCreatedLocalPaths.add(reopenedLocalPath);
       await waitForMissingPath(remoteOpenConflictLocalPath, 15_000);
       await waitForFileContents(reopenedLocalPath, remoteConflictContents, 15_000);
       await waitForCondition(
@@ -2366,7 +2575,7 @@ async function main() {
         throw new Error("snippet manager button not found");
       }
       await snippetButton.click();
-      await page.locator(".modal--snippet-manager").waitFor({ state: "visible", timeout: 5000 });
+      await page.locator(".modal--snippet-manager").waitFor({ state: "visible", timeout: 10000 });
       try {
         const newGroupButton = page
           .locator(".modal--snippet-manager .secondary-button:has-text('New Group')")
@@ -2435,7 +2644,7 @@ async function main() {
       await manageButton.click();
       await page
         .locator(".modal--command-history-manager")
-        .waitFor({ state: "visible", timeout: 5000 });
+        .waitFor({ state: "visible", timeout: 10000 });
       const fileName = await recordShot(page, "command-history-manager-open");
       return fileName;
     });
@@ -2559,7 +2768,7 @@ async function main() {
       await manageButton.click();
       await page
         .locator(".modal--command-history-manager")
-        .waitFor({ state: "visible", timeout: 5000 });
+        .waitFor({ state: "visible", timeout: 10000 });
       const zhTitle = page.locator(".modal--command-history-manager h3:has-text('命令历史管理')").first();
       const zhAddButton = page
         .locator(".command-history-manager__toolbar .secondary-button:has-text('添加')")
@@ -2580,6 +2789,325 @@ async function main() {
 
       await restoreEnglishInterface(page);
       return zhShot;
+    });
+
+    await runStep("session import dialogs localized zh-cn", async () => {
+      let restoredEnglish = false;
+      try {
+        await openSettingsModal(page);
+        await selectInterfaceLanguage(page, "zh-CN");
+        await settingsDoneButton(page).click();
+        await page.waitForTimeout(260);
+        await waitForInterfaceLanguage(page, "zh-CN");
+
+        await page.evaluate(() => {
+          window.__termdockSmokeSshConfigResult = {
+            filePath: "C:/tmp/termdock-smoke-ssh-config-zh",
+            candidates: [
+              {
+                hostAlias: "smoke-imported-zh",
+                name: "smoke-imported-zh",
+                host: "127.0.0.1",
+                port: 52202,
+                username: "smoke",
+                authType: "password",
+                sourceLine: 1
+              }
+            ],
+            warnings: [
+              "C:/tmp/termdock-smoke-ssh-config-zh:5: ProxyJump is not imported yet; sessions that require a bastion host may need manual setup."
+            ]
+          };
+          window.__termdockSmokePickedTextFile = {
+            filePath: "C:/tmp/termdock-smoke-sessions-import.json",
+            text: JSON.stringify({
+              sessions: [
+                {
+                  id: "smoke-json-import-1",
+                  name: "smoke-json-imported",
+                  host: "127.0.0.1",
+                  port: 52201,
+                  username: "smoke",
+                  authType: "password",
+                  privateKeyPath: "",
+                  groupId: "json-import-group",
+                  remark: "smoke json preview",
+                  favorite: false
+                },
+                {
+                  name: "",
+                  host: "127.0.0.1",
+                  port: 22,
+                  username: "",
+                  authType: "password"
+                }
+              ]
+            })
+          };
+        });
+
+        const sessionSection = page.locator(".panel--right .panel__section").first();
+        if (!(await isVisible(sessionSection))) {
+          throw new Error("session panel not found for zh-cn import dialogs");
+        }
+
+        await sessionSection.click({ button: "right" });
+        await page.locator(".sftp-context-menu").waitFor({ state: "visible", timeout: 3000 });
+        const zhImportSshConfigItem = page
+          .locator(".sftp-context-menu__item:has-text('导入 SSH 配置...')")
+          .first();
+        if (!(await isVisible(zhImportSshConfigItem))) {
+          throw new Error("localized SSH config import menu item not visible");
+        }
+        await closeMenusAndDialogs(page);
+        const zhHookReady = await waitForSmokeHook(page, "__termdockSmokeImportSshConfig");
+        if (!zhHookReady) {
+          throw new Error("localized SSH config import smoke hook is unavailable");
+        }
+        const zhHookStarted = await page.evaluate(() => {
+          if (typeof window.__termdockSmokeImportSshConfig !== "function") {
+            return false;
+          }
+          window.__termdockSmokeImportSshConfig();
+          return true;
+        });
+        if (!zhHookStarted) {
+          throw new Error("localized SSH config import smoke hook did not start");
+        }
+
+        const zhSshTargetGroupDialog = page
+          .locator(".modal.app-dialog", {
+            hasText: "为导入会话设置目标分组。留空则导入到未分组。"
+          })
+          .first();
+        await zhSshTargetGroupDialog.waitFor({ state: "visible", timeout: 5_000 });
+        const zhSshGroupInput = zhSshTargetGroupDialog.locator(".app-dialog__input").first();
+        await zhSshGroupInput.fill("zh-smoke-imports");
+        await zhSshTargetGroupDialog.locator(".primary-button:has-text('查看导入计划')").first().click();
+
+        const zhSshPreviewDialog = page
+          .locator(".modal.app-dialog", { hasText: "SSH 配置预览" })
+          .first();
+        await zhSshPreviewDialog.waitFor({ state: "visible", timeout: 5_000 });
+        const zhSshPreviewText = await zhSshPreviewDialog.textContent();
+        for (const expected of [
+          "要从 termdock-smoke-ssh-config-zh 导入 1 个 Host 条目吗？",
+          "解析到的主机：1",
+          "新建会话：1",
+          "重复目标：0",
+          "私钥会话：0",
+          "目标分组：zh-smoke-imports",
+          "重复项策略：跳过重复项",
+          "ProxyJump is not imported yet",
+          "smoke-imported-zh"
+        ]) {
+          if (!zhSshPreviewText?.includes(expected)) {
+            throw new Error(
+              `localized SSH config preview missing "${expected}"; text=${JSON.stringify(zhSshPreviewText ?? "")}`
+            );
+          }
+        }
+        const zhSshShot = await recordShot(page, "zh-cn-ssh-config-import-preview");
+        await zhSshPreviewDialog.locator(".secondary-button:has-text('取消')").first().click();
+        await page.waitForTimeout(220);
+
+        await sessionSection.click({ button: "right" });
+        await page.locator(".sftp-context-menu").waitFor({ state: "visible", timeout: 3000 });
+        const zhImportSessionsJsonItem = page
+          .locator(".sftp-context-menu__item:has-text('导入会话 JSON...')")
+          .first();
+        if (!(await isVisible(zhImportSessionsJsonItem))) {
+          throw new Error("localized session JSON import menu item not visible");
+        }
+        await closeMenusAndDialogs(page);
+        const zhJsonHookReady = await waitForSmokeHook(page, "__termdockSmokeImportSessionsJson");
+        if (!zhJsonHookReady) {
+          throw new Error("localized session JSON import smoke hook is unavailable");
+        }
+        const zhJsonHookStarted = await page.evaluate(() => {
+          if (typeof window.__termdockSmokeImportSessionsJson !== "function") {
+            return false;
+          }
+          window.__termdockSmokeImportSessionsJson();
+          return true;
+        });
+        if (!zhJsonHookStarted) {
+          throw new Error("localized session JSON import smoke hook did not start");
+        }
+
+        let zhJsonShot = "";
+        try {
+          const zhJsonPreviewDialog = page
+            .locator(".modal.app-dialog", { hasText: "会话 JSON 预览" })
+            .first();
+          await zhJsonPreviewDialog.waitFor({ state: "visible", timeout: 5_000 });
+          const zhJsonPreviewText = await zhJsonPreviewDialog.textContent();
+          for (const expected of [
+            "导入前请先检查已解析的会话。",
+            "可导入会话：1",
+            "smoke-json-imported",
+            "警告：",
+            "第 2 行缺少必填字段（name/host/username），已跳过。"
+          ]) {
+            if (!zhJsonPreviewText?.includes(expected)) {
+              throw new Error(
+                `localized session JSON preview missing "${expected}"; text=${JSON.stringify(zhJsonPreviewText ?? "")}`
+              );
+            }
+          }
+          zhJsonShot = await recordShot(page, "zh-cn-session-json-import-preview");
+          await zhJsonPreviewDialog.locator(".primary-button:has-text('继续')").first().click();
+
+          const zhJsonGroupDialog = page
+            .locator(".modal.app-dialog", { hasText: "分组策略" })
+            .first();
+          await zhJsonGroupDialog.waitFor({ state: "visible", timeout: 5_000 });
+          const zhJsonGroupText = await zhJsonGroupDialog.textContent();
+          for (const expected of [
+            "为导入会话选择目标分组策略。",
+            "保留文件中的分组",
+            "强制使用当前分组",
+            "移动到未分组"
+          ]) {
+            if (!zhJsonGroupText?.includes(expected)) {
+              throw new Error(`localized session JSON group choice missing "${expected}"`);
+            }
+          }
+          await zhJsonGroupDialog.locator(".secondary-button:has-text('取消')").first().click();
+          await page.waitForTimeout(220);
+        } finally {
+          await closeMenusAndDialogs(page, { closeTopLevelModals: true });
+        }
+
+        await sessionSection.click({ button: "right" });
+        await page.locator(".sftp-context-menu").waitFor({ state: "visible", timeout: 3000 });
+        const zhImportEncryptedItem = page
+          .locator(".sftp-context-menu__item:has-text('导入加密迁移包...')")
+          .first();
+        if (!(await isVisible(zhImportEncryptedItem))) {
+          throw new Error("localized encrypted migration import menu item not visible");
+        }
+        await closeMenusAndDialogs(page);
+        await page.evaluate(() => {
+          window.__termdockSmokePickedTextFile = {
+            filePath: "C:/tmp/termdock-smoke-session-migration.tdmigration",
+            text: "__TERMDOCK_SMOKE_MIGRATION__"
+          };
+        });
+        const zhEncryptedHookReady = await waitForSmokeHook(
+          page,
+          "__termdockSmokeImportEncryptedMigration"
+        );
+        if (!zhEncryptedHookReady) {
+          throw new Error("localized encrypted migration import smoke hook is unavailable");
+        }
+        const zhEncryptedHookStarted = await page.evaluate(() => {
+          if (typeof window.__termdockSmokeImportEncryptedMigration !== "function") {
+            return false;
+          }
+          window.__termdockSmokeImportEncryptedMigration();
+          return true;
+        });
+        if (!zhEncryptedHookStarted) {
+          throw new Error("localized encrypted migration import smoke hook did not start");
+        }
+
+        const zhEncryptedPassphraseDialog = page
+          .locator(".modal.app-dialog", {
+            hasText: /导入加密迁移包|输入迁移口令。/u
+          })
+          .first();
+        try {
+          await zhEncryptedPassphraseDialog.waitFor({ state: "visible", timeout: 5_000 });
+        } catch (error) {
+          const visibleUi = await describeVisibleUi(page);
+          throw new Error(
+            `localized encrypted migration prompt missing; ui=${JSON.stringify(visibleUi)}; cause=${asErrorMessage(error)}`
+          );
+        }
+        const zhEncryptedPassphraseText = await zhEncryptedPassphraseDialog.textContent();
+        for (const expected of ["导入加密迁移包", "输入迁移口令。", "解密", "取消"]) {
+          if (!zhEncryptedPassphraseText?.includes(expected)) {
+            throw new Error(
+              `localized encrypted migration prompt missing "${expected}"; text=${JSON.stringify(zhEncryptedPassphraseText ?? "")}`
+            );
+          }
+        }
+        const zhEncryptedPromptShot = await recordShot(page, "zh-cn-encrypted-migration-passphrase");
+        await zhEncryptedPassphraseDialog.locator(".app-dialog__input").first().fill("smoke migration passphrase");
+        await zhEncryptedPassphraseDialog.locator(".primary-button:has-text('解密')").first().click();
+
+        const zhEncryptedPreviewDialog = page
+          .locator(".modal.app-dialog", { hasText: "加密迁移预览" })
+          .first();
+        await zhEncryptedPreviewDialog.waitFor({ state: "visible", timeout: 8_000 });
+        const zhEncryptedPreviewText = await zhEncryptedPreviewDialog.textContent();
+        for (const expected of ["可导入会话：2", "已恢复加密密码：2", "私钥会话：0", "已恢复密码"]) {
+          if (!zhEncryptedPreviewText?.includes(expected)) {
+            throw new Error(
+              `localized encrypted migration preview missing "${expected}"; text=${JSON.stringify(zhEncryptedPreviewText ?? "")}`
+            );
+          }
+        }
+        const zhEncryptedPreviewShot = await recordShot(page, "zh-cn-encrypted-migration-preview");
+        await zhEncryptedPreviewDialog.locator(".primary-button:has-text('继续')").first().click();
+
+        const zhEncryptedGroupDialog = page
+          .locator(".modal.app-dialog", { hasText: "分组策略" })
+          .first();
+        await zhEncryptedGroupDialog.waitFor({ state: "visible", timeout: 5_000 });
+        const zhEncryptedGroupText = await zhEncryptedGroupDialog.textContent();
+        for (const expected of [
+          "为导入会话选择目标分组策略。",
+          "保留文件中的分组",
+          "强制使用当前分组",
+          "移动到未分组"
+        ]) {
+          if (!zhEncryptedGroupText?.includes(expected)) {
+            throw new Error(
+              `localized encrypted migration group choice missing "${expected}"; text=${JSON.stringify(zhEncryptedGroupText ?? "")}`
+            );
+          }
+        }
+        const zhEncryptedGroupShot = await recordShot(page, "zh-cn-encrypted-migration-group-choice");
+        await zhEncryptedGroupDialog.locator(".secondary-button:has-text('取消')").first().click();
+        await page.waitForTimeout(220);
+
+        await restoreEnglishInterface(page);
+        await waitForInterfaceLanguage(page, "en");
+        await page.evaluate(() => {
+          window.__termdockSmokeSshConfigResult = {
+            filePath: "C:/tmp/termdock-smoke-ssh-config",
+            candidates: [
+              {
+                hostAlias: "smoke-imported",
+                name: "smoke-imported",
+                host: "127.0.0.1",
+                port: 52199,
+                username: "smoke",
+                authType: "password",
+                sourceLine: 1
+              }
+            ],
+            warnings: [
+              "C:/tmp/termdock-smoke-ssh-config:4: IdentityFile \"C:/missing/termdock-smoke-key\" for Host \"smoke-imported\" does not exist or is not a regular file after expansion.",
+              "C:/tmp/termdock-smoke-ssh-config:5: ProxyJump is not imported yet; sessions that require a bastion host may need manual setup."
+            ]
+          };
+        });
+        restoredEnglish = true;
+        return `${zhSshShot}, ${zhJsonShot}, ${zhEncryptedPromptShot}, ${zhEncryptedPreviewShot}, ${zhEncryptedGroupShot}`;
+      } finally {
+        if (!restoredEnglish) {
+          try {
+            await closeMenusAndDialogs(page, { closeTopLevelModals: true });
+            await restoreEnglishInterface(page);
+            await waitForInterfaceLanguage(page, "en");
+          } catch {
+            // Best effort cleanup so later smoke steps keep using the expected locale.
+          }
+        }
+      }
     });
 
     await runStep("command history panel context menu", async () => {
@@ -2629,7 +3157,7 @@ async function main() {
       await trigger.click();
       await page
         .locator(".modal--operation-center")
-        .waitFor({ state: "visible", timeout: 5000 });
+        .waitFor({ state: "visible", timeout: 10000 });
       const trackedJobsTitle = page
         .locator(".modal--operation-center .operation-center__title", {
           hasText: "Tracked App Jobs"
@@ -2695,7 +3223,7 @@ async function main() {
         throw new Error("retry center trigger not found");
       }
       await trigger.click();
-      await page.locator(".modal--retry-center").waitFor({ state: "visible", timeout: 5000 });
+      await page.locator(".modal--retry-center").waitFor({ state: "visible", timeout: 10000 });
       const openShot = await recordShot(page, "retry-center-open");
 
       const viewSelect = page.locator(".modal--retry-center select").nth(4);
@@ -2726,7 +3254,7 @@ async function main() {
         throw new Error("localized retry center trigger not found");
       }
       await zhTrigger.click();
-      await page.locator(".modal--retry-center").waitFor({ state: "visible", timeout: 5000 });
+      await page.locator(".modal--retry-center").waitFor({ state: "visible", timeout: 10000 });
       const zhTitle = page.locator(".modal--retry-center h3:has-text('传输重试中心')").first();
       if (!(await isVisible(zhTitle))) {
         throw new Error("localized retry center title not visible");
@@ -2883,6 +3411,31 @@ async function main() {
       process.exitCode = 2;
     }
   } finally {
+    if (pageRef.current) {
+      try {
+        await closeMenusAndDialogs(pageRef.current, { closeTopLevelModals: true });
+      } catch {
+        // Best effort UI cleanup before shutting down the app.
+      }
+      try {
+        const createdPaths = await pageRef.current.evaluate(() =>
+          Array.isArray(window.__termdockSmokeCreatedLocalPaths)
+            ? window.__termdockSmokeCreatedLocalPaths.slice()
+            : []
+        );
+        for (const targetPath of createdPaths) {
+          smokeCreatedLocalPaths.add(targetPath);
+        }
+      } catch {
+        // Ignore runtime read failures during shutdown cleanup.
+      }
+    }
+    smokeCreatedLocalPaths.add(downloadTargetPath);
+    smokeCreatedLocalPaths.add(remoteOpenConflictLocalPath);
+    smokeCreatedLocalPaths.add(remoteOpenReloadedLocalPath);
+    for (const targetPath of smokeCreatedLocalPaths) {
+      await removeLocalPathIfPresent(targetPath);
+    }
     if (app) {
       await app.close();
     }
