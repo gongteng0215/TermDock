@@ -46,8 +46,6 @@ import {
   TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
   TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
   TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
-  TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
-  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
   TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
   TerminalWorkspace
 } from "./components/terminal-workspace";
@@ -80,6 +78,11 @@ import {
 } from "./components/workbench-panels";
 import { SettingsModalShell } from "./components/settings-modal-shell";
 import { SettingsModalContent } from "./components/settings-modal-content";
+import { AppDialogModal, MoveGroupDialogModal } from "./components/app-dialogs";
+import { GlobalErrorBar } from "./components/global-error-bar";
+import { SessionCreateModal } from "./components/session-create-modal";
+import { ServerHealthDetailModal } from "./components/server-health-detail-modal";
+import { SessionTemplateManagerModal } from "./components/session-template-manager-modal";
 import {
   WorkbenchContextMenu,
   type WorkbenchContextMenuAction
@@ -95,6 +98,15 @@ import {
   buildSftpSettingsSectionProps,
   buildWorkspaceSettingsSectionProps
 } from "./settings-section-props";
+import { buildCommandHistoryContextMenuActions } from "./command-history-context-menu-actions";
+import {
+  buildSftpContextActions,
+  buildSftpToolbarActions,
+  type SftpContextAction
+} from "./sftp-context-actions";
+import { buildSessionContextActions } from "./session-context-actions";
+import { useAppDialog } from "./use-app-dialog";
+import { useSessionTemplateManager } from "./use-session-template-manager";
 import {
   WorkbenchExplorerSidebar,
   WorkbenchInspectorSidebar
@@ -148,13 +160,22 @@ import {
   formatDangerousCommandTemporaryApprovalScopeLabel,
   useDangerousCommandApprovalFlow
 } from "./use-dangerous-command-approval-flow";
+import { useCommandHistoryManager } from "./use-command-history-manager";
 import { useDangerousCommandSettingsViewModels } from "./use-dangerous-command-settings-view-models";
+import { useOperationCenterActions } from "./use-operation-center-actions";
+import { useOperationCenterAppJobs } from "./use-operation-center-app-jobs";
 import { usePortForwardingViewModels } from "./use-port-forwarding-view-models";
+import { useRetryCenterActions } from "./use-retry-center-actions";
+import { useRetryCenterExportActions } from "./use-retry-center-export-actions";
 import { useRetryCenterViewModels } from "./use-retry-center-view-models";
+import { useSessionCreateActions } from "./use-session-create-actions";
+import { useSessionQuickProfileActions } from "./use-session-quick-profile-actions";
 import { useServerHealthMonitor } from "./use-server-health-monitor";
 import { useSessionGroupingViewModels } from "./use-session-grouping-view-models";
 import { useSftpActivityViewModels } from "./use-sftp-activity-view-models";
 import { useSftpSettingsViewModels } from "./use-sftp-settings-view-models";
+import { useSessionUtilityActions } from "./use-session-utility-actions";
+import { useTerminalCommandHistoryActions } from "./use-terminal-command-history-actions";
 import {
   usePendingTransferRestoreRuntime,
   useSftpTransferBatchNotifications,
@@ -892,13 +913,6 @@ interface CommandHistoryContextMenuState {
   entryId: string | null;
 }
 
-interface SftpContextAction {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  run: () => void;
-}
-
 interface SessionContextMenuState {
   x: number;
   y: number;
@@ -950,83 +964,6 @@ interface DangerousCommandPolicyBundleSyncState {
   filePath: string;
   lastPulledAtIso: string | null;
   lastPushedAtIso: string | null;
-}
-
-type AppDialogMode = "alert" | "confirm" | "prompt" | "choice";
-
-interface AppDialogBaseState {
-  mode: AppDialogMode;
-  title: string;
-  message: string;
-  confirmLabel: string;
-}
-
-interface AppAlertDialogState extends AppDialogBaseState {
-  mode: "alert";
-  detailText?: string;
-}
-
-interface AppConfirmDialogState extends AppDialogBaseState {
-  mode: "confirm";
-  cancelLabel: string;
-  danger?: boolean;
-  detailText?: string;
-}
-
-interface AppPromptDialogState extends AppDialogBaseState {
-  mode: "prompt";
-  cancelLabel: string;
-  value: string;
-  multiline?: boolean;
-  inputType?: "text" | "password";
-}
-
-interface AppChoiceDialogOption {
-  value: string;
-  label: string;
-  danger?: boolean;
-}
-
-interface AppChoiceDialogState extends AppDialogBaseState {
-  mode: "choice";
-  cancelLabel: string;
-  detailText?: string;
-  options: AppChoiceDialogOption[];
-}
-
-type AppDialogState =
-  | AppAlertDialogState
-  | AppConfirmDialogState
-  | AppPromptDialogState
-  | AppChoiceDialogState;
-
-interface AppAlertDialogOptions {
-  title?: string;
-  confirmLabel?: string;
-  detailText?: string;
-  translateDetailText?: boolean;
-}
-
-interface AppConfirmDialogOptions {
-  title?: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  danger?: boolean;
-  detailText?: string;
-}
-
-interface AppPromptDialogOptions {
-  title?: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  multiline?: boolean;
-  inputType?: "text" | "password";
-}
-
-interface AppChoiceDialogOptions {
-  title?: string;
-  cancelLabel?: string;
-  detailText?: string;
 }
 
 function getSafeTabInstance(value: unknown): number {
@@ -5712,9 +5649,6 @@ export function App() {
   );
   const [isRetryCenterOpen, setIsRetryCenterOpen] = useState(false);
   const [isOperationCenterOpen, setIsOperationCenterOpen] = useState(false);
-  const [isOperationCenterBulkCanceling, setIsOperationCenterBulkCanceling] = useState(false);
-  const [isOperationCenterReconnecting, setIsOperationCenterReconnecting] = useState(false);
-  const [operationCenterAppJobs, setOperationCenterAppJobs] = useState<OperationCenterAppJob[]>([]);
   const [retryCenterScope, setRetryCenterScope] = useState<TransferHistoryScope>(
     initialRetryCenterViewPreferences.scope
   );
@@ -5856,9 +5790,6 @@ export function App() {
   const sftpToolbarMenuRef = useRef<HTMLDivElement | null>(null);
   const commandHistoryContextMenuRef = useRef<HTMLDivElement | null>(null);
   const sessionContextMenuRef = useRef<HTMLDivElement | null>(null);
-  const appDialogInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
-  const appDialogResolverRef = useRef<((value: unknown) => void) | null>(null);
-  const appDialogCancelValueRef = useRef<unknown>(undefined);
   const appHintTimerRef = useRef<number | null>(null);
   const hotkeyRowRefs = useRef<Map<HotkeyActionId, HTMLDivElement | null>>(new Map());
   const hotkeyConflictHighlightTimerRef = useRef<number | null>(null);
@@ -5954,8 +5885,6 @@ export function App() {
   const [schedulePausedUploadTabs, setSchedulePausedUploadTabs] = useState<Record<string, true>>({});
   const [schedulePausedDownloadTabs, setSchedulePausedDownloadTabs] = useState<Record<string, true>>({});
   const [transferDockNotice, setTransferDockNotice] = useState<TransferDockNotice | null>(null);
-  const [appDialog, setAppDialog] = useState<AppDialogState | null>(null);
-  const [appDialogInput, setAppDialogInput] = useState("");
   const [appHintMessage, setAppHintMessage] = useState<{
     level: "info" | "warn";
     message: string;
@@ -5998,6 +5927,23 @@ export function App() {
     },
     []
   );
+  const {
+    appDialog,
+    appDialogInput,
+    appDialogInputRef,
+    closeAppDialog,
+    resolveAppDialog,
+    setAppDialogInput,
+    showAppAlert,
+    showAppChoice,
+    showAppConfirm,
+    showAppPrompt,
+    submitAppDialog
+  } = useAppDialog({
+    pushAppHintMessage,
+    tr,
+    trMultiline
+  });
   const buildDangerousCommandApprovalContext = useCallback(
     (request: DangerousCommandApprovalRequest) => {
       const uniqueRuleLabels = Array.from(new Set(request.result.matches.map((match) => match.label)));
@@ -6287,209 +6233,21 @@ export function App() {
     scope: terminalCommandHistoryScope,
     selection: commandHistorySelection
   });
-  const copyTerminalCommandHistoryEntry = useCallback(
-    async (entry: TerminalCommandHistoryEntry) => {
-      try {
-        const copied = await copyTextToClipboard(entry.command);
-        if (copied) {
-          return;
-        }
-      } catch {
-        // Fall through and show error.
-      }
-      setError("Clipboard unavailable. Copy command manually.");
-    },
-    []
-  );
-  const runTerminalCommandHistoryEntry = useCallback(
-    async (entry: TerminalCommandHistoryEntry) => {
-      if (!terminalApi) {
-        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
-        return;
-      }
-      const existingTabId = terminalTabsRef.current.some((tab) => tab.id === entry.tabId)
-        ? entry.tabId
-        : activeTabIdRef.current;
-      if (!existingTabId) {
-        setError("Open a terminal tab before running command history entries.");
-        return;
-      }
-      if (activeTabIdRef.current !== existingTabId) {
-        setActiveTabId(existingTabId);
-      }
-      try {
-        const wrote = await guardedTerminalWrite(existingTabId, `${entry.command}\n`, {
-          source: "commandHistoryRun",
-          commandText: entry.command
-        });
-        if (!wrote) {
-          return;
-        }
-        window.dispatchEvent(
-          new CustomEvent(TERMINAL_COMMAND_HISTORY_APPEND_EVENT, {
-            detail: {
-              tabId: existingTabId,
-              command: entry.command,
-              source: "manual"
-            }
-          })
-        );
-      } catch (caughtError) {
-        setError((caughtError as Error).message);
-      }
-    },
-    [guardedTerminalWrite, terminalApi]
-  );
-  const pasteTerminalCommandHistoryEntry = useCallback(
-    async (entry: TerminalCommandHistoryEntry) => {
-      if (!terminalApi) {
-        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
-        return;
-      }
-      const targetTabId = activeTabIdRef.current;
-      if (!targetTabId) {
-        setError("Open and focus a terminal tab before pasting command history entries.");
-        return;
-      }
-      try {
-        await guardedTerminalWrite(targetTabId, entry.command, {
-          source: "commandHistoryPaste",
-          commandText: entry.command
-        });
-      } catch (caughtError) {
-        setError((caughtError as Error).message);
-      }
-    },
-    [guardedTerminalWrite, terminalApi]
-  );
-  const upsertTerminalCommandHistoryCommand = useCallback(
-    (
-      command: string,
-      options?: {
-        replaceEntryId?: string;
-        preferredTabId?: string;
-        source?: TerminalCommandHistorySource;
-      }
-    ): boolean => {
-      const normalizedCommand = command
-        .trim()
-        .slice(0, MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH);
-      if (!normalizedCommand) {
-        return false;
-      }
-      const replaceEntryId = options?.replaceEntryId?.trim() ?? "";
-      const preferredTabId = options?.preferredTabId?.trim();
-      const fallbackTabId = activeTabIdRef.current ?? terminalTabsRef.current[0]?.id ?? "__manual__";
-      const tabId = preferredTabId || fallbackTabId;
-      const source = options?.source ?? "manual";
-
-      if (replaceEntryId) {
-        window.dispatchEvent(
-          new CustomEvent(TERMINAL_COMMAND_HISTORY_REMOVE_EVENT, {
-            detail: {
-              entryId: replaceEntryId
-            }
-          })
-        );
-      }
-      window.dispatchEvent(
-        new CustomEvent(TERMINAL_COMMAND_HISTORY_APPEND_EVENT, {
-          detail: {
-            tabId,
-            command: normalizedCommand,
-            source
-          }
-        })
-      );
-      setTerminalCommandHistoryEntries((prev) => {
-        const filtered = prev.filter((entry) => {
-          if (replaceEntryId && entry.id === replaceEntryId) {
-            return false;
-          }
-          return entry.command.trim() !== normalizedCommand;
-        });
-        const nextEntry: TerminalCommandHistoryEntry = {
-          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-          tabId,
-          command: normalizedCommand,
-          executedAt: Date.now(),
-          source
-        };
-        return [nextEntry, ...filtered].slice(0, MAX_TERMINAL_COMMAND_HISTORY);
-      });
-      return true;
-    },
-    []
-  );
-  const deleteTerminalCommandHistoryEntries = useCallback((entryIds: string[]) => {
-    const normalizedEntryIds = Array.from(
-      new Set(entryIds.map((entryId) => entryId.trim()).filter((entryId) => entryId.length > 0))
-    );
-    if (normalizedEntryIds.length === 0) {
-      return;
-    }
-    const deleteSet = new Set(normalizedEntryIds);
-    setTerminalCommandHistoryEntries((prev) =>
-      prev.filter((entry) => !deleteSet.has(entry.id))
-    );
-    setCommandHistorySelection((prev) => prev.filter((entryId) => !deleteSet.has(entryId)));
-    for (const entryId of normalizedEntryIds) {
-      window.dispatchEvent(
-        new CustomEvent(TERMINAL_COMMAND_HISTORY_REMOVE_EVENT, {
-          detail: {
-            entryId
-          }
-        })
-      );
-    }
-  }, []);
-  const deleteTerminalCommandHistoryEntry = useCallback(
-    (entryId: string) => {
-      deleteTerminalCommandHistoryEntries([entryId]);
-    },
-    [deleteTerminalCommandHistoryEntries]
-  );
-  const toggleCommandHistorySelection = useCallback((entryId: string) => {
-    const normalizedEntryId = entryId.trim();
-    if (!normalizedEntryId) {
-      return;
-    }
-    setCommandHistorySelection((prev) => {
-      if (prev.includes(normalizedEntryId)) {
-        return prev.filter((value) => value !== normalizedEntryId);
-      }
-      return [...prev, normalizedEntryId];
-    });
-  }, []);
-  const toggleSelectAllVisibleCommandHistory = useCallback(() => {
-    if (visibleCommandHistoryIds.length === 0) {
-      return;
-    }
-    const visibleSet = new Set(visibleCommandHistoryIds);
-    setCommandHistorySelection((prev) => {
-      if (allVisibleCommandHistorySelected) {
-        return prev.filter((entryId) => !visibleSet.has(entryId));
-      }
-      const next = [...prev];
-      for (const entryId of visibleCommandHistoryIds) {
-        if (!next.includes(entryId)) {
-          next.push(entryId);
-        }
-      }
-      return next;
-    });
-  }, [allVisibleCommandHistorySelected, visibleCommandHistoryIds]);
-  const clearCommandHistorySelection = useCallback(() => {
-    setCommandHistorySelection([]);
-  }, []);
-  const openCommandHistoryManager = useCallback(() => {
-    setCommandHistoryContextMenu(null);
-    setIsCommandHistoryManagerOpen(true);
-  }, []);
-  const closeCommandHistoryManager = useCallback(() => {
-    setIsCommandHistoryManagerOpen(false);
-    setCommandHistorySelection([]);
-  }, []);
+  const {
+    copyTerminalCommandHistoryEntry,
+    pasteTerminalCommandHistoryEntry,
+    runTerminalCommandHistoryEntry,
+    upsertTerminalCommandHistoryCommand
+  } = useTerminalCommandHistoryActions({
+    activeTabIdRef,
+    copyTextToClipboard,
+    guardedTerminalWrite,
+    setActiveTabId,
+    setEntries: setTerminalCommandHistoryEntries,
+    setError,
+    terminalApi,
+    terminalTabsRef
+  });
   const openCommandSnippetManager = useCallback(() => {
     setCommandHistoryContextMenu(null);
     setIsCommandSnippetManagerOpen(true);
@@ -6497,101 +6255,6 @@ export function App() {
   const closeCommandSnippetManager = useCallback(() => {
     setIsCommandSnippetManagerOpen(false);
   }, []);
-  const startOperationCenterAppJob = useCallback(
-    (input: Pick<OperationCenterAppJob, "category" | "title" | "description">) => {
-      const entry: OperationCenterAppJob = {
-        id: createClientSideId("ocj"),
-        category: input.category,
-        title: input.title,
-        description: input.description,
-        status: "running",
-        startedAt: Date.now()
-      };
-      setOperationCenterAppJobs((prev) => [entry, ...prev].slice(0, MAX_OPERATION_CENTER_APP_JOBS));
-      return entry.id;
-    },
-    []
-  );
-  const finishOperationCenterAppJob = useCallback(
-    (
-      jobId: string,
-      status: Extract<OperationCenterAppJobStatus, "succeeded" | "failed">,
-      options?: {
-        detail?: string;
-        outputPath?: string;
-      }
-    ) => {
-      const normalizedJobId = jobId.trim();
-      if (!normalizedJobId) {
-        return;
-      }
-      setOperationCenterAppJobs((prev) =>
-        prev.map((entry) =>
-          entry.id !== normalizedJobId
-            ? entry
-            : {
-                ...entry,
-                status,
-                finishedAt: Date.now(),
-                detail: options?.detail?.trim() || entry.detail,
-                outputPath: options?.outputPath?.trim() || entry.outputPath
-              }
-        )
-      );
-    },
-    []
-  );
-  const removeOperationCenterAppJob = useCallback((jobId: string) => {
-    const normalizedJobId = jobId.trim();
-    if (!normalizedJobId) {
-      return;
-    }
-    setOperationCenterAppJobs((prev) => prev.filter((entry) => entry.id !== normalizedJobId));
-  }, []);
-  const clearFinishedOperationCenterAppJobs = useCallback(() => {
-    setOperationCenterAppJobs((prev) => prev.filter((entry) => entry.status === "running"));
-  }, []);
-  const deleteSelectedCommandHistoryEntries = useCallback(() => {
-    deleteTerminalCommandHistoryEntries(commandHistorySelection);
-  }, [commandHistorySelection, deleteTerminalCommandHistoryEntries]);
-  const deleteVisibleCommandHistoryEntries = useCallback(() => {
-    deleteTerminalCommandHistoryEntries(visibleCommandHistoryIds);
-  }, [deleteTerminalCommandHistoryEntries, visibleCommandHistoryIds]);
-  const deleteAllCommandHistoryEntries = useCallback(() => {
-    deleteTerminalCommandHistoryEntries(terminalCommandHistoryEntries.map((entry) => entry.id));
-  }, [deleteTerminalCommandHistoryEntries, terminalCommandHistoryEntries]);
-  useEffect(() => {
-    setCommandHistorySelection((prev) => {
-      if (prev.length === 0) {
-        return prev;
-      }
-      const validIdSet = new Set(terminalCommandHistoryEntries.map((entry) => entry.id));
-      const next = prev.filter((entryId) => validIdSet.has(entryId));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [terminalCommandHistoryEntries]);
-  useEffect(() => {
-    if (!isCommandHistoryManagerOpen) {
-      return;
-    }
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      closeCommandHistoryManager();
-    };
-    window.addEventListener("keydown", onEscape);
-    return () => {
-      window.removeEventListener("keydown", onEscape);
-    };
-  }, [closeCommandHistoryManager, isCommandHistoryManagerOpen]);
-  useEffect(() => {
-    if (!isCommandHistoryManagerOpen) {
-      return;
-    }
-    setCommandHistoryContextMenu(null);
-  }, [isCommandHistoryManagerOpen]);
   useEffect(() => {
     if (!isCommandSnippetManagerOpen) {
       return;
@@ -7253,100 +6916,12 @@ export function App() {
       // Ignore storage failures; runtime state still works for this launch.
     }
   }, [hotkeyConflictCursorSignature]);
-  const resolveAppDialog = useCallback((result: unknown) => {
-    const resolver = appDialogResolverRef.current;
-    appDialogResolverRef.current = null;
-    appDialogCancelValueRef.current = undefined;
-    setAppDialog(null);
-    setAppDialogInput("");
-    if (resolver) {
-      resolver(result);
-    }
-  }, []);
-  const openAppDialog = useCallback(
-    (dialog: AppDialogState, cancelResult: unknown): Promise<unknown> => {
-      if (appDialogResolverRef.current) {
-        appDialogResolverRef.current(appDialogCancelValueRef.current);
-      }
-      appDialogCancelValueRef.current = cancelResult;
-      setAppDialog(dialog);
-      setAppDialogInput(dialog.mode === "prompt" ? dialog.value : "");
-      return new Promise((resolve) => {
-        appDialogResolverRef.current = resolve;
-      });
-    },
-    []
-  );
   const removeDangerousCommandPersistentApproval = useCallback((approvalId: string) => {
     setDangerousCommandGuardPreferences((prev) => ({
       ...prev,
       persistentApprovals: prev.persistentApprovals.filter((approval) => approval.id !== approvalId)
     }));
   }, []);
-  const showAppAlert = useCallback(
-    async (message: string, options?: AppAlertDialogOptions): Promise<void> => {
-      const title = tr((options?.title ?? "").trim());
-      const translatedMessage = tr(message);
-      const hasDetailText = typeof options?.detailText === "string" && options.detailText.trim().length > 0;
-      if (hasDetailText) {
-        const dialog: AppAlertDialogState = {
-          mode: "alert",
-          title: title || tr("Notice"),
-          message: translatedMessage,
-          confirmLabel: tr(options?.confirmLabel ?? "OK"),
-          detailText:
-            options?.translateDetailText && options.detailText
-              ? trMultiline(options.detailText)
-              : options?.detailText
-        };
-        await openAppDialog(dialog, undefined);
-        return;
-      }
-      const summary = hasDetailText ? `${translatedMessage} (${tr("details available")})` : translatedMessage;
-      pushAppHintMessage(summary, {
-        level: /error|fail|warning|warn/i.test(title) ? "warn" : "info",
-        durationMs: hasDetailText ? 5600 : 3600
-      });
-    },
-    [openAppDialog, pushAppHintMessage, tr, trMultiline]
-  );
-  const showAppConfirm = useCallback(
-    async (message: string, options?: AppConfirmDialogOptions): Promise<boolean> => {
-      const dialog: AppConfirmDialogState = {
-        mode: "confirm",
-        title: tr(options?.title ?? "Confirm"),
-        message: tr(message),
-        confirmLabel: tr(options?.confirmLabel ?? "Confirm"),
-        cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
-        danger: options?.danger,
-        detailText: options?.detailText ? trMultiline(options.detailText) : undefined
-      };
-      const result = await openAppDialog(dialog, false);
-      return result === true;
-    },
-    [openAppDialog, tr, trMultiline]
-  );
-  const showAppPrompt = useCallback(
-    async (
-      message: string,
-      defaultValue = "",
-      options?: AppPromptDialogOptions
-    ): Promise<string | null> => {
-      const dialog: AppPromptDialogState = {
-        mode: "prompt",
-        title: tr(options?.title ?? "Input Required"),
-        message: tr(message),
-        confirmLabel: tr(options?.confirmLabel ?? "OK"),
-        cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
-        value: defaultValue,
-        multiline: options?.multiline,
-        inputType: options?.inputType
-      };
-      const result = await openAppDialog(dialog, null);
-      return typeof result === "string" ? result : null;
-    },
-    [openAppDialog, tr]
-  );
   const addTerminalCommandHistoryEntry = useCallback(async () => {
     const input = await showAppPrompt("Enter command to add into history.", "", {
       title: "Add Command History Entry",
@@ -7388,149 +6963,6 @@ export function App() {
     },
     [showAppAlert, showAppPrompt, upsertTerminalCommandHistoryCommand]
   );
-  const exportTerminalCommandHistory = useCallback(async () => {
-    try {
-      if (terminalCommandHistoryEntries.length === 0) {
-        await showAppAlert("No command history entries available to export.", {
-          title: "Export Command History"
-        });
-        return;
-      }
-      const generatedAtIso = new Date().toISOString();
-      const payload = {
-        exportedAtIso: generatedAtIso,
-        appVersion: APP_VERSION,
-        count: terminalCommandHistoryEntries.length,
-        entries: terminalCommandHistoryEntries.map((entry) => ({
-          command: entry.command,
-          source: entry.source,
-          sourceLabel: formatTerminalCommandHistorySourceLabel(entry.source),
-          executedAt: entry.executedAt,
-          executedAtIso: toIsoTimestamp(entry.executedAt)
-        }))
-      };
-      const exportText = `${JSON.stringify(payload, null, 2)}\n`;
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Command History",
-          defaultFileName: `termdock-command-history-${generatedAtIso.replace(/[:]/g, "-")}.json`,
-          text: exportText,
-          filters: [
-            {
-              name: "JSON",
-              extensions: ["json"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copiedPath = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copiedPath
-              ? `Command history exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Command history exported:\n${result.outputPath}`,
-            {
-              title: "Export Command History"
-            }
-          );
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Command history JSON copied to clipboard.", {
-          title: "Export Command History"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the command history JSON manually.", {
-        title: "Export Command History",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:command-history",
-        "Failed to export command history.",
-        caughtError
-      );
-    }
-  }, [showAppAlert, systemApi, terminalCommandHistoryEntries, writeAppLog]);
-  const importTerminalCommandHistory = useCallback(async () => {
-    try {
-      if (!systemApi?.pickAndReadTextFile) {
-        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
-      }
-      const selected = await systemApi.pickAndReadTextFile({
-        title: "Import Command History",
-        buttonLabel: "Import",
-        filters: [
-          {
-            name: "JSON",
-            extensions: ["json"]
-          },
-          {
-            name: "Text",
-            extensions: ["txt", "log"]
-          },
-          {
-            name: "All Files",
-            extensions: ["*"]
-          }
-        ]
-      });
-      if (selected.canceled || !selected.filePath) {
-        return;
-      }
-      const rawText = typeof selected.text === "string" ? selected.text : "";
-      if (!rawText.trim()) {
-        await showAppAlert("Selected file is empty.", {
-          title: "Import Command History"
-        });
-        return;
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(rawText);
-      } catch (caughtError) {
-        await showAppAlert(`Invalid JSON format.\n${toLogMessage(caughtError)}`, {
-          title: "Import Command History"
-        });
-        return;
-      }
-      const commands = parseImportedCommandHistoryCommands(parsed);
-      if (commands.length === 0) {
-        await showAppAlert(
-          "No importable commands found.\nSupported formats: [\"cmd\"], { commands: [] }, { entries: [{ command }] }",
-          {
-            title: "Import Command History"
-          }
-        );
-        return;
-      }
-      for (let index = commands.length - 1; index >= 0; index -= 1) {
-        upsertTerminalCommandHistoryCommand(commands[index].command, {
-          source: commands[index].source
-        });
-      }
-      await showAppAlert(
-        `Imported ${commands.length} command(s) from:\n${selected.filePath}`,
-        {
-          title: "Import Command History"
-        }
-      );
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:command-history",
-        "Failed to import command history.",
-        caughtError
-      );
-    }
-  }, [showAppAlert, systemApi, upsertTerminalCommandHistoryCommand, writeAppLog]);
   const refreshLogInfo = useCallback(async (): Promise<void> => {
     if (!systemApi?.getLogInfo) {
       setError("Log bridge unavailable. Restart `pnpm dev`.");
@@ -8650,32 +8082,22 @@ export function App() {
     },
     [portForwards, removePortForward]
   );
-  const showAppChoice = useCallback(
-    async (
-      message: string,
-      choices: AppChoiceDialogOption[],
-      options?: AppChoiceDialogOptions
-    ): Promise<string | null> => {
-      if (!Array.isArray(choices) || choices.length === 0) {
-        return null;
-      }
-      const dialog: AppChoiceDialogState = {
-        mode: "choice",
-        title: tr(options?.title ?? "Choose Action"),
-        message: tr(message),
-        confirmLabel: "",
-        cancelLabel: tr(options?.cancelLabel ?? "Cancel"),
-        detailText: options?.detailText ? trMultiline(options.detailText) : undefined,
-        options: choices.map((choice) => ({
-          ...choice,
-          label: tr(choice.label)
-        }))
-      };
-      const result = await openAppDialog(dialog, null);
-      return typeof result === "string" ? result : null;
-    },
-    [openAppDialog, tr, trMultiline]
-  );
+  const {
+    clearFinishedOperationCenterAppJobs,
+    copyOperationCenterAppJobOutputPath,
+    finishOperationCenterAppJob,
+    operationCenterAppJobs,
+    removeOperationCenterAppJob,
+    startOperationCenterAppJob
+  } = useOperationCenterAppJobs({
+    copyTextToClipboard,
+    createJobId: () => createClientSideId("ocj"),
+    maxJobs: MAX_OPERATION_CENTER_APP_JOBS,
+    setError,
+    showAppAlert,
+    toLogMessage,
+    writeAppLog
+  });
   const clearDangerousCommandPersistentApprovals = useCallback(async () => {
     const currentApprovals = dangerousCommandGuardPreferencesRef.current.persistentApprovals;
     if (currentApprovals.length === 0) {
@@ -8787,26 +8209,6 @@ export function App() {
     showAppAlert,
     showAppChoice
   ]);
-  const closeAppDialog = useCallback(() => {
-    resolveAppDialog(appDialogCancelValueRef.current);
-  }, [resolveAppDialog]);
-  const submitAppDialog = useCallback(() => {
-    if (!appDialog) {
-      return;
-    }
-    if (appDialog.mode === "choice") {
-      return;
-    }
-    if (appDialog.mode === "confirm") {
-      resolveAppDialog(true);
-      return;
-    }
-    if (appDialog.mode === "prompt") {
-      resolveAppDialog(appDialogInput);
-      return;
-    }
-    resolveAppDialog(undefined);
-  }, [appDialog, appDialogInput, resolveAppDialog]);
   useEffect(() => {
     return () => {
       if (appHintTimerRef.current !== null) {
@@ -8819,10 +8221,47 @@ export function App() {
     () => sessions.find((session) => session.id === editingSessionId) ?? null,
     [editingSessionId, sessions]
   );
-  const editingSessionTemplate = useMemo(
-    () => sessionTemplates.find((template) => template.id === editingSessionTemplateId) ?? null,
-    [editingSessionTemplateId, sessionTemplates]
-  );
+  const {
+    addSessionTemplateEnvVar,
+    applySessionTemplateToForm,
+    chooseSessionTemplateAndApply,
+    closeSessionTemplateManager,
+    deleteEditingSessionTemplate,
+    editingSessionTemplate,
+    loadSessionTemplateForEditing,
+    openSessionTemplateManager,
+    removeSessionTemplateEnvVar,
+    resetSessionTemplateDraft,
+    saveSessionTemplateDraft,
+    startSessionTemplateDraftFromForm,
+    updateSessionTemplateDraftFields,
+    updateSessionTemplateEnvVar
+  } = useSessionTemplateManager({
+    createClientSideId,
+    createEmptySessionTemplateDraft,
+    createSessionTemplateDraftFromForm,
+    editingSessionTemplateId,
+    form,
+    maxEnvVarCount: MAX_SESSION_TEMPLATE_ENV_VARS,
+    normalizeSessionTemplateDraft,
+    normalizeSessionTemplates,
+    resolveSessionTemplateToForm,
+    sessionTemplates,
+    setEditingSessionId,
+    setEditingSessionTemplateId,
+    setError,
+    setForm,
+    setIsCreateModalOpen,
+    setIsSessionTemplateManagerOpen,
+    setSessionTemplateDraft,
+    setSessionTemplateError,
+    setSessionTemplates,
+    setTestConnectionResult,
+    showAppAlert,
+    showAppChoice,
+    showAppConfirm,
+    toSessionTemplateDraftFromRecord
+  });
   const selectedSftpEntry = useMemo<SftpEntry | null>(() => {
     if (!sftpDirectory || !selectedSftpPath) {
       return null;
@@ -9053,185 +8492,6 @@ export function App() {
     },
     [retryCenterGroupedEntries]
   );
-  const getRetryCenterGroupEntriesForRetryScope = useCallback(
-    (
-      group: (typeof retryCenterGroupedEntries)[number],
-      retryScope: RetryCenterRetryScope
-    ): SftpTransferHistoryItem[] => {
-      if (!activeSessionId) {
-        return [];
-      }
-      const retryableEntries = group.entries.filter(
-        (entry) => entry.status === "failed" && entry.sessionId === activeSessionId
-      );
-      if (retryScope === "upload") {
-        return retryableEntries.filter((entry) => entry.direction === "upload");
-      }
-      if (retryScope === "download") {
-        return retryableEntries.filter((entry) => entry.direction === "download");
-      }
-      return retryableEntries;
-    },
-    [activeSessionId]
-  );
-  const chooseRetryCenterGroupRetryScope = async (
-    group: (typeof retryCenterGroupedEntries)[number]
-  ): Promise<RetryCenterRetryScope | null> => {
-    const retryableEntries = getRetryCenterGroupEntriesForRetryScope(group, "all");
-    if (retryableEntries.length === 0) {
-      await showAppAlert("No active-session failed records can be retried for this group.", {
-        title: "Retry Center"
-      });
-      return null;
-    }
-    return chooseRetryCenterRetryScope(
-      retryableEntries,
-      `Choose retry scope for "${group.label}".`
-    );
-  };
-  const retryRetryCenterGroupFailedEntries = async (groupKey: string) => {
-    if (!activeTabId || !activeSessionId) {
-      await showAppAlert("Open a terminal tab for the target session first.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    const targetGroup = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
-    if (!targetGroup) {
-      return;
-    }
-    const retryScope = await chooseRetryCenterGroupRetryScope(targetGroup);
-    if (!retryScope) {
-      return;
-    }
-    const targetEntries = getRetryCenterGroupEntriesForRetryScope(targetGroup, retryScope);
-    if (targetEntries.length === 0) {
-      await showAppAlert("No transfer tasks were requeued.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    const confirmed = await confirmRetryBatchIfNeeded(
-      targetEntries.length,
-      `group "${targetGroup.label}"`
-    );
-    if (!confirmed) {
-      return;
-    }
-    const tabId = activeTabId;
-    const targetKeys = new Set(targetEntries.map((entry) => entry.key));
-    const uploadTargetMap = new Map<
-      string,
-      { name: string; localPath: string; remotePath: string }
-    >();
-    const downloadTargetMap = new Map<
-      string,
-      { name: string; localPath: string; remotePath: string }
-    >();
-    for (const entry of targetEntries) {
-      const key = createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath);
-      const target = {
-        name: entry.name,
-        localPath: entry.localPath,
-        remotePath: entry.remotePath
-      };
-      if (entry.direction === "upload") {
-        uploadTargetMap.set(key, target);
-        continue;
-      }
-      downloadTargetMap.set(key, target);
-    }
-
-    let queuedCount = 0;
-    const uploadTargets = Array.from(uploadTargetMap.values());
-    if (uploadTargets.length > 0) {
-      const uploadQueued = enqueueUploadTargets(tabId, uploadTargets, {
-        suppressEmptyError: true
-      });
-      queuedCount += uploadQueued;
-      if (uploadQueued > 0) {
-        markTransferHistoryRetryQueued(
-          "upload",
-          uploadTargets.map((entry) => ({
-            localPath: entry.localPath,
-            remotePath: entry.remotePath
-          }))
-        );
-      }
-    }
-
-    const downloadTargets = Array.from(downloadTargetMap.values());
-    if (downloadTargets.length > 0) {
-      const resolvedTargets = await resolveDownloadTargetConflicts(
-        downloadTargets.map((entry) => ({
-          name: entry.name,
-          localPath: entry.localPath,
-          remotePath: entry.remotePath
-        })),
-        {
-          tabId,
-          sessionId: activeSessionId
-        }
-      );
-      if (resolvedTargets && resolvedTargets.length > 0) {
-        const downloadQueued = enqueueDownloadTargets(tabId, resolvedTargets, {
-          suppressEmptyError: true
-        });
-        queuedCount += downloadQueued;
-        if (downloadQueued > 0) {
-          markTransferHistoryRetryQueued(
-            "download",
-            resolvedTargets.map((entry) => ({
-              localPath: entry.localPath,
-              remotePath: entry.remotePath
-            }))
-          );
-        }
-      }
-    }
-
-    if (queuedCount <= 0) {
-      await showAppAlert("No transfer tasks were requeued.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-
-    setRetryCenterSelection((prev) => prev.filter((key) => !targetKeys.has(key)));
-    const scopeLabel =
-      retryScope === "upload"
-        ? "upload-only"
-        : retryScope === "download"
-          ? "download-only"
-          : "all retryable";
-    await showAppAlert(
-      `Requeued ${queuedCount} failed transfer task(s) from group "${targetGroup.label}" (${scopeLabel}).`,
-      {
-        title: "Retry Center"
-      }
-    );
-  };
-  const clearRetryCenterGroupEntries = async (groupKey: string) => {
-    const targetGroup = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
-    if (!targetGroup || targetGroup.entries.length === 0) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete ${targetGroup.total} visible history record(s) in group "${targetGroup.label}"?`,
-      {
-        title: "Retry Center",
-        confirmLabel: "Delete Group",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    const targetKeys = new Set(targetGroup.entries.map((entry) => entry.key));
-    setTransferHistory((prev) => prev.filter((entry) => !targetKeys.has(entry.key)));
-    setRetryCenterSelection((prev) => prev.filter((key) => !targetKeys.has(key)));
-  };
   const canDownloadSelectedSftpEntry =
     !!selectedSftpEntry &&
     (selectedSftpEntry.kind === "file" || selectedSftpEntry.kind === "directory");
@@ -9804,6 +9064,40 @@ export function App() {
   const closeCommandHistoryContextMenu = useCallback(() => {
     setCommandHistoryContextMenu(null);
   }, []);
+  const {
+    clearCommandHistorySelection,
+    closeCommandHistoryManager,
+    deleteAllCommandHistoryEntries,
+    deleteSelectedCommandHistoryEntries,
+    deleteTerminalCommandHistoryEntry,
+    deleteVisibleCommandHistoryEntries,
+    exportTerminalCommandHistory,
+    importTerminalCommandHistory,
+    openCommandHistoryManager,
+    toggleCommandHistorySelection,
+    toggleSelectAllVisibleCommandHistory
+  } = useCommandHistoryManager({
+    allVisibleCommandHistorySelected,
+    appVersion: APP_VERSION,
+    clearCommandHistoryContextMenu: closeCommandHistoryContextMenu,
+    commandHistorySelection,
+    copyTextToClipboard,
+    entries: terminalCommandHistoryEntries,
+    formatTerminalCommandHistorySourceLabel,
+    isCommandHistoryManagerOpen,
+    parseImportedCommandHistoryCommands,
+    setEntries: setTerminalCommandHistoryEntries,
+    setError,
+    setCommandHistorySelection,
+    setIsCommandHistoryManagerOpen,
+    showAppAlert,
+    systemApi,
+    toIsoTimestamp,
+    toLogMessage,
+    upsertTerminalCommandHistoryCommand,
+    visibleEntryIds: visibleCommandHistoryIds,
+    writeAppLog
+  });
 
   const openSftpContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLElement>, entry?: SftpEntry) => {
@@ -11192,49 +10486,6 @@ export function App() {
   }, [closeSessionContextMenu, sessionContextMenu, sessionGroupOptions, sessions]);
 
   useEffect(() => {
-    if (!appDialog) {
-      return;
-    }
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeAppDialog();
-      }
-      if (event.key === "Enter") {
-        if (appDialog.mode === "choice") {
-          return;
-        }
-        if (appDialog.mode === "prompt" && appDialog.multiline && !event.ctrlKey && !event.metaKey) {
-          return;
-        }
-        event.preventDefault();
-        submitAppDialog();
-      }
-    };
-    window.addEventListener("keydown", onEscape);
-    return () => {
-      window.removeEventListener("keydown", onEscape);
-    };
-  }, [appDialog, closeAppDialog, submitAppDialog]);
-
-  useEffect(() => {
-    if (!appDialog || appDialog.mode !== "prompt") {
-      return;
-    }
-    const timeoutId = window.setTimeout(() => {
-      const input = appDialogInputRef.current;
-      if (!input) {
-        return;
-      }
-      input.focus();
-      input.select();
-    }, 0);
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [appDialog]);
-
-  useEffect(() => {
     if (!sftpContextMenu) {
       return;
     }
@@ -11265,10 +10516,6 @@ export function App() {
 
   useEffect(() => {
     return () => {
-      if (appDialogResolverRef.current) {
-        appDialogResolverRef.current(appDialogCancelValueRef.current);
-        appDialogResolverRef.current = null;
-      }
       uploadQueueRef.current = [];
       runningUploadIdsRef.current.clear();
       autoRestoredPortForwardTabsRef.current.clear();
@@ -11291,334 +10538,38 @@ export function App() {
     };
   }, [systemApi]);
 
-  const resetSessionTemplateDraft = useCallback(() => {
-    setEditingSessionTemplateId(null);
-    setSessionTemplateDraft(createEmptySessionTemplateDraft());
-    setSessionTemplateError(null);
-  }, []);
-
-  const startSessionTemplateDraftFromForm = useCallback((sourceForm: SessionCreateInput) => {
-    setEditingSessionTemplateId(null);
-    setSessionTemplateDraft(createSessionTemplateDraftFromForm(sourceForm));
-    setSessionTemplateError(null);
-  }, []);
-
-  const loadSessionTemplateForEditing = useCallback((template: SessionTemplateRecord) => {
-    setEditingSessionTemplateId(template.id);
-    setSessionTemplateDraft(toSessionTemplateDraftFromRecord(template));
-    setSessionTemplateError(null);
-  }, []);
-
-  const openSessionTemplateManager = useCallback(
-    (options?: {
-      templateId?: string | null;
-      sourceForm?: SessionCreateInput;
-    }) => {
-      const nextTemplateId = options?.templateId?.trim() || null;
-      if (nextTemplateId) {
-        const existing = sessionTemplates.find((template) => template.id === nextTemplateId);
-        if (existing) {
-          loadSessionTemplateForEditing(existing);
-        } else if (options?.sourceForm) {
-          startSessionTemplateDraftFromForm(options.sourceForm);
-        } else {
-          resetSessionTemplateDraft();
-        }
-      } else if (options?.sourceForm) {
-        startSessionTemplateDraftFromForm(options.sourceForm);
-      } else if (sessionTemplates.length > 0) {
-        loadSessionTemplateForEditing(sessionTemplates[0]);
-      } else {
-        resetSessionTemplateDraft();
-      }
-      setIsSessionTemplateManagerOpen(true);
-    },
-    [
-      loadSessionTemplateForEditing,
-      resetSessionTemplateDraft,
-      sessionTemplates,
-      startSessionTemplateDraftFromForm
-    ]
-  );
-
-  const closeSessionTemplateManager = useCallback(() => {
-    setIsSessionTemplateManagerOpen(false);
-    setSessionTemplateError(null);
-  }, []);
-
-  const addSessionTemplateEnvVar = useCallback(() => {
-    setSessionTemplateDraft((prev) => {
-      if (prev.envVars.length >= MAX_SESSION_TEMPLATE_ENV_VARS) {
-        return prev;
-      }
-      return {
-        ...prev,
-        envVars: [
-          ...prev.envVars,
-          {
-            id: createClientSideId("stv"),
-            key: "",
-            value: ""
-          }
-        ]
-      };
-    });
-    setSessionTemplateError(null);
-  }, []);
-
-  const updateSessionTemplateEnvVar = useCallback(
-    (envVarId: string, patch: Partial<Pick<SessionTemplateEnvVar, "key" | "value">>) => {
-      setSessionTemplateDraft((prev) => ({
-        ...prev,
-        envVars: prev.envVars.map((envVar) =>
-          envVar.id === envVarId
-            ? {
-                ...envVar,
-                key: patch.key ?? envVar.key,
-                value: patch.value ?? envVar.value
-              }
-            : envVar
-        )
-      }));
-      setSessionTemplateError(null);
-    },
-    []
-  );
-
-  const removeSessionTemplateEnvVar = useCallback((envVarId: string) => {
-    setSessionTemplateDraft((prev) => ({
-      ...prev,
-      envVars: prev.envVars.filter((envVar) => envVar.id !== envVarId)
-    }));
-    setSessionTemplateError(null);
-  }, []);
-
-  const validateSessionTemplateDraft = useCallback(
-    (draft: SessionTemplateDraft): SessionTemplateDraft => {
-      const normalized = normalizeSessionTemplateDraft(draft);
-      if (!normalized.templateName) {
-        throw new Error("Template name is required.");
-      }
-      const envKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
-      const seenKeys = new Set<string>();
-      for (const envVar of normalized.envVars) {
-        if (!envVar.key) {
-          throw new Error("Template env var name is required.");
-        }
-        if (!envKeyPattern.test(envVar.key)) {
-          throw new Error(
-            `Invalid env var "${envVar.key}". Use letters, numbers, and underscores, and do not start with a number.`
-          );
-        }
-        const normalizedKey = envVar.key.toLowerCase();
-        if (seenKeys.has(normalizedKey)) {
-          throw new Error(`Duplicate env var "${envVar.key}" in this template.`);
-        }
-        seenKeys.add(normalizedKey);
-      }
-      const conflictingTemplate = sessionTemplates.find(
-        (template) =>
-          template.id !== editingSessionTemplateId &&
-          template.templateName.trim().toLowerCase() === normalized.templateName.toLowerCase()
-      );
-      if (conflictingTemplate) {
-        throw new Error(`Template "${normalized.templateName}" already exists.`);
-      }
-      return normalized;
-    },
-    [editingSessionTemplateId, sessionTemplates]
-  );
-
-  const saveSessionTemplateDraft = useCallback(
-    (event?: FormEvent<HTMLFormElement>) => {
-      event?.preventDefault();
-      try {
-        const normalizedDraft = validateSessionTemplateDraft(sessionTemplateDraft);
-        const now = Date.now();
-        const nextRecord: SessionTemplateRecord = {
-          id: editingSessionTemplateId ?? createClientSideId("st"),
-          createdAt: editingSessionTemplate?.createdAt ?? now,
-          updatedAt: now,
-          ...normalizedDraft
-        };
-        setSessionTemplates((prev) => {
-          const next =
-            editingSessionTemplateId === null
-              ? [nextRecord, ...prev]
-              : prev.map((template) =>
-                  template.id === editingSessionTemplateId ? nextRecord : template
-                );
-          return normalizeSessionTemplates(next);
-        });
-        setEditingSessionTemplateId(nextRecord.id);
-        setSessionTemplateDraft(toSessionTemplateDraftFromRecord(nextRecord));
-        setSessionTemplateError(null);
-      } catch (caughtError) {
-        setSessionTemplateError((caughtError as Error).message);
-      }
-    },
-    [
-      editingSessionTemplate,
-      editingSessionTemplateId,
-      sessionTemplateDraft,
-      validateSessionTemplateDraft
-    ]
-  );
-
-  const deleteEditingSessionTemplate = useCallback(async () => {
-    if (!editingSessionTemplate) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete session template "${editingSessionTemplate.templateName}"?`,
-      {
-        title: "Delete Session Template",
-        confirmLabel: "Delete",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setSessionTemplates((prev) => prev.filter((template) => template.id !== editingSessionTemplate.id));
-    const remaining = sessionTemplates.filter((template) => template.id !== editingSessionTemplate.id);
-    if (remaining.length > 0) {
-      loadSessionTemplateForEditing(remaining[0]);
-    } else {
-      resetSessionTemplateDraft();
-    }
-  }, [
-    editingSessionTemplate,
-    loadSessionTemplateForEditing,
-    resetSessionTemplateDraft,
-    sessionTemplates,
-    showAppConfirm
-  ]);
-
-  const applySessionTemplateToForm = useCallback(
-    async (
-      template: SessionTemplateRecord,
-      options?: {
-        openCreateModal?: boolean;
-        groupId?: string;
-        forceNewSession?: boolean;
-      }
-    ) => {
-      try {
-        const resolved = resolveSessionTemplateToForm(template);
-        const nextGroupId = options?.groupId?.trim();
-        setForm({
-          ...resolved,
-          groupId: nextGroupId && nextGroupId.length > 0 ? nextGroupId : resolved.groupId ?? ""
-        });
-        if (options?.forceNewSession) {
-          setEditingSessionId(null);
-        }
-        setTestConnectionResult(null);
-        setError(null);
-        if (options?.openCreateModal) {
-          setIsCreateModalOpen(true);
-        }
-        setIsSessionTemplateManagerOpen(false);
-      } catch (caughtError) {
-        await showAppAlert((caughtError as Error).message, {
-          title: "Session Template"
-        });
-      }
-    },
-    [showAppAlert]
-  );
-
-  const chooseSessionTemplateAndApply = useCallback(
-    async (options?: { openCreateModal?: boolean; groupId?: string; forceNewSession?: boolean }) => {
-      if (sessionTemplates.length === 0) {
-        await showAppAlert("No session templates available. Create one first.", {
-          title: "Session Templates"
-        });
-        return;
-      }
-      const selectedTemplateId = await showAppChoice(
-        "Choose session template.",
-        sessionTemplates.map((template) => ({
-          value: template.id,
-          label: `${template.templateName}  (${template.host || "host pending"})`
-        })),
-        {
-          title: "Session Templates",
-          cancelLabel: "Cancel"
-        }
-      );
-      if (!selectedTemplateId) {
-        return;
-      }
-      const selectedTemplate =
-        sessionTemplates.find((template) => template.id === selectedTemplateId) ?? null;
-      if (!selectedTemplate) {
-        return;
-      }
-      await applySessionTemplateToForm(selectedTemplate, options);
-    },
-    [applySessionTemplateToForm, sessionTemplates, showAppAlert, showAppChoice]
-  );
-
-  const openCreateModal = (groupId = "") => {
-    setForm({
-      ...EMPTY_FORM,
-      groupId
-    });
-    setEditingSessionId(null);
-    setTestConnectionResult(null);
-    setIsCreateModalOpen(true);
-    setError(null);
-  };
-
-  const openEditModal = useCallback((session: SessionRecord) => {
-    setForm(toFormFromSession(session));
-    setEditingSessionId(session.id);
-    setTestConnectionResult(null);
-    setIsCreateModalOpen(true);
-    setError(null);
-  }, []);
-
-  const buildDuplicateSessionName = useCallback(
-    (sourceName: string): string => {
-      const baseName = sourceName.trim() || "Session";
-      const candidateBase = `${baseName} copy`;
-      const usedNames = new Set(
-        sessions.map((session) => session.name.trim().toLowerCase())
-      );
-      if (!usedNames.has(candidateBase.toLowerCase())) {
-        return candidateBase;
-      }
-      let suffix = 2;
-      while (usedNames.has(`${candidateBase} ${suffix}`.toLowerCase())) {
-        suffix += 1;
-      }
-      return `${candidateBase} ${suffix}`;
-    },
-    [sessions]
-  );
-
-  const openDuplicateSessionModal = useCallback(
-    (session: SessionRecord) => {
-      setForm({
-        ...toFormFromSession(session),
-        name: buildDuplicateSessionName(session.name),
-        secret: ""
-      });
-      setEditingSessionId(null);
-      setTestConnectionResult(null);
-      setIsCreateModalOpen(true);
-      setError(null);
-      if (session.authType === "password") {
-        void showAppAlert("Duplicated session requires password input before saving.", {
-          title: "Duplicate Session"
-        });
-      }
-    },
-    [buildDuplicateSessionName, showAppAlert]
-  );
+  const {
+    closeCreateModal,
+    handleCreateSession,
+    handleTestConnection,
+    openCreateModal,
+    openDuplicateSessionModal,
+    openEditModal,
+    updateCreateSessionFormFields
+  } = useSessionCreateActions({
+    editingSession,
+    editingSessionId,
+    emptyForm: EMPTY_FORM,
+    form,
+    formatSshConnectionError,
+    normalizeSessionGroups,
+    saving,
+    sessions,
+    sessionsApi,
+    setEditingSessionId,
+    setError,
+    setForm,
+    setIsCreateModalOpen,
+    setSaving,
+    setSelectedSessionId,
+    setSessionGroupsState,
+    setSessions,
+    setTestConnectionResult,
+    setTestingConnection,
+    showAppAlert,
+    testingConnection,
+    toFormFromSession
+  });
 
   const exportHotkeyPreferences = useCallback(async () => {
     try {
@@ -13260,134 +12211,6 @@ export function App() {
     writeAppLog
   ]);
 
-  const closeCreateModal = () => {
-    if (saving || testingConnection) {
-      return;
-    }
-    setEditingSessionId(null);
-    setIsCreateModalOpen(false);
-  };
-
-  const normalizeFormForSubmit = (): SessionCreateInput => ({
-    ...form,
-    secret: form.secret?.trim(),
-    groupId: form.groupId?.trim(),
-    privateKeyPath:
-      form.authType === "privateKey" ? form.privateKeyPath?.trim() : undefined
-  });
-
-  const handleCreateSession = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const isEditing = !!editingSessionId;
-    const editingPasswordExists =
-      isEditing && editingSession?.authType === "password" && editingSession.hasSecret;
-    const normalizedSecret = form.secret?.trim();
-    if (!form.name.trim() || !form.host.trim() || !form.username.trim()) {
-      setError("Name, host and username are required.");
-      return;
-    }
-    if (form.authType === "password" && !normalizedSecret && !editingPasswordExists) {
-      setError("Password is required when auth type is password.");
-      return;
-    }
-    if (form.authType === "privateKey" && !form.privateKeyPath?.trim()) {
-      setError("Private key path is required when auth type is private key.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    try {
-      if (!sessionsApi) {
-        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
-      }
-
-      const normalizedForm = normalizeFormForSubmit();
-      if (isEditing && editingSessionId) {
-        const patch: SessionUpdateInput = {
-          name: normalizedForm.name,
-          host: normalizedForm.host,
-          port: normalizedForm.port,
-          username: normalizedForm.username,
-          authType: normalizedForm.authType,
-          privateKeyPath:
-            normalizedForm.authType === "privateKey"
-              ? normalizedForm.privateKeyPath
-              : "",
-          groupId: normalizedForm.groupId,
-          remark: normalizedForm.remark,
-          favorite: normalizedForm.favorite
-        };
-        if (normalizedForm.secret) {
-          patch.secret = normalizedForm.secret;
-        }
-        const updated = await sessionsApi.update(editingSessionId, patch);
-        setSessions((prev) =>
-          prev.map((session) => (session.id === updated.id ? updated : session))
-        );
-        if (updated.groupId?.trim()) {
-          setSessionGroupsState((prev) => ({
-            groups: normalizeSessionGroups([...prev.groups, updated.groupId ?? ""])
-          }));
-        }
-        setSelectedSessionId(updated.id);
-      } else {
-        const created = await sessionsApi.create(normalizedForm);
-        const nextSessions = [created, ...sessions];
-        setSessions(nextSessions);
-        if (created.groupId?.trim()) {
-          setSessionGroupsState((prev) => ({
-            groups: normalizeSessionGroups([...prev.groups, created.groupId ?? ""])
-          }));
-        }
-        setSelectedSessionId(created.id);
-      }
-
-      setForm(EMPTY_FORM);
-      setEditingSessionId(null);
-      setIsCreateModalOpen(false);
-      setTestConnectionResult(null);
-    } catch (caughtError) {
-      setError((caughtError as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    if (!sessionsApi) {
-      setError("Session bridge unavailable. Restart `pnpm dev`.");
-      return;
-    }
-    if (!form.host?.trim() || !form.username?.trim()) {
-      setError("Host and username are required for connection test.");
-      return;
-    }
-    if (form.authType === "password" && !form.secret?.trim()) {
-      setError("Password is required for connection test.");
-      return;
-    }
-    if (form.authType === "privateKey" && !form.privateKeyPath?.trim()) {
-      setError("Private key path is required for connection test.");
-      return;
-    }
-
-    setTestingConnection(true);
-    setError(null);
-    setTestConnectionResult(null);
-    try {
-      const result = await sessionsApi.testConnection(normalizeFormForSubmit());
-      setTestConnectionResult(result);
-    } catch (caughtError) {
-      setTestConnectionResult({
-        ok: false,
-        message: formatSshConnectionError(caughtError)
-      });
-    } finally {
-      setTestingConnection(false);
-    }
-  };
-
   const runStartupCommandsOnTab = useCallback(
     async (tabId: string, commands: string[]): Promise<void> => {
       if (!terminalApi) {
@@ -13517,261 +12340,34 @@ export function App() {
     }
   }, [openTerminalTab, pendingOpenImportedSessionId, pushAppHintMessage, sessions]);
 
-  const runSessionQuickProfile = useCallback(
-    async (session: SessionRecord, profile: SessionQuickProfile): Promise<void> => {
-      const normalizedCommand = profile.startupCommand.trim();
-      if (!normalizedCommand) {
-        await showAppAlert("Quick profile command is empty.", {
-          title: "Quick Profile"
-        });
-        return;
-      }
-      if (profile.confirmBeforeRun) {
-        const confirmed = await showAppConfirm(
-          `Run quick profile "${profile.name}" on "${session.name}"?\n\nCommand:\n${normalizedCommand}`,
-          {
-            title: "Quick Profile",
-            confirmLabel: "Run",
-            cancelLabel: "Cancel"
-          }
-        );
-        if (!confirmed) {
-          return;
-        }
-      }
-      const tabId = openTerminalTab(session, {
-        startupCommands: [normalizedCommand]
-      });
-      if (!tabId) {
-        return;
-      }
-      setError(null);
-    },
-    [openTerminalTab, showAppAlert, showAppConfirm]
-  );
-
-  const createSessionQuickProfileForSession = useCallback(
-    async (session: SessionRecord): Promise<void> => {
-      const profileNameInput = await showAppPrompt(
-        "Enter quick profile name.",
-        `${session.name} quick`,
-        {
-          title: "New Quick Profile",
-          confirmLabel: "Continue"
-        }
-      );
-      if (profileNameInput === null) {
-        return;
-      }
-      const profileName = profileNameInput.trim().slice(0, 80);
-      if (!profileName) {
-        await showAppAlert("Profile name cannot be empty.", {
-          title: "New Quick Profile"
-        });
-        return;
-      }
-      const commandInput = await showAppPrompt(
-        "Enter startup command (supports multiline).",
-        "",
-        {
-          title: "Quick Profile Command",
-          confirmLabel: "Save",
-          multiline: true
-        }
-      );
-      if (commandInput === null) {
-        return;
-      }
-      const startupCommand = commandInput.trim().slice(0, 4000);
-      if (!startupCommand) {
-        await showAppAlert("Startup command cannot be empty.", {
-          title: "Quick Profile Command"
-        });
-        return;
-      }
-      const confirmChoice = await showAppChoice(
-        "Require confirmation before running this profile?",
-        [
-          { value: "yes", label: "Yes" },
-          { value: "no", label: "No" }
-        ],
-        {
-          title: "Quick Profile"
-        }
-      );
-      if (!confirmChoice) {
-        return;
-      }
-      const profile: SessionQuickProfile = {
-        id: `qp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-        name: profileName,
-        startupCommand,
-        confirmBeforeRun: confirmChoice === "yes"
-      };
-      setSessionQuickProfiles((prev) => [profile, ...prev].slice(0, MAX_SESSION_QUICK_PROFILES));
-      await showAppAlert(
-        `Quick profile "${profile.name}" saved. Use "Run Quick Profile..." to execute on a session.`,
-        {
-          title: "Quick Profile"
-        }
-      );
-    },
-    [showAppAlert, showAppChoice, showAppPrompt]
-  );
-
-  const runSessionQuickProfileChooser = useCallback(
-    async (session: SessionRecord): Promise<void> => {
-      if (sessionQuickProfiles.length === 0) {
-        await showAppAlert("No quick profiles available. Create one first.", {
-          title: "Quick Profile"
-        });
-        return;
-      }
-      const profileChoice = await showAppChoice(
-        `Choose quick profile for "${session.name}".`,
-        sessionQuickProfiles.map((profile) => ({
-          value: profile.id,
-          label: profile.name
-        })),
-        {
-          title: "Run Quick Profile"
-        }
-      );
-      if (!profileChoice) {
-        return;
-      }
-      const profile = sessionQuickProfiles.find((entry) => entry.id === profileChoice);
-      if (!profile) {
-        return;
-      }
-      await runSessionQuickProfile(session, profile);
-    },
-    [runSessionQuickProfile, sessionQuickProfiles, showAppAlert, showAppChoice]
-  );
-
-  const manageSessionQuickProfilesForSession = useCallback(
-    async (session: SessionRecord): Promise<void> => {
-      if (sessionQuickProfiles.length === 0) {
-        await createSessionQuickProfileForSession(session);
-        return;
-      }
-      const profileChoice = await showAppChoice(
-        "Select quick profile to manage.",
-        sessionQuickProfiles.map((profile) => ({
-          value: profile.id,
-          label: profile.name
-        })),
-        {
-          title: "Manage Quick Profiles"
-        }
-      );
-      if (!profileChoice) {
-        return;
-      }
-      const profile = sessionQuickProfiles.find((entry) => entry.id === profileChoice);
-      if (!profile) {
-        return;
-      }
-      const action = await showAppChoice(
-        `Profile "${profile.name}"`,
-        [
-          { value: "run", label: "Run" },
-          { value: "edit", label: "Edit" },
-          { value: "delete", label: "Delete", danger: true }
-        ],
-        {
-          title: "Manage Quick Profile"
-        }
-      );
-      if (!action) {
-        return;
-      }
-      if (action === "run") {
-        await runSessionQuickProfile(session, profile);
-        return;
-      }
-      if (action === "edit") {
-        const nextNameInput = await showAppPrompt("Edit profile name.", profile.name, {
-          title: "Edit Quick Profile",
-          confirmLabel: "Continue"
-        });
-        if (nextNameInput === null) {
-          return;
-        }
-        const nextName = nextNameInput.trim().slice(0, 80);
-        if (!nextName) {
-          await showAppAlert("Profile name cannot be empty.", {
-            title: "Edit Quick Profile"
-          });
-          return;
-        }
-        const nextCommandInput = await showAppPrompt(
-          "Edit startup command (supports multiline).",
-          profile.startupCommand,
-          {
-            title: "Edit Quick Profile",
-            confirmLabel: "Save",
-            multiline: true
-          }
-        );
-        if (nextCommandInput === null) {
-          return;
-        }
-        const nextCommand = nextCommandInput.trim().slice(0, 4000);
-        if (!nextCommand) {
-          await showAppAlert("Startup command cannot be empty.", {
-            title: "Edit Quick Profile"
-          });
-          return;
-        }
-        const confirmChoice = await showAppChoice(
-          "Require confirmation before running this profile?",
-          [
-            { value: "yes", label: "Yes" },
-            { value: "no", label: "No" }
-          ],
-          {
-            title: "Edit Quick Profile"
-          }
-        );
-        if (!confirmChoice) {
-          return;
-        }
-        setSessionQuickProfiles((prev) =>
-          prev.map((entry) =>
-            entry.id === profile.id
-              ? {
-                  ...entry,
-                  name: nextName,
-                  startupCommand: nextCommand,
-                  confirmBeforeRun: confirmChoice === "yes"
-                }
-              : entry
-          )
-        );
-        return;
-      }
-      const confirmed = await showAppConfirm(`Delete quick profile "${profile.name}"?`, {
-        title: "Delete Quick Profile",
-        confirmLabel: "Delete",
-        cancelLabel: "Cancel",
-        danger: true
-      });
-      if (!confirmed) {
-        return;
-      }
-      setSessionQuickProfiles((prev) => prev.filter((entry) => entry.id !== profile.id));
-    },
-    [
-      createSessionQuickProfileForSession,
-      runSessionQuickProfile,
-      sessionQuickProfiles,
-      showAppAlert,
-      showAppChoice,
-      showAppConfirm,
-      showAppPrompt
-    ]
-  );
+  const {
+    createSessionQuickProfileForSession,
+    manageSessionQuickProfilesForSession,
+    runSessionQuickProfile,
+    runSessionQuickProfileChooser
+  } = useSessionQuickProfileActions({
+    maxQuickProfiles: MAX_SESSION_QUICK_PROFILES,
+    openTerminalTab,
+    sessionQuickProfiles,
+    setError,
+    setSessionQuickProfiles,
+    showAppAlert,
+    showAppChoice,
+    showAppConfirm,
+    showAppPrompt
+  });
+  const {
+    copyClashDirectRules,
+    copySessionConnectionCommand,
+    viewSessionDetails
+  } = useSessionUtilityActions({
+    buildClashDirectRules,
+    buildSshConnectionCommand,
+    copyTextToClipboard,
+    formatSessionLastConnected,
+    showAppAlert,
+    tr
+  });
 
   const renderCommandSnippetTemplate = useCallback(
     async (
@@ -17583,77 +16179,6 @@ export function App() {
     writeAppLog
   });
 
-  const copyClashDirectRules = async (session: SessionRecord) => {
-    const text = buildClashDirectRules(session);
-    try {
-      const copied = await copyTextToClipboard(text);
-      if (copied) {
-        await showAppAlert("Clash direct rules copied to clipboard.", {
-          title: "Clash Rules"
-        });
-        return;
-      }
-    } catch {
-      // Fall through to manual copy dialog.
-    }
-    await showAppAlert("Clipboard unavailable. Copy the text below manually.", {
-      title: "Manual Copy",
-      confirmLabel: "Close",
-      detailText: text
-    });
-  };
-
-  const copySessionConnectionCommand = useCallback(
-    async (session: SessionRecord) => {
-      const command = buildSshConnectionCommand(session);
-      try {
-        const copied = await copyTextToClipboard(command);
-        if (copied) {
-          await showAppAlert("SSH command copied to clipboard.", {
-            title: "Connection Command"
-          });
-          return;
-        }
-      } catch {
-        // Fall through to manual copy dialog.
-      }
-      await showAppAlert("Clipboard unavailable. Copy the command below manually.", {
-        title: "Manual Copy",
-        confirmLabel: "Close",
-        detailText: command
-      });
-    },
-    [showAppAlert]
-  );
-
-  const viewSessionDetails = useCallback(
-    async (session: SessionRecord) => {
-      const authLabel = session.authType === "privateKey" ? tr("Private Key") : tr("Password");
-      const credentialLabel = session.hasSecret ? tr("Stored in secure vault") : "-";
-      const lines = [
-        `${tr("Name")}: ${session.name}`,
-        `${tr("Group")}: ${session.groupId?.trim() || tr("Ungrouped")}`,
-        `${tr("Target")}: ${session.username}@${session.host}:${session.port}`,
-        `${tr("Auth")}: ${authLabel}`,
-        `${tr("Credential")}: ${credentialLabel}`,
-        session.authType === "privateKey"
-          ? `${tr("Private Key Path")}: ${session.privateKeyPath?.trim() || "-"}`
-          : null,
-        `${tr("Favorite")}: ${session.favorite ? tr("Yes") : tr("No")}`,
-        `${tr("Last Connected")}: ${formatSessionLastConnected(session.lastConnectedAt)}`,
-        `${tr("Created At")}: ${formatSessionLastConnected(session.createdAt)}`,
-        `${tr("Updated At")}: ${formatSessionLastConnected(session.updatedAt)}`,
-        `${tr("Remark")}: ${session.remark || "-"}`
-      ].filter((line): line is string => Boolean(line));
-      await showAppAlert("Session details", {
-        title: "Session Details",
-        confirmLabel: "Close",
-        detailText: lines.join("\n")
-      });
-    },
-    [showAppAlert, tr]
-  );
-
   const pickPrivateKeyFile = async () => {
     try {
       if (!systemApi) {
@@ -19312,62 +17837,6 @@ export function App() {
     ]
   );
 
-  const cancelTransferTasksForTab = useCallback(
-    async (tabId: string): Promise<void> => {
-      await cancelAllUploadsForTab(tabId);
-      await cancelAllDownloadsForTab(tabId);
-    },
-    [cancelAllDownloadsForTab, cancelAllUploadsForTab]
-  );
-
-  const cancelAllActiveUploads = useCallback(async () => {
-    if (!activeTabId) {
-      return;
-    }
-    await cancelAllUploadsForTab(activeTabId);
-  }, [activeTabId, cancelAllUploadsForTab]);
-
-  const cancelAllActiveDownloads = useCallback(async () => {
-    if (!activeTabId) {
-      return;
-    }
-    await cancelAllDownloadsForTab(activeTabId);
-  }, [activeTabId, cancelAllDownloadsForTab]);
-
-  const cancelAllTransfersAcrossTabs = useCallback(async () => {
-    if (isOperationCenterBulkCanceling) {
-      return;
-    }
-    if (operationCenterTransferTabSummaries.length === 0) {
-      if (activeTabId) {
-        showTransferDockNotice(activeTabId, "info", "No active transfer tasks across tabs.");
-      }
-      return;
-    }
-    setIsOperationCenterBulkCanceling(true);
-    try {
-      for (const summary of operationCenterTransferTabSummaries) {
-        await cancelTransferTasksForTab(summary.tabId);
-      }
-      if (activeTabId) {
-        showTransferDockNotice(
-          activeTabId,
-          "warn",
-          `Canceled active transfer tasks across ${operationCenterTransferTabSummaries.length} tab(s).`,
-          8000
-        );
-      }
-    } finally {
-      setIsOperationCenterBulkCanceling(false);
-    }
-  }, [
-    activeTabId,
-    cancelTransferTasksForTab,
-    isOperationCenterBulkCanceling,
-    operationCenterTransferTabSummaries,
-    showTransferDockNotice
-  ]);
-
   const {
     clearPendingTransferRestoreQueue,
     discardPendingTransferRestoreQueue,
@@ -19392,82 +17861,27 @@ export function App() {
     terminalTabsDependency: terminalTabs,
     terminalTabsRef
   });
-
-  const reconnectOperationTabById = useCallback(
-    async (tabId: string): Promise<boolean> => {
-      const normalizedTabId = tabId.trim();
-      if (!normalizedTabId || !terminalApi) {
-        return false;
-      }
-      const tab = terminalTabsRef.current.find((entry) => entry.id === normalizedTabId);
-      if (!tab) {
-        return false;
-      }
-      try {
-        await terminalApi.connect(normalizedTabId, tab.sessionId);
-        return true;
-      } catch (caughtError) {
-        const message = toLogMessage(caughtError);
-        setError(message);
-        writeAppLog(
-          "warn",
-          "renderer:operation-center",
-          "Reconnect action failed for operation-center tab.",
-          {
-            tabId: normalizedTabId,
-            sessionId: tab.sessionId,
-            message
-          }
-        );
-        return false;
-      }
-    },
-    [terminalApi, writeAppLog]
-  );
-
-  const reconnectDisconnectedOperationTabs = useCallback(async () => {
-    if (isOperationCenterReconnecting) {
-      return;
-    }
-    const targets = operationCenterTransferTabSummaries.filter((entry) => !entry.connected);
-    if (targets.length === 0) {
-      if (activeTabId) {
-        showTransferDockNotice(activeTabId, "info", "No disconnected transfer tabs to reconnect.");
-      }
-      return;
-    }
-    setIsOperationCenterReconnecting(true);
-    try {
-      let successCount = 0;
-      let failedCount = 0;
-      for (const target of targets) {
-        const ok = await reconnectOperationTabById(target.tabId);
-        if (ok) {
-          successCount += 1;
-        } else {
-          failedCount += 1;
-        }
-      }
-      if (activeTabId) {
-        showTransferDockNotice(
-          activeTabId,
-          failedCount > 0 ? "warn" : "info",
-          failedCount > 0
-            ? `Reconnect completed: ${successCount} succeeded, ${failedCount} failed.`
-            : `Reconnect completed: ${successCount} tab(s) requested.`,
-          8000
-        );
-      }
-    } finally {
-      setIsOperationCenterReconnecting(false);
-    }
-  }, [
-    activeTabId,
+  const {
+    cancelAllActiveDownloads,
+    cancelAllActiveUploads,
+    cancelAllTransfersAcrossTabs,
+    cancelTransferTasksForTab,
+    isOperationCenterBulkCanceling,
     isOperationCenterReconnecting,
+    reconnectDisconnectedOperationTabs,
+    reconnectOperationTabById
+  } = useOperationCenterActions({
+    activeTabId,
+    cancelAllDownloadsForTab,
+    cancelAllUploadsForTab,
     operationCenterTransferTabSummaries,
-    reconnectOperationTabById,
-    showTransferDockNotice
-  ]);
+    setError,
+    showTransferDockNotice,
+    terminalApi,
+    terminalTabsRef,
+    toLogMessage,
+    writeAppLog
+  });
 
   const clearFinishedTransfers = (direction: "upload" | "download") => {
     if (!activeTabId) {
@@ -19559,36 +17973,6 @@ export function App() {
     closeOperationCenter();
     openCommandSnippetManager();
   }, [closeOperationCenter, openCommandSnippetManager]);
-  const copyOperationCenterAppJobOutputPath = useCallback(
-    async (jobId: string) => {
-      const job = operationCenterAppJobs.find((entry) => entry.id === jobId) ?? null;
-      const outputPath = job?.outputPath?.trim() ?? "";
-      if (!outputPath) {
-        return;
-      }
-      try {
-        const copied = await copyTextToClipboard(outputPath);
-        await showAppAlert(
-          copied
-            ? `Output path copied to clipboard.\n${outputPath}`
-            : `Clipboard unavailable.\n${outputPath}`,
-          {
-            title: "Operation Center"
-          }
-        );
-      } catch (caughtError) {
-        const message = toLogMessage(caughtError);
-        setError(message);
-        writeAppLog(
-          "error",
-          "renderer:operation-center",
-          "Failed to copy tracked app-job output path.",
-          caughtError
-        );
-      }
-    },
-    [operationCenterAppJobs, showAppAlert, writeAppLog]
-  );
 
   const toggleRetryCenterEntrySelection = useCallback((key: string) => {
     const normalized = key.trim();
@@ -19610,1451 +17994,81 @@ export function App() {
   const clearRetryCenterSelection = useCallback(() => {
     setRetryCenterSelection([]);
   }, []);
-
-  const exportRetryCenterVisibleHistoryJson = async () => {
-    try {
-      const generatedAtIso = new Date().toISOString();
-      const exportPayload = {
-        exportedAtIso: generatedAtIso,
-        appVersion: APP_VERSION,
-        filters: {
-          scope: retryCenterScope,
-          direction: retryCenterDirection,
-          status: retryCenterStatus,
-          timeRange: retryCenterTimeRange,
-          listMode: retryCenterListMode,
-          failureReason: retryCenterFailureReasonExportValue,
-          query: retryCenterQuery.trim()
-        },
-        stats: {
-          visibleCount: retryCenterEntries.length,
-          totalHistoryCount: transferHistory.length,
-          selectedCount: selectedRetryCenterEntries.length,
-          failedVisibleCount: retryCenterAnalytics.failedCount,
-          failedVisibleRatioPercent: Number(
-            retryCenterAnalytics.failedRatioPercent.toFixed(2)
-          ),
-          directionCounts: retryCenterAnalytics.directionCounts,
-          statusCounts: retryCenterAnalytics.statusCounts,
-          topSessions: retryCenterAnalytics.topSessions,
-          topGroups: retryCenterAnalytics.topGroups,
-          topFailureReasons: retryCenterAnalytics.topFailureReasons
-        },
-        entries: retryCenterVisibleExportEntries
-      };
-      const exportText = `${JSON.stringify(exportPayload, null, 2)}\n`;
-      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
-      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Retry Center (JSON)",
-          defaultFileName: `termdock-retry-center-${scopeSegment}-${dateSegment}.json`,
-          text: exportText,
-          filters: [
-            {
-              name: "JSON",
-              extensions: ["json"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copiedPath = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copiedPath
-              ? `Retry Center JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Retry Center JSON exported:\n${result.outputPath}`,
-            {
-              title: "Retry Center"
-            }
-          );
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Retry Center JSON copied to clipboard.", {
-          title: "Retry Center"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the JSON below manually.", {
-        title: "Retry Center",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:retry-center",
-        "Failed to export retry center JSON.",
-        caughtError
-      );
-    }
-  };
-
-  const exportRetryCenterVisibleHistoryCsv = async () => {
-    try {
-      const generatedAtIso = new Date().toISOString();
-      const lines: string[] = [];
-      lines.push("# TermDock Retry Center Export");
-      lines.push(`# Format: CSV`);
-      lines.push(`# Generated: ${generatedAtIso}`);
-      lines.push(`# AppVersion: ${APP_VERSION}`);
-      lines.push(
-        `# Filters: scope=${retryCenterScope}, direction=${retryCenterDirection}, status=${retryCenterStatus}, timeRange=${retryCenterTimeRange}, listMode=${retryCenterListMode}, failureReason=${retryCenterFailureReasonExportValue}, query=${retryCenterQuery.trim() || "-"}`
-      );
-      lines.push(
-        `# Counts: visible=${retryCenterEntries.length}, total=${transferHistory.length}, selected=${selectedRetryCenterEntries.length}`
-      );
-      lines.push(
-        `# TopFailureReasons: ${
-          retryCenterAnalytics.topFailureReasons.length > 0
-            ? retryCenterAnalytics.topFailureReasons
-                .map((entry) => `${entry.reason}(${entry.total})`)
-                .join(" | ")
-            : "-"
-        }`
-      );
-      lines.push("");
-      lines.push(
-        [
-          "key",
-          "sessionId",
-          "sessionName",
-          "groupName",
-          "direction",
-          "status",
-          "name",
-          "localPath",
-          "remotePath",
-          "attemptCount",
-          "updatedAt",
-          "updatedAtIso",
-          "message"
-        ].join(",")
-      );
-      for (const entry of retryCenterVisibleExportEntries) {
-        lines.push(
-          [
-            entry.key,
-            entry.sessionId,
-            entry.sessionName,
-            entry.groupName,
-            entry.direction,
-            entry.status,
-            entry.name,
-            entry.localPath,
-            entry.remotePath,
-            entry.attemptCount,
-            entry.updatedAt,
-            entry.updatedAtIso,
-            entry.message
-          ]
-            .map((value) => escapeCsvCell(value))
-            .join(",")
-        );
-      }
-      const exportText = `${lines.join("\n")}\n`;
-      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
-      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Retry Center (CSV)",
-          defaultFileName: `termdock-retry-center-${scopeSegment}-${dateSegment}.csv`,
-          text: exportText,
-          filters: [
-            {
-              name: "CSV",
-              extensions: ["csv"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copiedPath = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copiedPath
-              ? `Retry Center CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Retry Center CSV exported:\n${result.outputPath}`,
-            {
-              title: "Retry Center"
-            }
-          );
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Retry Center CSV copied to clipboard.", {
-          title: "Retry Center"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the CSV below manually.", {
-        title: "Retry Center",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:retry-center",
-        "Failed to export retry center CSV.",
-        caughtError
-      );
-    }
-  };
-
-  const chooseRetryCenterGroupExportScope = async (
-    groupKey: string,
-    format: "json" | "csv"
-  ): Promise<RetryCenterGroupExportScope | null> => {
-    const group = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
-    if (!group || group.entries.length === 0) {
-      await showAppAlert("No visible records in this group to export.", {
-        title: "Retry Center"
-      });
-      return null;
-    }
-    const choices: AppChoiceDialogOption[] = [
-      {
-        value: "all",
-        label: `All (${group.total})`
-      }
-    ];
-    if (group.failedCount > 0) {
-      choices.push({
-        value: "failed",
-        label: `Failed (${group.failedCount})`
-      });
-    }
-    if (group.activeSessionFailedCount > 0) {
-      choices.push({
-        value: "retryable",
-        label: `Retryable Active Session (${group.activeSessionFailedCount})`
-      });
-    }
-    if (choices.length === 1) {
-      return "all";
-    }
-    const choice = await showAppChoice(
-      `Choose ${format.toUpperCase()} export scope for "${group.label}".`,
-      choices,
-      {
-        title: "Retry Center",
-        cancelLabel: "Cancel"
-      }
-    );
-    if (choice !== "all" && choice !== "failed" && choice !== "retryable") {
-      return null;
-    }
-    return choice;
-  };
-
-  const getRetryCenterGroupEntriesForExportScope = (
-    group: (typeof retryCenterGroupedEntries)[number],
-    exportScope: RetryCenterGroupExportScope
-  ): SftpTransferHistoryItem[] => {
-    if (exportScope === "all") {
-      return group.entries;
-    }
-    if (exportScope === "failed") {
-      return group.entries.filter((entry) => entry.status === "failed");
-    }
-    if (!activeSessionId) {
-      return [];
-    }
-    return group.entries.filter(
-      (entry) => entry.status === "failed" && entry.sessionId === activeSessionId
-    );
-  };
-
-  const exportRetryCenterGroupHistoryJson = async (
-    groupKey: string,
-    exportScope: RetryCenterGroupExportScope = "all"
-  ) => {
-    const group = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
-    if (!group || group.entries.length === 0) {
-      await showAppAlert("No visible records in this group to export.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    const scopedEntries = getRetryCenterGroupEntriesForExportScope(group, exportScope);
-    if (scopedEntries.length === 0) {
-      await showAppAlert(`No "${exportScope}" records available in this group.`, {
-        title: "Retry Center"
-      });
-      return;
-    }
-    try {
-      const generatedAtIso = new Date().toISOString();
-      const exportEntries = scopedEntries.map((entry) => {
-        const exportEntry = retryCenterVisibleExportEntryByKey.get(entry.key);
-        return {
-          key: entry.key,
-          sessionId: entry.sessionId,
-          sessionName: exportEntry?.sessionName ?? entry.sessionId,
-          groupName: exportEntry?.groupName ?? "Unknown",
-          direction: entry.direction,
-          status: entry.status,
-          name: entry.name,
-          localPath: entry.localPath,
-          remotePath: entry.remotePath,
-          attemptCount: entry.attemptCount,
-          updatedAt: entry.updatedAt,
-          updatedAtIso: exportEntry?.updatedAtIso ?? toIsoTimestamp(entry.updatedAt),
-          failureReason:
-            entry.status === "failed" ? classifyTransferFailureReason(entry.message) : "",
-          message: entry.message ?? ""
-        };
-      });
-      const exportPayload = {
-        exportedAtIso: generatedAtIso,
-        appVersion: APP_VERSION,
-        filters: {
-          scope: retryCenterScope,
-          direction: retryCenterDirection,
-          status: retryCenterStatus,
-          timeRange: retryCenterTimeRange,
-          listMode: retryCenterListMode,
-          failureReason: retryCenterFailureReasonExportValue,
-          groupExportScope: exportScope,
-          query: retryCenterQuery.trim()
-        },
-        group: {
-          key: group.key,
-          label: group.label,
-          total: group.total,
-          failedCount: group.failedCount,
-          activeSessionFailedCount: group.activeSessionFailedCount,
-          exportedCount: scopedEntries.length
-        },
-        entries: exportEntries
-      };
-      const exportText = `${JSON.stringify(exportPayload, null, 2)}\n`;
-      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
-      const groupSegment =
-        group.label
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 48) || "group";
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Retry Center Group (JSON)",
-          defaultFileName: `termdock-retry-center-group-${groupSegment}-${exportScope}-${dateSegment}.json`,
-          text: exportText,
-          filters: [
-            {
-              name: "JSON",
-              extensions: ["json"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copiedPath = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copiedPath
-              ? `Retry Center group JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Retry Center group JSON exported:\n${result.outputPath}`,
-            {
-              title: "Retry Center"
-            }
-          );
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Retry Center group JSON copied to clipboard.", {
-          title: "Retry Center"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the JSON below manually.", {
-        title: "Retry Center",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:retry-center",
-        "Failed to export retry center group JSON.",
-        caughtError
-      );
-    }
-  };
-
-  const exportRetryCenterGroupHistoryCsv = async (
-    groupKey: string,
-    exportScope: RetryCenterGroupExportScope = "all"
-  ) => {
-    const group = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
-    if (!group || group.entries.length === 0) {
-      await showAppAlert("No visible records in this group to export.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    const scopedEntries = getRetryCenterGroupEntriesForExportScope(group, exportScope);
-    if (scopedEntries.length === 0) {
-      await showAppAlert(`No "${exportScope}" records available in this group.`, {
-        title: "Retry Center"
-      });
-      return;
-    }
-    try {
-      const generatedAtIso = new Date().toISOString();
-      const lines: string[] = [];
-      lines.push("# TermDock Retry Center Group Export");
-      lines.push(`# Format: CSV`);
-      lines.push(`# Generated: ${generatedAtIso}`);
-      lines.push(`# AppVersion: ${APP_VERSION}`);
-      lines.push(
-        `# Filters: scope=${retryCenterScope}, direction=${retryCenterDirection}, status=${retryCenterStatus}, timeRange=${retryCenterTimeRange}, listMode=${retryCenterListMode}, failureReason=${retryCenterFailureReasonExportValue}, groupExportScope=${exportScope}, query=${retryCenterQuery.trim() || "-"}`
-      );
-      lines.push(
-        `# Group: key=${group.key}, label=${group.label}, total=${group.total}, failed=${group.failedCount}, activeSessionFailed=${group.activeSessionFailedCount}, exportedCount=${scopedEntries.length}`
-      );
-      lines.push("");
-      lines.push(
-        [
-          "key",
-          "sessionId",
-          "sessionName",
-          "groupName",
-          "direction",
-          "status",
-          "name",
-          "localPath",
-          "remotePath",
-          "attemptCount",
-          "updatedAt",
-          "updatedAtIso",
-          "failureReason",
-          "message"
-        ].join(",")
-      );
-      for (const entry of scopedEntries) {
-        const exportEntry = retryCenterVisibleExportEntryByKey.get(entry.key);
-        lines.push(
-          [
-            entry.key,
-            entry.sessionId,
-            exportEntry?.sessionName ?? entry.sessionId,
-            exportEntry?.groupName ?? "Unknown",
-            entry.direction,
-            entry.status,
-            entry.name,
-            entry.localPath,
-            entry.remotePath,
-            entry.attemptCount,
-            entry.updatedAt,
-            exportEntry?.updatedAtIso ?? toIsoTimestamp(entry.updatedAt),
-            entry.status === "failed" ? classifyTransferFailureReason(entry.message) : "",
-            entry.message ?? ""
-          ]
-            .map((value) => escapeCsvCell(value))
-            .join(",")
-        );
-      }
-      const exportText = `${lines.join("\n")}\n`;
-      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
-      const groupSegment =
-        group.label
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "")
-          .slice(0, 48) || "group";
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Retry Center Group (CSV)",
-          defaultFileName: `termdock-retry-center-group-${groupSegment}-${exportScope}-${dateSegment}.csv`,
-          text: exportText,
-          filters: [
-            {
-              name: "CSV",
-              extensions: ["csv"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copiedPath = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copiedPath
-              ? `Retry Center group CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Retry Center group CSV exported:\n${result.outputPath}`,
-            {
-              title: "Retry Center"
-            }
-          );
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Retry Center group CSV copied to clipboard.", {
-          title: "Retry Center"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the CSV below manually.", {
-        title: "Retry Center",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:retry-center",
-        "Failed to export retry center group CSV.",
-        caughtError
-      );
-    }
-  };
-
-  const exportRetryCenterGroupHistoryJsonWithScopeChoice = async (groupKey: string) => {
-    const exportScope = await chooseRetryCenterGroupExportScope(groupKey, "json");
-    if (!exportScope) {
-      return;
-    }
-    await exportRetryCenterGroupHistoryJson(groupKey, exportScope);
-  };
-
-  const exportRetryCenterGroupHistoryCsvWithScopeChoice = async (groupKey: string) => {
-    const exportScope = await chooseRetryCenterGroupExportScope(groupKey, "csv");
-    if (!exportScope) {
-      return;
-    }
-    await exportRetryCenterGroupHistoryCsv(groupKey, exportScope);
-  };
-
-  const exportRetryCenterAnalyticsJson = async () => {
-    try {
-      const generatedAtIso = new Date().toISOString();
-      const failedVisibleEntries = retryCenterVisibleExportEntries
-        .filter((entry) => entry.status === "failed")
-        .slice(0, 40);
-      const exportPayload = {
-        exportedAtIso: generatedAtIso,
-        appVersion: APP_VERSION,
-        filters: {
-          scope: retryCenterScope,
-          direction: retryCenterDirection,
-          status: retryCenterStatus,
-          timeRange: retryCenterTimeRange,
-          listMode: retryCenterListMode,
-          failureReason: retryCenterFailureReasonExportValue,
-          query: retryCenterQuery.trim()
-        },
-        stats: {
-          visibleCount: retryCenterEntries.length,
-          totalHistoryCount: transferHistory.length,
-          selectedCount: selectedRetryCenterEntries.length,
-          failedVisibleCount: retryCenterAnalytics.failedCount,
-          failedVisibleRatioPercent: Number(
-            retryCenterAnalytics.failedRatioPercent.toFixed(2)
-          ),
-          directionCounts: retryCenterAnalytics.directionCounts,
-          statusCounts: retryCenterAnalytics.statusCounts,
-          topSessions: retryCenterAnalytics.topSessions,
-          topGroups: retryCenterAnalytics.topGroups,
-          topFailureReasons: retryCenterAnalytics.topFailureReasons
-        },
-        samples: {
-          latestFailedEntries: failedVisibleEntries
-        }
-      };
-      const exportText = `${JSON.stringify(exportPayload, null, 2)}\n`;
-      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
-      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Retry Center Analytics (JSON)",
-          defaultFileName: `termdock-retry-center-analytics-${scopeSegment}-${dateSegment}.json`,
-          text: exportText,
-          filters: [
-            {
-              name: "JSON",
-              extensions: ["json"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copiedPath = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copiedPath
-              ? `Retry Center analytics JSON exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Retry Center analytics JSON exported:\n${result.outputPath}`,
-            {
-              title: "Retry Center"
-            }
-          );
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Retry Center analytics JSON copied to clipboard.", {
-          title: "Retry Center"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the analytics JSON below manually.", {
-        title: "Retry Center",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:retry-center",
-        "Failed to export retry center analytics JSON.",
-        caughtError
-      );
-    }
-  };
-
-  const exportRetryCenterAnalyticsCsv = async () => {
-    try {
-      const generatedAtIso = new Date().toISOString();
-      const lines: string[] = [];
-      lines.push("# TermDock Retry Center Analytics");
-      lines.push(`# Generated: ${generatedAtIso}`);
-      lines.push(`# AppVersion: ${APP_VERSION}`);
-      lines.push(
-        `# Filters: scope=${retryCenterScope}, direction=${retryCenterDirection}, status=${retryCenterStatus}, timeRange=${retryCenterTimeRange}, listMode=${retryCenterListMode}, failureReason=${retryCenterFailureReasonExportValue}, query=${retryCenterQuery.trim() || "-"}`
-      );
-      lines.push("");
-      lines.push("metric,value");
-      lines.push(`visibleCount,${escapeCsvCell(retryCenterEntries.length)}`);
-      lines.push(`totalHistoryCount,${escapeCsvCell(transferHistory.length)}`);
-      lines.push(`selectedCount,${escapeCsvCell(selectedRetryCenterEntries.length)}`);
-      lines.push(`failedVisibleCount,${escapeCsvCell(retryCenterAnalytics.failedCount)}`);
-      lines.push(
-        `failedVisibleRatioPercent,${escapeCsvCell(
-          Number(retryCenterAnalytics.failedRatioPercent.toFixed(2))
-        )}`
-      );
-      lines.push("");
-      lines.push("direction,count");
-      lines.push(`upload,${escapeCsvCell(retryCenterAnalytics.directionCounts.upload)}`);
-      lines.push(`download,${escapeCsvCell(retryCenterAnalytics.directionCounts.download)}`);
-      lines.push("");
-      lines.push("status,count");
-      lines.push(`queued,${escapeCsvCell(retryCenterAnalytics.statusCounts.queued)}`);
-      lines.push(`running,${escapeCsvCell(retryCenterAnalytics.statusCounts.running)}`);
-      lines.push(`completed,${escapeCsvCell(retryCenterAnalytics.statusCounts.completed)}`);
-      lines.push(`failed,${escapeCsvCell(retryCenterAnalytics.statusCounts.failed)}`);
-      lines.push(`canceled,${escapeCsvCell(retryCenterAnalytics.statusCounts.canceled)}`);
-      lines.push("");
-      lines.push("topSessionId,topSessionName,topGroupName,total,failed");
-      if (retryCenterAnalytics.topSessions.length === 0) {
-        lines.push([ "-", "-", "-", 0, 0 ].map((value) => escapeCsvCell(value)).join(","));
-      } else {
-        for (const entry of retryCenterAnalytics.topSessions) {
-          lines.push(
-            [
-              entry.sessionId,
-              entry.sessionName,
-              entry.groupName,
-              entry.total,
-              entry.failed
-            ]
-              .map((value) => escapeCsvCell(value))
-              .join(",")
-          );
-        }
-      }
-      lines.push("");
-      lines.push("topGroupName,total");
-      if (retryCenterAnalytics.topGroups.length === 0) {
-        lines.push([ "-", 0 ].map((value) => escapeCsvCell(value)).join(","));
-      } else {
-        for (const entry of retryCenterAnalytics.topGroups) {
-          lines.push([entry.groupName, entry.total].map((value) => escapeCsvCell(value)).join(","));
-        }
-      }
-      lines.push("");
-      lines.push("topFailureReason,total");
-      if (retryCenterAnalytics.topFailureReasons.length === 0) {
-        lines.push([ "-", 0 ].map((value) => escapeCsvCell(value)).join(","));
-      } else {
-        for (const entry of retryCenterAnalytics.topFailureReasons) {
-          lines.push([entry.reason, entry.total].map((value) => escapeCsvCell(value)).join(","));
-        }
-      }
-      const exportText = `${lines.join("\n")}\n`;
-      const dateSegment = generatedAtIso.replace(/[:]/g, "-");
-      const scopeSegment = retryCenterScope === "activeSession" ? "active-session" : "all-sessions";
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Retry Center Analytics (CSV)",
-          defaultFileName: `termdock-retry-center-analytics-${scopeSegment}-${dateSegment}.csv`,
-          text: exportText,
-          filters: [
-            {
-              name: "CSV",
-              extensions: ["csv"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copiedPath = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copiedPath
-              ? `Retry Center analytics CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Retry Center analytics CSV exported:\n${result.outputPath}`,
-            {
-              title: "Retry Center"
-            }
-          );
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Retry Center analytics CSV copied to clipboard.", {
-          title: "Retry Center"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the analytics CSV below manually.", {
-        title: "Retry Center",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:retry-center",
-        "Failed to export retry center analytics CSV.",
-        caughtError
-      );
-    }
-  };
-
-  const confirmRetryBatchIfNeeded = async (count: number, label: string): Promise<boolean> => {
-    if (retryBatchConfirmThreshold <= 0) {
-      return true;
-    }
-    if (count < retryBatchConfirmThreshold) {
-      return true;
-    }
-    return showAppConfirm(
-      `Requeue ${count} failed transfer task(s) for ${label}? This exceeds your retry confirmation threshold (${retryBatchConfirmThreshold}).`,
-      {
-        title: "Retry Confirmation",
-        confirmLabel: "Retry",
-        cancelLabel: "Cancel"
-      }
-    );
-  };
-
-  const retrySelectedRetryCenterEntries = async (retryScope: RetryCenterRetryScope = "all") => {
-    if (!activeTabId || !activeSessionId) {
-      await showAppAlert("Open a terminal tab for the target session first.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    if (selectedRetryCenterFailedEntries.length === 0) {
-      return;
-    }
-    const targetEntries = getRetryCenterEntriesForRetryScope(
-      selectedRetryCenterFailedEntries,
-      retryScope
-    );
-    if (targetEntries.length === 0) {
-      await showAppAlert("No transfer tasks were requeued.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    const confirmed = await confirmRetryBatchIfNeeded(
-      targetEntries.length,
-      "selected retry-center records"
-    );
-    if (!confirmed) {
-      return;
-    }
-    const tabId = activeTabId;
-    const selectedKeys = new Set(targetEntries.map((entry) => entry.key));
-    const uploadTargetMap = new Map<
-      string,
-      { name: string; localPath: string; remotePath: string }
-    >();
-    const downloadTargetMap = new Map<
-      string,
-      { name: string; localPath: string; remotePath: string }
-    >();
-    for (const entry of targetEntries) {
-      const key = createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath);
-      const target = {
-        name: entry.name,
-        localPath: entry.localPath,
-        remotePath: entry.remotePath
-      };
-      if (entry.direction === "upload") {
-        uploadTargetMap.set(key, target);
-        continue;
-      }
-      downloadTargetMap.set(key, target);
-    }
-
-    let queuedCount = 0;
-    const uploadTargets = Array.from(uploadTargetMap.values());
-    if (uploadTargets.length > 0) {
-      const uploadQueued = enqueueUploadTargets(tabId, uploadTargets, {
-        suppressEmptyError: true
-      });
-      queuedCount += uploadQueued;
-      if (uploadQueued > 0) {
-        markTransferHistoryRetryQueued(
-          "upload",
-          uploadTargets.map((entry) => ({
-            localPath: entry.localPath,
-            remotePath: entry.remotePath
-          }))
-        );
-      }
-    }
-
-    const downloadTargets = Array.from(downloadTargetMap.values());
-    if (downloadTargets.length > 0) {
-      const resolvedTargets = await resolveDownloadTargetConflicts(
-        downloadTargets.map((entry) => ({
-          name: entry.name,
-          localPath: entry.localPath,
-          remotePath: entry.remotePath
-        })),
-        {
-          tabId,
-          sessionId: activeSessionId
-        }
-      );
-      if (resolvedTargets && resolvedTargets.length > 0) {
-        const downloadQueued = enqueueDownloadTargets(tabId, resolvedTargets, {
-          suppressEmptyError: true
-        });
-        queuedCount += downloadQueued;
-        if (downloadQueued > 0) {
-          markTransferHistoryRetryQueued(
-            "download",
-            resolvedTargets.map((entry) => ({
-              localPath: entry.localPath,
-              remotePath: entry.remotePath
-            }))
-          );
-        }
-      }
-    }
-
-    if (queuedCount <= 0) {
-      await showAppAlert("No transfer tasks were requeued.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-
-    setRetryCenterSelection((prev) => prev.filter((key) => !selectedKeys.has(key)));
-    const scopeSuffix =
-      retryScope === "upload"
-        ? " (upload-only)"
-        : retryScope === "download"
-          ? " (download-only)"
-          : "";
-    await showAppAlert(`Requeued ${queuedCount} transfer task(s) from history${scopeSuffix}.`, {
-      title: "Retry Center"
-    });
-  };
-
-  const retrySelectedRetryCenterEntriesWithScopeChoice = async () => {
-    if (!activeTabId || !activeSessionId) {
-      await showAppAlert("Open a terminal tab for the target session first.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    if (selectedRetryCenterFailedEntries.length === 0) {
-      return;
-    }
-    const retryScope = await chooseRetryCenterSelectedRetryScope(selectedRetryCenterFailedEntries);
-    if (!retryScope) {
-      return;
-    }
-    await retrySelectedRetryCenterEntries(retryScope);
-  };
-
-  const getRetryCenterEntriesForRetryScope = useCallback(
-    (entries: SftpTransferHistoryItem[], retryScope: RetryCenterRetryScope) => {
-      if (retryScope === "upload") {
-        return entries.filter((entry) => entry.direction === "upload");
-      }
-      if (retryScope === "download") {
-        return entries.filter((entry) => entry.direction === "download");
-      }
-      return entries;
-    },
-    []
-  );
-
-  const chooseRetryCenterRetryScopeByCounts = async (
-    counts: {
-      all: number;
-      upload: number;
-      download: number;
-    },
-    message: string
-  ): Promise<RetryCenterRetryScope | null> => {
-    if (counts.all <= 0) {
-      return null;
-    }
-    const choices: AppChoiceDialogOption[] = [
-      {
-        value: "all",
-        label: `All Retryable (${counts.all})`
-      }
-    ];
-    if (counts.upload > 0) {
-      choices.push({
-        value: "upload",
-        label: `Upload Only (${counts.upload})`
-      });
-    }
-    if (counts.download > 0) {
-      choices.push({
-        value: "download",
-        label: `Download Only (${counts.download})`
-      });
-    }
-    if (choices.length === 1) {
-      setRetryCenterLastRetryScope("all");
-      return "all";
-    }
-    if (retryCenterAutoUseLastRetryScope) {
-      const preferredChoice = choices.find((entry) => entry.value === retryCenterLastRetryScope);
-      if (preferredChoice) {
-        setRetryCenterLastRetryScope(preferredChoice.value as RetryCenterRetryScope);
-        return preferredChoice.value as RetryCenterRetryScope;
-      }
-    }
-    let dialogChoices = choices;
-    const preferredChoice = choices.find((entry) => entry.value === retryCenterLastRetryScope);
-    if (preferredChoice) {
-      const remainingChoices = choices.filter((entry) => entry.value !== retryCenterLastRetryScope);
-      dialogChoices = [
-        {
-          ...preferredChoice,
-          label: `${preferredChoice.label} (Last Used)`
-        },
-        ...remainingChoices
-      ];
-    }
-    const choice = await showAppChoice(message, dialogChoices, {
-      title: "Retry Center",
-      cancelLabel: "Cancel"
-    });
-    if (choice !== "all" && choice !== "upload" && choice !== "download") {
-      return null;
-    }
-    setRetryCenterLastRetryScope(choice);
-    return choice;
-  };
-
-  const chooseRetryCenterRetryScope = async (
-    baseEntries: SftpTransferHistoryItem[],
-    message: string
-  ): Promise<RetryCenterRetryScope | null> =>
-    chooseRetryCenterRetryScopeByCounts(
-      {
-        all: baseEntries.length,
-        upload: baseEntries.filter((entry) => entry.direction === "upload").length,
-        download: baseEntries.filter((entry) => entry.direction === "download").length
-      },
-      message
-    );
-
-  const chooseRetryCenterVisibleRetryScope = async (
-    baseEntries: SftpTransferHistoryItem[],
-    failureReason?: string
-  ): Promise<RetryCenterRetryScope | null> => {
-    const message =
-      typeof failureReason === "string" && failureReason.trim()
-        ? `Choose retry scope for visible "${failureReason}" failures.`
-        : "Choose retry scope for visible failed records.";
-    return chooseRetryCenterRetryScope(baseEntries, message);
-  };
-
-  const chooseRetryCenterSelectedRetryScope = async (
-    baseEntries: SftpTransferHistoryItem[]
-  ): Promise<RetryCenterRetryScope | null> =>
-    chooseRetryCenterRetryScope(baseEntries, "Choose retry scope for selected failed records.");
-
-  const retryVisibleRetryCenterEntries = async (
-    failureReason?: string,
-    retryScope: RetryCenterRetryScope = "all"
-  ) => {
-    if (!activeTabId || !activeSessionId) {
-      await showAppAlert("Open a terminal tab for the target session first.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    const scopedVisibleEntries =
-      typeof failureReason === "string" && failureReason.trim()
-        ? visibleRetryCenterFailedEntries.filter(
-            (entry) => classifyTransferFailureReason(entry.message) === failureReason
-          )
-        : visibleRetryCenterFailedEntries;
-    const targetEntries = getRetryCenterEntriesForRetryScope(scopedVisibleEntries, retryScope);
-    if (targetEntries.length === 0) {
-      if (failureReason) {
-        await showAppAlert(
-          `No visible failed records for reason "${failureReason}" under the active session.`,
-          {
-            title: "Retry Center"
-          }
-        );
-      }
-      return;
-    }
-    const retryLabel =
-      typeof failureReason === "string" && failureReason.trim()
-        ? `visible failure reason "${failureReason}"`
-        : "visible failed records";
-    const confirmed = await confirmRetryBatchIfNeeded(targetEntries.length, retryLabel);
-    if (!confirmed) {
-      return;
-    }
-    const tabId = activeTabId;
-    const visibleKeys = new Set(targetEntries.map((entry) => entry.key));
-    const uploadTargetMap = new Map<
-      string,
-      { name: string; localPath: string; remotePath: string }
-    >();
-    const downloadTargetMap = new Map<
-      string,
-      { name: string; localPath: string; remotePath: string }
-    >();
-    for (const entry of targetEntries) {
-      const key = createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath);
-      const target = {
-        name: entry.name,
-        localPath: entry.localPath,
-        remotePath: entry.remotePath
-      };
-      if (entry.direction === "upload") {
-        uploadTargetMap.set(key, target);
-        continue;
-      }
-      downloadTargetMap.set(key, target);
-    }
-
-    let queuedCount = 0;
-    const uploadTargets = Array.from(uploadTargetMap.values());
-    if (uploadTargets.length > 0) {
-      const uploadQueued = enqueueUploadTargets(tabId, uploadTargets, {
-        suppressEmptyError: true
-      });
-      queuedCount += uploadQueued;
-      if (uploadQueued > 0) {
-        markTransferHistoryRetryQueued(
-          "upload",
-          uploadTargets.map((entry) => ({
-            localPath: entry.localPath,
-            remotePath: entry.remotePath
-          }))
-        );
-      }
-    }
-
-    const downloadTargets = Array.from(downloadTargetMap.values());
-    if (downloadTargets.length > 0) {
-      const resolvedTargets = await resolveDownloadTargetConflicts(
-        downloadTargets.map((entry) => ({
-          name: entry.name,
-          localPath: entry.localPath,
-          remotePath: entry.remotePath
-        })),
-        {
-          tabId,
-          sessionId: activeSessionId
-        }
-      );
-      if (resolvedTargets && resolvedTargets.length > 0) {
-        const downloadQueued = enqueueDownloadTargets(tabId, resolvedTargets, {
-          suppressEmptyError: true
-        });
-        queuedCount += downloadQueued;
-        if (downloadQueued > 0) {
-          markTransferHistoryRetryQueued(
-            "download",
-            resolvedTargets.map((entry) => ({
-              localPath: entry.localPath,
-              remotePath: entry.remotePath
-            }))
-          );
-        }
-      }
-    }
-
-    if (queuedCount <= 0) {
-      await showAppAlert("No transfer tasks were requeued.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-
-    setRetryCenterSelection((prev) => prev.filter((key) => !visibleKeys.has(key)));
-    if (failureReason) {
-      const scopeSuffix =
-        retryScope === "upload"
-          ? " (upload-only)"
-          : retryScope === "download"
-            ? " (download-only)"
-            : "";
-      await showAppAlert(
-        `Requeued ${queuedCount} visible failed transfer task(s) for reason "${failureReason}"${scopeSuffix}.`,
-        {
-          title: "Retry Center"
-        }
-      );
-      return;
-    }
-    const scopeSuffix =
-      retryScope === "upload"
-        ? " (upload-only)"
-        : retryScope === "download"
-          ? " (download-only)"
-          : "";
-    await showAppAlert(`Requeued ${queuedCount} visible failed transfer task(s)${scopeSuffix}.`, {
-      title: "Retry Center"
-    });
-  };
-
-  const retryVisibleRetryCenterEntriesWithScopeChoice = async (failureReason?: string) => {
-    if (!activeTabId || !activeSessionId) {
-      await showAppAlert("Open a terminal tab for the target session first.", {
-        title: "Retry Center"
-      });
-      return;
-    }
-    const baseEntries =
-      typeof failureReason === "string" && failureReason.trim()
-        ? visibleRetryCenterFailedEntries.filter(
-            (entry) => classifyTransferFailureReason(entry.message) === failureReason
-          )
-        : visibleRetryCenterFailedEntries;
-    if (baseEntries.length === 0) {
-      if (failureReason) {
-        await showAppAlert(
-          `No visible failed records for reason "${failureReason}" under the active session.`,
-          {
-            title: "Retry Center"
-          }
-        );
-      }
-      return;
-    }
-    const retryScope = await chooseRetryCenterVisibleRetryScope(baseEntries, failureReason);
-    if (!retryScope) {
-      return;
-    }
-    await retryVisibleRetryCenterEntries(failureReason, retryScope);
-  };
-
-  const clearVisibleRetryCenterEntriesByFailureReason = async (failureReason: string) => {
-    const normalizedReason = failureReason.trim();
-    if (!normalizedReason) {
-      return;
-    }
-    const targetEntries = retryCenterEntries.filter(
-      (entry) =>
-        entry.status === "failed" && classifyTransferFailureReason(entry.message) === normalizedReason
-    );
-    if (targetEntries.length === 0) {
-      await showAppAlert(
-        `No visible failed history records found for reason "${normalizedReason}".`,
-        {
-          title: "Retry Center"
-        }
-      );
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete ${targetEntries.length} visible failed history record(s) with reason "${normalizedReason}"?`,
-      {
-        title: "Retry Center",
-        confirmLabel: "Delete Reason",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    const targetKeys = new Set(targetEntries.map((entry) => entry.key));
-    setTransferHistory((prev) => prev.filter((entry) => !targetKeys.has(entry.key)));
-    setRetryCenterSelection((prev) => prev.filter((key) => !targetKeys.has(key)));
-  };
-
-  const clearSelectedRetryCenterEntries = async () => {
-    if (selectedRetryCenterEntries.length === 0) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete ${selectedRetryCenterEntries.length} selected history record(s)?`,
-      {
-        title: "Retry Center",
-        confirmLabel: "Delete",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    const selectedKeys = new Set(selectedRetryCenterEntries.map((entry) => entry.key));
-    setTransferHistory((prev) => prev.filter((entry) => !selectedKeys.has(entry.key)));
-    setRetryCenterSelection([]);
-  };
-
-  const clearVisibleRetryCenterEntries = async () => {
-    if (retryCenterEntries.length === 0) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete ${retryCenterEntries.length} visible history record(s)?`,
-      {
-        title: "Retry Center",
-        confirmLabel: "Delete Visible",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    const visibleKeys = new Set(retryCenterEntries.map((entry) => entry.key));
-    setTransferHistory((prev) => prev.filter((entry) => !visibleKeys.has(entry.key)));
-    setRetryCenterSelection([]);
-  };
-
-  const clearAllRetryCenterEntries = async () => {
-    if (transferHistory.length === 0) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete all ${transferHistory.length} transfer history record(s)?`,
-      {
-        title: "Retry Center",
-        confirmLabel: "Delete All",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setTransferHistory([]);
-    setRetryCenterSelection([]);
-  };
-
-  type FailedRetryCandidate = {
-    name: string;
-    localPath: string;
-    remotePath: string;
-  };
-
-  const queueFailedUploadRetryCandidates = (
-    tabId: string,
-    retryCandidates: FailedRetryCandidate[]
-  ) => {
-    const queuedCount = enqueueUploadTargets(
-      tabId,
-      retryCandidates.map((transfer) => ({
-        name: transfer.name,
-        localPath: transfer.localPath,
-        remotePath: transfer.remotePath
-      })),
-      {
-        suppressEmptyError: true
-      }
-    );
-    if (queuedCount > 0) {
-      markTransferHistoryRetryQueued(
-        "upload",
-        retryCandidates.map((transfer) => ({
-          localPath: transfer.localPath,
-          remotePath: transfer.remotePath
-        }))
-      );
-    }
-    return queuedCount;
-  };
-
-  const queueFailedDownloadRetryCandidates = async (
-    tabId: string,
-    retryCandidates: FailedRetryCandidate[],
-    sessionId?: string
-  ) => {
-    const retryTargets = retryCandidates.map((transfer) => ({
-      name: transfer.name,
-      remotePath: transfer.remotePath,
-      localPath: transfer.localPath
-    }));
-    const resolvedTargets = await resolveDownloadTargetConflicts(retryTargets, {
-      tabId,
-      sessionId
-    });
-    if (!resolvedTargets || resolvedTargets.length === 0) {
-      return 0;
-    }
-    const queuedCount = enqueueDownloadTargets(tabId, resolvedTargets, {
-      suppressEmptyError: true
-    });
-    if (queuedCount > 0) {
-      markTransferHistoryRetryQueued(
-        "download",
-        resolvedTargets.map((entry) => ({
-          localPath: entry.localPath,
-          remotePath: entry.remotePath
-        }))
-      );
-    }
-    return queuedCount;
-  };
-
-  const retryFailedUploads = async () => {
-    if (!activeTabId || failedUploadRetryCandidates.length === 0) {
-      return;
-    }
-    const tabId = activeTabId;
-    const sortedFailedTransfers = [...failedUploadRetryCandidates];
-    const confirmed = await confirmRetryBatchIfNeeded(
-      sortedFailedTransfers.length,
-      "failed upload candidates"
-    );
-    if (!confirmed) {
-      return;
-    }
-    const queuedCount = queueFailedUploadRetryCandidates(tabId, sortedFailedTransfers);
-    if (queuedCount > 0) {
-      await showAppAlert(`Requeued ${queuedCount} failed upload task(s).`, {
-        title: "Retry Uploads"
-      });
-    }
-  };
-
-  const retryFailedDownloads = async () => {
-    if (!activeTabId || failedDownloadRetryCandidates.length === 0) {
-      return;
-    }
-    const tabId = activeTabId;
-    const sortedFailedTransfers = [...failedDownloadRetryCandidates];
-    const confirmed = await confirmRetryBatchIfNeeded(
-      sortedFailedTransfers.length,
-      "failed download candidates"
-    );
-    if (!confirmed) {
-      return;
-    }
-    const queuedCount = await queueFailedDownloadRetryCandidates(
-      tabId,
-      sortedFailedTransfers,
-      activeSessionId ?? undefined
-    );
-    if (queuedCount > 0) {
-      await showAppAlert(`Requeued ${queuedCount} failed download task(s).`, {
-        title: "Retry Downloads"
-      });
-    }
-  };
-
-  const retryAllFailedTransfers = async (retryScope: RetryCenterRetryScope = "all") => {
-    if (!activeTabId || failedRetryCandidateTotal <= 0) {
-      return;
-    }
-    const tabId = activeTabId;
-    const uploadCandidates =
-      retryScope === "download" ? [] : [...failedUploadRetryCandidates];
-    const downloadCandidates =
-      retryScope === "upload" ? [] : [...failedDownloadRetryCandidates];
-    const targetCount = uploadCandidates.length + downloadCandidates.length;
-    if (targetCount <= 0) {
-      await showAppAlert("No transfer tasks were requeued.", {
-        title: "Retry Transfers"
-      });
-      return;
-    }
-    const scopeLabel =
-      retryScope === "upload"
-        ? "all failed upload candidates"
-        : retryScope === "download"
-          ? "all failed download candidates"
-          : "all failed transfer candidates";
-    const confirmed = await confirmRetryBatchIfNeeded(targetCount, scopeLabel);
-    if (!confirmed) {
-      return;
-    }
-    const uploadQueued =
-      uploadCandidates.length > 0
-        ? queueFailedUploadRetryCandidates(tabId, uploadCandidates)
-        : 0;
-    const downloadQueued =
-      downloadCandidates.length > 0
-        ? await queueFailedDownloadRetryCandidates(
-            tabId,
-            downloadCandidates,
-            activeSessionId ?? undefined
-          )
-        : 0;
-    const queuedTotal = uploadQueued + downloadQueued;
-    if (queuedTotal <= 0) {
-      await showAppAlert("No transfer tasks were requeued.", {
-        title: "Retry Transfers"
-      });
-      return;
-    }
-    const scopeSuffix =
-      retryScope === "upload"
-        ? " (upload-only)"
-        : retryScope === "download"
-          ? " (download-only)"
-          : "";
-    await showAppAlert(
-      `Requeued ${queuedTotal} failed transfer task(s)${scopeSuffix}. Upload ${uploadQueued}, Download ${downloadQueued}.`,
-      {
-        title: "Retry Transfers"
-      }
-    );
-  };
-
-  const retryAllFailedTransfersWithScopeChoice = async () => {
-    if (!activeTabId || failedRetryCandidateTotal <= 0) {
-      return;
-    }
-    const retryScope = await chooseRetryCenterRetryScopeByCounts(
-      {
-        all: failedRetryCandidateTotal,
-        upload: failedUploadRetryCandidates.length,
-        download: failedDownloadRetryCandidates.length
-      },
-      "Choose retry scope for all failed transfer candidates."
-    );
-    if (!retryScope) {
-      return;
-    }
-    await retryAllFailedTransfers(retryScope);
-  };
+  const {
+    exportRetryCenterAnalyticsCsv,
+    exportRetryCenterAnalyticsJson,
+    exportRetryCenterGroupHistoryCsvWithScopeChoice,
+    exportRetryCenterGroupHistoryJsonWithScopeChoice,
+    exportRetryCenterVisibleHistoryCsv,
+    exportRetryCenterVisibleHistoryJson
+  } = useRetryCenterExportActions({
+    activeSessionId,
+    analytics: retryCenterAnalytics,
+    appVersion: APP_VERSION,
+    classifyTransferFailureReason,
+    copyTextToClipboard,
+    direction: retryCenterDirection,
+    escapeCsvCell,
+    failureReasonExportValue: retryCenterFailureReasonExportValue,
+    groupedEntries: retryCenterGroupedEntries,
+    listMode: retryCenterListMode,
+    query: retryCenterQuery,
+    scope: retryCenterScope,
+    selectedCount: selectedRetryCenterEntries.length,
+    setError,
+    showAppAlert,
+    showAppChoice,
+    status: retryCenterStatus,
+    systemApi,
+    timeRange: retryCenterTimeRange,
+    toIsoTimestamp,
+    toLogMessage,
+    totalHistoryCount: transferHistory.length,
+    visibleEntries: retryCenterEntries,
+    visibleExportEntries: retryCenterVisibleExportEntries,
+    visibleExportEntryByKey: retryCenterVisibleExportEntryByKey,
+    writeAppLog
+  });
+  const {
+    clearAllRetryCenterEntries,
+    clearRetryCenterGroupEntries,
+    clearSelectedRetryCenterEntries,
+    clearVisibleRetryCenterEntries,
+    clearVisibleRetryCenterEntriesByFailureReason,
+    retryAllFailedTransfersWithScopeChoice,
+    retryFailedDownloads,
+    retryFailedUploads,
+    retryRetryCenterGroupFailedEntries,
+    retrySelectedRetryCenterEntriesWithScopeChoice,
+    retryVisibleRetryCenterEntriesWithScopeChoice
+  } = useRetryCenterActions({
+    activeSessionId,
+    activeTabId,
+    classifyTransferFailureReason,
+    createTransferRetryKey,
+    enqueueDownloadTargets,
+    enqueueUploadTargets,
+    failedDownloadRetryCandidates,
+    failedRetryCandidateTotal,
+    failedUploadRetryCandidates,
+    markTransferHistoryRetryQueued,
+    resolveDownloadTargetConflicts,
+    retryBatchConfirmThreshold,
+    retryCenterAutoUseLastRetryScope,
+    retryCenterEntries,
+    retryCenterGroupedEntries,
+    retryCenterLastRetryScope,
+    selectedRetryCenterEntries,
+    selectedRetryCenterFailedEntries,
+    setRetryCenterLastRetryScope,
+    setRetryCenterSelection,
+    setTransferHistory,
+    showAppAlert,
+    showAppChoice,
+    showAppConfirm,
+    totalHistoryCount: transferHistory.length,
+    visibleRetryCenterFailedEntries
+  });
 
   const onSftpDragOver = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
@@ -21116,6 +18130,27 @@ export function App() {
     action.run();
   };
 
+  const copySftpPathWithFallback = useCallback(
+    (path: string) => {
+      void (async () => {
+        try {
+          const copied = await copyTextToClipboard(path);
+          if (copied) {
+            return;
+          }
+        } catch {
+          // Fallback to dialog for manual copy.
+        }
+        await showAppAlert("Clipboard unavailable. Copy the path below manually.", {
+          title: "Manual Copy",
+          confirmLabel: "Close",
+          detailText: path
+        });
+      })();
+    },
+    [showAppAlert]
+  );
+
   const promptCreateSessionGroup = async () => {
     const groupNameInput = await showAppPrompt("Enter a name for the new group.", "", {
       title: "New Group",
@@ -21127,858 +18162,145 @@ export function App() {
     addSessionGroup(groupNameInput);
   };
 
-  const appendSessionSortActions = (actions: SessionContextAction[]) => {
-    actions.push({
-      id: "sort-default",
-      label: tr(sessionSortMode === "default" ? "Sort: Default (Current)" : "Sort: Default"),
-      run: () => {
-        setSessionSortMode("default");
-      }
-    });
-    actions.push({
-      id: "sort-recent",
-      label: tr(sessionSortMode === "recent" ? "Sort: Recent (Current)" : "Sort: Recent"),
-      run: () => {
-        setSessionSortMode("recent");
-      }
-    });
-    actions.push({
-      id: "sort-name-asc",
-      label: tr(sessionSortMode === "nameAsc" ? "Sort: Name A-Z (Current)" : "Sort: Name A-Z"),
-      run: () => {
-        setSessionSortMode("nameAsc");
-      }
-    });
-    actions.push({
-      id: "sort-name-desc",
-      label: tr(sessionSortMode === "nameDesc" ? "Sort: Name Z-A (Current)" : "Sort: Name Z-A"),
-      run: () => {
-        setSessionSortMode("nameDesc");
-      }
-    });
-  };
-
-  const sessionContextActions: SessionContextAction[] = [];
-  const contextTarget = sessionContextMenu?.target ?? null;
-  if (contextTarget?.type === "session" && sessionContextTarget) {
-    const selectedSet = new Set(selectedSessionsInActiveGroup.map((session) => session.id));
-    const sessionsForActions =
-      selectedSet.has(sessionContextTarget.id) && selectedSessionsInActiveGroup.length > 0
-        ? selectedSessionsInActiveGroup
-        : [sessionContextTarget];
-    const selectedIds = sessionsForActions.map((session) => session.id);
-    const selectedCount = sessionsForActions.length;
-
-    sessionContextActions.push({
-      id: "open-session",
-      label: tr(selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Terminal Tab"),
-      run: () => {
-        for (const session of sessionsForActions) {
-          openTerminalTab(session);
-        }
-      }
-    });
-    if (selectedCount === 1) {
-      sessionContextActions.push({
-        id: "view-session",
-        label: tr("View Details"),
-        run: () => {
-          void viewSessionDetails(sessionContextTarget);
-        }
-      });
-      sessionContextActions.push({
-        id: "toggle-favorite",
-        label: tr(sessionContextTarget.favorite ? "Unfavorite" : "Favorite"),
-        run: () => {
-          void patchSession(sessionContextTarget.id, {
-            favorite: !sessionContextTarget.favorite
-          });
-        }
-      });
-      sessionContextActions.push({
-        id: "copy-clash-rules",
-        label: tr("Copy Clash Direct Rules"),
-        run: () => {
-          void copyClashDirectRules(sessionContextTarget);
-        }
-      });
-      sessionContextActions.push({
-        id: "copy-ssh-command",
-        label: tr("Copy SSH Command"),
-        run: () => {
-          void copySessionConnectionCommand(sessionContextTarget);
-        }
-      });
-      sessionContextActions.push({
-        id: "edit-session",
-        label: tr("Edit Session"),
-        run: () => {
-          openEditModal(sessionContextTarget);
-        }
-      });
-      sessionContextActions.push({
-        id: "duplicate-session",
-        label: tr("Duplicate Session"),
-        run: () => {
-          openDuplicateSessionModal(sessionContextTarget);
-        }
-      });
-      sessionContextActions.push({
-        id: "save-session-template",
-        label: tr("Save as Session Template..."),
-        run: () => {
-          openSessionTemplateManager({
-            sourceForm: toFormFromSession(sessionContextTarget)
-          });
-        }
-      });
-      sessionContextActions.push({
-        id: "run-quick-profile",
-        label:
-          sessionQuickProfiles.length > 0
-            ? tr(`Run Quick Profile... (${sessionQuickProfiles.length})`)
-            : tr("Run Quick Profile..."),
-        disabled: sessionQuickProfiles.length === 0,
-        run: () => {
-          void runSessionQuickProfileChooser(sessionContextTarget);
-        }
-      });
-      sessionContextActions.push({
-        id: "create-quick-profile",
-        label: tr("Save Quick Profile..."),
-        run: () => {
-          void createSessionQuickProfileForSession(sessionContextTarget);
-        }
-      });
-      sessionContextActions.push({
-        id: "manage-quick-profile",
-        label: tr("Manage Quick Profiles..."),
-        run: () => {
-          void manageSessionQuickProfilesForSession(sessionContextTarget);
-        }
-      });
-    }
-    sessionContextActions.push({
-      id: "move-session-group",
-      label: tr(selectedCount > 1 ? "Move Selected to Group..." : "Move to Group..."),
-      run: () => {
-        openMoveSessionsToGroupDialog(selectedIds);
-      }
-    });
-    sessionContextActions.push({
-      id: "move-session-ungrouped",
-      label: tr(selectedCount > 1 ? "Move Selected to Ungrouped" : "Move to Ungrouped"),
-      run: () => {
-        void assignSessionsToGroup(selectedIds, "");
-      }
-    });
-    sessionContextActions.push({
-      id: "delete-session",
-      label: tr(selectedCount > 1 ? `Delete ${selectedCount} Selected` : "Delete Session"),
-      danger: true,
-      run: () => {
-        void removeSessionsByIds(selectedIds);
-      }
-    });
-    appendSessionSortActions(sessionContextActions);
-  } else if (contextTarget?.type === "group") {
-    const contextGroup =
-      groupedSessions.find((group) => group.key === contextTarget.groupKey) ?? null;
-    const groupsForActions =
-      selectedGroupKeySet.has(contextTarget.groupKey) && selectedGroups.length > 0
-        ? selectedGroups
-        : contextGroup
-          ? [contextGroup]
-          : [];
-    const groupNamesForActions = groupsForActions
-      .filter((group) => group.groupName.trim().length > 0)
-      .map((group) => group.groupName);
-
-    sessionContextActions.push({
-      id: "open-group",
-      label: tr("Open Group"),
-      run: () => {
-        setSelectedGroupKeys([contextTarget.groupKey]);
-        setActiveSessionGroupKey(contextTarget.groupKey);
-      }
-    });
-    sessionContextActions.push({
-      id: "new-session",
-      label: tr("New Session"),
-      run: () => {
-        openCreateModal(contextTarget.groupName);
-      }
-    });
-    sessionContextActions.push({
-      id: "new-session-from-template",
-      label:
-        sessionTemplates.length > 0
-          ? tr(`New Session From Template... (${sessionTemplates.length})`)
-          : tr("New Session From Template..."),
-      disabled: sessionTemplates.length === 0,
-      run: () => {
-        void chooseSessionTemplateAndApply({
-          openCreateModal: true,
-          groupId: contextTarget.groupName,
-          forceNewSession: true
-        });
-      }
-    });
-    sessionContextActions.push({
-      id: "manage-session-templates",
-      label: tr("Manage Session Templates..."),
-      run: () => {
-        openSessionTemplateManager();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-ssh-config",
-      label: tr("Import SSH Config..."),
-      run: () => {
-        void importSessionsFromSshConfig();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-sessions-json",
-      label: tr("Import Sessions JSON..."),
-      run: () => {
-        void importSessionsFromJson();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-encrypted-migration",
-      label: tr("Import Encrypted Migration..."),
-      run: () => {
-        void importEncryptedSessionMigration();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-all-sessions",
-      label: tr("Export All Sessions..."),
-      run: () => {
-        void exportAllSessionsWithGroups();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-encrypted-migration",
-      label: tr("Export Encrypted Migration..."),
-      run: () => {
-        void exportEncryptedSessionMigration();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-all-groups",
-      label: tr("Export All Groups..."),
-      run: () => {
-        void exportAllSessionGroups();
-      }
-    });
-    sessionContextActions.push({
-      id: "new-group",
-      label: tr("New Group"),
-      run: () => {
-        void promptCreateSessionGroup();
-      }
-    });
-    sessionContextActions.push({
-      id: "select-all-groups",
-      label: tr("Select All Groups"),
-      disabled: groupedSessions.length === 0,
-      run: () => {
-        setSelectedGroupKeys(groupedSessions.map((group) => group.key));
-      }
-    });
-    sessionContextActions.push({
-      id: "clear-group-selection",
-      label: tr("Clear Group Selection"),
-      disabled: selectedGroupKeys.length === 0,
-      run: () => {
-        setSelectedGroupKeys([]);
-      }
-    });
-    sessionContextActions.push({
-      id: "rename-group",
-      label:
-        groupNamesForActions.length > 1
-          ? tr("Rename Group (Select One)")
-          : tr("Rename Group"),
-      disabled: groupNamesForActions.length !== 1,
-      run: () => {
-        void renameSessionGroup(groupNamesForActions[0]);
-      }
-    });
-    sessionContextActions.push({
-      id: "delete-group",
-      label:
-        groupNamesForActions.length > 1
-          ? tr(`Delete ${groupNamesForActions.length} Selected Groups`)
-          : tr("Delete Group"),
-      disabled: groupNamesForActions.length === 0,
-      danger: true,
-      run: () => {
-        void deleteSessionGroupsBatch(groupNamesForActions);
-      }
-    });
-    appendSessionSortActions(sessionContextActions);
-  } else if (contextTarget?.type === "group-root") {
-    sessionContextActions.push({
-      id: "new-group",
-      label: tr("New Group"),
-      run: () => {
-        void promptCreateSessionGroup();
-      }
-    });
-    sessionContextActions.push({
-      id: "new-session",
-      label: tr("New Session"),
-      run: () => {
-        openCreateModal("");
-      }
-    });
-    sessionContextActions.push({
-      id: "new-session-from-template",
-      label:
-        sessionTemplates.length > 0
-          ? tr(`New Session From Template... (${sessionTemplates.length})`)
-          : tr("New Session From Template..."),
-      disabled: sessionTemplates.length === 0,
-      run: () => {
-        void chooseSessionTemplateAndApply({
-          openCreateModal: true,
-          forceNewSession: true
-        });
-      }
-    });
-    sessionContextActions.push({
-      id: "manage-session-templates",
-      label: tr("Manage Session Templates..."),
-      run: () => {
-        openSessionTemplateManager();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-ssh-config",
-      label: tr("Import SSH Config..."),
-      run: () => {
-        void importSessionsFromSshConfig();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-sessions-json",
-      label: tr("Import Sessions JSON..."),
-      run: () => {
-        void importSessionsFromJson();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-encrypted-migration",
-      label: tr("Import Encrypted Migration..."),
-      run: () => {
-        void importEncryptedSessionMigration();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-all-sessions",
-      label: tr("Export All Sessions..."),
-      run: () => {
-        void exportAllSessionsWithGroups();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-encrypted-migration",
-      label: tr("Export Encrypted Migration..."),
-      run: () => {
-        void exportEncryptedSessionMigration();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-all-groups",
-      label: tr("Export All Groups..."),
-      run: () => {
-        void exportAllSessionGroups();
-      }
-    });
-    sessionContextActions.push({
-      id: "select-all-groups",
-      label: tr("Select All Groups"),
-      disabled: groupedSessions.length === 0,
-      run: () => {
-        setSelectedGroupKeys(groupedSessions.map((group) => group.key));
-      }
-    });
-    sessionContextActions.push({
-      id: "clear-group-selection",
-      label: tr("Clear Group Selection"),
-      disabled: selectedGroupKeys.length === 0,
-      run: () => {
-        setSelectedGroupKeys([]);
-      }
-    });
-    sessionContextActions.push({
-      id: "rename-selected-group",
-      label: tr("Rename Selected Group"),
-      disabled: selectedGroupNames.length !== 1,
-      run: () => {
-        void renameSessionGroup(selectedGroupNames[0]);
-      }
-    });
-    sessionContextActions.push({
-      id: "delete-selected-groups",
-      label:
-        selectedGroupNames.length > 1
-          ? tr(`Delete ${selectedGroupNames.length} Selected Groups`)
-          : tr("Delete Selected Group"),
-      disabled: selectedGroupNames.length === 0,
-      danger: true,
-      run: () => {
-        void deleteSessionGroupsBatch(selectedGroupNames);
-      }
-    });
-    appendSessionSortActions(sessionContextActions);
-  } else if (contextTarget?.type === "group-view") {
-    const selectedCount = selectedSessionsInActiveGroup.length;
-    const selectedIds = selectedSessionsInActiveGroup.map((session) => session.id);
-    sessionContextActions.push({
-      id: "back-groups",
-      label: tr("Back to Groups"),
-      run: () => {
-        setActiveSessionGroupKey(null);
-      }
-    });
-    sessionContextActions.push({
-      id: "new-session",
-      label: tr("New Session"),
-      run: () => {
-        openCreateModal(contextTarget.groupName);
-      }
-    });
-    sessionContextActions.push({
-      id: "new-session-from-template",
-      label:
-        sessionTemplates.length > 0
-          ? tr(`New Session From Template... (${sessionTemplates.length})`)
-          : tr("New Session From Template..."),
-      disabled: sessionTemplates.length === 0,
-      run: () => {
-        void chooseSessionTemplateAndApply({
-          openCreateModal: true,
-          groupId: contextTarget.groupName,
-          forceNewSession: true
-        });
-      }
-    });
-    sessionContextActions.push({
-      id: "manage-session-templates",
-      label: tr("Manage Session Templates..."),
-      run: () => {
-        openSessionTemplateManager();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-ssh-config",
-      label: tr("Import SSH Config..."),
-      run: () => {
-        void importSessionsFromSshConfig();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-sessions-json",
-      label: tr("Import Sessions JSON..."),
-      run: () => {
-        void importSessionsFromJson();
-      }
-    });
-    sessionContextActions.push({
-      id: "import-encrypted-migration",
-      label: tr("Import Encrypted Migration..."),
-      run: () => {
-        void importEncryptedSessionMigration();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-all-sessions",
-      label: tr("Export All Sessions..."),
-      run: () => {
-        void exportAllSessionsWithGroups();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-encrypted-migration",
-      label: tr("Export Encrypted Migration..."),
-      run: () => {
-        void exportEncryptedSessionMigration();
-      }
-    });
-    sessionContextActions.push({
-      id: "export-all-groups",
-      label: tr("Export All Groups..."),
-      run: () => {
-        void exportAllSessionGroups();
-      }
-    });
-    sessionContextActions.push({
-      id: "new-group",
-      label: tr("New Group"),
-      run: () => {
-        void promptCreateSessionGroup();
-      }
-    });
-    if (contextTarget.groupName) {
-      sessionContextActions.push({
-        id: "rename-group",
-        label: tr("Rename Group"),
-        run: () => {
-          void renameSessionGroup(contextTarget.groupName);
-        }
-      });
-      sessionContextActions.push({
-        id: "delete-group",
-        label: tr("Delete Group"),
-        danger: true,
-        run: () => {
-          void deleteSessionGroup(contextTarget.groupName);
-        }
-      });
-    }
-    sessionContextActions.push({
-      id: "select-all-sessions",
-      label: tr("Select All Sessions"),
-      disabled: activeGroupSessions.length === 0,
-      run: () => {
-        const allIds = activeGroupSessions.map((session) => session.id);
-        setSelectedSessionIds(allIds);
-        setSelectedSessionId(allIds[0] ?? null);
-      }
-    });
-    sessionContextActions.push({
-      id: "clear-session-selection",
-      label: tr("Clear Session Selection"),
-      disabled: selectedCount === 0,
-      run: () => {
-        setSelectedSessionIds([]);
-      }
-    });
-    sessionContextActions.push({
-      id: "open-selected-sessions",
-      label: tr(selectedCount > 1 ? `Open ${selectedCount} Selected Tabs` : "Open Selected Session"),
-      disabled: selectedCount === 0,
-      run: () => {
-        for (const session of selectedSessionsInActiveGroup) {
-          openTerminalTab(session);
-        }
-      }
-    });
-    sessionContextActions.push({
-      id: "move-selected-sessions",
-      label: tr("Move Selected to Group..."),
-      disabled: selectedCount === 0,
-      run: () => {
-        openMoveSessionsToGroupDialog(selectedIds);
-      }
-    });
-    sessionContextActions.push({
-      id: "move-selected-sessions-ungrouped",
-      label: tr("Move Selected to Ungrouped"),
-      disabled: selectedCount === 0,
-      run: () => {
-        void assignSessionsToGroup(selectedIds, "");
-      }
-    });
-    sessionContextActions.push({
-      id: "delete-selected-sessions",
-      label: tr(selectedCount > 1 ? `Delete ${selectedCount} Selected Sessions` : "Delete Selected Session"),
-      disabled: selectedCount === 0,
-      danger: true,
-      run: () => {
-        void removeSessionsByIds(selectedIds);
-      }
-    });
-    appendSessionSortActions(sessionContextActions);
-  }
+  const sessionContextActions: SessionContextAction[] = buildSessionContextActions({
+    activeGroupSessions,
+    assignSessionsToGroup,
+    chooseSessionTemplateAndApply,
+    contextTarget: sessionContextMenu?.target ?? null,
+    copyClashDirectRules,
+    copySessionConnectionCommand,
+    createSessionQuickProfileForSession,
+    deleteSessionGroup,
+    deleteSessionGroupsBatch,
+    exportAllSessionGroups,
+    exportAllSessionsWithGroups,
+    exportEncryptedSessionMigration,
+    groupedSessions,
+    importEncryptedSessionMigration,
+    importSessionsFromJson,
+    importSessionsFromSshConfig,
+    manageSessionQuickProfilesForSession,
+    openCreateModal,
+    openDuplicateSessionModal,
+    openEditModal,
+    openMoveSessionsToGroupDialog,
+    openSessionTemplateManager,
+    openTerminalTab,
+    patchSession,
+    promptCreateSessionGroup,
+    removeSessionsByIds,
+    renameSessionGroup,
+    runSessionQuickProfileChooser,
+    selectedGroupKeySet,
+    selectedGroupKeys,
+    selectedGroupNames,
+    selectedGroups,
+    selectedSession,
+    selectedSessionIds,
+    selectedSessionsInActiveGroup,
+    sessionContextTarget,
+    sessionQuickProfilesCount: sessionQuickProfiles.length,
+    sessionSortMode,
+    sessionTemplatesCount: sessionTemplates.length,
+    setActiveSessionGroupKey,
+    setSelectedGroupKeys,
+    setSelectedSessionId,
+    setSelectedSessionIds,
+    setSessionSortMode,
+    toFormFromSession,
+    tr,
+    viewSessionDetails
+  });
 
   const isSftpActionDisabled = sftpLoading || sftpActionLoading;
-  const sftpToolbarActions: SftpContextAction[] = [
-    {
-      id: "go-to-path",
-      label: tr("Go to Path"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void loadSftpDirectory(sftpPath);
-      }
-    },
-    {
-      id: "go-parent",
-      label: tr("Go Up"),
-      disabled: isSftpActionDisabled || !sftpDirectory?.parent,
-      run: () => {
-        if (!sftpDirectory?.parent) {
-          return;
-        }
-        void loadSftpDirectory(sftpDirectory.parent);
-      }
-    },
-    {
-      id: "refresh-directory",
-      label: tr("Refresh"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
-      }
-    },
-    {
-      id: "new-folder",
-      label: tr("New Folder"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void createSftpDirectory();
-      }
-    },
-    {
-      id: "upload-file",
-      label: tr("Upload File"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void uploadLocalFileToSftp();
-      }
-    },
-    {
-      id: "download-selected",
-      label: tr("Download Selected"),
-      disabled: isSftpActionDisabled || !canDownloadSelectedSftpEntry,
-      run: () => {
-        void downloadSelectedSftpEntry();
-      }
-    },
-    {
-      id: "rename-selected",
-      label: tr("Rename Selected"),
-      disabled: isSftpActionDisabled || !selectedSftpEntry,
-      run: () => {
-        void renameSelectedSftpEntry();
-      }
-    },
-    {
-      id: "delete-selected",
-      label: tr("Delete Selected"),
-      disabled: isSftpActionDisabled || !selectedSftpEntry,
-      run: () => {
-        void deleteSelectedSftpEntry();
-      }
-    }
-  ];
-
-  const sftpContextActions: SftpContextAction[] = [];
-  if (sftpContextEntry?.kind === "directory") {
-    sftpContextActions.push({
-      id: "open-directory",
-      label: tr("Open Directory"),
-      run: () => {
-        void loadSftpDirectory(sftpContextEntry.path);
-      }
-    });
-    sftpContextActions.push({
-      id: "download-directory",
-      label: tr("Download Folder"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void downloadSftpDirectory(sftpContextEntry);
-      }
-    });
-  }
-  if (sftpContextEntry && sftpContextEntry.kind !== "directory") {
-    sftpContextActions.push({
-      id: "open-file",
-      label: tr("Open File"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void openSftpEntryFile(sftpContextEntry);
-      }
-    });
-    sftpContextActions.push({
-      id: "download-file",
-      label: tr("Download File"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void downloadSelectedSftpEntry(sftpContextEntry);
-      }
-    });
-  }
-  sftpContextActions.push({
-    id: "upload-file",
-    label: tr("Upload File"),
-    disabled: isSftpActionDisabled,
-    run: () => {
-      void uploadLocalFileToSftp();
-    }
-  });
-  sftpContextActions.push({
-    id: "create-directory",
-    label: tr("New Folder"),
-    disabled: isSftpActionDisabled,
-    run: () => {
+  const sftpToolbarActions: SftpContextAction[] = buildSftpToolbarActions({
+    canDownloadSelectedEntry: canDownloadSelectedSftpEntry,
+    currentDirectoryCwd: sftpDirectory?.cwd ?? null,
+    currentDirectoryParent: sftpDirectory?.parent ?? null,
+    hasSelectedEntry: Boolean(selectedSftpEntry),
+    inputPath: sftpPath,
+    isActionDisabled: isSftpActionDisabled,
+    onCreateDirectory: () => {
       void createSftpDirectory();
-    }
+    },
+    onDeleteSelected: () => {
+      void deleteSelectedSftpEntry();
+    },
+    onDownloadSelected: () => {
+      void downloadSelectedSftpEntry();
+    },
+    onLoadDirectory: (path) => {
+      void loadSftpDirectory(path);
+    },
+    onRenameSelected: () => {
+      void renameSelectedSftpEntry();
+    },
+    onUploadFile: () => {
+      void uploadLocalFileToSftp();
+    },
+    tr
   });
-  sftpContextActions.push({
-    id: "refresh-directory",
-    label: tr("Refresh"),
-    disabled: isSftpActionDisabled,
-    run: () => {
-      void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
-    }
+
+  const sftpContextActions: SftpContextAction[] = buildSftpContextActions({
+    contextEntry: sftpContextEntry,
+    currentDirectoryCwd: sftpDirectory?.cwd ?? null,
+    currentPathInput: sftpPath,
+    isActionDisabled: isSftpActionDisabled,
+    onCopyPath: copySftpPathWithFallback,
+    onCreateDirectory: () => {
+      void createSftpDirectory();
+    },
+    onDeleteEntry: (entry) => {
+      void deleteSelectedSftpEntry(entry);
+    },
+    onDownloadDirectory: (entry) => {
+      void downloadSftpDirectory(entry);
+    },
+    onDownloadFile: (entry) => {
+      void downloadSelectedSftpEntry(entry);
+    },
+    onLoadDirectory: (path) => {
+      void loadSftpDirectory(path);
+    },
+    onOpenFile: (entry) => {
+      void openSftpEntryFile(entry);
+    },
+    onRefreshDirectory: (path) => {
+      void loadSftpDirectory(path);
+    },
+    onRenameEntry: (entry) => {
+      void renameSelectedSftpEntry(entry);
+    },
+    onUploadFile: () => {
+      void uploadLocalFileToSftp();
+    },
+    tr
   });
-  if (sftpContextEntry) {
-    sftpContextActions.push({
-      id: "rename-entry",
-      label: tr("Rename"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void renameSelectedSftpEntry(sftpContextEntry);
-      }
-    });
-    sftpContextActions.push({
-      id: "delete-entry",
-      label: tr("Delete"),
-      disabled: isSftpActionDisabled,
-      run: () => {
-        void deleteSelectedSftpEntry(sftpContextEntry);
-      }
-    });
-    sftpContextActions.push({
-      id: "copy-entry-path",
-      label: tr("Copy Path"),
-      run: () => {
-        void (async () => {
-          try {
-            const copied = await copyTextToClipboard(sftpContextEntry.path);
-            if (copied) {
-              return;
-            }
-          } catch {
-            // Fallback to dialog for manual copy.
-          }
-          await showAppAlert("Clipboard unavailable. Copy the path below manually.", {
-            title: "Manual Copy",
-            confirmLabel: "Close",
-            detailText: sftpContextEntry.path
-          });
-        })();
-      }
-    });
-  } else if (sftpDirectory?.cwd) {
-    sftpContextActions.push({
-      id: "copy-current-path",
-      label: tr("Copy Current Path"),
-      run: () => {
-        void (async () => {
-          try {
-            const copied = await copyTextToClipboard(sftpDirectory.cwd);
-            if (copied) {
-              return;
-            }
-          } catch {
-            // Fallback to dialog for manual copy.
-          }
-          await showAppAlert("Clipboard unavailable. Copy the path below manually.", {
-            title: "Manual Copy",
-            confirmLabel: "Close",
-            detailText: sftpDirectory.cwd
-          });
-        })();
-      }
-    });
-  }
   const commandHistoryContextMenuActions: WorkbenchContextMenuAction[] =
-    selectedCommandHistoryContextEntry
-      ? [
-          {
-            id: "run",
-            label: "Run",
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              void runTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
-            }
-          },
-          {
-            id: "copy",
-            label: "Copy",
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              void copyTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry);
-            }
-          },
-          {
-            id: "delete",
-            label: "Delete",
-            danger: true,
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              deleteTerminalCommandHistoryEntry(selectedCommandHistoryContextEntry.id);
-            }
-          },
-          {
-            id: "close",
-            label: "Close",
-            onSelect: closeCommandHistoryContextMenu
-          }
-        ]
-      : [
-          {
-            id: "add",
-            label: "Add",
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              void addTerminalCommandHistoryEntry();
-            }
-          },
-          {
-            id: "import",
-            label: "Import",
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              void importTerminalCommandHistory();
-            }
-          },
-          {
-            id: "export",
-            label: "Export",
-            disabled: terminalCommandHistoryEntries.length === 0,
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              void exportTerminalCommandHistory();
-            }
-          },
-          {
-            id: "run-snippet",
-            label: "Run Snippet",
-            disabled: totalCommandSnippetCount === 0,
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              openCommandSnippetManager();
-            }
-          },
-          {
-            id: "snippet-manager",
-            label: "Snippet Manager",
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              void openCommandSnippetManager();
-            }
-          },
-          {
-            id: "manage",
-            label: "Manage",
-            onSelect: () => {
-              closeCommandHistoryContextMenu();
-              openCommandHistoryManager();
-            }
-          },
-          {
-            id: "close",
-            label: "Close",
-            onSelect: closeCommandHistoryContextMenu
-          }
-        ];
+    buildCommandHistoryContextMenuActions({
+      closeMenu: closeCommandHistoryContextMenu,
+      entry: selectedCommandHistoryContextEntry,
+      entryCount: terminalCommandHistoryEntries.length,
+      onAdd: () => {
+        void addTerminalCommandHistoryEntry();
+      },
+      onCopy: (entry) => {
+        void copyTerminalCommandHistoryEntry(entry);
+      },
+      onDelete: deleteTerminalCommandHistoryEntry,
+      onExport: () => {
+        void exportTerminalCommandHistory();
+      },
+      onImport: () => {
+        void importTerminalCommandHistory();
+      },
+      onManage: openCommandHistoryManager,
+      onOpenSnippetManager: openCommandSnippetManager,
+      onRun: (entry) => {
+        void runTerminalCommandHistoryEntry(entry);
+      },
+      totalSnippetCount: totalCommandSnippetCount
+    });
   const sftpToolbarMenuActions: WorkbenchContextMenuAction[] = sftpToolbarActions.map(
     (action) => ({
       id: action.id,
@@ -22907,384 +19229,40 @@ export function App() {
         }}
       />
 
-      {isServerHealthDetailOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <div
-            aria-label="Server Health Details"
-            aria-modal="true"
-            className="modal modal--server-health-details"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <div className="modal__header">
-              <div>
-                <h3>Server Health Details</h3>
-                <p className="hint server-health-modal__subtitle">
-                  {activeTerminalTab?.title ?? "No active tab"}
-                </p>
-              </div>
-              <button
-                aria-label="Close server health details"
-                className="icon-button"
-                onClick={() => setIsServerHealthDetailOpen(false)}
-                type="button"
-              >
-                <UiIcon name="close" />
-              </button>
-            </div>
-            {!isActiveTabConnected ? (
-              <p className="hint">Connect the active terminal tab to collect metrics.</p>
-            ) : null}
-            {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
-            {serverHealth ? (
-              <div className="server-health-details">
-                <div className="server-health-grid server-health-grid--details">
-                  <div
-                    className={
-                      serverHealthAlertStatus.cpuHigh
-                        ? "server-health-card server-health-card--cpu is-alert"
-                        : "server-health-card server-health-card--cpu"
-                    }
-                  >
-                    <span className="server-health-card__label">CPU</span>
-                    <strong className="server-health-card__value">
-                      {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
-                    </strong>
-                    <span className="server-health-card__meta">
-                      <span>Cores</span> {serverHealthCpuCoreLabel}
-                    </span>
-                  </div>
-                  <div
-                    className={
-                      serverHealthAlertStatus.memoryHigh
-                        ? "server-health-card server-health-card--memory is-alert"
-                        : "server-health-card server-health-card--memory"
-                    }
-                  >
-                    <span className="server-health-card__label">Memory</span>
-                    <strong className="server-health-card__value">
-                      {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
-                    </strong>
-                    <span className="server-health-card__meta">
-                      <span>Used</span> {formatTransferBytes(serverHealth.memoryUsedBytes)} ·{" "}
-                      <span>Available</span> {formatTransferBytes(serverHealthMemoryAvailableBytes)}
-                    </span>
-                  </div>
-                  <div
-                    className={
-                      serverHealthAlertStatus.diskHigh
-                        ? "server-health-card server-health-card--disk is-alert"
-                        : "server-health-card server-health-card--disk"
-                    }
-                  >
-                    <span className="server-health-card__label">Disk</span>
-                    <strong className="server-health-card__value">
-                      {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
-                    </strong>
-                    <span className="server-health-card__meta">
-                      {serverHealth.diskPath} · <span>Free</span>{" "}
-                      {formatTransferBytes(serverHealth.diskAvailableBytes)} · <span>Total</span>{" "}
-                      {formatTransferBytes(serverHealth.diskTotalBytes)}
-                    </span>
-                  </div>
-                  <div className="server-health-card server-health-card--network">
-                    <span className="server-health-card__label">Network</span>
-                    <strong className="server-health-card__value">
-                      RX {formatTransferBytes(serverHealthMetrics?.rxBytesPerSecond ?? 0)}/s
-                    </strong>
-                    <span className="server-health-card__meta">
-                      TX {formatTransferBytes(serverHealthMetrics?.txBytesPerSecond ?? 0)}/s ·{" "}
-                      <span>Total</span> RX {formatTransferBytes(serverHealth.networkRxBytes)} / TX{" "}
-                      {formatTransferBytes(serverHealth.networkTxBytes)}
-                    </span>
-                  </div>
-                  <div className="server-health-card server-health-card--load">
-                    <span className="server-health-card__label">Load</span>
-                    <strong className="server-health-card__value">
-                      {serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} /{" "}
-                      {serverHealth.load15.toFixed(2)}
-                    </strong>
-                    <span className="server-health-card__meta">1m / 5m / 15m</span>
-                  </div>
-                  <div className="server-health-card server-health-card--uptime">
-                    <span className="server-health-card__label">Uptime</span>
-                    <strong className="server-health-card__value">
-                      {formatServerUptime(serverHealth.uptimeSeconds)}
-                    </strong>
-                    <span className="server-health-card__meta">{serverHealth.hostname}</span>
-                  </div>
-                </div>
-                <div className="server-health-detail-tabs" role="tablist" aria-label="Server health sections">
-                  {[
-                    ["overview", "Overview"],
-                    ["disk", "Disk"],
-                    ["network", "Network"],
-                    ["processes", "Processes"],
-                    ["services", "Services"]
-                  ].map(([tabId, label]) => (
-                    <button
-                      aria-selected={serverHealthDetailTab === tabId}
-                      className={
-                        serverHealthDetailTab === tabId
-                          ? "server-health-detail-tab is-active"
-                          : "server-health-detail-tab"
-                      }
-                      key={tabId}
-                      onClick={() => setServerHealthDetailTab(tabId as ServerHealthDetailTab)}
-                      role="tab"
-                      type="button"
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="server-health-detail-panel">
-                  {serverHealthDetailTab === "overview" ? (
-                    <>
-                      <div className="server-health-info-grid" aria-label="System information">
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Hostname</span>
-                          <strong className="server-health-info-item__value">{serverHealth.hostname}</strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">OS</span>
-                          <strong className="server-health-info-item__value">
-                            {serverHealth.osName || "-"}
-                          </strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Kernel</span>
-                          <strong className="server-health-info-item__value">{serverHealthKernelLabel}</strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Architecture</span>
-                          <strong className="server-health-info-item__value">
-                            {serverHealth.architecture || "-"}
-                          </strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">CPU cores</span>
-                          <strong className="server-health-info-item__value">{serverHealthCpuCoreLabel}</strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Load / core</span>
-                          <strong className="server-health-info-item__value">
-                            {serverHealthLoadPerCore === null ? "-" : serverHealthLoadPerCore.toFixed(2)}
-                          </strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Free memory</span>
-                          <strong className="server-health-info-item__value">
-                            {formatTransferBytes(serverHealth.memoryFreeBytes ?? 0)}
-                          </strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Cache / buffers</span>
-                          <strong className="server-health-info-item__value">
-                            {formatTransferBytes(serverHealth.memoryCachedBytes ?? 0)} /{" "}
-                            {formatTransferBytes(serverHealth.memoryBufferBytes ?? 0)}
-                          </strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Swap</span>
-                          <strong className="server-health-info-item__value">
-                            {formatPercent(serverHealthSwapUsagePercent)} ·{" "}
-                            {formatTransferBytes(serverHealth.swapUsedBytes ?? 0)}/
-                            {formatTransferBytes(serverHealth.swapTotalBytes ?? 0)}
-                          </strong>
-                        </div>
-                        <div className="server-health-info-item">
-                          <span className="server-health-info-item__label">Collected</span>
-                          <strong className="server-health-info-item__value">
-                            {serverHealthCollectedAtLabel}
-                          </strong>
-                        </div>
-                      </div>
-                    </>
-                  ) : null}
-                  {serverHealthDetailTab === "disk" ? (
-                    <div className="server-health-table server-health-table--disk">
-                      <div className="server-health-table__row server-health-table__row--header">
-                        <span>Mount</span>
-                        <span>Type</span>
-                        <span>Used</span>
-                        <span>Free</span>
-                        <span>Use</span>
-                        <span>Inodes</span>
-                      </div>
-                      {serverHealthFilesystems.map((entry) => (
-                        <div className="server-health-table__row" key={`${entry.filesystem}-${entry.path}`}>
-                          <span className="server-health-table__main" title={`${entry.filesystem} ${entry.path}`}>
-                            {entry.path}
-                          </span>
-                          <span>{entry.type || "-"}</span>
-                          <span>
-                            {formatTransferBytes(entry.usedBytes)}/{formatTransferBytes(entry.totalBytes)}
-                          </span>
-                          <span>{formatTransferBytes(entry.availableBytes)}</span>
-                          <span>{formatOptionalPercent(entry.usePercent)}</span>
-                          <span>{formatOptionalPercent(entry.inodeUsedPercent)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  {serverHealthDetailTab === "network" ? (
-                    <div className="server-health-table server-health-table--network">
-                      <div className="server-health-table__row server-health-table__row--header">
-                        <span>Interface</span>
-                        <span>RX</span>
-                        <span>TX</span>
-                        <span>RX errors</span>
-                        <span>TX errors</span>
-                        <span>Dropped</span>
-                      </div>
-                      {serverHealthNetworkInterfaces.length ? (
-                        serverHealthNetworkInterfaces.map((entry) => (
-                          <div className="server-health-table__row" key={entry.name}>
-                            <span className="server-health-table__main">{entry.name}</span>
-                            <span>{formatTransferBytes(entry.rxBytes)}</span>
-                            <span>{formatTransferBytes(entry.txBytes)}</span>
-                            <span>{entry.rxErrors ?? 0}</span>
-                            <span>{entry.txErrors ?? 0}</span>
-                            <span>
-                              {(entry.rxDropped ?? 0).toLocaleString()}/
-                              {(entry.txDropped ?? 0).toLocaleString()}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="hint">No network interface data yet.</p>
-                      )}
-                    </div>
-                  ) : null}
-                  {serverHealthDetailTab === "processes" ? (
-                    <>
-                      {serverProcessError ? <p className="hint sftp-error">{serverProcessError}</p> : null}
-                      {serverProcessLoading ? (
-                        <p className="hint" role="status" aria-live="polite">
-                          Collecting process details...
-                        </p>
-                      ) : null}
-                      <div className="server-health-details__columns">
-                        <div className="server-health-processes">
-                          <p className="hint server-health-processes__title">Top processes (CPU)</p>
-                          {serverProcessSnapshot?.processes?.length ? (
-                            <ul className="server-health-processes__list">
-                              <li className="server-health-processes__item server-health-processes__item--header">
-                                <span className="server-health-processes__pid">PID</span>
-                                <span className="server-health-processes__user">User</span>
-                                <span className="server-health-processes__command">Command</span>
-                                <span className="server-health-processes__cpu">CPU</span>
-                                <span className="server-health-processes__mem">MEM</span>
-                              </li>
-                              {serverProcessSnapshot.processes.map((entry) => (
-                                <li className="server-health-processes__item" key={`cpu-${entry.pid}-${entry.command}`}>
-                                  <span className="server-health-processes__pid">{entry.pid}</span>
-                                  <span className="server-health-processes__user" title={entry.user}>
-                                    {entry.user}
-                                  </span>
-                                  <span className="server-health-processes__command" title={entry.command}>
-                                    {entry.command}
-                                  </span>
-                                  <span className="server-health-processes__cpu">
-                                    {formatProcessPercent(entry.cpuPercent)}
-                                  </span>
-                                  <span className="server-health-processes__mem">
-                                    {formatProcessPercent(entry.memoryPercent)}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="hint">No process data yet.</p>
-                          )}
-                        </div>
-                        <div className="server-health-processes">
-                          <p className="hint server-health-processes__title">Top processes (Memory)</p>
-                          {serverHealthMemoryProcesses.length ? (
-                            <ul className="server-health-processes__list">
-                              <li className="server-health-processes__item server-health-processes__item--header">
-                                <span className="server-health-processes__pid">PID</span>
-                                <span className="server-health-processes__user">User</span>
-                                <span className="server-health-processes__command">Command</span>
-                                <span className="server-health-processes__cpu">CPU</span>
-                                <span className="server-health-processes__mem">MEM</span>
-                              </li>
-                              {serverHealthMemoryProcesses.map((entry) => (
-                                <li className="server-health-processes__item" key={`mem-${entry.pid}-${entry.command}`}>
-                                  <span className="server-health-processes__pid">{entry.pid}</span>
-                                  <span className="server-health-processes__user" title={entry.user}>
-                                    {entry.user}
-                                  </span>
-                                  <span className="server-health-processes__command" title={entry.command}>
-                                    {entry.command}
-                                  </span>
-                                  <span className="server-health-processes__cpu">
-                                    {formatProcessPercent(entry.cpuPercent)}
-                                  </span>
-                                  <span className="server-health-processes__mem">
-                                    {formatProcessPercent(entry.memoryPercent)}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="hint">No process data yet.</p>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  ) : null}
-                  {serverHealthDetailTab === "services" ? (
-                    <div className="server-health-services server-health-services--details">
-                      <p className="hint server-health-processes__title">Failed services</p>
-                      {serverProcessError ? <p className="hint sftp-error">{serverProcessError}</p> : null}
-                      {serverProcessSnapshot?.failedServices?.length ? (
-                        <ul className="server-health-services__list server-health-services__list--details">
-                          {serverProcessSnapshot.failedServices.map((entry) => (
-                            <li className="server-health-services__item server-health-services__item--details" key={entry.name}>
-                              <strong>{entry.name}</strong>
-                              <span>
-                                {[entry.loadState, entry.activeState, entry.subState].filter(Boolean).join(" / ") ||
-                                  "-"}
-                              </span>
-                              {entry.description ? <small>{entry.description}</small> : null}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="hint">No failed services detected.</p>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : (
-              <p className="hint">No server metrics collected yet.</p>
-            )}
-            <div className="modal__actions">
-              <button
-                className="secondary-button"
-                disabled={!activeTerminalTab || !isActiveTabConnected || serverHealthLoading || serverProcessLoading}
-                onClick={() => {
-                  void refreshServerHealth();
-                  void refreshServerProcesses();
-                }}
-                type="button"
-              >
-                Refresh
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => setIsServerHealthDetailOpen(false)}
-                type="button"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ServerHealthDetailModal
+        alertStatus={serverHealthAlertStatus}
+        canRefresh={Boolean(activeTerminalTab) && isActiveTabConnected && !serverHealthLoading && !serverProcessLoading}
+        collectedAtLabel={serverHealthCollectedAtLabel}
+        cpuCoreLabel={serverHealthCpuCoreLabel}
+        detailTab={serverHealthDetailTab}
+        filesystems={serverHealthFilesystems}
+        formatOptionalPercent={formatOptionalPercent}
+        formatPercent={formatPercent}
+        formatProcessPercent={formatProcessPercent}
+        formatTransferBytes={formatTransferBytes}
+        formatUptime={formatServerUptime}
+        isConnected={isActiveTabConnected}
+        kernelLabel={serverHealthKernelLabel}
+        loadPerCore={serverHealthLoadPerCore}
+        memoryAvailableBytes={serverHealthMemoryAvailableBytes}
+        memoryProcesses={serverHealthMemoryProcesses}
+        metrics={serverHealthMetrics}
+        networkInterfaces={serverHealthNetworkInterfaces}
+        onClose={() => setIsServerHealthDetailOpen(false)}
+        onRefresh={() => {
+          void refreshServerHealth();
+          void refreshServerProcesses();
+        }}
+        onSelectTab={setServerHealthDetailTab}
+        open={isServerHealthDetailOpen}
+        processError={serverProcessError}
+        processLoading={serverProcessLoading}
+        processSnapshot={serverProcessSnapshot}
+        serverHealth={serverHealth}
+        serverHealthError={serverHealthError}
+        subtitle={activeTerminalTab?.title ?? "No active tab"}
+        swapUsagePercent={serverHealthSwapUsagePercent}
+      />
 
       {isOperationCenterOpen ? (
         <Suspense fallback={null}>
@@ -23695,930 +19673,133 @@ export function App() {
         />
       </SettingsModalShell>
 
-      {isCreateModalOpen ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-        >
-          <div
-            className="modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label={editingSessionId ? "Edit Session" : "Create Session"}
-          >
-            <div className="modal__header">
-              <h3>{editingSessionId ? "Edit Session" : "Create Session"}</h3>
-              <button className="icon-button" onClick={closeCreateModal} type="button">
-                Close
-              </button>
-            </div>
-            <form className="session-form" onSubmit={handleCreateSession}>
-              <div className="session-template-tools">
-                <div className="session-template-tools__summary">
-                  <strong>Template Tools</strong>
-                  <span className="hint">
-                    Saved templates {sessionTemplates.length}/{MAX_SESSION_TEMPLATES}
-                  </span>
-                </div>
-                <div className="session-template-tools__actions">
-                  <button
-                    className="field-row__action"
-                    disabled={sessionTemplates.length === 0}
-                    onClick={() => void chooseSessionTemplateAndApply()}
-                    type="button"
-                  >
-                    Apply Template...
-                  </button>
-                  <button
-                    className="field-row__action"
-                    onClick={() =>
-                      openSessionTemplateManager({
-                        sourceForm: form
-                      })
-                    }
-                    type="button"
-                  >
-                    Save as Template...
-                  </button>
-                  <button
-                    className="field-row__action"
-                    onClick={() => openSessionTemplateManager()}
-                    type="button"
-                  >
-                    Manage Templates...
-                  </button>
-                </div>
-              </div>
-              <label>
-                Name
-                <input
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, name: event.target.value }))
-                  }
-                  placeholder="prod-web-01"
-                  value={form.name}
-                />
-              </label>
-              <label>
-                Host
-                <input
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, host: event.target.value }))
-                  }
-                  placeholder="10.0.10.31"
-                  value={form.host}
-                />
-              </label>
-              <div className="field-grid">
-                <label>
-                  Port
-                  <input
-                    max={65535}
-                    min={1}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        port: Number(event.target.value) || 22
-                      }))
-                    }
-                    type="number"
-                    value={form.port ?? 22}
-                  />
-                </label>
-                <label>
-                  Username
-                  <input
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, username: event.target.value }))
-                    }
-                    placeholder="ec2-user"
-                    value={form.username}
-                  />
-                </label>
-              </div>
-              <label>
-                Group
-                <select
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, groupId: event.target.value }))
-                  }
-                  value={form.groupId ?? ""}
-                >
-                  <option value="">Ungrouped</option>
-                  {sessionGroupOptions.map((groupName) => (
-                    <option key={groupName} value={groupName}>
-                      {groupName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Auth Type
-                <select
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      authType: event.target.value as SessionCreateInput["authType"]
-                    }))
-                  }
-                  value={form.authType}
-                >
-                  <option value="password">Password</option>
-                  <option value="privateKey">Private Key</option>
-                </select>
-              </label>
-              {form.authType === "privateKey" ? (
-                <label>
-                  Private Key Path
-                  <div className="field-row">
-                    <input
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          privateKeyPath: event.target.value
-                        }))
-                      }
-                      placeholder="~/.ssh/id_ed25519"
-                      value={form.privateKeyPath ?? ""}
-                    />
-                    <button
-                      className="field-row__action"
-                      onClick={() => void pickPrivateKeyFile()}
-                      type="button"
-                    >
-                      Choose File
-                    </button>
-                  </div>
-                </label>
-              ) : null}
-              <label>
-                {form.authType === "password" ? "Password" : "Key Passphrase (Optional)"}
-                <input
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, secret: event.target.value }))
-                  }
-                  placeholder={
-                    form.authType === "password"
-                      ? editingSessionId
-                        ? "Leave blank to keep current password"
-                        : "Password stored in OS secure vault"
-                      : "Optional passphrase"
-                  }
-                  type="password"
-                  value={form.secret ?? ""}
-                />
-              </label>
-              <label>
-                Remark
-                <input
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, remark: event.target.value }))
-                  }
-                  placeholder="web production host"
-                  value={form.remark ?? ""}
-                />
-              </label>
+      <SessionCreateModal
+        editingSessionId={editingSessionId}
+        form={form}
+        groupOptions={sessionGroupOptions}
+        maxTemplateCount={MAX_SESSION_TEMPLATES}
+        onApplyTemplate={() => {
+          void chooseSessionTemplateAndApply();
+        }}
+        onClose={closeCreateModal}
+        onFormChange={updateCreateSessionFormFields}
+        onManageTemplates={() => openSessionTemplateManager()}
+        onPickPrivateKeyFile={() => {
+          void pickPrivateKeyFile();
+        }}
+        onSaveAsTemplate={() =>
+          openSessionTemplateManager({
+            sourceForm: form
+          })
+        }
+        onSubmit={handleCreateSession}
+        onTestConnection={() => {
+          void handleTestConnection();
+        }}
+        open={isCreateModalOpen}
+        saving={saving}
+        sessionTemplateCount={sessionTemplates.length}
+        testConnectionResult={testConnectionResult}
+        testingConnection={testingConnection}
+      />
 
-              {testConnectionResult ? (
-                <p
-                  className={
-                    testConnectionResult.ok
-                      ? "hint test-result test-result--ok"
-                      : "hint test-result test-result--error"
-                  }
-                >
-                  {testConnectionResult.message}
-                </p>
-              ) : null}
+      <SessionTemplateManagerModal
+        draft={sessionTemplateDraft}
+        editingTemplate={editingSessionTemplate}
+        editingTemplateId={editingSessionTemplateId}
+        error={sessionTemplateError}
+        maxEnvVarCount={MAX_SESSION_TEMPLATE_ENV_VARS}
+        maxTemplateCount={MAX_SESSION_TEMPLATES}
+        onAddEnvVar={addSessionTemplateEnvVar}
+        onClose={closeSessionTemplateManager}
+        onDeleteEditingTemplate={() => {
+          void deleteEditingSessionTemplate();
+        }}
+        onDraftFieldChange={updateSessionTemplateDraftFields}
+        onRemoveEnvVar={removeSessionTemplateEnvVar}
+        onResetDraft={resetSessionTemplateDraft}
+        onSelectTemplate={loadSessionTemplateForEditing}
+        onSubmit={(event) => saveSessionTemplateDraft(sessionTemplateDraft, event)}
+        onUpdateEnvVar={updateSessionTemplateEnvVar}
+        onUseCurrentForm={() => startSessionTemplateDraftFromForm(form)}
+        onUseEditingTemplate={() => {
+          if (!editingSessionTemplate) {
+            return;
+          }
+          void applySessionTemplateToForm(editingSessionTemplate, {
+            openCreateModal: true,
+            forceNewSession: !isCreateModalOpen
+          });
+        }}
+        open={isSessionTemplateManagerOpen}
+        templates={sessionTemplates}
+      />
 
-              <div className="modal__actions">
-                <button
-                  className="icon-button"
-                  disabled={saving || testingConnection}
-                  onClick={closeCreateModal}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="field-row__action"
-                  disabled={saving || testingConnection}
-                  onClick={() => void handleTestConnection()}
-                  type="button"
-                >
-                  {testingConnection ? "Testing..." : "Test Connection"}
-                </button>
-                <button className="primary-button" disabled={saving} type="submit">
-                  {saving ? "Saving..." : editingSessionId ? "Save Changes" : "Create Session"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
+      <MoveGroupDialogModal
+        dialog={moveGroupDialog}
+        groupOptions={sessionGroupOptions}
+        onClose={closeMoveGroupDialog}
+        onSubmit={() => {
+          void submitMoveGroupDialog();
+        }}
+        onTargetGroupChange={(targetGroup) => {
+          setMoveGroupDialog((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  targetGroup
+                }
+              : prev
+          );
+        }}
+      />
 
-      {isSessionTemplateManagerOpen ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-        >
-          <div
-            className="modal modal--wide"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Session Templates"
-          >
-            <div className="modal__header">
-              <h3>Session Templates</h3>
-              <button
-                className="icon-button"
-                onClick={closeSessionTemplateManager}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-            <div className="session-template-manager">
-              <aside className="session-template-manager__sidebar">
-                <div className="session-template-manager__sidebar-actions">
-                  <button
-                    className="field-row__action"
-                    onClick={resetSessionTemplateDraft}
-                    type="button"
-                  >
-                    New Blank
-                  </button>
-                  <button
-                    className="field-row__action"
-                    onClick={() => startSessionTemplateDraftFromForm(form)}
-                    type="button"
-                  >
-                    Use Current Form
-                  </button>
-                </div>
-                <p className="hint">
-                  Use {"${ENV_NAME}"} placeholders in host, name, user, group, remark, secret, and
-                  key path fields.
-                </p>
-                {sessionTemplates.length === 0 ? (
-                  <p className="hint">No saved templates yet.</p>
-                ) : (
-                  <ul className="session-template-list">
-                    {sessionTemplates.map((template) => (
-                      <li key={template.id}>
-                        <button
-                          className={
-                            editingSessionTemplateId === template.id
-                              ? "session-template-list__item is-selected"
-                              : "session-template-list__item"
-                          }
-                          onClick={() => loadSessionTemplateForEditing(template)}
-                          type="button"
-                        >
-                          <span className="session-template-list__name">
-                            {template.templateName}
-                          </span>
-                          <span className="session-template-list__meta">
-                            {(template.host || "host pending") +
-                              (template.username ? ` · ${template.username}` : "")}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </aside>
-              <form
-                className="session-form session-template-manager__editor"
-                onSubmit={(event) => saveSessionTemplateDraft(event)}
-              >
-                <label>
-                  Template Name
-                  <input
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      setSessionTemplateDraft((prev) => ({
-                        ...prev,
-                        templateName: nextValue
-                      }));
-                      setSessionTemplateError(null);
-                    }}
-                    placeholder="Prod Web Template"
-                    value={sessionTemplateDraft.templateName}
-                  />
-                </label>
-                <div className="field-grid">
-                  <label>
-                    Session Name
-                    <input
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setSessionTemplateDraft((prev) => ({
-                          ...prev,
-                          sessionName: nextValue
-                        }));
-                        setSessionTemplateError(null);
-                      }}
-                      placeholder="web-${ENV}-${INDEX}"
-                      value={sessionTemplateDraft.sessionName}
-                    />
-                  </label>
-                  <label>
-                    Port
-                    <input
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setSessionTemplateDraft((prev) => ({
-                          ...prev,
-                          port: nextValue
-                        }));
-                        setSessionTemplateError(null);
-                      }}
-                      placeholder="22"
-                      value={sessionTemplateDraft.port}
-                    />
-                  </label>
-                </div>
-                <div className="field-grid">
-                  <label>
-                    Host
-                    <input
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setSessionTemplateDraft((prev) => ({
-                          ...prev,
-                          host: nextValue
-                        }));
-                        setSessionTemplateError(null);
-                      }}
-                      placeholder="${HOST}"
-                      value={sessionTemplateDraft.host}
-                    />
-                  </label>
-                  <label>
-                    Username
-                    <input
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setSessionTemplateDraft((prev) => ({
-                          ...prev,
-                          username: nextValue
-                        }));
-                        setSessionTemplateError(null);
-                      }}
-                      placeholder="deploy"
-                      value={sessionTemplateDraft.username}
-                    />
-                  </label>
-                </div>
-                <div className="field-grid">
-                  <label>
-                    Group
-                    <input
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setSessionTemplateDraft((prev) => ({
-                          ...prev,
-                          groupId: nextValue
-                        }));
-                        setSessionTemplateError(null);
-                      }}
-                      placeholder="${ENV}"
-                      value={sessionTemplateDraft.groupId}
-                    />
-                  </label>
-                  <label>
-                    Auth Type
-                    <select
-                      onChange={(event) => {
-                        const nextValue = event.target.value as SessionCreateInput["authType"];
-                        setSessionTemplateDraft((prev) => ({
-                          ...prev,
-                          authType: nextValue
-                        }));
-                        setSessionTemplateError(null);
-                      }}
-                      value={sessionTemplateDraft.authType}
-                    >
-                      <option value="password">Password</option>
-                      <option value="privateKey">Private Key</option>
-                    </select>
-                  </label>
-                </div>
-                {sessionTemplateDraft.authType === "privateKey" ? (
-                  <label>
-                    Private Key Path
-                    <input
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setSessionTemplateDraft((prev) => ({
-                          ...prev,
-                          privateKeyPath: nextValue
-                        }));
-                        setSessionTemplateError(null);
-                      }}
-                      placeholder="~/.ssh/${KEY_NAME}"
-                      value={sessionTemplateDraft.privateKeyPath}
-                    />
-                  </label>
-                ) : null}
-                <label>
-                  {sessionTemplateDraft.authType === "password"
-                    ? "Password / Secret"
-                    : "Key Passphrase"}
-                  <input
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      setSessionTemplateDraft((prev) => ({
-                        ...prev,
-                        secret: nextValue
-                      }));
-                      setSessionTemplateError(null);
-                    }}
-                    placeholder={
-                      sessionTemplateDraft.authType === "password"
-                        ? "${SSH_PASSWORD}"
-                        : "${KEY_PASSPHRASE}"
-                    }
-                    type="password"
-                    value={sessionTemplateDraft.secret}
-                  />
-                </label>
-                <label className="settings-checkbox">
-                  <input
-                    checked={sessionTemplateDraft.favorite}
-                    onChange={(event) => {
-                      const nextValue = event.target.checked;
-                      setSessionTemplateDraft((prev) => ({
-                        ...prev,
-                        favorite: nextValue
-                      }));
-                    }}
-                    type="checkbox"
-                  />
-                  Mark created sessions as favorite
-                </label>
-                <label>
-                  Remark
-                  <input
-                    onChange={(event) => {
-                      const nextValue = event.target.value;
-                      setSessionTemplateDraft((prev) => ({
-                        ...prev,
-                        remark: nextValue
-                      }));
-                      setSessionTemplateError(null);
-                    }}
-                    placeholder="Managed by ${OWNER}"
-                    value={sessionTemplateDraft.remark}
-                  />
-                </label>
-                <section className="session-template-env-vars">
-                  <div className="session-template-env-vars__header">
-                    <div>
-                      <h4>Template Env Vars</h4>
-                      <p className="hint">
-                        {sessionTemplateDraft.envVars.length}/{MAX_SESSION_TEMPLATE_ENV_VARS} saved
-                        values
-                      </p>
-                    </div>
-                    <button
-                      className="field-row__action"
-                      disabled={
-                        sessionTemplateDraft.envVars.length >= MAX_SESSION_TEMPLATE_ENV_VARS
-                      }
-                      onClick={addSessionTemplateEnvVar}
-                      type="button"
-                    >
-                      Add Variable
-                    </button>
-                  </div>
-                  {sessionTemplateDraft.envVars.length === 0 ? (
-                    <p className="hint">No template env vars yet.</p>
-                  ) : (
-                    <div className="session-template-env-vars__list">
-                      {sessionTemplateDraft.envVars.map((envVar) => (
-                        <div className="session-template-env-vars__row" key={envVar.id}>
-                          <input
-                            onChange={(event) =>
-                              updateSessionTemplateEnvVar(envVar.id, {
-                                key: event.target.value
-                              })
-                            }
-                            placeholder="ENV_NAME"
-                            value={envVar.key}
-                          />
-                          <input
-                            onChange={(event) =>
-                              updateSessionTemplateEnvVar(envVar.id, {
-                                value: event.target.value
-                              })
-                            }
-                            placeholder="value"
-                            value={envVar.value}
-                          />
-                          <button
-                            className="icon-button"
-                            onClick={() => removeSessionTemplateEnvVar(envVar.id)}
-                            type="button"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-                {sessionTemplateError ? (
-                  <p className="hint test-result test-result--error">{sessionTemplateError}</p>
-                ) : null}
-                <div className="modal__actions">
-                  <button
-                    className="icon-button"
-                    onClick={closeSessionTemplateManager}
-                    type="button"
-                  >
-                    Close
-                  </button>
-                  <button
-                    className="field-row__action"
-                    disabled={!editingSessionTemplate}
-                    onClick={() =>
-                      editingSessionTemplate
-                        ? void applySessionTemplateToForm(editingSessionTemplate, {
-                            openCreateModal: true,
-                            forceNewSession: !isCreateModalOpen
-                          })
-                        : undefined
-                    }
-                    type="button"
-                  >
-                    Use Template
-                  </button>
-                  <button
-                    className="field-row__action"
-                    disabled={!editingSessionTemplate}
-                    onClick={() => void deleteEditingSessionTemplate()}
-                    type="button"
-                  >
-                    Delete Template
-                  </button>
-                  <button className="primary-button" type="submit">
-                    {editingSessionTemplate ? "Save Changes" : "Save Template"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AppDialogModal
+        dialog={appDialog}
+        inputElementRef={appDialogInputRef}
+        inputValue={appDialogInput}
+        onClose={closeAppDialog}
+        onInputChange={setAppDialogInput}
+        onResolveOption={resolveAppDialog}
+        onSubmit={submitAppDialog}
+      />
 
-      {moveGroupDialog ? (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-        >
-          <div
-            className="modal modal--compact app-dialog"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Move Sessions to Group"
-          >
-            <div className="modal__header">
-              <h3>
-                {moveGroupDialog.sessionIds.length > 1
-                  ? `Move ${moveGroupDialog.sessionIds.length} Sessions`
-                  : "Move Session"}
-              </h3>
-              <button className="icon-button" onClick={closeMoveGroupDialog} type="button">
-                <UiIcon name="close" />
-              </button>
-            </div>
-            <p className="app-dialog__message">Select target group from the list.</p>
-            <form
-              className="session-form app-dialog"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitMoveGroupDialog();
-              }}
-            >
-              <label>
-                Target Group
-                <select
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setMoveGroupDialog((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            targetGroup: nextValue
-                          }
-                        : prev
-                    );
-                  }}
-                  value={moveGroupDialog.targetGroup}
-                >
-                  <option value="">Ungrouped</option>
-                  {sessionGroupOptions.map((groupName) => (
-                    <option key={groupName} value={groupName}>
-                      {groupName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="modal__actions">
-                <button className="secondary-button" onClick={closeMoveGroupDialog} type="button">
-                  Cancel
-                </button>
-                <button className="primary-button" type="submit">
-                  Move
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
-      {appDialog ? (
-        <div className="modal-backdrop" role="presentation">
-          <div
-            className={
-              appDialog.mode === "choice"
-                ? "modal modal--compact app-dialog app-dialog--choice"
-                : (appDialog.mode === "alert" || appDialog.mode === "confirm") && appDialog.detailText
-                  ? "modal modal--compact app-dialog app-dialog--details"
-                  : "modal modal--compact app-dialog"
-            }
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label={appDialog.title}
-          >
-            <div className="modal__header">
-              <h3>{appDialog.title}</h3>
-              <button className="icon-button" onClick={closeAppDialog} type="button">
-                <UiIcon name="close" />
-              </button>
-            </div>
-            <p className="app-dialog__message">{appDialog.message}</p>
-            {appDialog.mode === "prompt" ? (
-              appDialog.multiline ? (
-                <textarea
-                  className="app-dialog__textarea"
-                  onChange={(event) => setAppDialogInput(event.target.value)}
-                  ref={(element) => {
-                    appDialogInputRef.current = element;
-                  }}
-                  rows={6}
-                  value={appDialogInput}
-                />
-              ) : (
-                <input
-                  className="app-dialog__input"
-                  onChange={(event) => setAppDialogInput(event.target.value)}
-                  ref={(element) => {
-                    appDialogInputRef.current = element;
-                  }}
-                  type={appDialog.inputType ?? "text"}
-                  value={appDialogInput}
-                />
-              )
-            ) : (appDialog.mode === "alert" || appDialog.mode === "confirm" || appDialog.mode === "choice") &&
-              appDialog.detailText ? (
-              <textarea
-                className="app-dialog__textarea app-dialog__textarea--readonly"
-                readOnly
-                value={appDialog.detailText}
-              />
-            ) : null}
-            {appDialog.mode === "prompt" && appDialog.multiline ? (
-              <p className="hint app-dialog__hint">Use Ctrl+Enter to confirm.</p>
-            ) : null}
-            <div
-              className={
-                appDialog.mode === "choice"
-                  ? "modal__actions app-dialog__choice-actions"
-                  : "modal__actions"
-              }
-            >
-              {appDialog.mode !== "alert" ? (
-                <button
-                  className={
-                    appDialog.mode === "choice"
-                      ? "secondary-button app-dialog__choice-cancel"
-                      : "secondary-button"
-                  }
-                  onClick={closeAppDialog}
-                  type="button"
-                >
-                  {appDialog.cancelLabel}
-                </button>
-              ) : null}
-              {appDialog.mode === "choice"
-                ? appDialog.options.map((option) => (
-                    <button
-                      className={
-                        option.danger
-                          ? "primary-button app-dialog__confirm--danger"
-                          : "primary-button"
-                      }
-                      key={option.value}
-                      onClick={() => resolveAppDialog(option.value)}
-                      type="button"
-                    >
-                      {option.label}
-                    </button>
-                  ))
-                : (
-                    <button
-                      className={
-                        appDialog.mode === "confirm" && appDialog.danger
-                          ? "primary-button app-dialog__confirm--danger"
-                          : "primary-button"
-                      }
-                      onClick={submitAppDialog}
-                      type="button"
-                    >
-                      {appDialog.confirmLabel}
-                    </button>
-                  )}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="error-bar" role="status">
-          <p className="error-bar__message">{error}</p>
-          {globalErrorRecovery.hint ? (
-            <p className="hint error-bar__hint">{globalErrorRecovery.hint}</p>
-          ) : null}
-          <div className="error-bar__actions">
-            {globalErrorRecovery.canReconnect ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={() => {
-                  void reconnectActiveTabFromError();
-                }}
-                type="button"
-              >
-                Reconnect
-              </button>
-            ) : null}
-            {globalErrorRecovery.canOpenLogs ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={() => {
-                  void openLogDirectory();
-                }}
-                type="button"
-              >
-                Open Logs
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "connection" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openConnectionSettingsFromError}
-                type="button"
-              >
-                Connection Settings
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "fileOpening" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openFileOpeningSettingsFromError}
-                type="button"
-              >
-                File Opening
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "hotkeys" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openHotkeysSettingsFromError}
-                type="button"
-              >
-                Hotkeys
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "workspace" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openWorkspaceSettingsFromError}
-                type="button"
-              >
-                Workspace
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "safety" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openSafetySettingsFromError}
-                type="button"
-              >
-                Safety
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "serverHealth" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openServerHealthSettingsFromError}
-                type="button"
-              >
-                Monitor
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "sftp" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openSftpSettingsFromError}
-                type="button"
-              >
-                SFTP Settings
-              </button>
-            ) : null}
-            {globalErrorRecovery.settingsAction === "portForwarding" ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openPortForwardingSettingsFromError}
-                type="button"
-              >
-                Port Fwd
-              </button>
-            ) : null}
-            {globalErrorRecovery.canOpenRetryCenter ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openRetryCenterFromError}
-                type="button"
-              >
-                Retry Center
-              </button>
-            ) : null}
-            {globalErrorRecovery.canOpenOperationCenter ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={openOperationCenterFromError}
-                type="button"
-              >
-                Operation Center
-              </button>
-            ) : null}
-            {globalErrorRecovery.canExportBugReport ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={exportBugReportFromError}
-                type="button"
-              >
-                Export Bug Report
-              </button>
-            ) : null}
-            <button
-              className="secondary-button secondary-button--small"
-              onClick={() => {
-                openDiagnosticsFromError();
-              }}
-              type="button"
-            >
-              Diagnostics
-            </button>
-            <button
-              className="secondary-button secondary-button--small"
-              onClick={() => {
-                void copyGlobalErrorMessage();
-              }}
-              type="button"
-            >
-              Copy Error
-            </button>
-            {globalErrorRecovery.canCopyLatestDisconnectReport ? (
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={() => {
-                  void copyLatestDisconnectReport();
-                }}
-                type="button"
-              >
-                Copy Latest Disconnect
-              </button>
-            ) : null}
-            <button
-              aria-label="Dismiss error"
-              className="icon-button"
-              onClick={dismissGlobalError}
-              title="Dismiss"
-              type="button"
-            >
-              <UiIcon name="close" />
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <GlobalErrorBar
+        canCopyLatestDisconnectReport={globalErrorRecovery.canCopyLatestDisconnectReport}
+        canExportBugReport={globalErrorRecovery.canExportBugReport}
+        canOpenLogs={globalErrorRecovery.canOpenLogs}
+        canOpenOperationCenter={globalErrorRecovery.canOpenOperationCenter}
+        canOpenRetryCenter={globalErrorRecovery.canOpenRetryCenter}
+        canReconnect={globalErrorRecovery.canReconnect}
+        error={error}
+        hint={globalErrorRecovery.hint}
+        onCopyError={() => {
+          void copyGlobalErrorMessage();
+        }}
+        onCopyLatestDisconnect={() => {
+          void copyLatestDisconnectReport();
+        }}
+        onDismiss={dismissGlobalError}
+        onExportBugReport={exportBugReportFromError}
+        onOpenConnectionSettings={openConnectionSettingsFromError}
+        onOpenDiagnostics={openDiagnosticsFromError}
+        onOpenFileOpeningSettings={openFileOpeningSettingsFromError}
+        onOpenHotkeysSettings={openHotkeysSettingsFromError}
+        onOpenLogDirectory={() => {
+          void openLogDirectory();
+        }}
+        onOpenOperationCenter={openOperationCenterFromError}
+        onOpenPortForwardingSettings={openPortForwardingSettingsFromError}
+        onOpenRetryCenter={openRetryCenterFromError}
+        onOpenSafetySettings={openSafetySettingsFromError}
+        onOpenServerHealthSettings={openServerHealthSettingsFromError}
+        onOpenSftpSettings={openSftpSettingsFromError}
+        onOpenWorkspaceSettings={openWorkspaceSettingsFromError}
+        onReconnect={() => {
+          void reconnectActiveTabFromError();
+        }}
+        settingsAction={globalErrorRecovery.settingsAction}
+      />
     </div>
   );
 }

@@ -1,0 +1,186 @@
+import { UiIcon } from "./ui-icon";
+
+type ErrorSettingsAction =
+  | "connection"
+  | "workspace"
+  | "safety"
+  | "hotkeys"
+  | "serverHealth"
+  | "fileOpening"
+  | "sftp"
+  | "portForwarding"
+  | "diagnostics";
+
+interface GlobalErrorBarProps {
+  canCopyLatestDisconnectReport: boolean;
+  canExportBugReport: boolean;
+  canOpenLogs: boolean;
+  canOpenOperationCenter: boolean;
+  canOpenRetryCenter: boolean;
+  canReconnect: boolean;
+  error: string | null;
+  hint: string;
+  onCopyError: () => void;
+  onCopyLatestDisconnect: () => void;
+  onDismiss: () => void;
+  onExportBugReport: () => void;
+  onOpenConnectionSettings: () => void;
+  onOpenDiagnostics: () => void;
+  onOpenFileOpeningSettings: () => void;
+  onOpenHotkeysSettings: () => void;
+  onOpenLogDirectory: () => void;
+  onOpenOperationCenter: () => void;
+  onOpenPortForwardingSettings: () => void;
+  onOpenRetryCenter: () => void;
+  onOpenSafetySettings: () => void;
+  onOpenServerHealthSettings: () => void;
+  onOpenSftpSettings: () => void;
+  onOpenWorkspaceSettings: () => void;
+  onReconnect: () => void;
+  settingsAction: ErrorSettingsAction | null;
+}
+
+export function GlobalErrorBar({
+  canCopyLatestDisconnectReport,
+  canExportBugReport,
+  canOpenLogs,
+  canOpenOperationCenter,
+  canOpenRetryCenter,
+  canReconnect,
+  error,
+  hint,
+  onCopyError,
+  onCopyLatestDisconnect,
+  onDismiss,
+  onExportBugReport,
+  onOpenConnectionSettings,
+  onOpenDiagnostics,
+  onOpenFileOpeningSettings,
+  onOpenHotkeysSettings,
+  onOpenLogDirectory,
+  onOpenOperationCenter,
+  onOpenPortForwardingSettings,
+  onOpenRetryCenter,
+  onOpenSafetySettings,
+  onOpenServerHealthSettings,
+  onOpenSftpSettings,
+  onOpenWorkspaceSettings,
+  onReconnect,
+  settingsAction
+}: GlobalErrorBarProps) {
+  if (!error) {
+    return null;
+  }
+
+  return (
+    <div className="error-bar" role="status">
+      <p className="error-bar__message">{error}</p>
+      {hint ? <p className="hint error-bar__hint">{hint}</p> : null}
+      <div className="error-bar__actions">
+        {canReconnect ? (
+          <button className="secondary-button secondary-button--small" onClick={onReconnect} type="button">
+            Reconnect
+          </button>
+        ) : null}
+        {canOpenLogs ? (
+          <button className="secondary-button secondary-button--small" onClick={onOpenLogDirectory} type="button">
+            Open Logs
+          </button>
+        ) : null}
+        {settingsAction === "connection" ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onOpenConnectionSettings}
+            type="button"
+          >
+            Connection Settings
+          </button>
+        ) : null}
+        {settingsAction === "fileOpening" ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onOpenFileOpeningSettings}
+            type="button"
+          >
+            File Opening
+          </button>
+        ) : null}
+        {settingsAction === "hotkeys" ? (
+          <button className="secondary-button secondary-button--small" onClick={onOpenHotkeysSettings} type="button">
+            Hotkeys
+          </button>
+        ) : null}
+        {settingsAction === "workspace" ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onOpenWorkspaceSettings}
+            type="button"
+          >
+            Workspace
+          </button>
+        ) : null}
+        {settingsAction === "safety" ? (
+          <button className="secondary-button secondary-button--small" onClick={onOpenSafetySettings} type="button">
+            Safety
+          </button>
+        ) : null}
+        {settingsAction === "serverHealth" ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onOpenServerHealthSettings}
+            type="button"
+          >
+            Monitor
+          </button>
+        ) : null}
+        {settingsAction === "sftp" ? (
+          <button className="secondary-button secondary-button--small" onClick={onOpenSftpSettings} type="button">
+            SFTP Settings
+          </button>
+        ) : null}
+        {settingsAction === "portForwarding" ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onOpenPortForwardingSettings}
+            type="button"
+          >
+            Port Fwd
+          </button>
+        ) : null}
+        {canOpenRetryCenter ? (
+          <button className="secondary-button secondary-button--small" onClick={onOpenRetryCenter} type="button">
+            Retry Center
+          </button>
+        ) : null}
+        {canOpenOperationCenter ? (
+          <button className="secondary-button secondary-button--small" onClick={onOpenOperationCenter} type="button">
+            Operation Center
+          </button>
+        ) : null}
+        {canExportBugReport ? (
+          <button className="secondary-button secondary-button--small" onClick={onExportBugReport} type="button">
+            Export Bug Report
+          </button>
+        ) : null}
+        <button className="secondary-button secondary-button--small" onClick={onOpenDiagnostics} type="button">
+          Diagnostics
+        </button>
+        <button className="secondary-button secondary-button--small" onClick={onCopyError} type="button">
+          Copy Error
+        </button>
+        {canCopyLatestDisconnectReport ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onCopyLatestDisconnect}
+            type="button"
+          >
+            Copy Latest Disconnect
+          </button>
+        ) : null}
+        <button aria-label="Dismiss error" className="icon-button" onClick={onDismiss} title="Dismiss" type="button">
+          <UiIcon name="close" />
+        </button>
+      </div>
+    </div>
+  );
+}
