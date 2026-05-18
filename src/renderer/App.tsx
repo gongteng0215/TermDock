@@ -142,14 +142,19 @@ import {
   type DangerousCommandPolicyPackId
 } from "./dangerous-command-guard";
 import { useCommandHistoryViewModels } from "./use-command-history-view-models";
+import { useDisconnectDiagnosticsActions } from "./use-disconnect-diagnostics-actions";
+import { useDisconnectDiagnosticsViewModels } from "./use-disconnect-diagnostics-view-models";
 import {
   formatDangerousCommandTemporaryApprovalScopeLabel,
   useDangerousCommandApprovalFlow
 } from "./use-dangerous-command-approval-flow";
 import { useDangerousCommandSettingsViewModels } from "./use-dangerous-command-settings-view-models";
 import { usePortForwardingViewModels } from "./use-port-forwarding-view-models";
+import { useRetryCenterViewModels } from "./use-retry-center-view-models";
 import { useServerHealthMonitor } from "./use-server-health-monitor";
 import { useSessionGroupingViewModels } from "./use-session-grouping-view-models";
+import { useSftpActivityViewModels } from "./use-sftp-activity-view-models";
+import { useSftpSettingsViewModels } from "./use-sftp-settings-view-models";
 import {
   usePendingTransferRestoreRuntime,
   useSftpTransferBatchNotifications,
@@ -6619,185 +6624,64 @@ export function App() {
       download: strategy?.download ?? null
     };
   }, [activeSessionId, sessionTransferConflictStrategyState.bySessionId]);
-  const sftpScheduleDayViews = useMemo(
-    () =>
-      SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS.map((dayOption) => ({
-        value: dayOption.value,
-        label: dayOption.label,
-        checked: sftpTransferPreferences.scheduleWindowDays.includes(dayOption.value)
-      })),
-    [sftpTransferPreferences.scheduleWindowDays]
-  );
-  const sftpSchedulePresetViews = useMemo(
-    () =>
-      SFTP_TRANSFER_SCHEDULE_PRESETS.map((preset) => {
-        const presetPreferences = createSftpTransferSchedulePreferencesFromPreset(preset);
-        return {
-          id: preset.id,
-          label: preset.label,
-          description: preset.description,
-          summary: preset.scheduleWindowEnabled
-            ? formatSftpTransferScheduleWindowSummary(presetPreferences)
-            : "No schedule restriction",
-          isActive: preset.id === activeSftpTransferSchedulePresetId
-        };
-      }),
-    [activeSftpTransferSchedulePresetId]
-  );
-  const sftpTransferPolicyPackViews = useMemo(
-    () =>
-      sftpTransferPolicyPacks.map((pack) => ({
-        id: pack.id,
-        name: pack.name,
-        summary: formatSftpTransferPolicyPackSummary(pack.preferences),
-        updatedAtLabel: formatPortForwardTimestamp(pack.updatedAtIso),
-        description: pack.description || undefined
-      })),
-    [sftpTransferPolicyPacks]
-  );
-  const sftpTransferPolicyPackLastSyncLabel = useMemo(() => {
-    const { lastPulledAtIso, lastPushedAtIso } = sftpTransferPolicyPackSyncState;
-    if (!lastPulledAtIso && !lastPushedAtIso) {
-      return null;
-    }
-    return `Last pull: ${
-      lastPulledAtIso ? new Date(lastPulledAtIso).toLocaleString() : "never"
-    } | last push: ${lastPushedAtIso ? new Date(lastPushedAtIso).toLocaleString() : "never"}`;
-  }, [
-    sftpTransferPolicyPackSyncState.lastPulledAtIso,
-    sftpTransferPolicyPackSyncState.lastPushedAtIso
-  ]);
-  const sftpConcurrencyHint = `Controls max parallel upload/download tasks. Range: 1-${MAX_SFTP_TRANSFER_CONCURRENCY}. New installs default uploads to 4 and downloads to 2.`;
-  const sftpRateLimitHint = `Per-direction rate limit uses KiB/s. Set 0 to disable throttling. Current upload limit: ${
-    sftpTransferPreferences.uploadRateLimitKiBps > 0
-      ? `${sftpTransferPreferences.uploadRateLimitKiBps} KiB/s`
-      : "unlimited"
-  }. Current download limit: ${
-    sftpTransferPreferences.downloadRateLimitKiBps > 0
-      ? `${sftpTransferPreferences.downloadRateLimitKiBps} KiB/s`
-      : "unlimited"
-  }.`;
-  const sftpScheduleHint = `Schedule window:${
-    sftpTransferPreferences.scheduleWindowEnabled
-      ? ` ${sftpTransferScheduleSummary}. Transfers are currently ${
-          isSftpTransferWindowOpen ? "inside" : "outside"
-        } the allowed window.${
-          !isSftpTransferWindowOpen && nextSftpTransferWindowOpeningLabel
-            ? ` Next queued transfer resume: ${nextSftpTransferWindowOpeningLabel}.`
-            : ""
-        }`
-      : " disabled; queued transfers start immediately when threads are available."
-  }`;
-  const sftpRetryThresholdHint = `Large retry batches at or above this threshold require confirmation. Set to 0 to disable confirmations. Range: ${MIN_RETRY_BATCH_CONFIRM_THRESHOLD}-${MAX_RETRY_BATCH_CONFIRM_THRESHOLD}.`;
-  const sftpActiveSessionConflictHint = `Active-session conflict defaults:${
-    activeSessionId
-      ? ` Upload ${formatTransferConflictStrategyLabel(
-          activeSessionTransferConflictStrategy?.upload
-        )}, Download ${formatTransferConflictStrategyLabel(
-          activeSessionTransferConflictStrategy?.download
-        )}.`
-      : " Open a terminal tab to configure remembered conflict behavior."
-  }`;
-  const visibleDisconnectReports = useMemo(() => {
-    let filtered = disconnectReports;
-    if (disconnectReportScope === "activeSession") {
-      if (!activeSessionId) {
-        return [] as DisconnectReportItem[];
-      }
-      filtered = filtered.filter((entry) => entry.sessionId === activeSessionId);
-    }
-    if (disconnectReportTriggerFilter !== "all") {
-      filtered = filtered.filter((entry) => entry.trigger === disconnectReportTriggerFilter);
-    }
-    const cutoffMs = resolveDisconnectReportTimeRangeCutoff(disconnectReportTimeRange, Date.now());
-    if (cutoffMs !== null) {
-      filtered = filtered.filter((entry) => {
-        const createdAtMs = new Date(entry.createdAt).getTime();
-        return Number.isFinite(createdAtMs) && createdAtMs >= cutoffMs;
-      });
-    }
-    const normalizedQuery = disconnectReportQuery.trim().toLowerCase();
-    if (normalizedQuery) {
-      filtered = filtered.filter((entry) =>
-        [
-          entry.sessionName,
-          entry.target,
-          entry.tabTitle,
-          entry.message,
-          entry.trigger,
-          entry.status ?? ""
-        ].some((value) => value.toLowerCase().includes(normalizedQuery))
-      );
-    }
-    return filtered
-      .slice()
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  }, [
+  const {
+    sftpActiveSessionConflictHint,
+    sftpConcurrencyHint,
+    sftpRateLimitHint,
+    sftpRetryThresholdHint,
+    sftpScheduleDayViews,
+    sftpScheduleHint,
+    sftpSchedulePresetViews,
+    sftpTransferPolicyPackLastSyncLabel,
+    sftpTransferPolicyPackViews
+  } = useSftpSettingsViewModels({
     activeSessionId,
+    activeSessionTransferConflictStrategy,
+    activeSftpTransferSchedulePresetId,
+    formatPortForwardTimestamp,
+    formatSftpTransferPolicyPackSummary,
+    formatTransferConflictStrategyLabel,
+    getSchedulePresetSummary: (preset) => {
+      const presetPreferences = createSftpTransferSchedulePreferencesFromPreset(preset);
+      return preset.scheduleWindowEnabled
+        ? formatSftpTransferScheduleWindowSummary(presetPreferences)
+        : "No schedule restriction";
+    },
+    isSftpTransferWindowOpen,
+    maxSftpTransferConcurrency: MAX_SFTP_TRANSFER_CONCURRENCY,
+    maxRetryBatchConfirmThreshold: MAX_RETRY_BATCH_CONFIRM_THRESHOLD,
+    minRetryBatchConfirmThreshold: MIN_RETRY_BATCH_CONFIRM_THRESHOLD,
+    nextSftpTransferWindowOpeningLabel,
+    scheduleDayOptions: SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS,
+    schedulePresets: SFTP_TRANSFER_SCHEDULE_PRESETS,
+    sftpTransferPolicyPacks,
+    sftpTransferPolicyPackSyncState,
+    sftpTransferPreferences,
+    sftpTransferScheduleSummary
+  });
+  const {
+    diagnosticsDisconnectCaptureHint,
+    diagnosticsDisconnectEmptyStateLabel,
+    diagnosticsDisconnectReportViews,
+    diagnosticsLogDirectoryPath,
+    diagnosticsLogFilePath,
+    hasCustomizedDisconnectReportView,
+    visibleDisconnectReports
+  } = useDisconnectDiagnosticsViewModels({
+    activeSessionId,
+    classifyTransferFailureReason,
+    disconnectCaptureEnabled: disconnectReportCapturePreferences.enabled,
+    disconnectReportDefaults: DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES,
     disconnectReportQuery,
     disconnectReportScope,
     disconnectReportTimeRange,
     disconnectReportTriggerFilter,
-    disconnectReports
-  ]);
-  const openTerminalTabIdSet = useMemo(
-    () => new Set(terminalTabs.map((tab) => tab.id)),
-    [terminalTabs]
-  );
-  const diagnosticsLogDirectoryPath = logInfo?.logDirectoryPath ?? "Not loaded yet";
-  const diagnosticsLogFilePath = logInfo?.logFilePath ?? "Not loaded yet";
-  const diagnosticsDisconnectCaptureHint = disconnectReportCapturePreferences.enabled
-    ? "Unexpected disconnects are auto-captured with connection and transfer context. Use export when reporting random disconnect issues."
-    : "Auto capture is disabled. Re-enable it to collect future disconnect reports automatically.";
-  const diagnosticsDisconnectEmptyStateLabel =
-    disconnectReports.length === 0
-      ? "No disconnect reports captured yet."
-      : "No disconnect reports match the current filter.";
-  const diagnosticsDisconnectReportViews = useMemo(
-    () =>
-      visibleDisconnectReports.slice(0, 50).map((report) => {
-        const transferActive =
-          report.uploadRunning +
-          report.uploadQueued +
-          report.downloadRunning +
-          report.downloadQueued;
-        return {
-          id: report.id,
-          title: `${formatPortForwardTimestamp(report.createdAt)} | ${report.sessionName}`,
-          metaLines: [
-            `${report.tabTitle} | ${report.target}`,
-            `Trigger: ${
-              report.trigger === "error"
-                ? `error (${report.message})`
-                : `${report.status ?? "closed"} (${report.message})`
-            }`,
-            `Transfers active: ${transferActive} (up ${report.uploadRunning}/${report.uploadQueued}, down ${report.downloadRunning}/${report.downloadQueued}) | Port forwards: ${report.portForwardTotal} (${report.portForwardDegraded} degraded)`,
-            `Tabs: ${report.connectedTabCount}/${report.openTabCount} connected | Auto reconnect: ${
-              report.autoReconnect ? `on (${report.reconnectDelaySeconds}s)` : "off"
-            }`
-          ],
-          recentFailuresLabel:
-            report.recentFailures.length > 0
-              ? report.recentFailures
-                  .slice(0, 3)
-                  .map(
-                    (failure) =>
-                      `${failure.direction}:${failure.name} (${classifyTransferFailureReason(
-                        failure.message
-                      )})`
-                  )
-                  .join(" | ")
-              : null,
-          canFocusTab: openTerminalTabIdSet.has(report.tabId)
-        };
-      }),
-    [openTerminalTabIdSet, visibleDisconnectReports]
-  );
-  const hasCustomizedDisconnectReportView =
-    disconnectReportScope !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.scope ||
-    disconnectReportTriggerFilter !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.trigger ||
-    disconnectReportTimeRange !== DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.timeRange ||
-    disconnectReportQuery.trim().length > 0;
+    disconnectReports,
+    formatPortForwardTimestamp,
+    logInfo,
+    resolveDisconnectReportTimeRangeCutoff,
+    terminalTabs
+  });
   const resetDisconnectReportViewFilters = useCallback(() => {
     setDisconnectReportScope(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.scope);
     setDisconnectReportTriggerFilter(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.trigger);
@@ -8951,347 +8835,70 @@ export function App() {
     }
     return sftpDirectory.entries.find((entry) => entry.path === sftpContextMenu.entryPath) ?? null;
   }, [sftpContextMenu?.entryPath, sftpDirectory]);
-  const activeUploadTransfers = useMemo(() => {
-    if (!activeTabId) {
-      return [];
-    }
-    return sftpTransfers
-      .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "upload")
-      .slice(0, 10);
-  }, [activeTabId, sftpTransfers]);
-  const failedUploadTransfers = useMemo(() => {
-    if (!activeTabId) {
-      return [];
-    }
-    return sftpTransfers.filter(
-      (transfer) =>
-        transfer.tabId === activeTabId &&
-        transfer.direction === "upload" &&
-        transfer.status === "failed"
-    );
-  }, [activeTabId, sftpTransfers]);
-  const activeDownloadTransfers = useMemo(() => {
-    if (!activeTabId) {
-      return [];
-    }
-    return sftpTransfers
-      .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "download")
-      .slice(0, 10);
-  }, [activeTabId, sftpTransfers]);
-  const failedDownloadTransfers = useMemo(() => {
-    if (!activeTabId) {
-      return [];
-    }
-    return sftpTransfers.filter(
-      (transfer) =>
-        transfer.tabId === activeTabId &&
-        transfer.direction === "download" &&
-        transfer.status === "failed"
-    );
-  }, [activeTabId, sftpTransfers]);
-  const failedUploadHistory = useMemo(() => {
-    if (!activeSessionId) {
-      return [];
-    }
-    return transferHistory.filter(
-      (entry) =>
-        entry.sessionId === activeSessionId &&
-        entry.direction === "upload" &&
-        entry.status === "failed"
-    );
-  }, [activeSessionId, transferHistory]);
-  const failedDownloadHistory = useMemo(() => {
-    if (!activeSessionId) {
-      return [];
-    }
-    return transferHistory.filter(
-      (entry) =>
-        entry.sessionId === activeSessionId &&
-        entry.direction === "download" &&
-        entry.status === "failed"
-    );
-  }, [activeSessionId, transferHistory]);
-  const failedUploadRetryCandidates = useMemo(() => {
-    const dedup = new Set<string>();
-    const targets: Array<{
-      name: string;
-      localPath: string;
-      remotePath: string;
-    }> = [];
-    const runtime = [...failedUploadTransfers].sort((left, right) => left.updatedAt - right.updatedAt);
-    for (const transfer of runtime) {
-      const key = createTransferRetryKey(
-        "upload",
-        transfer.localPath.trim(),
-        transfer.remotePath.trim()
-      );
-      if (dedup.has(key)) {
-        continue;
-      }
-      dedup.add(key);
-      targets.push({
-        name: transfer.name,
-        localPath: transfer.localPath,
-        remotePath: transfer.remotePath
-      });
-    }
-    const history = [...failedUploadHistory].sort((left, right) => left.updatedAt - right.updatedAt);
-    for (const transfer of history) {
-      const key = createTransferRetryKey(
-        "upload",
-        transfer.localPath.trim(),
-        transfer.remotePath.trim()
-      );
-      if (dedup.has(key)) {
-        continue;
-      }
-      dedup.add(key);
-      targets.push({
-        name: transfer.name,
-        localPath: transfer.localPath,
-        remotePath: transfer.remotePath
-      });
-    }
-    return targets;
-  }, [failedUploadHistory, failedUploadTransfers]);
-  const failedDownloadRetryCandidates = useMemo(() => {
-    const dedup = new Set<string>();
-    const targets: Array<{
-      name: string;
-      localPath: string;
-      remotePath: string;
-    }> = [];
-    const runtime = [...failedDownloadTransfers].sort(
-      (left, right) => left.updatedAt - right.updatedAt
-    );
-    for (const transfer of runtime) {
-      const key = createTransferRetryKey(
-        "download",
-        transfer.localPath.trim(),
-        transfer.remotePath.trim()
-      );
-      if (dedup.has(key)) {
-        continue;
-      }
-      dedup.add(key);
-      targets.push({
-        name: transfer.name,
-        localPath: transfer.localPath,
-        remotePath: transfer.remotePath
-      });
-    }
-    const history = [...failedDownloadHistory].sort((left, right) => left.updatedAt - right.updatedAt);
-    for (const transfer of history) {
-      const key = createTransferRetryKey(
-        "download",
-        transfer.localPath.trim(),
-        transfer.remotePath.trim()
-      );
-      if (dedup.has(key)) {
-        continue;
-      }
-      dedup.add(key);
-      targets.push({
-        name: transfer.name,
-        localPath: transfer.localPath,
-        remotePath: transfer.remotePath
-      });
-    }
-    return targets;
-  }, [failedDownloadHistory, failedDownloadTransfers]);
-  const activeUploadQueueStats = useMemo(() => {
-    if (!activeTabId) {
-      return {
-        total: 0,
-        queued: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-        canceled: 0
-      };
-    }
-    const tabTransfers = sftpTransfers.filter(
-      (transfer) => transfer.tabId === activeTabId && transfer.direction === "upload"
-    );
-    return {
-      total: tabTransfers.length,
-      queued: tabTransfers.filter((transfer) => transfer.status === "queued").length,
-      running: tabTransfers.filter((transfer) => transfer.status === "running").length,
-      completed: tabTransfers.filter((transfer) => transfer.status === "completed").length,
-      failed: tabTransfers.filter((transfer) => transfer.status === "failed").length,
-      canceled: tabTransfers.filter((transfer) => transfer.status === "canceled").length
-    };
-  }, [activeTabId, sftpTransfers]);
-  const activeUploadBatchProgress = useMemo(() => {
-    if (!activeTabId) {
-      return null;
-    }
-    const batch = uploadBatchByTab[activeTabId];
-    if (!batch) {
-      return null;
-    }
-    const batchTransfers = sftpTransfers.filter(
-      (transfer) =>
-        transfer.tabId === activeTabId &&
-        transfer.direction === "upload" &&
-        transfer.batchId === batch.batchId
-    );
-    const completed = batchTransfers.filter((transfer) => transfer.status === "completed").length;
-    const failed = batchTransfers.filter((transfer) => transfer.status === "failed").length;
-    const canceled = batchTransfers.filter((transfer) => transfer.status === "canceled").length;
-    const queued = batchTransfers.filter((transfer) => transfer.status === "queued").length;
-    const running = batchTransfers.filter((transfer) => transfer.status === "running").length;
-    const processed = completed + failed + canceled;
-    return {
-      ...batch,
-      completed,
-      failed,
-      canceled,
-      queued,
-      running,
-      processed,
-      done: batch.total > 0 && processed >= batch.total
-    };
-  }, [activeTabId, sftpTransfers, uploadBatchByTab]);
-  const activeUploadProgressStats = useMemo(() => {
-    if (activeUploadBatchProgress) {
-      return {
-        completed: activeUploadBatchProgress.completed,
-        total: activeUploadBatchProgress.total,
-        failed: activeUploadBatchProgress.failed,
-        canceled: activeUploadBatchProgress.canceled,
-        running: activeUploadBatchProgress.running,
-        queued: activeUploadBatchProgress.queued
-      };
-    }
-    return {
-      completed: activeUploadQueueStats.completed,
-      total: activeUploadQueueStats.total,
-      failed: activeUploadQueueStats.failed,
-      canceled: activeUploadQueueStats.canceled,
-      running: activeUploadQueueStats.running,
-      queued: activeUploadQueueStats.queued
-    };
-  }, [activeUploadBatchProgress, activeUploadQueueStats]);
-  const activeDownloadQueueStats = useMemo(() => {
-    if (!activeTabId) {
-      return {
-        total: 0,
-        queued: 0,
-        running: 0,
-        completed: 0,
-        failed: 0,
-        canceled: 0
-      };
-    }
-    const tabTransfers = sftpTransfers.filter(
-      (transfer) => transfer.tabId === activeTabId && transfer.direction === "download"
-    );
-    return {
-      total: tabTransfers.length,
-      queued: tabTransfers.filter((transfer) => transfer.status === "queued").length,
-      running: tabTransfers.filter((transfer) => transfer.status === "running").length,
-      completed: tabTransfers.filter((transfer) => transfer.status === "completed").length,
-      failed: tabTransfers.filter((transfer) => transfer.status === "failed").length,
-      canceled: tabTransfers.filter((transfer) => transfer.status === "canceled").length
-    };
-  }, [activeTabId, sftpTransfers]);
-  const activeDownloadBatchProgress = useMemo(() => {
-    if (!activeTabId) {
-      return null;
-    }
-    const batch = downloadBatchByTab[activeTabId];
-    if (!batch) {
-      return null;
-    }
-    const batchTransfers = sftpTransfers.filter(
-      (transfer) =>
-        transfer.tabId === activeTabId &&
-        transfer.direction === "download" &&
-        transfer.batchId === batch.batchId
-    );
-    const completed = batchTransfers.filter((transfer) => transfer.status === "completed").length;
-    const failed = batchTransfers.filter((transfer) => transfer.status === "failed").length;
-    const canceled = batchTransfers.filter((transfer) => transfer.status === "canceled").length;
-    const queued = batchTransfers.filter((transfer) => transfer.status === "queued").length;
-    const running = batchTransfers.filter((transfer) => transfer.status === "running").length;
-    const processed = completed + failed + canceled;
-    return {
-      ...batch,
-      completed,
-      failed,
-      canceled,
-      queued,
-      running,
-      processed,
-      done: batch.total > 0 && processed >= batch.total
-    };
-  }, [activeTabId, downloadBatchByTab, sftpTransfers]);
-  const activeDownloadProgressStats = useMemo(() => {
-    if (activeDownloadBatchProgress) {
-      return {
-        completed: activeDownloadBatchProgress.completed,
-        total: activeDownloadBatchProgress.total,
-        failed: activeDownloadBatchProgress.failed,
-        canceled: activeDownloadBatchProgress.canceled,
-        running: activeDownloadBatchProgress.running,
-        queued: activeDownloadBatchProgress.queued
-      };
-    }
-    return {
-      completed: activeDownloadQueueStats.completed,
-      total: activeDownloadQueueStats.total,
-      failed: activeDownloadQueueStats.failed,
-      canceled: activeDownloadQueueStats.canceled,
-      running: activeDownloadQueueStats.running,
-      queued: activeDownloadQueueStats.queued
-    };
-  }, [activeDownloadBatchProgress, activeDownloadQueueStats]);
-  const operationCenterUploadSummary = useMemo(() => {
-    const openTabIds = new Set(terminalTabs.map((tab) => tab.id));
-    const relevantTransfers = sftpTransfers.filter(
-      (transfer) => transfer.direction === "upload" && openTabIds.has(transfer.tabId)
-    );
-    const activeTabCount = new Set(relevantTransfers.map((transfer) => transfer.tabId)).size;
-    return {
-      total: relevantTransfers.length,
-      running: relevantTransfers.filter((transfer) => transfer.status === "running").length,
-      queued: relevantTransfers.filter((transfer) => transfer.status === "queued").length,
-      completed: relevantTransfers.filter((transfer) => transfer.status === "completed").length,
-      failed: relevantTransfers.filter((transfer) => transfer.status === "failed").length,
-      canceled: relevantTransfers.filter((transfer) => transfer.status === "canceled").length,
-      activeTabCount
-    };
-  }, [sftpTransfers, terminalTabs]);
-  const operationCenterDownloadSummary = useMemo(() => {
-    const openTabIds = new Set(terminalTabs.map((tab) => tab.id));
-    const relevantTransfers = sftpTransfers.filter(
-      (transfer) => transfer.direction === "download" && openTabIds.has(transfer.tabId)
-    );
-    const activeTabCount = new Set(relevantTransfers.map((transfer) => transfer.tabId)).size;
-    return {
-      total: relevantTransfers.length,
-      running: relevantTransfers.filter((transfer) => transfer.status === "running").length,
-      queued: relevantTransfers.filter((transfer) => transfer.status === "queued").length,
-      completed: relevantTransfers.filter((transfer) => transfer.status === "completed").length,
-      failed: relevantTransfers.filter((transfer) => transfer.status === "failed").length,
-      canceled: relevantTransfers.filter((transfer) => transfer.status === "canceled").length,
-      activeTabCount
-    };
-  }, [sftpTransfers, terminalTabs]);
-  const operationCenterPortForwardSummary = useMemo(() => {
-    const tabIds = new Set(allPortForwards.map((entry) => entry.tabId));
-    const degraded = allPortForwards.filter((entry) => entry.status === "degraded").length;
-    return {
-      total: allPortForwards.length,
-      degraded,
-      activeTabCount: tabIds.size,
-      activeTabStatus:
-        activeTabId && portForwardStatusMessagesByTab[activeTabId]
-          ? portForwardStatusMessagesByTab[activeTabId]
-          : null
-    };
-  }, [activeTabId, allPortForwards, portForwardStatusMessagesByTab]);
+  const {
+    activeDownloadBatchProgress,
+    activeDownloadProgressStats,
+    activeDownloadQueueStats,
+    activeDownloadTransfers,
+    activeUploadBatchProgress,
+    activeUploadProgressStats,
+    activeUploadQueueStats,
+    activeUploadTransfers,
+    canClearFinishedDownloads,
+    canClearFinishedUploads,
+    canRetryAllFailedTransfers,
+    canRetryFailedDownloads,
+    canRetryFailedUploads,
+    failedDownloadHistoryCount,
+    failedDownloadRetryCandidates,
+    failedRetryCandidateTotal,
+    failedUploadHistoryCount,
+    failedUploadRetryCandidates,
+    hasOperationCenterActivity,
+    hasOperationCenterDiagnosticsJobs,
+    hasOperationCenterSnippetJobs,
+    operationCenterActiveCount,
+    operationCenterDeleteProgressLabel,
+    operationCenterDownloadSummary,
+    operationCenterFinishedAppJobCount,
+    operationCenterPortForwardSummary,
+    operationCenterRecentAppJobViews,
+    operationCenterRunningAppJobCount,
+    operationCenterTimelineItems,
+    operationCenterTransferTabSummaries,
+    operationCenterUploadSummary
+  } = useSftpActivityViewModels({
+    activePortForwardStatusMessage:
+      activeTabId && portForwardStatusMessagesByTab[activeTabId]
+        ? portForwardStatusMessagesByTab[activeTabId]
+        : null,
+    activeSessionId,
+    activeTabId,
+    allPortForwards,
+    connectedTabIds: connectedTabIdsRef.current,
+    createTransferRetryKey,
+    downloadBatchByTab,
+    formatHistoryTimestamp,
+    formatOperationCenterAppJobCategoryLabel,
+    formatOperationCenterAppJobDuration,
+    formatOperationCenterAppJobStatusLabel,
+    formatOperationCenterTransferStatus,
+    formatPortForwardEventSummary,
+    formatPortForwardEventType,
+    formatPortForwardRecord,
+    formatPortForwardTimestamp,
+    getOperationCenterAppJobStateClass,
+    getOperationCenterTransferStateClass,
+    getPortForwardStatusLabel,
+    operationCenterAppJobs,
+    portForwardBusy,
+    portForwardEventHistory,
+    sftpDeleteProgress,
+    sftpTransfers,
+    terminalTabs,
+    transferHistory,
+    uploadBatchByTab
+  });
   const buildBatchFailureDetailText = useCallback(
     (
       tabId: string,
@@ -9340,633 +8947,58 @@ export function App() {
     showTransferDockNotice,
     writeAppLog
   });
-  const canClearFinishedUploads =
-    !!activeTabId &&
-    (activeUploadQueueStats.completed +
-      activeUploadQueueStats.failed +
-      activeUploadQueueStats.canceled >
-      0);
-  const canClearFinishedDownloads =
-    !!activeTabId &&
-    (activeDownloadQueueStats.completed +
-      activeDownloadQueueStats.failed +
-      activeDownloadQueueStats.canceled >
-      0);
-  const canRetryFailedUploads = !!activeTabId && failedUploadRetryCandidates.length > 0;
-  const canRetryFailedDownloads = !!activeTabId && failedDownloadRetryCandidates.length > 0;
-  const failedRetryCandidateTotal =
-    failedUploadRetryCandidates.length + failedDownloadRetryCandidates.length;
-  const canRetryAllFailedTransfers = !!activeTabId && failedRetryCandidateTotal > 0;
-  const operationCenterTransferTabSummaries = useMemo(() => {
-    const byTabId = new Map<
-      string,
-      {
-        tabId: string;
-        title: string;
-        connected: boolean;
-        uploadRunning: number;
-        uploadQueued: number;
-        downloadRunning: number;
-        downloadQueued: number;
-        totalActive: number;
-      }
-    >();
-    for (const tab of terminalTabs) {
-      byTabId.set(tab.id, {
-        tabId: tab.id,
-        title: tab.title,
-        connected: connectedTabIdsRef.current.has(tab.id),
-        uploadRunning: 0,
-        uploadQueued: 0,
-        downloadRunning: 0,
-        downloadQueued: 0,
-        totalActive: 0
-      });
-    }
-    for (const transfer of sftpTransfers) {
-      if (transfer.status !== "queued" && transfer.status !== "running") {
-        continue;
-      }
-      const current = byTabId.get(transfer.tabId) ?? {
-        tabId: transfer.tabId,
-        title: transfer.tabId,
-        connected: connectedTabIdsRef.current.has(transfer.tabId),
-        uploadRunning: 0,
-        uploadQueued: 0,
-        downloadRunning: 0,
-        downloadQueued: 0,
-        totalActive: 0
-      };
-      if (transfer.direction === "upload") {
-        if (transfer.status === "running") {
-          current.uploadRunning += 1;
-        } else {
-          current.uploadQueued += 1;
-        }
-      } else if (transfer.status === "running") {
-        current.downloadRunning += 1;
-      } else {
-        current.downloadQueued += 1;
-      }
-      byTabId.set(transfer.tabId, current);
-    }
-    const summaries = Array.from(byTabId.values())
-      .map((entry) => ({
-        ...entry,
-        totalActive:
-          entry.uploadRunning +
-          entry.uploadQueued +
-          entry.downloadRunning +
-          entry.downloadQueued
-      }))
-      .filter((entry) => entry.totalActive > 0)
-      .sort((left, right) => {
-        if (right.totalActive !== left.totalActive) {
-          return right.totalActive - left.totalActive;
-        }
-        return left.title.localeCompare(right.title);
-      })
-      .slice(0, 12);
-    return summaries;
-  }, [sftpTransfers, terminalTabs]);
-  const operationCenterRecentAppJobs = useMemo(
-    () =>
-      [...operationCenterAppJobs]
-        .sort((left, right) => {
-          const rightTime = right.finishedAt ?? right.startedAt;
-          const leftTime = left.finishedAt ?? left.startedAt;
-          return rightTime - leftTime;
-        })
-        .slice(0, 8),
-    [operationCenterAppJobs]
-  );
-  const operationCenterRunningAppJobCount = useMemo(
-    () => operationCenterAppJobs.filter((entry) => entry.status === "running").length,
-    [operationCenterAppJobs]
-  );
-  const operationCenterRecentAppJobViews = useMemo(
-    () =>
-      operationCenterRecentAppJobs.map((job) => ({
-        id: job.id,
-        title: job.title,
-        categoryLabel: formatOperationCenterAppJobCategoryLabel(job.category),
-        startedAtLabel: formatHistoryTimestamp(job.startedAt),
-        durationLabel: formatOperationCenterAppJobDuration(job.startedAt, job.finishedAt),
-        detail: job.detail?.trim() || job.description,
-        outputPath: job.outputPath,
-        stateClassName: getOperationCenterAppJobStateClass(job.status),
-        stateLabel: formatOperationCenterAppJobStatusLabel(job.status)
-      })),
-    [operationCenterRecentAppJobs]
-  );
-  const operationCenterDeleteProgressLabel = sftpDeleteProgress
-    ? `Deleting ${sftpDeleteProgress.kind === "directory" ? "directory" : "file"} "${sftpDeleteProgress.name}"...`
-    : null;
-  const operationCenterTimelineItems = useMemo(() => {
-    const timelineItems: Array<{
-      id: string;
-      title: string;
-      meta: string;
-      detail: string;
-      stateClassName: string;
-      stateLabel: string;
-      timestamp: number;
-    }> = [];
-    const tabTitleById = new Map(terminalTabs.map((tab) => [tab.id, tab.title]));
-    for (const transfer of sftpTransfers.slice(0, 18)) {
-      if (!tabTitleById.has(transfer.tabId)) {
-        continue;
-      }
-      const directionLabel = transfer.direction === "upload" ? "Upload" : "Download";
-      const tabTitle = tabTitleById.get(transfer.tabId) ?? transfer.tabId;
-      const route =
-        transfer.direction === "upload"
-          ? `${transfer.localPath} -> ${transfer.remotePath}`
-          : `${transfer.remotePath} -> ${transfer.localPath}`;
-      const message = transfer.message?.trim();
-      timelineItems.push({
-        id: `transfer:${transfer.transferId}:${transfer.updatedAt}`,
-        title: `${directionLabel}: ${transfer.name || "transfer"}`,
-        meta: `${tabTitle} | ${formatHistoryTimestamp(transfer.updatedAt)}`,
-        detail: message ? `${route} | ${message}` : route,
-        stateClassName: getOperationCenterTransferStateClass(transfer.status),
-        stateLabel: formatOperationCenterTransferStatus(transfer.status),
-        timestamp: transfer.updatedAt
-      });
-    }
-    if (sftpDeleteProgress) {
-      timelineItems.push({
-        id: `delete:${sftpDeleteProgress.name}:${Date.now()}`,
-        title: "Remote Delete",
-        meta: "Active now",
-        detail: operationCenterDeleteProgressLabel ?? "Delete operation running.",
-        stateClassName: "operation-center__state is-active",
-        stateLabel: "Running",
-        timestamp: Date.now()
-      });
-    }
-    for (const forward of allPortForwards.slice(0, 12)) {
-      const createdAt = new Date(forward.lastActivityAt ?? forward.lastErrorAt ?? forward.createdAt);
-      const timestamp = Number.isFinite(createdAt.getTime()) ? createdAt.getTime() : 0;
-      const statusLabel = getPortForwardStatusLabel(forward);
-      timelineItems.push({
-        id: `port-forward:${forward.tabId}:${forward.id}:${forward.status}`,
-        title: `Port Forward: ${formatPortForwardRecord(forward)}`,
-        meta: `${tabTitleById.get(forward.tabId) ?? forward.tabId} | ${formatPortForwardTimestamp(
-          forward.lastActivityAt ?? forward.lastErrorAt ?? forward.createdAt
-        )}`,
-        detail:
-          forward.lastError?.trim() ||
-          `connections ${forward.totalConnections} | failed ${forward.failedConnections}`,
-        stateClassName:
-          forward.status === "degraded"
-            ? "operation-center__state is-failed"
-            : "operation-center__state is-active",
-        stateLabel: statusLabel,
-        timestamp
-      });
-    }
-    for (const event of portForwardEventHistory.slice(0, 12)) {
-      if (!tabTitleById.has(event.tabId)) {
-        continue;
-      }
-      const createdAt = new Date(event.createdAt);
-      const timestamp = Number.isFinite(createdAt.getTime()) ? createdAt.getTime() : 0;
-      timelineItems.push({
-        id: `port-forward-event:${event.key}`,
-        title: `${formatPortForwardEventType(event.type)} ${formatPortForwardEventSummary(event)}`,
-        meta: `${formatPortForwardTimestamp(event.createdAt)} | ${event.level.toUpperCase()}`,
-        detail: event.message,
-        stateClassName:
-          event.level === "error"
-            ? "operation-center__state is-failed"
-            : "operation-center__state is-success",
-        stateLabel: event.level === "error" ? "Error" : "Event",
-        timestamp
-      });
-    }
-    for (const job of operationCenterRecentAppJobs) {
-      timelineItems.push({
-        id: `app-job:${job.id}:${job.finishedAt ?? job.startedAt}`,
-        title: job.title,
-        meta: `${formatOperationCenterAppJobCategoryLabel(job.category)} | ${formatHistoryTimestamp(
-          job.finishedAt ?? job.startedAt
-        )}`,
-        detail: job.detail?.trim() || job.description,
-        stateClassName: getOperationCenterAppJobStateClass(job.status),
-        stateLabel: formatOperationCenterAppJobStatusLabel(job.status),
-        timestamp: job.finishedAt ?? job.startedAt
-      });
-    }
-    return timelineItems
-      .sort((left, right) => right.timestamp - left.timestamp)
-      .slice(0, 10)
-      .map((item) => ({
-        id: item.id,
-        title: item.title,
-        meta: item.meta,
-        detail: item.detail,
-        stateClassName: item.stateClassName,
-        stateLabel: item.stateLabel
-      }));
-  }, [
-    allPortForwards,
-    operationCenterDeleteProgressLabel,
-    operationCenterRecentAppJobs,
-    portForwardEventHistory,
-    sftpDeleteProgress,
-    sftpTransfers,
-    terminalTabs
-  ]);
-  const operationCenterFinishedAppJobCount = useMemo(
-    () => operationCenterAppJobs.filter((entry) => entry.status !== "running").length,
-    [operationCenterAppJobs]
-  );
-  const hasOperationCenterSnippetJobs = useMemo(
-    () => operationCenterAppJobs.some((entry) => entry.category === "snippets"),
-    [operationCenterAppJobs]
-  );
-  const hasOperationCenterDiagnosticsJobs = useMemo(
-    () => operationCenterAppJobs.some((entry) => entry.category === "diagnostics"),
-    [operationCenterAppJobs]
-  );
-  const operationCenterActiveCount =
-    operationCenterTransferTabSummaries.length +
-    (sftpDeleteProgress ? 1 : 0) +
-    (portForwardBusy ? 1 : 0) +
-    operationCenterRunningAppJobCount;
-  const hasOperationCenterActivity = operationCenterActiveCount > 0;
-  const retryCenterSessionMetaById = useMemo(() => {
-    const map = new Map<string, { sessionName: string; groupName: string }>();
-    for (const session of sessions) {
-      map.set(session.id, {
-        sessionName: session.name.trim() || session.id,
-        groupName: session.groupId?.trim() || "Ungrouped"
-      });
-    }
-    return map;
-  }, [sessions]);
-  const retryCenterEntriesWithoutFailureReasonFilter = useMemo(() => {
-    const normalizedQuery = retryCenterQuery.trim().toLowerCase();
-    const cutoffMs = resolveTransferHistoryTimeRangeCutoff(retryCenterTimeRange, Date.now());
-    const filtered = transferHistory.filter((entry) => {
-      if (retryCenterScope === "activeSession") {
-        if (!activeSessionId || entry.sessionId !== activeSessionId) {
-          return false;
-        }
-      }
-      if (retryCenterDirection !== "all" && entry.direction !== retryCenterDirection) {
-        return false;
-      }
-      if (retryCenterStatus !== "all" && entry.status !== retryCenterStatus) {
-        return false;
-      }
-      if (cutoffMs !== null && entry.updatedAt < cutoffMs) {
-        return false;
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
-      return (
-        entry.name.toLowerCase().includes(normalizedQuery) ||
-        entry.localPath.toLowerCase().includes(normalizedQuery) ||
-        entry.remotePath.toLowerCase().includes(normalizedQuery) ||
-        (entry.message ?? "").toLowerCase().includes(normalizedQuery)
-      );
-    });
-    return filtered.sort((left, right) => right.updatedAt - left.updatedAt).slice(0, 400);
-  }, [
+  const {
+    canClearAllRetryCenterEntries,
+    canClearSelectedRetryCenterEntries,
+    canClearVisibleRetryCenterEntries,
+    canCollapseAllRetryCenterGroups,
+    canExpandAllRetryCenterGroups,
+    canExportRetryCenterAnalytics,
+    canRetrySelectedRetryCenterEntries,
+    canRetryVisibleRetryCenterEntries,
+    hasCustomizedRetryCenterView,
+    isRetryCenterGroupedView,
+    retryCenterAnalytics,
+    retryCenterCollapsedGroupKeySet,
+    retryCenterEntries,
+    retryCenterFailureReasonExportValue,
+    retryCenterFailureReasonOptions,
+    retryCenterFailureSuggestionRows,
+    retryCenterGroupedEntries,
+    retryCenterLastRetryScopeLabel,
+    retryCenterResolvedFailureReasonFilter,
+    retryCenterSelectedFailureReasonLabel,
+    retryCenterSelectionSet,
+    retryCenterTopFailureReasonRetryRows,
+    retryCenterVisibleExportEntryByKey,
+    retryCenterVisibleExportEntries,
+    selectedRetryCenterEntries,
+    selectedRetryCenterFailedEntries,
+    visibleRetryCenterFailedEntries
+  } = useRetryCenterViewModels({
     activeSessionId,
-    retryCenterDirection,
-    retryCenterQuery,
-    retryCenterScope,
-    retryCenterStatus,
-    retryCenterTimeRange,
+    activeTabId,
+    autoUseLastRetryScope: retryCenterAutoUseLastRetryScope,
+    classifyTransferFailureReason,
+    collapsedGroupKeys: retryCenterCollapsedGroupKeys,
+    defaultViewPreferences: DEFAULT_RETRY_CENTER_VIEW_PREFERENCES,
+    direction: retryCenterDirection,
+    failureReasonAllValue: RETRY_CENTER_FAILURE_REASON_ALL,
+    failureReasonFilter: retryCenterFailureReasonFilter,
+    getTransferFailureSuggestion,
+    labels: i18n.retryCenter,
+    lastRetryScope: retryCenterLastRetryScope,
+    listMode: retryCenterListMode,
+    query: retryCenterQuery,
+    retryBatchConfirmThreshold,
+    scope: retryCenterScope,
+    selection: retryCenterSelection,
+    sessions,
+    status: retryCenterStatus,
+    timeRange: retryCenterTimeRange,
+    toIsoTimestamp,
     transferHistory
-  ]);
-  const retryCenterFailureReasonOptions = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const entry of retryCenterEntriesWithoutFailureReasonFilter) {
-      if (entry.status !== "failed") {
-        continue;
-      }
-      const reason = classifyTransferFailureReason(entry.message);
-      counts.set(reason, (counts.get(reason) ?? 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([reason, total]) => ({ reason, total }))
-      .sort((left, right) => {
-        if (right.total !== left.total) {
-          return right.total - left.total;
-        }
-        return left.reason.localeCompare(right.reason);
-      })
-      .slice(0, 24);
-  }, [retryCenterEntriesWithoutFailureReasonFilter]);
-  const retryCenterResolvedFailureReasonFilter = useMemo(() => {
-    if (retryCenterFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL) {
-      return RETRY_CENTER_FAILURE_REASON_ALL;
-    }
-    return retryCenterFailureReasonOptions.some(
-      (entry) => entry.reason === retryCenterFailureReasonFilter
-    )
-      ? retryCenterFailureReasonFilter
-      : RETRY_CENTER_FAILURE_REASON_ALL;
-  }, [retryCenterFailureReasonFilter, retryCenterFailureReasonOptions]);
-  const retryCenterEntries = useMemo(() => {
-    if (retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL) {
-      return retryCenterEntriesWithoutFailureReasonFilter;
-    }
-    return retryCenterEntriesWithoutFailureReasonFilter.filter(
-      (entry) =>
-        entry.status === "failed" &&
-        classifyTransferFailureReason(entry.message) === retryCenterResolvedFailureReasonFilter
-    );
-  }, [retryCenterEntriesWithoutFailureReasonFilter, retryCenterResolvedFailureReasonFilter]);
-  const retryCenterGroupedEntries = useMemo(() => {
-    const grouped = new Map<
-      string,
-      {
-        key: string;
-        label: string;
-        failureReason: string | null;
-        order: number;
-        total: number;
-        failedCount: number;
-        activeSessionFailedCount: number;
-        latestUpdatedAt: number;
-        entries: SftpTransferHistoryItem[];
-      }
-    >();
-    for (const entry of retryCenterEntries) {
-      const groupReason =
-        entry.status === "failed"
-          ? classifyTransferFailureReason(entry.message)
-          : `Status: ${entry.status}`;
-      const groupKey = entry.status === "failed" ? `failed:${groupReason}` : `status:${entry.status}`;
-      const groupLabel = entry.status === "failed" ? `Failed: ${groupReason}` : groupReason;
-      const current = grouped.get(groupKey);
-      if (!current) {
-        grouped.set(groupKey, {
-          key: groupKey,
-          label: groupLabel,
-          failureReason: entry.status === "failed" ? groupReason : null,
-          order: entry.status === "failed" ? 0 : 1,
-          total: 1,
-          failedCount: entry.status === "failed" ? 1 : 0,
-          activeSessionFailedCount:
-            entry.status === "failed" && !!activeSessionId && entry.sessionId === activeSessionId
-              ? 1
-              : 0,
-          latestUpdatedAt: entry.updatedAt,
-          entries: [entry]
-        });
-        continue;
-      }
-      current.total += 1;
-      current.latestUpdatedAt = Math.max(current.latestUpdatedAt, entry.updatedAt);
-      if (entry.status === "failed") {
-        current.failedCount += 1;
-        if (activeSessionId && entry.sessionId === activeSessionId) {
-          current.activeSessionFailedCount += 1;
-        }
-      }
-      current.entries.push(entry);
-    }
-    return Array.from(grouped.values()).sort((left, right) => {
-      if (left.order !== right.order) {
-        return left.order - right.order;
-      }
-      if (right.total !== left.total) {
-        return right.total - left.total;
-      }
-      if (right.latestUpdatedAt !== left.latestUpdatedAt) {
-        return right.latestUpdatedAt - left.latestUpdatedAt;
-      }
-      return left.label.localeCompare(right.label);
-    });
-  }, [activeSessionId, retryCenterEntries]);
-  const retryCenterCollapsedGroupKeySet = useMemo(
-    () => new Set(retryCenterCollapsedGroupKeys),
-    [retryCenterCollapsedGroupKeys]
-  );
-  const isRetryCenterGroupedView = retryCenterListMode === "groupedByReason";
-  const retryCenterAnalytics = useMemo(() => {
-    const statusCounts: Record<SftpTransferEvent["status"], number> = {
-      queued: 0,
-      running: 0,
-      completed: 0,
-      failed: 0,
-      canceled: 0
-    };
-    const directionCounts: Record<SftpTransferEvent["direction"], number> = {
-      upload: 0,
-      download: 0
-    };
-    const sessionCounts = new Map<
-      string,
-      {
-        sessionId: string;
-        sessionName: string;
-        groupName: string;
-        total: number;
-        failed: number;
-      }
-    >();
-    const groupCounts = new Map<string, number>();
-    const failureReasonCounts = new Map<string, number>();
-    for (const entry of retryCenterEntries) {
-      directionCounts[entry.direction] += 1;
-      statusCounts[entry.status] += 1;
-      const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
-      const sessionName = sessionMeta?.sessionName ?? entry.sessionId;
-      const groupName = sessionMeta?.groupName ?? "Unknown";
-      const currentSessionCount = sessionCounts.get(entry.sessionId);
-      if (!currentSessionCount) {
-        sessionCounts.set(entry.sessionId, {
-          sessionId: entry.sessionId,
-          sessionName,
-          groupName,
-          total: 1,
-          failed: entry.status === "failed" ? 1 : 0
-        });
-      } else {
-        currentSessionCount.total += 1;
-        if (entry.status === "failed") {
-          currentSessionCount.failed += 1;
-        }
-      }
-      if (entry.status === "failed") {
-        const failureReason = classifyTransferFailureReason(entry.message);
-        failureReasonCounts.set(failureReason, (failureReasonCounts.get(failureReason) ?? 0) + 1);
-      }
-      groupCounts.set(groupName, (groupCounts.get(groupName) ?? 0) + 1);
-    }
-    const totalCount = retryCenterEntries.length;
-    const failedCount = statusCounts.failed;
-    const failedRatioPercent = totalCount > 0 ? (failedCount / totalCount) * 100 : 0;
-    const topSessions = Array.from(sessionCounts.values())
-      .sort((left, right) => {
-        if (right.total !== left.total) {
-          return right.total - left.total;
-        }
-        if (right.failed !== left.failed) {
-          return right.failed - left.failed;
-        }
-        return left.sessionName.localeCompare(right.sessionName);
-      })
-      .slice(0, 3);
-    const topGroups = Array.from(groupCounts.entries())
-      .map(([groupName, total]) => ({ groupName, total }))
-      .sort((left, right) => {
-        if (right.total !== left.total) {
-          return right.total - left.total;
-        }
-        return left.groupName.localeCompare(right.groupName);
-      })
-      .slice(0, 3);
-    const topFailureReasons = Array.from(failureReasonCounts.entries())
-      .map(([reason, total]) => ({
-        reason,
-        total
-      }))
-      .sort((left, right) => {
-        if (right.total !== left.total) {
-          return right.total - left.total;
-        }
-        return left.reason.localeCompare(right.reason);
-      })
-      .slice(0, 5);
-    return {
-      totalCount,
-      failedCount,
-      failedRatioPercent,
-      directionCounts,
-      statusCounts,
-      topSessions,
-      topGroups,
-      topFailureReasons
-    };
-  }, [retryCenterEntries, retryCenterSessionMetaById]);
-  const retryCenterVisibleExportEntries = useMemo(
-    () =>
-      retryCenterEntries.map((entry) => {
-        const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
-        return {
-          key: entry.key,
-          sessionId: entry.sessionId,
-          sessionName: sessionMeta?.sessionName ?? entry.sessionId,
-          groupName: sessionMeta?.groupName ?? "Unknown",
-          direction: entry.direction,
-          status: entry.status,
-          name: entry.name,
-          localPath: entry.localPath,
-          remotePath: entry.remotePath,
-          attemptCount: entry.attemptCount,
-          updatedAt: entry.updatedAt,
-          updatedAtIso: toIsoTimestamp(entry.updatedAt),
-          message: entry.message ?? ""
-        };
-      }),
-    [retryCenterEntries, retryCenterSessionMetaById]
-  );
-  const retryCenterSelectionSet = useMemo(
-    () => new Set(retryCenterSelection),
-    [retryCenterSelection]
-  );
-  const selectedRetryCenterEntries = useMemo(
-    () => retryCenterEntries.filter((entry) => retryCenterSelectionSet.has(entry.key)),
-    [retryCenterEntries, retryCenterSelectionSet]
-  );
-  const selectedRetryCenterFailedEntries = useMemo(
-    () =>
-      selectedRetryCenterEntries.filter(
-        (entry) =>
-          entry.status === "failed" &&
-          !!activeSessionId &&
-          entry.sessionId === activeSessionId
-      ),
-    [activeSessionId, selectedRetryCenterEntries]
-  );
-  const visibleRetryCenterFailedEntries = useMemo(
-    () =>
-      retryCenterEntries.filter(
-        (entry) =>
-          entry.status === "failed" && !!activeSessionId && entry.sessionId === activeSessionId
-      ),
-    [activeSessionId, retryCenterEntries]
-  );
-  const visibleRetryCenterFailedReasonCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const entry of visibleRetryCenterFailedEntries) {
-      const reason = classifyTransferFailureReason(entry.message);
-      counts.set(reason, (counts.get(reason) ?? 0) + 1);
-    }
-    return counts;
-  }, [visibleRetryCenterFailedEntries]);
-  const retryCenterTopFailureReasonRetryRows = useMemo(
-    () =>
-      retryCenterAnalytics.topFailureReasons.map((entry) => ({
-        reason: entry.reason,
-        totalVisible: entry.total,
-        activeSessionVisibleFailed: visibleRetryCenterFailedReasonCounts.get(entry.reason) ?? 0,
-        isCurrentFilter:
-          retryCenterResolvedFailureReasonFilter !== RETRY_CENTER_FAILURE_REASON_ALL &&
-          retryCenterResolvedFailureReasonFilter === entry.reason
-      })),
-    [
-      retryCenterAnalytics.topFailureReasons,
-      retryCenterResolvedFailureReasonFilter,
-      visibleRetryCenterFailedReasonCounts
-    ]
-  );
-  const retryCenterFailureSuggestionRows = useMemo(
-    () =>
-      retryCenterTopFailureReasonRetryRows
-        .map((entry) => ({
-          reason: entry.reason,
-          suggestion: getTransferFailureSuggestion(entry.reason)
-        }))
-        .filter(
-          (entry): entry is { reason: string; suggestion: string } =>
-            typeof entry.suggestion === "string" && entry.suggestion.length > 0
-        ),
-    [retryCenterTopFailureReasonRetryRows]
-  );
-  const canRetrySelectedRetryCenterEntries =
-    !!activeTabId && selectedRetryCenterFailedEntries.length > 0;
-  const canRetryVisibleRetryCenterEntries = !!activeTabId && visibleRetryCenterFailedEntries.length > 0;
-  const canClearSelectedRetryCenterEntries = selectedRetryCenterEntries.length > 0;
-  const canClearVisibleRetryCenterEntries = retryCenterEntries.length > 0;
-  const canClearAllRetryCenterEntries = transferHistory.length > 0;
-  const canExportRetryCenterAnalytics = transferHistory.length > 0;
-  const retryCenterSelectedFailureReasonLabel =
-    retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL
-      ? i18n.retryCenter.all
-      : retryCenterResolvedFailureReasonFilter;
-  const retryCenterFailureReasonExportValue =
-    retryCenterResolvedFailureReasonFilter === RETRY_CENTER_FAILURE_REASON_ALL
-      ? "all"
-      : retryCenterResolvedFailureReasonFilter;
-  const retryCenterLastRetryScopeLabel =
-    retryCenterLastRetryScope === "upload"
-      ? i18n.retryCenter.uploadOnly
-      : retryCenterLastRetryScope === "download"
-        ? i18n.retryCenter.downloadOnly
-        : i18n.retryCenter.allRetryable;
-  const hasCustomizedRetryCenterView =
-    retryCenterScope !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.scope ||
-    retryCenterDirection !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.direction ||
-    retryCenterStatus !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.status ||
-    retryCenterTimeRange !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.timeRange ||
-    retryCenterListMode !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.listMode ||
-    retryCenterResolvedFailureReasonFilter !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.failureReason ||
-    retryCenterLastRetryScope !== DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.lastRetryScope ||
-    retryCenterAutoUseLastRetryScope !==
-      DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.autoUseLastRetryScope ||
-    retryBatchConfirmThreshold !==
-      DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.retryBatchConfirmThreshold ||
-    retryCenterQuery.trim().length > 0;
+  });
   const resetRetryCenterViewFilters = useCallback(() => {
     setRetryCenterScope(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.scope);
     setRetryCenterDirection(DEFAULT_RETRY_CENTER_VIEW_PREFERENCES.direction);
@@ -10002,12 +9034,6 @@ export function App() {
   const expandAllRetryCenterGroups = useCallback(() => {
     setRetryCenterCollapsedGroupKeys([]);
   }, []);
-  const canCollapseAllRetryCenterGroups =
-    retryCenterGroupedEntries.length > 0 &&
-    retryCenterGroupedEntries.some((entry) => !retryCenterCollapsedGroupKeySet.has(entry.key));
-  const canExpandAllRetryCenterGroups =
-    retryCenterGroupedEntries.length > 0 &&
-    retryCenterGroupedEntries.some((entry) => retryCenterCollapsedGroupKeySet.has(entry.key));
   const selectRetryCenterGroupEntries = useCallback(
     (groupKey: string) => {
       const targetGroup = retryCenterGroupedEntries.find((entry) => entry.key === groupKey);
@@ -18528,316 +17554,34 @@ export function App() {
   const setDisconnectReportQueryValue = useCallback((value: string) => {
     setDisconnectReportQuery(value.slice(0, 160));
   }, []);
-
-  const copyDisconnectReportJson = useCallback(
-    async (report: DisconnectReportItem) => {
-      try {
-        const payload = {
-          appVersion: APP_VERSION,
-          copiedAtIso: new Date().toISOString(),
-          report
-        };
-        const copied = await copyTextToClipboard(`${JSON.stringify(payload, null, 2)}\n`);
-        if (!copied) {
-          throw new Error("Clipboard unavailable.");
-        }
-        await showAppAlert("Disconnect report JSON copied to clipboard.", {
-          title: "Diagnostics"
-        });
-      } catch (caughtError) {
-        const message = toLogMessage(caughtError);
-        setError(message);
-        writeAppLog(
-          "error",
-          "renderer:diagnostics",
-          "Failed to copy disconnect report JSON.",
-          caughtError
-        );
-      }
-    },
-    [showAppAlert, writeAppLog]
-  );
-  const copyVisibleDisconnectReportJsonById = useCallback(
-    (reportId: string) => {
-      const report = visibleDisconnectReports.find((entry) => entry.id === reportId) ?? null;
-      if (!report) {
-        return;
-      }
-      void copyDisconnectReportJson(report);
-    },
-    [copyDisconnectReportJson, visibleDisconnectReports]
-  );
-  const focusVisibleDisconnectReportTab = useCallback(
-    (reportId: string) => {
-      const report = visibleDisconnectReports.find((entry) => entry.id === reportId) ?? null;
-      if (!report) {
-        return;
-      }
-      setActiveTabId(report.tabId);
-    },
-    [visibleDisconnectReports]
-  );
-
-  const exportDisconnectReportsJson = useCallback(async () => {
-    if (visibleDisconnectReports.length === 0) {
-      await showAppAlert("No matching disconnect reports for the current filter.", {
-        title: "Diagnostics"
-      });
-      return;
-    }
-    const payload = {
-      appVersion: APP_VERSION,
-      exportedAtIso: new Date().toISOString(),
-      reportCount: visibleDisconnectReports.length,
-      totalReportCount: disconnectReports.length,
-      reports: visibleDisconnectReports
-    };
-    const exportText = `${JSON.stringify(payload, null, 2)}\n`;
-    try {
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Disconnect Reports (JSON)",
-          defaultFileName: `termdock-disconnect-reports-${Date.now()}${hasCustomizedDisconnectReportView ? "-filtered" : ""}.json`,
-          text: exportText,
-          filters: [
-            {
-              name: "JSON",
-              extensions: ["json"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copied = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copied
-              ? `Disconnect reports exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Disconnect reports exported:\n${result.outputPath}`,
-            {
-              title: "Diagnostics"
-            }
-          );
-          return;
-        }
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Disconnect reports JSON copied to clipboard.", {
-          title: "Diagnostics"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the disconnect reports below manually.", {
-        title: "Diagnostics",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog("error", "renderer:diagnostics", "Failed to export disconnect reports.", caughtError);
-    }
-  }, [
-    disconnectReports.length,
-    hasCustomizedDisconnectReportView,
-    showAppAlert,
-    systemApi,
-    visibleDisconnectReports,
-    writeAppLog
-  ]);
-
-  const exportDisconnectReportsCsv = useCallback(async () => {
-    if (visibleDisconnectReports.length === 0) {
-      await showAppAlert("No matching disconnect reports for the current filter.", {
-        title: "Diagnostics"
-      });
-      return;
-    }
-    const lines: string[] = [];
-    lines.push("# TermDock Disconnect Reports");
-    lines.push(`generatedAtIso,${escapeCsvCell(new Date().toISOString())}`);
-    lines.push(`reportCount,${visibleDisconnectReports.length}`);
-    lines.push(`totalReportCount,${disconnectReports.length}`);
-    lines.push("");
-    lines.push(
-      [
-        "id",
-        "createdAt",
-        "sessionName",
-        "target",
-        "tabTitle",
-        "trigger",
-        "status",
-        "message",
-        "connectedTabCount",
-        "openTabCount",
-        "uploadRunning",
-        "uploadQueued",
-        "downloadRunning",
-        "downloadQueued",
-        "portForwardTotal",
-        "portForwardDegraded",
-        "autoReconnect",
-        "reconnectDelaySeconds",
-        "recentFailures"
-      ].join(",")
-    );
-    for (const report of visibleDisconnectReports) {
-      const recentFailures = report.recentFailures
-        .slice(0, 5)
-        .map(
-          (failure) =>
-            `${failure.direction}:${failure.name} (${classifyTransferFailureReason(failure.message)})`
-        )
-        .join(" | ");
-      lines.push(
-        [
-          escapeCsvCell(report.id),
-          escapeCsvCell(report.createdAt),
-          escapeCsvCell(report.sessionName),
-          escapeCsvCell(report.target),
-          escapeCsvCell(report.tabTitle),
-          escapeCsvCell(report.trigger),
-          escapeCsvCell(report.status ?? ""),
-          escapeCsvCell(report.message),
-          escapeCsvCell(report.connectedTabCount),
-          escapeCsvCell(report.openTabCount),
-          escapeCsvCell(report.uploadRunning),
-          escapeCsvCell(report.uploadQueued),
-          escapeCsvCell(report.downloadRunning),
-          escapeCsvCell(report.downloadQueued),
-          escapeCsvCell(report.portForwardTotal),
-          escapeCsvCell(report.portForwardDegraded),
-          escapeCsvCell(report.autoReconnect ? "true" : "false"),
-          escapeCsvCell(report.reconnectDelaySeconds),
-          escapeCsvCell(recentFailures)
-        ].join(",")
-      );
-    }
-    const exportText = `${lines.join("\n")}\n`;
-    try {
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Disconnect Reports (CSV)",
-          defaultFileName: `termdock-disconnect-reports-${Date.now()}${hasCustomizedDisconnectReportView ? "-filtered" : ""}.csv`,
-          text: exportText,
-          filters: [
-            {
-              name: "CSV",
-              extensions: ["csv"]
-            }
-          ]
-        });
-        if (!result.canceled && result.outputPath) {
-          const copied = await copyTextToClipboard(result.outputPath);
-          await showAppAlert(
-            copied
-              ? `Disconnect reports CSV exported.\nPath copied to clipboard:\n${result.outputPath}`
-              : `Disconnect reports CSV exported:\n${result.outputPath}`,
-            {
-              title: "Diagnostics"
-            }
-          );
-          return;
-        }
-      }
-      const copied = await copyTextToClipboard(exportText);
-      if (copied) {
-        await showAppAlert("Disconnect reports CSV copied to clipboard.", {
-          title: "Diagnostics"
-        });
-        return;
-      }
-      await showAppAlert("Clipboard unavailable. Copy the disconnect reports CSV below manually.", {
-        title: "Diagnostics",
-        detailText: exportText
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog("error", "renderer:diagnostics", "Failed to export disconnect reports CSV.", caughtError);
-    }
-  }, [
-    disconnectReports.length,
-    hasCustomizedDisconnectReportView,
-    showAppAlert,
-    systemApi,
-    visibleDisconnectReports,
-    writeAppLog
-  ]);
-
-  const copyLatestDisconnectReport = useCallback(async () => {
-    const latestReport = disconnectReports[0];
-    if (!latestReport) {
-      await showAppAlert("No disconnect reports captured yet.", {
-        title: "Diagnostics"
-      });
-      return;
-    }
-    await copyDisconnectReportJson(latestReport);
-  }, [copyDisconnectReportJson, disconnectReports, showAppAlert]);
-
-  const copyLatestVisibleDisconnectReport = useCallback(async () => {
-    const latestReport = visibleDisconnectReports[0];
-    if (!latestReport) {
-      await showAppAlert("No matching disconnect reports for the current filter.", {
-        title: "Diagnostics"
-      });
-      return;
-    }
-    await copyDisconnectReportJson(latestReport);
-  }, [copyDisconnectReportJson, showAppAlert, visibleDisconnectReports]);
-
-  const clearVisibleDisconnectReportsHistory = useCallback(async () => {
-    if (visibleDisconnectReports.length === 0) {
-      return;
-    }
-    const visibleIds = new Set(visibleDisconnectReports.map((entry) => entry.id));
-    const visibleTabIds = visibleDisconnectReports.map((entry) => entry.tabId);
-    const confirmed = await showAppConfirm(
-      `Clear ${visibleDisconnectReports.length} visible disconnect report(s)?`,
-      {
-        title: "Diagnostics",
-        confirmLabel: "Clear Visible",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setDisconnectReports((prev) => prev.filter((entry) => !visibleIds.has(entry.id)));
-    clearDisconnectReportFingerprintsForTabIds(visibleTabIds);
-    await showAppAlert("Visible disconnect reports cleared.", {
-      title: "Diagnostics"
-    });
-  }, [
+  const {
+    clearDisconnectReportsHistory,
+    clearVisibleDisconnectReportsHistory,
+    copyDisconnectReportJson,
+    copyLatestDisconnectReport,
+    copyLatestVisibleDisconnectReport,
+    copyVisibleDisconnectReportJsonById,
+    exportDisconnectReportsCsv,
+    exportDisconnectReportsJson,
+    focusVisibleDisconnectReportTab
+  } = useDisconnectDiagnosticsActions({
+    appVersion: APP_VERSION,
+    classifyTransferFailureReason,
     clearDisconnectReportFingerprintsForTabIds,
+    copyTextToClipboard,
+    disconnectReports,
+    escapeCsvCell,
+    hasCustomizedDisconnectReportView,
+    setActiveTabId,
+    setDisconnectReports,
+    setError,
     showAppAlert,
     showAppConfirm,
-    visibleDisconnectReports
-  ]);
-
-  const clearDisconnectReportsHistory = useCallback(async () => {
-    if (disconnectReports.length === 0) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Clear ${disconnectReports.length} disconnect report(s)?`,
-      {
-        title: "Diagnostics",
-        confirmLabel: "Clear",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setDisconnectReports([]);
-    clearDisconnectReportFingerprintsForTabIds(
-      disconnectReports.map((entry) => entry.tabId)
-    );
-    await showAppAlert("Disconnect reports cleared.", {
-      title: "Diagnostics"
-    });
-  }, [clearDisconnectReportFingerprintsForTabIds, disconnectReports, showAppAlert, showAppConfirm]);
+    systemApi,
+    toLogMessage,
+    visibleDisconnectReports,
+    writeAppLog
+  });
 
   const copyClashDirectRules = async (session: SessionRecord) => {
     const text = buildClashDirectRules(session);
@@ -21147,12 +19891,12 @@ export function App() {
     try {
       const generatedAtIso = new Date().toISOString();
       const exportEntries = scopedEntries.map((entry) => {
-        const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
+        const exportEntry = retryCenterVisibleExportEntryByKey.get(entry.key);
         return {
           key: entry.key,
           sessionId: entry.sessionId,
-          sessionName: sessionMeta?.sessionName ?? entry.sessionId,
-          groupName: sessionMeta?.groupName ?? "Unknown",
+          sessionName: exportEntry?.sessionName ?? entry.sessionId,
+          groupName: exportEntry?.groupName ?? "Unknown",
           direction: entry.direction,
           status: entry.status,
           name: entry.name,
@@ -21160,7 +19904,7 @@ export function App() {
           remotePath: entry.remotePath,
           attemptCount: entry.attemptCount,
           updatedAt: entry.updatedAt,
-          updatedAtIso: toIsoTimestamp(entry.updatedAt),
+          updatedAtIso: exportEntry?.updatedAtIso ?? toIsoTimestamp(entry.updatedAt),
           failureReason:
             entry.status === "failed" ? classifyTransferFailureReason(entry.message) : "",
           message: entry.message ?? ""
@@ -21296,13 +20040,13 @@ export function App() {
         ].join(",")
       );
       for (const entry of scopedEntries) {
-        const sessionMeta = retryCenterSessionMetaById.get(entry.sessionId);
+        const exportEntry = retryCenterVisibleExportEntryByKey.get(entry.key);
         lines.push(
           [
             entry.key,
             entry.sessionId,
-            sessionMeta?.sessionName ?? entry.sessionId,
-            sessionMeta?.groupName ?? "Unknown",
+            exportEntry?.sessionName ?? entry.sessionId,
+            exportEntry?.groupName ?? "Unknown",
             entry.direction,
             entry.status,
             entry.name,
@@ -21310,7 +20054,7 @@ export function App() {
             entry.remotePath,
             entry.attemptCount,
             entry.updatedAt,
-            toIsoTimestamp(entry.updatedAt),
+            exportEntry?.updatedAtIso ?? toIsoTimestamp(entry.updatedAt),
             entry.status === "failed" ? classifyTransferFailureReason(entry.message) : "",
             entry.message ?? ""
           ]
@@ -24018,8 +22762,8 @@ export function App() {
           clearFinishedDisabled: !canClearFinishedDownloads,
           emptyLabel: i18n.transfer.downloadEmpty,
           historyMessage:
-            failedDownloadHistory.length > 0
-              ? i18n.transfer.storedFailedRetries(failedDownloadHistory.length)
+            failedDownloadHistoryCount > 0
+              ? i18n.transfer.storedFailedRetries(failedDownloadHistoryCount)
               : null,
           onCancelAll: () => {
             void cancelAllActiveDownloads();
@@ -24089,8 +22833,8 @@ export function App() {
           clearFinishedDisabled: !canClearFinishedUploads,
           emptyLabel: i18n.transfer.uploadEmpty,
           historyMessage:
-            failedUploadHistory.length > 0
-              ? i18n.transfer.storedFailedRetries(failedUploadHistory.length)
+            failedUploadHistoryCount > 0
+              ? i18n.transfer.storedFailedRetries(failedUploadHistoryCount)
               : null,
           onCancelAll: () => {
             void cancelAllActiveUploads();
