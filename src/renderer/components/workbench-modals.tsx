@@ -61,7 +61,7 @@ interface OperationCenterTimelineItemView {
   stateLabel: string;
 }
 
-interface OperationCenterModalProps {
+export interface OperationCenterModalProps {
   open: boolean;
   labels: OperationCenterLabels;
   onClose: () => void;
@@ -176,7 +176,7 @@ interface CommandHistoryManagerEntryView {
   title: string;
 }
 
-interface CommandHistoryManagerModalProps {
+export interface CommandHistoryManagerModalProps {
   open: boolean;
   labels: CommandHistoryManagerLabels;
   onClose: () => void;
@@ -201,7 +201,7 @@ interface CommandHistoryManagerModalProps {
   onDeleteAll: () => void;
 }
 
-interface RetryCenterModalProps {
+export interface RetryCenterModalProps {
   open: boolean;
   labels: RetryCenterLabels;
   onClose: () => void;

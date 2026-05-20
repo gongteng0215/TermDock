@@ -29,7 +29,7 @@ interface SessionTemplateRecordView extends SessionTemplateDraftView {
   updatedAt: number;
 }
 
-interface SessionTemplateManagerModalProps {
+export interface SessionTemplateManagerModalProps {
   open: boolean;
   draft: SessionTemplateDraftView;
   editingTemplate: SessionTemplateRecordView | null;

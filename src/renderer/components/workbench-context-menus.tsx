@@ -8,7 +8,7 @@ export interface WorkbenchContextMenuAction {
   onSelect: () => void;
 }
 
-interface WorkbenchContextMenuProps {
+export interface WorkbenchContextMenuProps {
   actions: WorkbenchContextMenuAction[];
   x: number;
   y: number;

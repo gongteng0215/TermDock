@@ -47,7 +47,7 @@ interface TransferDockPanelView {
   emptyLabel: string;
 }
 
-interface TransferDockProps {
+export interface TransferDockProps {
   bindingLabel: string;
   labels: TransferDockLabels;
   notice: TransferDockNoticeView | null;
@@ -80,7 +80,7 @@ interface DangerousCommandApprovalView {
   allowInGroup: boolean;
 }
 
-interface AppInlineHintPanelProps {
+export interface AppInlineHintPanelProps {
   language: AppLanguage;
   approval: DangerousCommandApprovalView | null;
   hintMessage: AppInlineHintMessageView | null;

@@ -2,12 +2,12 @@ import type { ReactNode } from "react";
 
 import { UiIcon } from "./ui-icon";
 
-interface SettingsSectionNavItem {
+export interface SettingsSectionNavItem {
   id: string;
   label: string;
 }
 
-interface SettingsModalShellProps {
+export interface SettingsModalShellProps {
   open: boolean;
   activeSectionId: string;
   sections: SettingsSectionNavItem[];

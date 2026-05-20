@@ -1,9 +1,6 @@
 import {
   DragEvent,
   FormEvent,
-  MouseEvent as ReactMouseEvent,
-  Suspense,
-  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -47,7 +44,6 @@ import {
   TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
   TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
   TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
-  TerminalWorkspace
 } from "./components/terminal-workspace";
 import { UiIcon } from "./components/ui-icon";
 import type {
@@ -65,52 +61,75 @@ import type {
   TerminalTab
 } from "./components/terminal-workspace";
 import {
-  AppInlineHintPanel,
-  TransferDock,
-  WorkbenchLayout,
-  WorkbenchTopbar
-} from "./components/workbench-shell";
+  type MoveGroupDialogView
+} from "./components/app-dialogs";
+import { WorkbenchRootFrame } from "./components/workbench-root-frame";
+import { type ServerHealthDetailTab } from "./components/server-health-detail-modal";
+import { buildSettingsCompositeProps } from "./settings-composite-props";
 import {
-  CommandHistoryInspectorSection,
-  SftpExplorerSection,
-  ServerHealthInspectorSection,
-  SessionsInspectorSection
-} from "./components/workbench-panels";
-import { SettingsModalShell } from "./components/settings-modal-shell";
-import { SettingsModalContent } from "./components/settings-modal-content";
-import { AppDialogModal, MoveGroupDialogModal } from "./components/app-dialogs";
-import { GlobalErrorBar } from "./components/global-error-bar";
-import { SessionCreateModal } from "./components/session-create-modal";
-import { ServerHealthDetailModal } from "./components/server-health-detail-modal";
-import { SessionTemplateManagerModal } from "./components/session-template-manager-modal";
+  buildWorkbenchContextMenuCompositeProps
+} from "./workbench-context-menu-props";
+import { buildWorkbenchCompositeProps } from "./workbench-composite-props";
+import { buildWorkbenchDialogCompositeProps } from "./workbench-dialog-composite-props";
 import {
-  WorkbenchContextMenu,
-  type WorkbenchContextMenuAction
-} from "./components/workbench-context-menus";
-import {
-  buildConnectionSettingsSectionProps,
-  buildDiagnosticsSettingsSectionProps,
-  buildFileOpeningSettingsSectionProps,
-  buildHotkeySettingsSectionProps,
-  buildPortForwardingSettingsSectionProps,
-  buildSafetySettingsSectionProps,
-  buildServerHealthSettingsSectionProps,
-  buildSftpSettingsSectionProps,
-  buildWorkspaceSettingsSectionProps
-} from "./settings-section-props";
-import { buildCommandHistoryContextMenuActions } from "./command-history-context-menu-actions";
-import {
-  buildSftpContextActions,
-  buildSftpToolbarActions,
-  type SftpContextAction
-} from "./sftp-context-actions";
-import { buildSessionContextActions } from "./session-context-actions";
+  buildAppDialogArgs,
+  buildAppInlineHintArgs,
+  buildCommandHistoryManagerDialogArgs,
+  buildCommandSnippetManagerDialogArgs,
+  buildGlobalErrorBarDialogArgs,
+  buildMoveGroupDialogArgs,
+  buildOperationCenterDialogArgs,
+  buildRetryCenterDialogArgs,
+  buildServerHealthDetailDialogArgs,
+  buildSessionCreateDialogArgs,
+  buildSessionTemplateManagerDialogArgs
+} from "./workbench-dialog-composite-args";
 import { useAppDialog } from "./use-app-dialog";
+import { useCommandHistoryContextMenu } from "./use-command-history-context-menu";
+import { useSessionExplorerActions } from "./use-session-explorer-actions";
+import { useSessionContextMenu } from "./use-session-context-menu";
+import { useSftpContextMenus } from "./use-sftp-context-menus";
 import { useSessionTemplateManager } from "./use-session-template-manager";
+import { useSftpExplorerActions } from "./use-sftp-explorer-actions";
+import { useGlobalErrorBarActions } from "./use-global-error-bar-actions";
+import { useGlobalDiagnosticsActions } from "./use-global-diagnostics-actions";
+import { useGlobalErrorRecovery } from "./use-global-error-recovery";
 import {
-  WorkbenchExplorerSidebar,
-  WorkbenchInspectorSidebar
-} from "./components/workbench-sidebars";
+  buildConnectionSettingsArgs,
+  buildFileOpeningSettingsArgs,
+  buildHotkeySettingsArgs,
+  buildServerHealthSettingsArgs,
+  buildWorkspaceSettingsArgs
+} from "./basic-settings-section-args";
+import { buildDisconnectDiagnosticsSettingsArgs } from "./disconnect-diagnostics-settings-args";
+import {
+  buildPortForwardingSettingsArgs,
+  buildSafetySettingsArgs,
+  buildSftpSettingsArgs
+} from "./heavy-settings-section-args";
+import { buildSettingsShellArgs } from "./settings-shell-args";
+import {
+  buildTerminalWorkspaceArgs,
+  buildTransferDockArgs,
+  buildWorkbenchFrameArgs
+} from "./workbench-main-composite-args";
+import {
+  buildServerHealthInspectorContentArgs,
+  buildServerHealthInspectorSectionArgs,
+  buildWorkbenchInspectorSidebarArgs,
+  buildWorkbenchRootFrameArgs,
+  buildWorkbenchTopbarArgs
+} from "./workbench-frame-panel-args";
+import {
+  buildWorkbenchAppShellArgs,
+  buildWorkbenchOverlayStackArgs
+} from "./workbench-shell-composite-args";
+import {
+  buildCommandHistoryInspectorArgs,
+  buildSessionsInspectorArgs,
+  buildSftpExplorerArgs
+} from "./workbench-side-panel-args";
+import { useTransferCenterUiActions } from "./use-transfer-center-ui-actions";
 import {
   readCommandHistoryInspectorCollapsed,
   readFirstRunOnboardingDismissed,
@@ -136,6 +155,37 @@ import {
   type WorkspaceProfileI18nKey
 } from "./i18n";
 import {
+  COMMAND_SNIPPET_GROUPS_STORAGE_KEY,
+  COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN,
+  COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY,
+  COMMAND_SNIPPET_VARIABLE_SCOPES,
+  MAX_COMMAND_SNIPPET_GROUPS,
+  MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH,
+  MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH,
+  MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH,
+  MAX_COMMAND_SNIPPET_PARAMETERS,
+  MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH,
+  MAX_COMMAND_SNIPPET_PROMPT_SETS,
+  MAX_COMMAND_SNIPPETS_PER_GROUP,
+  buildCommandSnippetParameterToken,
+  buildCommandSnippetScopedValueCacheKey,
+  createCommandSnippetParameter,
+  formatCommandSnippetVariableScopeLabel,
+  getCommandSnippetParameterPatternError,
+  listCommandSnippetTemplateParameterKeys,
+  mergeCommandSnippetParameters,
+  normalizeCommandSnippetGroups,
+  normalizeCommandSnippetParameterKey,
+  normalizeCommandSnippetScopedValues,
+  readCommandSnippetGroups,
+  readCommandSnippetScopedValues,
+  type CommandSnippetGroup,
+  type CommandSnippetItem,
+  type CommandSnippetParameter,
+  type CommandSnippetPromptSet,
+  type CommandSnippetScopedValueRecord
+} from "./command-snippets";
+import {
   createDefaultDangerousCommandGuardPreferences,
   listDangerousCommandBuiltinRules,
   listDangerousCommandEnvironmentTemplates,
@@ -155,12 +205,17 @@ import {
 } from "./dangerous-command-guard";
 import { useCommandHistoryViewModels } from "./use-command-history-view-models";
 import { useDisconnectDiagnosticsActions } from "./use-disconnect-diagnostics-actions";
+import { useDisconnectDiagnosticsUiActions } from "./use-disconnect-diagnostics-ui-actions";
 import { useDisconnectDiagnosticsViewModels } from "./use-disconnect-diagnostics-view-models";
 import {
   formatDangerousCommandTemporaryApprovalScopeLabel,
   useDangerousCommandApprovalFlow
 } from "./use-dangerous-command-approval-flow";
 import { useCommandHistoryManager } from "./use-command-history-manager";
+import { useCommandSnippetManager } from "./use-command-snippet-manager";
+import { useCommandSnippetManagerActions } from "./use-command-snippet-manager-actions";
+import { useCommandSnippetRuntime } from "./use-command-snippet-runtime";
+import { useCommandSnippetState } from "./use-command-snippet-state";
 import { useDangerousCommandSettingsViewModels } from "./use-dangerous-command-settings-view-models";
 import { useOperationCenterActions } from "./use-operation-center-actions";
 import { useOperationCenterAppJobs } from "./use-operation-center-app-jobs";
@@ -181,19 +236,6 @@ import {
   useSftpTransferBatchNotifications,
   useSftpTransferQueueRuntime
 } from "./use-sftp-transfer-runtime";
-
-const LazyCommandSnippetManagerModal = lazy(async () => ({
-  default: (await import("./components/command-snippet-manager-modal")).CommandSnippetManagerModal
-}));
-const LazyCommandHistoryManagerModal = lazy(async () => ({
-  default: (await import("./components/workbench-modals")).CommandHistoryManagerModal
-}));
-const LazyOperationCenterModal = lazy(async () => ({
-  default: (await import("./components/workbench-modals")).OperationCenterModal
-}));
-const LazyRetryCenterModal = lazy(async () => ({
-  default: (await import("./components/workbench-modals")).RetryCenterModal
-}));
 
 const EMPTY_FORM: SessionCreateInput = {
   name: "",
@@ -235,8 +277,6 @@ const SESSION_SORT_MODE_STORAGE_KEY = "termdock.session-sort-mode.v1";
 const WORKSPACE_PROFILE_STORAGE_KEY = "termdock.workspace-profile.v1";
 const SESSION_QUICK_PROFILES_STORAGE_KEY = "termdock.session-quick-profiles.v1";
 const SESSION_TEMPLATES_STORAGE_KEY = "termdock.session-templates.v1";
-const COMMAND_SNIPPET_GROUPS_STORAGE_KEY = "termdock.command-snippet-groups.v1";
-const COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY = "termdock.command-snippet-scoped-values.v1";
 const SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY = "termdock.server-health-alert-preferences.v1";
 const DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY =
   "termdock.dangerous-command-guard-preferences.v1";
@@ -252,20 +292,10 @@ const MAX_PENDING_TRANSFER_RESTORE_ITEMS = 2000;
 const MAX_SESSION_QUICK_PROFILES = 80;
 const MAX_SESSION_TEMPLATES = 60;
 const MAX_SESSION_TEMPLATE_ENV_VARS = 16;
-const MAX_COMMAND_SNIPPET_GROUPS = 40;
-const MAX_COMMAND_SNIPPETS_PER_GROUP = 120;
-const MAX_COMMAND_SNIPPET_PROMPT_SETS = 24;
 const MAX_DANGEROUS_COMMAND_POLICY_BUNDLES = 40;
 const MAX_SFTP_TRANSFER_POLICY_PACKS = 24;
 const MAX_DANGEROUS_COMMAND_TEMP_APPROVALS = 80;
-const MAX_COMMAND_SNIPPET_PARAMETERS = 12;
-const MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH = 80;
-const MAX_COMMAND_SNIPPET_PARAMETER_KEY_LENGTH = 32;
-const MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH = 80;
-const MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH = 240;
 const COMMAND_HISTORY_INSPECTOR_PREVIEW_LIMIT = 5;
-const MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH = 240;
-const MAX_COMMAND_SNIPPET_SCOPED_VALUES = 400;
 const MAX_OPERATION_CENTER_APP_JOBS = 24;
 const DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD = 100;
 const MIN_RETRY_BATCH_CONFIRM_THRESHOLD = 0;
@@ -325,8 +355,6 @@ const SFTP_TRANSFER_SCHEDULE_PRESETS: SftpTransferSchedulePresetRecord[] = [
     scheduleWindowDays: [0, 6]
   }
 ];
-const COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN = /\$\{param:([a-zA-Z0-9_-]+)\}/g;
-const COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN = /[^a-zA-Z0-9_-]+/g;
 const DEFAULT_CONNECTION_PREFERENCES: ConnectionPreferences = {
   autoReconnect: true,
   reconnectDelaySeconds: 3
@@ -388,36 +416,8 @@ type RetryCenterGroupExportScope = "all" | "failed" | "retryable";
 type RetryCenterRetryScope = "all" | "upload" | "download";
 type TerminalCommandHistoryScope = "activeTab" | "allTabs";
 type WorkspaceProfileId = DangerousCommandEnvironmentTemplateId;
-type CommandSnippetVariableScopeId = "snippet" | "group" | "session" | "global";
 type OperationCenterAppJobCategory = "sessions" | "snippets" | "diagnostics";
 type OperationCenterAppJobStatus = "running" | "succeeded" | "failed";
-
-const COMMAND_SNIPPET_VARIABLE_SCOPES: Array<{
-  id: CommandSnippetVariableScopeId;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: "snippet",
-    label: "Per Snippet",
-    description: "Remember the last value only for this snippet."
-  },
-  {
-    id: "group",
-    label: "Per Group",
-    description: "Reuse the last value across snippets in the same group."
-  },
-  {
-    id: "session",
-    label: "Per Session",
-    description: "Reuse the last value for the active SSH session."
-  },
-  {
-    id: "global",
-    label: "Global",
-    description: "Reuse the last value everywhere in this app."
-  }
-];
 
 type HotkeyActionId = keyof HotkeyPreferences;
 
@@ -641,8 +641,6 @@ function createDefaultHotkeyPreferences(): HotkeyPreferences {
   };
 }
 
-type ServerHealthDetailTab = "overview" | "disk" | "network" | "processes" | "services";
-
 interface SftpTransferItem extends SftpTransferEvent {
   updatedAt: number;
   batchId?: string;
@@ -812,44 +810,6 @@ interface SessionTemplateRecord extends SessionTemplateDraft {
   updatedAt: number;
 }
 
-interface CommandSnippetItem {
-  id: string;
-  name: string;
-  template: string;
-  confirmBeforeRun: boolean;
-  previewBeforeRun: boolean;
-  promptSetId: string;
-  parameters: CommandSnippetParameter[];
-}
-
-interface CommandSnippetParameter {
-  id: string;
-  key: string;
-  label: string;
-  defaultValue: string;
-  required: boolean;
-  pattern: string;
-  scope: CommandSnippetVariableScopeId;
-}
-
-interface CommandSnippetPromptSet {
-  id: string;
-  name: string;
-  parameters: CommandSnippetParameter[];
-}
-
-interface CommandSnippetGroup {
-  id: string;
-  name: string;
-  promptSets: CommandSnippetPromptSet[];
-  snippets: CommandSnippetItem[];
-}
-
-interface CommandSnippetScopedValueRecord {
-  value: string;
-  updatedAt: number;
-}
-
 interface SessionJsonImportCandidate {
   id: string;
   name: string;
@@ -894,56 +854,6 @@ interface DownloadTargetEntry {
   name: string;
   remotePath: string;
   localPath: string;
-}
-
-interface SftpContextMenuState {
-  x: number;
-  y: number;
-  entryPath: string | null;
-}
-
-interface SftpToolbarMenuState {
-  x: number;
-  y: number;
-}
-
-interface CommandHistoryContextMenuState {
-  x: number;
-  y: number;
-  entryId: string | null;
-}
-
-interface SessionContextMenuState {
-  x: number;
-  y: number;
-  target:
-    | {
-        type: "session";
-        sessionId: string;
-      }
-    | {
-        type: "group";
-        groupKey: string;
-        groupName: string;
-        label: string;
-      }
-    | {
-        type: "group-root";
-      }
-    | {
-        type: "group-view";
-        groupKey: string;
-        groupName: string;
-        label: string;
-      };
-}
-
-interface SessionContextAction {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  danger?: boolean;
-  run: () => void;
 }
 
 interface TransferDockNotice {
@@ -1725,107 +1635,6 @@ function getSftpChannelOpenRetryDelayMs(retryCount: number): number {
     SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_MAX_MS,
     SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_BASE_MS * 2 ** normalizedRetryCount
   );
-}
-
-function isReconnectRecoverableError(message: string): boolean {
-  return /(not connected|disconnected|connection lost|connection reset|broken pipe|handshake|timed out|timeout)/i.test(
-    message
-  );
-}
-
-function isBridgeUnavailableError(message: string): boolean {
-  return /(bridge unavailable|bridge is not ready|restart `pnpm dev`)/i.test(message);
-}
-
-function isClipboardUnavailableError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /clipboard unavailable/i.test(message);
-}
-
-function isPreferredOpenerConfigurationError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /(configured windows opener was not found|quote paths with spaces|preferred (?:program|opener)|file opening)/i.test(
-    message
-  );
-}
-
-function isHotkeyRecoverableError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /(invalid hotkey file|hotkey|shortcut conflict|shortcut binding)/i.test(message);
-}
-
-function isPortForwardRecoverableError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /(port forwarding|forwarded connection|listen port|target host|target port|forwarding policy|already exists on .*:\d+)/i.test(
-    message
-  );
-}
-
-function isSafetyRecoverableError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /(dangerous command|safety (?:bundle|guardrail|settings)|safety bundles?|policy bundles?|guard preferences)/i.test(
-    message
-  );
-}
-
-function isWorkspaceRecoverableError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /(workspace profile|workspace safety sync|workspace settings|profile sync)/i.test(message);
-}
-
-function isServerHealthRecoverableError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /(server monitor|server health|health snapshot|process details|failed services|monitor command)/i.test(
-    message
-  );
-}
-
-function isDiagnosticsRecoverableError(message?: string): boolean {
-  if (!message) {
-    return false;
-  }
-  return /(diagnostics|log bridge|log info|log directory|bug report|disconnect report|snapshot export)/i.test(
-    message
-  );
-}
-
-function resolveTransferRecoveryReasonForError(message?: string): string | null {
-  const normalized = message?.trim() ?? "";
-  if (!normalized) {
-    return null;
-  }
-  if (isRemotePathMissingError(normalized) || isSftpChannelOpenFailureError(normalized)) {
-    return classifyTransferFailureReason(normalized);
-  }
-  if (
-    /(upload|download|transfer|sftp|remote file|remote path|remote directory|retry failed|queue paused)/i.test(
-      normalized
-    )
-  ) {
-    return classifyTransferFailureReason(normalized);
-  }
-  const classified = classifyTransferFailureReason(normalized);
-  if (
-    classified === "Target already exists" ||
-    classified === "Storage full or quota limit"
-  ) {
-    return classified;
-  }
-  return null;
 }
 
 function isTransferCanceledMessage(message?: string): boolean {
@@ -2711,29 +2520,6 @@ function formatServerUptime(seconds: number): string {
     return `${hours}h ${minutes}m`;
   }
   return `${minutes}m`;
-}
-
-async function getLocalPathsFromDroppedFiles(
-  files: FileList,
-  resolvePath?: (file: File) => Promise<string | null>
-): Promise<string[]> {
-  const paths = await Promise.all(
-    Array.from(files).map(async (file) => {
-      const maybePath = (file as File & { path?: string }).path;
-      if (maybePath && typeof maybePath === "string") {
-        return maybePath;
-      }
-      if (!resolvePath) {
-        return null;
-      }
-      try {
-        return await resolvePath(file);
-      } catch {
-        return null;
-      }
-    })
-  );
-  return paths.filter((pathValue): pathValue is string => typeof pathValue === "string" && pathValue.length > 0);
 }
 
 function parseReconnectDelaySeconds(value: unknown): number {
@@ -4282,347 +4068,6 @@ function readSessionTemplates(): SessionTemplateRecord[] {
   }
 }
 
-function normalizeCommandSnippetParameterKey(value: string): string {
-  return value
-    .trim()
-    .replace(COMMAND_SNIPPET_PARAMETER_KEY_SANITIZE_PATTERN, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, MAX_COMMAND_SNIPPET_PARAMETER_KEY_LENGTH);
-}
-
-function buildCommandSnippetParameterToken(key: string): string {
-  return `\${param:${key}}`;
-}
-
-function normalizeCommandSnippetVariableScope(value: unknown): CommandSnippetVariableScopeId {
-  return value === "group" || value === "session" || value === "global" ? value : "snippet";
-}
-
-function formatCommandSnippetVariableScopeLabel(scope: CommandSnippetVariableScopeId): string {
-  return COMMAND_SNIPPET_VARIABLE_SCOPES.find((entry) => entry.id === scope)?.label ?? "Per Snippet";
-}
-
-function buildCommandSnippetScopedValueCacheKey(options: {
-  scope: CommandSnippetVariableScopeId;
-  key: string;
-  snippetId: string;
-  groupId: string;
-  sessionId: string;
-}): string {
-  const normalizedKey = normalizeCommandSnippetParameterKey(options.key);
-  if (!normalizedKey) {
-    return "";
-  }
-  if (options.scope === "global") {
-    return `global:${normalizedKey}`;
-  }
-  if (options.scope === "session") {
-    return options.sessionId.trim() ? `session:${options.sessionId.trim()}:${normalizedKey}` : "";
-  }
-  if (options.scope === "group") {
-    return options.groupId.trim() ? `group:${options.groupId.trim()}:${normalizedKey}` : "";
-  }
-  return options.snippetId.trim() ? `snippet:${options.snippetId.trim()}:${normalizedKey}` : "";
-}
-
-function createCommandSnippetParameter(
-  ordinal: number,
-  existingKeys: ReadonlySet<string> = new Set<string>(),
-  scope: CommandSnippetVariableScopeId = "snippet"
-): CommandSnippetParameter {
-  let nextOrdinal = Math.max(1, Math.trunc(ordinal));
-  let nextKey = normalizeCommandSnippetParameterKey(`value_${nextOrdinal}`);
-  while (!nextKey || existingKeys.has(nextKey)) {
-    nextOrdinal += 1;
-    nextKey = normalizeCommandSnippetParameterKey(`value_${nextOrdinal}`);
-  }
-  return {
-    id: `sp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    key: nextKey,
-    label: `Value ${nextOrdinal}`,
-    defaultValue: "",
-    required: true,
-    pattern: "",
-    scope
-  };
-}
-
-function mergeCommandSnippetParameters(
-  snippet: CommandSnippetItem | null,
-  promptSet: CommandSnippetPromptSet | null
-): CommandSnippetParameter[] {
-  if (!snippet && !promptSet) {
-    return [];
-  }
-  const snippetParameters = snippet?.parameters ?? [];
-  const snippetKeys = new Set(snippetParameters.map((parameter) => parameter.key));
-  return [
-    ...(promptSet?.parameters.filter((parameter) => !snippetKeys.has(parameter.key)) ?? []),
-    ...snippetParameters
-  ];
-}
-
-function listCommandSnippetTemplateParameterKeys(template: string): string[] {
-  if (!template) {
-    return [];
-  }
-  const keys: string[] = [];
-  const seenKeys = new Set<string>();
-  for (const match of template.matchAll(COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN)) {
-    const key = typeof match[1] === "string" ? match[1].trim() : "";
-    if (!key || seenKeys.has(key)) {
-      continue;
-    }
-    seenKeys.add(key);
-    keys.push(key);
-  }
-  return keys;
-}
-
-function getCommandSnippetParameterPatternError(pattern: string): string | null {
-  const trimmedPattern = pattern.trim();
-  if (!trimmedPattern) {
-    return null;
-  }
-  try {
-    new RegExp(trimmedPattern);
-    return null;
-  } catch (caughtError) {
-    return caughtError instanceof Error && caughtError.message
-      ? caughtError.message
-      : "Invalid regular expression.";
-  }
-}
-
-function normalizeCommandSnippetParameters(payload: unknown): CommandSnippetParameter[] {
-  if (!Array.isArray(payload)) {
-    return [];
-  }
-  const normalized: CommandSnippetParameter[] = [];
-  const seenParameterIds = new Set<string>();
-  const seenParameterKeys = new Set<string>();
-  for (const row of payload) {
-    if (!row || typeof row !== "object") {
-      continue;
-    }
-    const candidate = row as Partial<CommandSnippetParameter>;
-    const parameterId =
-      typeof candidate.id === "string" && candidate.id.trim()
-        ? candidate.id.trim()
-        : `sp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    if (seenParameterIds.has(parameterId)) {
-      continue;
-    }
-    const parameterKey = normalizeCommandSnippetParameterKey(
-      typeof candidate.key === "string" ? candidate.key : ""
-    );
-    if (!parameterKey || seenParameterKeys.has(parameterKey)) {
-      continue;
-    }
-    seenParameterIds.add(parameterId);
-    seenParameterKeys.add(parameterKey);
-    const parameterLabel =
-      typeof candidate.label === "string" && candidate.label.trim()
-        ? candidate.label.trim().slice(0, MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH)
-        : parameterKey;
-    normalized.push({
-      id: parameterId,
-      key: parameterKey,
-      label: parameterLabel,
-      defaultValue:
-        typeof candidate.defaultValue === "string"
-          ? candidate.defaultValue.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH)
-          : "",
-      required: candidate.required !== false,
-      pattern:
-        typeof candidate.pattern === "string"
-          ? candidate.pattern.trim().slice(0, MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH)
-          : "",
-      scope: normalizeCommandSnippetVariableScope(candidate.scope)
-    });
-    if (normalized.length >= MAX_COMMAND_SNIPPET_PARAMETERS) {
-      break;
-    }
-  }
-  return normalized;
-}
-
-function normalizeCommandSnippetPromptSets(payload: unknown): CommandSnippetPromptSet[] {
-  if (!Array.isArray(payload)) {
-    return [];
-  }
-  const normalized: CommandSnippetPromptSet[] = [];
-  const seenPromptSetIds = new Set<string>();
-  for (const row of payload) {
-    if (!row || typeof row !== "object") {
-      continue;
-    }
-    const candidate = row as Partial<CommandSnippetPromptSet>;
-    const promptSetId =
-      typeof candidate.id === "string" && candidate.id.trim()
-        ? candidate.id.trim()
-        : `sps-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    if (seenPromptSetIds.has(promptSetId)) {
-      continue;
-    }
-    const promptSetName = typeof candidate.name === "string" ? candidate.name.trim() : "";
-    if (!promptSetName) {
-      continue;
-    }
-    seenPromptSetIds.add(promptSetId);
-    normalized.push({
-      id: promptSetId,
-      name: promptSetName.slice(0, MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH),
-      parameters: normalizeCommandSnippetParameters(
-        (candidate as Partial<CommandSnippetPromptSet> & { parameters?: unknown }).parameters
-      )
-    });
-    if (normalized.length >= MAX_COMMAND_SNIPPET_PROMPT_SETS) {
-      break;
-    }
-  }
-  return normalized;
-}
-
-function normalizeCommandSnippetGroups(payload: unknown): CommandSnippetGroup[] {
-  const rows = Array.isArray(payload)
-    ? payload
-    : payload && typeof payload === "object" && Array.isArray((payload as { groups?: unknown }).groups)
-      ? (payload as { groups: unknown[] }).groups
-      : [];
-  const normalized: CommandSnippetGroup[] = [];
-  const seenGroupIds = new Set<string>();
-  for (const row of rows) {
-    if (!row || typeof row !== "object") {
-      continue;
-    }
-    const candidate = row as Partial<CommandSnippetGroup>;
-    const groupId =
-      typeof candidate.id === "string" && candidate.id.trim()
-        ? candidate.id.trim()
-        : `sg-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    if (seenGroupIds.has(groupId)) {
-      continue;
-    }
-    const groupName = typeof candidate.name === "string" ? candidate.name.trim() : "";
-    if (!groupName) {
-      continue;
-    }
-    const promptSets = normalizeCommandSnippetPromptSets(
-      (candidate as Partial<CommandSnippetGroup> & { promptSets?: unknown }).promptSets
-    );
-    const validPromptSetIds = new Set(promptSets.map((promptSet) => promptSet.id));
-    const snippets = Array.isArray(candidate.snippets) ? candidate.snippets : [];
-    const normalizedSnippets: CommandSnippetItem[] = [];
-    const seenSnippetIds = new Set<string>();
-    for (const snippetRow of snippets) {
-      if (!snippetRow || typeof snippetRow !== "object") {
-        continue;
-      }
-      const snippet = snippetRow as Partial<CommandSnippetItem>;
-      const snippetId =
-        typeof snippet.id === "string" && snippet.id.trim()
-          ? snippet.id.trim()
-          : `sn-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-      if (seenSnippetIds.has(snippetId)) {
-        continue;
-      }
-      const snippetName = typeof snippet.name === "string" ? snippet.name.trim() : "";
-      const template = typeof snippet.template === "string" ? snippet.template.trim() : "";
-      if (!snippetName || !template) {
-        continue;
-      }
-      seenSnippetIds.add(snippetId);
-      normalizedSnippets.push({
-        id: snippetId,
-        name: snippetName.slice(0, 80),
-        template: template.slice(0, 4000),
-        confirmBeforeRun: snippet.confirmBeforeRun === true,
-        previewBeforeRun: snippet.previewBeforeRun === true,
-        promptSetId:
-          typeof snippet.promptSetId === "string" && validPromptSetIds.has(snippet.promptSetId.trim())
-            ? snippet.promptSetId.trim()
-            : "",
-        parameters: normalizeCommandSnippetParameters(
-          (snippet as Partial<CommandSnippetItem> & { parameters?: unknown }).parameters
-        )
-      });
-      if (normalizedSnippets.length >= MAX_COMMAND_SNIPPETS_PER_GROUP) {
-        break;
-      }
-    }
-    seenGroupIds.add(groupId);
-    normalized.push({
-      id: groupId,
-      name: groupName.slice(0, 80),
-      promptSets,
-      snippets: normalizedSnippets
-    });
-    if (normalized.length >= MAX_COMMAND_SNIPPET_GROUPS) {
-      break;
-    }
-  }
-  return normalized;
-}
-
-function readCommandSnippetGroups(): CommandSnippetGroup[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-  try {
-    const rawValue = window.localStorage.getItem(COMMAND_SNIPPET_GROUPS_STORAGE_KEY);
-    if (!rawValue) {
-      return [];
-    }
-    return normalizeCommandSnippetGroups(JSON.parse(rawValue));
-  } catch {
-    return [];
-  }
-}
-
-function normalizeCommandSnippetScopedValues(
-  payload: unknown
-): Record<string, CommandSnippetScopedValueRecord> {
-  if (!payload || typeof payload !== "object") {
-    return {};
-  }
-  const normalizedEntries: Array<[string, CommandSnippetScopedValueRecord]> = [];
-  for (const [rawKey, rawValue] of Object.entries(payload)) {
-    if (typeof rawKey !== "string" || !rawKey.trim() || !rawValue || typeof rawValue !== "object") {
-      continue;
-    }
-    const candidate = rawValue as Partial<CommandSnippetScopedValueRecord>;
-    const value = typeof candidate.value === "string" ? candidate.value.slice(0, 4000) : "";
-    const updatedAt =
-      typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
-        ? candidate.updatedAt
-        : Date.now();
-    normalizedEntries.push([
-      rawKey.trim(),
-      {
-        value,
-        updatedAt
-      }
-    ]);
-  }
-  normalizedEntries.sort((left, right) => right[1].updatedAt - left[1].updatedAt);
-  return Object.fromEntries(normalizedEntries.slice(0, MAX_COMMAND_SNIPPET_SCOPED_VALUES));
-}
-
-function readCommandSnippetScopedValues(): Record<string, CommandSnippetScopedValueRecord> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-  try {
-    const rawValue = window.localStorage.getItem(COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY);
-    if (!rawValue) {
-      return {};
-    }
-    return normalizeCommandSnippetScopedValues(JSON.parse(rawValue));
-  } catch {
-    return {};
-  }
-}
 
 function readPortForwardPresets(): PortForwardPreset[] {
   if (typeof window === "undefined") {
@@ -5619,12 +5064,28 @@ export function App() {
     () => createEmptySessionTemplateDraft()
   );
   const [sessionTemplateError, setSessionTemplateError] = useState<string | null>(null);
-  const [commandSnippetGroups, setCommandSnippetGroups] = useState<CommandSnippetGroup[]>(
-    () => readCommandSnippetGroups()
-  );
-  const [commandSnippetScopedValues, setCommandSnippetScopedValues] = useState<
-    Record<string, CommandSnippetScopedValueRecord>
-  >(() => readCommandSnippetScopedValues());
+  const {
+    commandSnippetGroups,
+    commandSnippetManagerGroupId,
+    commandSnippetManagerSnippetId,
+    commandSnippetScopedValueCount,
+    commandSnippetScopedValues,
+    isCommandSnippetManagerOpen,
+    setCommandSnippetGroups,
+    setCommandSnippetManagerGroupId,
+    setCommandSnippetManagerSnippetId,
+    setCommandSnippetScopedValues,
+    setIsCommandSnippetManagerOpen,
+    totalCommandSnippetCount,
+    totalCommandSnippetPromptSetCount
+  } = useCommandSnippetState({
+    groupsStorageKey: COMMAND_SNIPPET_GROUPS_STORAGE_KEY,
+    maxGroups: MAX_COMMAND_SNIPPET_GROUPS,
+    normalizeScopedValues: normalizeCommandSnippetScopedValues,
+    readGroups: readCommandSnippetGroups,
+    readScopedValues: readCommandSnippetScopedValues,
+    scopedValuesStorageKey: COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY
+  });
   const [disconnectReportCapturePreferences, setDisconnectReportCapturePreferences] =
     useState<DisconnectReportCapturePreferences>(() =>
       readDisconnectReportCapturePreferences()
@@ -5678,16 +5139,8 @@ export function App() {
   const [retryCenterQuery, setRetryCenterQuery] = useState(initialRetryCenterViewPreferences.query);
   const [retryCenterSelection, setRetryCenterSelection] = useState<string[]>([]);
   const [retryCenterCollapsedGroupKeys, setRetryCenterCollapsedGroupKeys] = useState<string[]>([]);
-  const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null);
-  const [sftpToolbarMenu, setSftpToolbarMenu] = useState<SftpToolbarMenuState | null>(null);
-  const [commandHistoryContextMenu, setCommandHistoryContextMenu] =
-    useState<CommandHistoryContextMenuState | null>(null);
   const [isCommandHistoryManagerOpen, setIsCommandHistoryManagerOpen] = useState(false);
-  const [isCommandSnippetManagerOpen, setIsCommandSnippetManagerOpen] = useState(false);
-  const [commandSnippetManagerGroupId, setCommandSnippetManagerGroupId] = useState("");
-  const [commandSnippetManagerSnippetId, setCommandSnippetManagerSnippetId] = useState("");
   const [commandHistorySelection, setCommandHistorySelection] = useState<string[]>([]);
-  const [sessionContextMenu, setSessionContextMenu] = useState<SessionContextMenuState | null>(null);
   const [globalSftpError, setGlobalSftpError] = useState<string | null>(null);
   const [sftpErrorsByTab, setSftpErrorsByTab] = useState<Record<string, string>>({});
   const [remoteOpenFileIssuesByTab, setRemoteOpenFileIssuesByTab] = useState<
@@ -5786,10 +5239,6 @@ export function App() {
   const adaptiveUploadConcurrencyRecoveryByTabRef = useRef<Map<string, number>>(new Map());
   const uploadQueueRetryTimerRef = useRef<number | null>(null);
   const openingRemoteFilesRef = useRef<Set<string>>(new Set());
-  const sftpContextMenuRef = useRef<HTMLDivElement | null>(null);
-  const sftpToolbarMenuRef = useRef<HTMLDivElement | null>(null);
-  const commandHistoryContextMenuRef = useRef<HTMLDivElement | null>(null);
-  const sessionContextMenuRef = useRef<HTMLDivElement | null>(null);
   const appHintTimerRef = useRef<number | null>(null);
   const hotkeyRowRefs = useRef<Map<HotkeyActionId, HTMLDivElement | null>>(new Map());
   const hotkeyConflictHighlightTimerRef = useRef<number | null>(null);
@@ -5889,10 +5338,7 @@ export function App() {
     level: "info" | "warn";
     message: string;
   } | null>(null);
-  const [moveGroupDialog, setMoveGroupDialog] = useState<{
-    sessionIds: string[];
-    targetGroup: string;
-  } | null>(null);
+  const [moveGroupDialog, setMoveGroupDialog] = useState<MoveGroupDialogView | null>(null);
   const clearAppHintMessage = useCallback(() => {
     if (appHintTimerRef.current !== null) {
       window.clearTimeout(appHintTimerRef.current);
@@ -6052,18 +5498,6 @@ export function App() {
     [portForwardRecordsByTab]
   );
   const pendingTransferRestoreCount = pendingTransferRestoreItems.length;
-  const totalCommandSnippetCount = useMemo(
-    () => commandSnippetGroups.reduce((total, group) => total + group.snippets.length, 0),
-    [commandSnippetGroups]
-  );
-  const totalCommandSnippetPromptSetCount = useMemo(
-    () => commandSnippetGroups.reduce((total, group) => total + group.promptSets.length, 0),
-    [commandSnippetGroups]
-  );
-  const commandSnippetScopedValueCount = useMemo(
-    () => Object.keys(commandSnippetScopedValues).length,
-    [commandSnippetScopedValues]
-  );
   const workspaceProfileLabels = i18n.settings.workspace.profileOptions;
   const selectedWorkspaceProfile = useMemo(
     () => {
@@ -6177,6 +5611,20 @@ export function App() {
     [terminalEditorFocusPreferences.cursorId]
   );
   const {
+    closeSessionContextMenu,
+    openSessionBlankContextMenu,
+    openSessionContextMenu,
+    sessionContextMenu,
+    sessionContextMenuRef
+  } = useSessionContextMenu({
+    activeSessionGroupKey,
+    persistedGroupNames: sessionGroupsState.groups,
+    sessions,
+    setSelectedGroupKeys,
+    setSelectedSessionId,
+    setSelectedSessionIds
+  });
+  const {
     activeGroupSessions,
     activeSessionGroup,
     activeTabSessionGroupName,
@@ -6209,6 +5657,16 @@ export function App() {
     terminalTabs
   });
   const {
+    closeCommandHistoryContextMenu,
+    commandHistoryContextEntryId,
+    commandHistoryContextMenu,
+    commandHistoryContextMenuRef,
+    openCommandHistoryContextMenu,
+    openCommandHistoryPanelContextMenu
+  } = useCommandHistoryContextMenu({
+    entryIds: terminalCommandHistoryEntries.map((entry) => entry.id)
+  });
+  const {
     allVisibleCommandHistorySelected,
     hiddenInspectorCommandHistoryCount,
     inspectorTerminalCommandHistoryEntries,
@@ -6226,7 +5684,7 @@ export function App() {
         entry.command,
         formatTerminalCommandHistorySourceLabel(entry.source)
       ),
-    commandHistoryContextEntryId: commandHistoryContextMenu?.entryId ?? null,
+    commandHistoryContextEntryId,
     entries: terminalCommandHistoryEntries,
     previewLimit: COMMAND_HISTORY_INSPECTOR_PREVIEW_LIMIT,
     query: terminalCommandHistoryQuery,
@@ -6248,35 +5706,20 @@ export function App() {
     terminalApi,
     terminalTabsRef
   });
-  const openCommandSnippetManager = useCallback(() => {
-    setCommandHistoryContextMenu(null);
-    setIsCommandSnippetManagerOpen(true);
-  }, []);
-  const closeCommandSnippetManager = useCallback(() => {
-    setIsCommandSnippetManagerOpen(false);
-  }, []);
-  useEffect(() => {
-    if (!isCommandSnippetManagerOpen) {
-      return;
-    }
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      closeCommandSnippetManager();
-    };
-    window.addEventListener("keydown", onEscape);
-    return () => {
-      window.removeEventListener("keydown", onEscape);
-    };
-  }, [closeCommandSnippetManager, isCommandSnippetManagerOpen]);
-  useEffect(() => {
-    if (!isCommandSnippetManagerOpen) {
-      return;
-    }
-    setCommandHistoryContextMenu(null);
-  }, [isCommandSnippetManagerOpen]);
+  const {
+    closeSftpContextMenu,
+    closeSftpToolbarMenu,
+    openSftpContextMenu,
+    sftpContextMenu,
+    sftpContextMenuRef,
+    sftpToolbarMenu,
+    sftpToolbarMenuRef,
+    toggleSftpToolbarMenu
+  } = useSftpContextMenus({
+    hasActiveTerminalTab: Boolean(activeTerminalTab),
+    setSelectedSftpPath,
+    sftpEntryPaths: sftpDirectory?.entries.map((entry) => entry.path) ?? []
+  });
   const activeSessionTransferConflictStrategy = useMemo(() => {
     if (!activeSessionId) {
       return null;
@@ -6345,12 +5788,21 @@ export function App() {
     resolveDisconnectReportTimeRangeCutoff,
     terminalTabs
   });
-  const resetDisconnectReportViewFilters = useCallback(() => {
-    setDisconnectReportScope(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.scope);
-    setDisconnectReportTriggerFilter(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.trigger);
-    setDisconnectReportTimeRange(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.timeRange);
-    setDisconnectReportQuery(DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES.query);
-  }, []);
+  const {
+    resetDisconnectReportViewFilters,
+    setDisconnectReportCaptureEnabled,
+    setDisconnectReportQueryValue,
+    setDisconnectReportScopeValue,
+    setDisconnectReportTimeRangeValue,
+    setDisconnectReportTriggerFilterValue
+  } = useDisconnectDiagnosticsUiActions({
+    defaults: DEFAULT_DISCONNECT_REPORT_VIEW_PREFERENCES,
+    setDisconnectReportCapturePreferences,
+    setDisconnectReportQuery,
+    setDisconnectReportScope,
+    setDisconnectReportTimeRange,
+    setDisconnectReportTriggerFilter
+  });
   const {
     activePortForwardEventHistory,
     activePortForwardPresets,
@@ -6963,21 +6415,6 @@ export function App() {
     },
     [showAppAlert, showAppPrompt, upsertTerminalCommandHistoryCommand]
   );
-  const refreshLogInfo = useCallback(async (): Promise<void> => {
-    if (!systemApi?.getLogInfo) {
-      setError("Log bridge unavailable. Restart `pnpm dev`.");
-      return;
-    }
-    const info = await systemApi.getLogInfo();
-    setLogInfo(info);
-  }, [systemApi]);
-  const refreshDiagnosticsLogInfo = useCallback(() => {
-    void refreshLogInfo().catch((caughtError) => {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog("error", "renderer:diagnostics", "Failed to refresh log info.", caughtError);
-    });
-  }, [refreshLogInfo, writeAppLog]);
   const setPortForwardsForTab = useCallback((tabId: string, records: PortForwardRecord[]) => {
     const normalizedTabId = tabId.trim();
     if (!normalizedTabId) {
@@ -8098,6 +7535,29 @@ export function App() {
     toLogMessage,
     writeAppLog
   });
+  const {
+    closeCommandSnippetManager,
+    exportCommandSnippetGroups,
+    importCommandSnippetGroups,
+    importCommandSnippetGroupsWithUiError,
+    openCommandSnippetManager
+  } = useCommandSnippetManagerActions({
+    appVersion: APP_VERSION,
+    commandSnippetGroups,
+    clearCommandHistoryContextMenu: closeCommandHistoryContextMenu,
+    copyTextToClipboard,
+    finishOperationCenterAppJob,
+    isCommandSnippetManagerOpen,
+    normalizeCommandSnippetGroups,
+    removeOperationCenterAppJob,
+    setCommandSnippetGroups,
+    setError,
+    setIsCommandSnippetManagerOpen,
+    showAppAlert,
+    startOperationCenterAppJob,
+    systemApi,
+    toLogMessage
+  });
   const clearDangerousCommandPersistentApprovals = useCallback(async () => {
     const currentApprovals = dangerousCommandGuardPreferencesRef.current.persistentApprovals;
     if (currentApprovals.length === 0) {
@@ -9053,17 +8513,6 @@ export function App() {
     }
   }, []);
 
-  const closeSftpContextMenu = useCallback(() => {
-    setSftpContextMenu(null);
-  }, []);
-
-  const closeSftpToolbarMenu = useCallback(() => {
-    setSftpToolbarMenu(null);
-  }, []);
-
-  const closeCommandHistoryContextMenu = useCallback(() => {
-    setCommandHistoryContextMenu(null);
-  }, []);
   const {
     clearCommandHistorySelection,
     closeCommandHistoryManager,
@@ -9098,72 +8547,6 @@ export function App() {
     visibleEntryIds: visibleCommandHistoryIds,
     writeAppLog
   });
-
-  const openSftpContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>, entry?: SftpEntry) => {
-      event.preventDefault();
-      event.stopPropagation();
-      closeSftpToolbarMenu();
-      if (entry) {
-        setSelectedSftpPath(entry.path);
-      }
-      setSftpContextMenu({
-        x: event.clientX,
-        y: event.clientY,
-        entryPath: entry?.path ?? null
-      });
-    },
-    [closeSftpToolbarMenu]
-  );
-
-  const toggleSftpToolbarMenu = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const triggerRect = event.currentTarget.getBoundingClientRect();
-      closeSftpContextMenu();
-      setSftpToolbarMenu((prev) => {
-        if (prev) {
-          return null;
-        }
-        return {
-          x: Math.round(triggerRect.left),
-          y: Math.round(triggerRect.bottom + 4)
-        };
-      });
-    },
-    [closeSftpContextMenu]
-  );
-
-  const openCommandHistoryContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>, entryId: string) => {
-      event.preventDefault();
-      event.stopPropagation();
-      setCommandHistoryContextMenu({
-        x: event.clientX,
-        y: event.clientY,
-        entryId
-      });
-    },
-    []
-  );
-
-  const openCommandHistoryPanelContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest(".command-history-panel__item")) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      setCommandHistoryContextMenu({
-        x: event.clientX,
-        y: event.clientY,
-        entryId: null
-      });
-    },
-    []
-  );
 
   useEffect(() => {
     if (bridge) {
@@ -9563,37 +8946,6 @@ export function App() {
 
   useEffect(() => {
     try {
-      if (commandSnippetGroups.length === 0) {
-        window.localStorage.removeItem(COMMAND_SNIPPET_GROUPS_STORAGE_KEY);
-      } else {
-        window.localStorage.setItem(
-          COMMAND_SNIPPET_GROUPS_STORAGE_KEY,
-          JSON.stringify(commandSnippetGroups.slice(0, MAX_COMMAND_SNIPPET_GROUPS))
-        );
-      }
-    } catch {
-      // Ignore storage failures; runtime settings still apply for this launch.
-    }
-  }, [commandSnippetGroups]);
-
-  useEffect(() => {
-    try {
-      const normalizedScopedValues = normalizeCommandSnippetScopedValues(commandSnippetScopedValues);
-      if (Object.keys(normalizedScopedValues).length === 0) {
-        window.localStorage.removeItem(COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY);
-      } else {
-        window.localStorage.setItem(
-          COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY,
-          JSON.stringify(normalizedScopedValues)
-        );
-      }
-    } catch {
-      // Ignore storage failures; runtime settings still apply for this launch.
-    }
-  }, [commandSnippetScopedValues]);
-
-  useEffect(() => {
-    try {
       window.localStorage.setItem(
         DISCONNECT_REPORT_HISTORY_STORAGE_KEY,
         JSON.stringify(disconnectReports)
@@ -9832,12 +9184,21 @@ export function App() {
     if (!isSettingsOpen || activeSettingsSection !== "diagnostics") {
       return;
     }
-    void refreshLogInfo().catch((caughtError) => {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog("error", "renderer:diagnostics", "Failed to load log info.", caughtError);
-    });
-  }, [activeSettingsSection, isSettingsOpen, refreshLogInfo, writeAppLog]);
+    void (async () => {
+      try {
+        if (!systemApi?.getLogInfo) {
+          setError("Log bridge unavailable. Restart `pnpm dev`.");
+          return;
+        }
+        const info = await systemApi.getLogInfo();
+        setLogInfo(info);
+      } catch (caughtError) {
+        const message = toLogMessage(caughtError);
+        setError(message);
+        writeAppLog("error", "renderer:diagnostics", "Failed to load log info.", caughtError);
+      }
+    })();
+  }, [activeSettingsSection, isSettingsOpen, systemApi, writeAppLog]);
 
   useEffect(() => {
     if (!isSettingsOpen || activeSettingsSection !== "portForwarding") {
@@ -10247,262 +9608,6 @@ export function App() {
       stopListening();
     };
   }, [activeTabId, applySftpTransferEvent, loadSftpDirectory, sftpApi, sftpDirectory?.cwd, writeAppLog]);
-
-  useEffect(() => {
-    if (!sftpContextMenu) {
-      return;
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (sftpContextMenuRef.current?.contains(target)) {
-        return;
-      }
-      closeSftpContextMenu();
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeSftpContextMenu();
-      }
-    };
-
-    const onWindowLayoutChange = () => {
-      closeSftpContextMenu();
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
-    window.addEventListener("resize", onWindowLayoutChange);
-    window.addEventListener("scroll", onWindowLayoutChange, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
-      window.removeEventListener("resize", onWindowLayoutChange);
-      window.removeEventListener("scroll", onWindowLayoutChange, true);
-    };
-  }, [closeSftpContextMenu, sftpContextMenu]);
-
-  useEffect(() => {
-    if (!sftpToolbarMenu) {
-      return;
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (sftpToolbarMenuRef.current?.contains(target)) {
-        return;
-      }
-      closeSftpToolbarMenu();
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeSftpToolbarMenu();
-      }
-    };
-
-    const onWindowLayoutChange = () => {
-      closeSftpToolbarMenu();
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
-    window.addEventListener("resize", onWindowLayoutChange);
-    window.addEventListener("scroll", onWindowLayoutChange, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
-      window.removeEventListener("resize", onWindowLayoutChange);
-      window.removeEventListener("scroll", onWindowLayoutChange, true);
-    };
-  }, [closeSftpToolbarMenu, sftpToolbarMenu]);
-
-  useEffect(() => {
-    if (!commandHistoryContextMenu) {
-      return;
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (commandHistoryContextMenuRef.current?.contains(target)) {
-        return;
-      }
-      closeCommandHistoryContextMenu();
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeCommandHistoryContextMenu();
-      }
-    };
-
-    const onWindowLayoutChange = () => {
-      closeCommandHistoryContextMenu();
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
-    window.addEventListener("resize", onWindowLayoutChange);
-    window.addEventListener("scroll", onWindowLayoutChange, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
-      window.removeEventListener("resize", onWindowLayoutChange);
-      window.removeEventListener("scroll", onWindowLayoutChange, true);
-    };
-  }, [closeCommandHistoryContextMenu, commandHistoryContextMenu]);
-
-  useEffect(() => {
-    if (!commandHistoryContextMenu) {
-      return;
-    }
-    if (!commandHistoryContextMenu.entryId) {
-      return;
-    }
-    const hasEntry = terminalCommandHistoryEntries.some(
-      (entry) => entry.id === commandHistoryContextMenu.entryId
-    );
-    if (!hasEntry) {
-      closeCommandHistoryContextMenu();
-    }
-  }, [closeCommandHistoryContextMenu, commandHistoryContextMenu, terminalCommandHistoryEntries]);
-
-  const closeSessionContextMenu = useCallback(() => {
-    setSessionContextMenu(null);
-  }, []);
-
-  const openSessionContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>, target: SessionContextMenuState["target"]) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (target.type === "session") {
-        setSelectedSessionId(target.sessionId);
-        setSelectedSessionIds((prev) =>
-          prev.includes(target.sessionId) ? prev : [target.sessionId]
-        );
-      }
-      if (target.type === "group") {
-        setSelectedGroupKeys((prev) =>
-          prev.includes(target.groupKey) ? prev : [target.groupKey]
-        );
-      }
-      setSessionContextMenu({
-        x: event.clientX,
-        y: event.clientY,
-        target
-      });
-    },
-    []
-  );
-
-  const openSessionBlankContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.closest(
-          "button, input, textarea, select, a, label, .session-list__item, .session-folder-list__item"
-        )
-      ) {
-        return;
-      }
-      if (activeSessionGroup) {
-        openSessionContextMenu(event, {
-          type: "group-view",
-          groupKey: activeSessionGroup.key,
-          groupName: activeSessionGroup.groupName,
-          label: activeSessionGroup.label
-        });
-        return;
-      }
-      openSessionContextMenu(event, { type: "group-root" });
-    },
-    [activeSessionGroup, openSessionContextMenu]
-  );
-
-  useEffect(() => {
-    if (!sessionContextMenu) {
-      return;
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (sessionContextMenuRef.current?.contains(target)) {
-        return;
-      }
-      closeSessionContextMenu();
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeSessionContextMenu();
-      }
-    };
-
-    const onWindowLayoutChange = () => {
-      closeSessionContextMenu();
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
-    window.addEventListener("resize", onWindowLayoutChange);
-    window.addEventListener("scroll", onWindowLayoutChange, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
-      window.removeEventListener("resize", onWindowLayoutChange);
-      window.removeEventListener("scroll", onWindowLayoutChange, true);
-    };
-  }, [closeSessionContextMenu, sessionContextMenu]);
-
-  useEffect(() => {
-    if (!sessionContextMenu) {
-      return;
-    }
-    const contextTarget = sessionContextMenu.target;
-    if (contextTarget.type === "session") {
-      const exists = sessions.some((session) => session.id === contextTarget.sessionId);
-      if (!exists) {
-        closeSessionContextMenu();
-      }
-      return;
-    }
-    if (contextTarget.type === "group" || contextTarget.type === "group-view") {
-      if (contextTarget.groupKey === "__ungrouped__") {
-        return;
-      }
-      const exists =
-        sessionGroupOptions.some(
-          (groupName) => groupName.toLowerCase() === contextTarget.groupName.toLowerCase()
-        ) ||
-        sessions.some(
-          (session) =>
-            (session.groupId?.trim() ?? "").toLowerCase() === contextTarget.groupName.toLowerCase()
-        );
-      if (!exists) {
-        closeSessionContextMenu();
-      }
-    }
-  }, [closeSessionContextMenu, sessionContextMenu, sessionGroupOptions, sessions]);
-
-  useEffect(() => {
-    if (!sftpContextMenu) {
-      return;
-    }
-    if (!activeTerminalTab) {
-      closeSftpContextMenu();
-      return;
-    }
-    if (!sftpContextMenu.entryPath) {
-      return;
-    }
-    const hasEntry = !!sftpDirectory?.entries.some(
-      (entry) => entry.path === sftpContextMenu.entryPath
-    );
-    if (!hasEntry) {
-      closeSftpContextMenu();
-    }
-  }, [activeTerminalTab, closeSftpContextMenu, sftpContextMenu, sftpDirectory]);
 
   useEffect(() => {
     if (!activeSessionGroupKey) {
@@ -12369,1224 +11474,523 @@ export function App() {
     tr
   });
 
-  const renderCommandSnippetTemplate = useCallback(
-    async (
-      template: string,
-      parameterValues?: Record<string, string>
-    ): Promise<{
-      rendered: string;
-      unresolvedParameterKeys: string[];
-    }> => {
-      const tabId = activeTabIdRef.current;
-      const tab = tabId ? terminalTabsRef.current.find((entry) => entry.id === tabId) ?? null : null;
-      const session = tab
-        ? sessionsRef.current.find((entry) => entry.id === tab.sessionId) ?? null
-        : null;
-      const now = new Date();
-      const replacements: Record<string, string> = {
-        "${date}": now.toLocaleDateString(),
-        "${time}": now.toLocaleTimeString(),
-        "${datetime}": now.toLocaleString(),
-        "${tabTitle}": tab?.title ?? "",
-        "${sessionName}": session?.name ?? "",
-        "${host}": session?.host ?? "",
-        "${username}": session?.username ?? ""
-      };
-      let rendered = template;
-      if (rendered.includes("${clipboard}") && systemApi?.readClipboardText) {
-        try {
-          replacements["${clipboard}"] = await systemApi.readClipboardText();
-        } catch {
-          replacements["${clipboard}"] = "";
-        }
-      } else {
-        replacements["${clipboard}"] = "";
-      }
-      for (const [token, value] of Object.entries(replacements)) {
-        rendered = rendered.replaceAll(token, value);
-      }
-      const unresolvedParameterKeys = new Set<string>();
-      rendered = rendered.replaceAll(COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN, (_match, key) => {
-        const parameterKey = typeof key === "string" ? key.trim() : "";
-        if (
-          parameterValues &&
-          parameterKey &&
-          Object.prototype.hasOwnProperty.call(parameterValues, parameterKey)
-        ) {
-          return parameterValues[parameterKey] ?? "";
-        }
-        if (parameterKey) {
-          unresolvedParameterKeys.add(parameterKey);
-        }
-        return _match;
-      });
-      return {
-        rendered: rendered.trim(),
-        unresolvedParameterKeys: Array.from(unresolvedParameterKeys)
-      };
-    },
-    [systemApi]
-  );
-  const applyCommandSnippetScopedValueUpdates = useCallback(
-    (updates: Array<{ cacheKey: string; value: string }>) => {
-      if (updates.length === 0) {
-        return;
-      }
-      setCommandSnippetScopedValues((prev) => {
-        const next: Record<string, CommandSnippetScopedValueRecord> = { ...prev };
-        let offset = 0;
-        for (const update of updates) {
-          if (!update.cacheKey) {
-            continue;
-          }
-          next[update.cacheKey] = {
-            value: update.value,
-            updatedAt: Date.now() + offset
-          };
-          offset += 1;
-        }
-        return normalizeCommandSnippetScopedValues(next);
-      });
-    },
-    []
-  );
-
-  const collectCommandSnippetParameterValues = useCallback(
-    async (
-      snippet: CommandSnippetItem,
-      parameters: CommandSnippetParameter[],
-      groupId: string
-    ): Promise<
-      | {
-          values: Record<string, string>;
-          scopedValueUpdates: Array<{ cacheKey: string; value: string }>;
-        }
-      | null
-    > => {
-      if (parameters.length === 0) {
-        return {
-          values: {},
-          scopedValueUpdates: []
-        };
-      }
-      const activeTabId = activeTabIdRef.current;
-      const activeTab = activeTabId
-        ? terminalTabsRef.current.find((entry) => entry.id === activeTabId) ?? null
-        : null;
-      const sessionId = activeTab?.sessionId ?? "";
-      const values: Record<string, string> = {};
-      const scopedValueUpdates: Array<{ cacheKey: string; value: string }> = [];
-      for (let index = 0; index < parameters.length; index += 1) {
-        const parameter = parameters[index];
-        const patternError = getCommandSnippetParameterPatternError(parameter.pattern);
-        if (patternError) {
-          await showAppAlert(
-            `Snippet parameter "${parameter.label || parameter.key}" has an invalid regex pattern.\n${patternError}`,
-            {
-              title: "Run Snippet"
-            }
-          );
-          return null;
-        }
-        const compiledPattern = parameter.pattern.trim() ? new RegExp(parameter.pattern.trim()) : null;
-        const scopedValueCacheKey = buildCommandSnippetScopedValueCacheKey({
-          scope: parameter.scope,
-          key: parameter.key,
-          snippetId: snippet.id,
-          groupId,
-          sessionId
-        });
-        const cachedValue = scopedValueCacheKey
-          ? commandSnippetScopedValues[scopedValueCacheKey]?.value ?? null
-          : null;
-        while (true) {
-          const input = await showAppPrompt(
-            [
-              `Provide a value for "${parameter.label || parameter.key}".`,
-              parameter.required ? "This parameter is required." : "Leave blank to skip this parameter.",
-              `Scope: ${formatCommandSnippetVariableScopeLabel(parameter.scope)}`,
-              compiledPattern ? `Pattern: ${parameter.pattern.trim()}` : null
-            ]
-              .filter(Boolean)
-              .join("\n"),
-            cachedValue ?? parameter.defaultValue,
-            {
-              title: `Run Snippet: ${snippet.name}`,
-              confirmLabel: index === parameters.length - 1 ? "Preview" : "Next"
-            }
-          );
-          if (input === null) {
-            return null;
-          }
-          if (parameter.required && !input.trim()) {
-            await showAppAlert(`"${parameter.label || parameter.key}" cannot be empty.`, {
-              title: "Run Snippet"
-            });
-            continue;
-          }
-          if (compiledPattern && input.trim() && !compiledPattern.test(input)) {
-            await showAppAlert(
-              `Value for "${parameter.label || parameter.key}" does not match:\n${parameter.pattern.trim()}`,
-              {
-                title: "Run Snippet"
-              }
-            );
-            continue;
-          }
-          values[parameter.key] = input;
-          if (scopedValueCacheKey) {
-            scopedValueUpdates.push({
-              cacheKey: scopedValueCacheKey,
-              value: input
-            });
-          }
-          break;
-        }
-      }
-      return {
-        values,
-        scopedValueUpdates
-      };
-    },
-    [commandSnippetScopedValues, showAppAlert, showAppPrompt]
-  );
-
-  const runCommandSnippet = useCallback(
-    async (snippet: CommandSnippetItem, groupId = ""): Promise<void> => {
-      if (!terminalApi) {
-        setError("Terminal bridge unavailable. Restart `pnpm dev`.");
-        return;
-      }
-      const tabId = activeTabIdRef.current;
-      if (!tabId) {
-        setError("Open and focus a terminal tab before running snippets.");
-        return;
-      }
-      const promptSet =
-        commandSnippetGroups.find((group) => group.id === groupId)?.promptSets.find(
-          (entry) => entry.id === snippet.promptSetId
-        ) ?? null;
-      const effectiveParameters = mergeCommandSnippetParameters(snippet, promptSet);
-      const parameterResult = await collectCommandSnippetParameterValues(
-        snippet,
-        effectiveParameters,
-        groupId
-      );
-      if (parameterResult === null) {
-        return;
-      }
-      const { rendered, unresolvedParameterKeys } = await renderCommandSnippetTemplate(
-        snippet.template,
-        parameterResult.values
-      );
-      if (unresolvedParameterKeys.length > 0) {
-        await showAppAlert(
-          `Snippet template references undefined parameter token(s): ${unresolvedParameterKeys.join(", ")}`,
-          {
-            title: "Run Snippet"
-          }
-        );
-        return;
-      }
-      if (!rendered) {
-        await showAppAlert("Snippet resolved to an empty command.", {
-          title: "Run Snippet"
-        });
-        return;
-      }
-      if (snippet.confirmBeforeRun || snippet.previewBeforeRun || effectiveParameters.length > 0) {
-        const confirmed = await showAppConfirm(
-          snippet.confirmBeforeRun
-            ? `Run snippet "${snippet.name}" on current tab?`
-            : `Preview generated command for snippet "${snippet.name}".`,
-          {
-            title: snippet.confirmBeforeRun ? "Run Snippet" : "Snippet Preview",
-            confirmLabel: "Run",
-            cancelLabel: "Cancel",
-            detailText: rendered
-          }
-        );
-        if (!confirmed) {
-          return;
-        }
-      }
-      const wrote = await guardedTerminalWrite(tabId, `${rendered}\n`, {
-        source: "snippet",
-        commandText: rendered
-      });
-      if (!wrote) {
-        return;
-      }
-      applyCommandSnippetScopedValueUpdates(parameterResult.scopedValueUpdates);
-      upsertTerminalCommandHistoryCommand(rendered, {
-        preferredTabId: tabId,
-        source: "manual"
-      });
-    },
-    [
-      applyCommandSnippetScopedValueUpdates,
-      commandSnippetGroups,
-      collectCommandSnippetParameterValues,
-      renderCommandSnippetTemplate,
-      guardedTerminalWrite,
-      showAppAlert,
-      showAppConfirm,
-      terminalApi,
-      upsertTerminalCommandHistoryCommand
-    ]
-  );
-
-  const importCommandSnippetGroups = useCallback(async () => {
-    let operationJobId: string | null = null;
-    try {
-      if (!systemApi?.pickAndReadTextFile) {
-        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
-      }
-      const selected = await systemApi.pickAndReadTextFile({
-        title: "Import Snippet Groups",
-        buttonLabel: "Import",
-        filters: [
-          { name: "JSON", extensions: ["json"] },
-          { name: "All Files", extensions: ["*"] }
-        ]
-      });
-      if (selected.canceled || !selected.filePath) {
-        return;
-      }
-      const parsed = JSON.parse(selected.text);
-      const imported = normalizeCommandSnippetGroups(parsed);
-      if (imported.length === 0) {
-        await showAppAlert("No valid snippet groups found in selected file.", {
-          title: "Import Snippet Groups"
-        });
-        return;
-      }
-      operationJobId = startOperationCenterAppJob({
-        category: "snippets",
-        title: "Snippet Groups Import",
-        description: `Importing ${imported.length} snippet group${imported.length === 1 ? "" : "s"}.`
-      });
-      setCommandSnippetGroups(imported);
-      if (operationJobId) {
-        finishOperationCenterAppJob(operationJobId, "succeeded", {
-          detail: `Imported ${imported.length} group${imported.length === 1 ? "" : "s"} and ${imported.reduce((total, group) => total + group.snippets.length, 0)} snippet${imported.reduce((total, group) => total + group.snippets.length, 0) === 1 ? "" : "s"}.`
-        });
-      }
-      await showAppAlert(
-        `Imported ${imported.length} snippet group(s), ${imported.reduce(
-          (total, group) => total + group.snippets.length,
-          0
-        )} snippet(s).`,
-        {
-          title: "Import Snippet Groups"
-        }
-      );
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      if (operationJobId) {
-        finishOperationCenterAppJob(operationJobId, "failed", {
-          detail: message
-        });
-      }
-      setError(message);
-    }
-  }, [finishOperationCenterAppJob, showAppAlert, startOperationCenterAppJob, systemApi]);
-
-  const exportCommandSnippetGroups = useCallback(async () => {
-    let operationJobId: string | null = null;
-    try {
-      if (commandSnippetGroups.length === 0) {
-        await showAppAlert("No snippet groups available to export.", {
-          title: "Export Snippet Groups"
-        });
-        return;
-      }
-      const payload = {
-        exportedAtIso: new Date().toISOString(),
-        appVersion: APP_VERSION,
-        groupCount: commandSnippetGroups.length,
-        snippetCount: commandSnippetGroups.reduce(
-          (total, group) => total + group.snippets.length,
-          0
-        ),
-        groups: commandSnippetGroups
-      };
-      const content = `${JSON.stringify(payload, null, 2)}\n`;
-      operationJobId = startOperationCenterAppJob({
-        category: "snippets",
-        title: "Snippet Groups Export",
-        description: `Exporting ${payload.groupCount} snippet group${payload.groupCount === 1 ? "" : "s"} and ${payload.snippetCount} snippet${payload.snippetCount === 1 ? "" : "s"}.`
-      });
-      if (systemApi?.saveTextFile) {
-        const result = await systemApi.saveTextFile({
-          title: "Export Snippet Groups",
-          defaultFileName: `termdock-snippet-groups-${new Date().toISOString().replace(/[:]/g, "-")}.json`,
-          text: content,
-          filters: [{ name: "JSON", extensions: ["json"] }]
-        });
-        if (!result.canceled && result.outputPath) {
-          if (operationJobId) {
-            finishOperationCenterAppJob(operationJobId, "succeeded", {
-              detail: `Exported ${payload.groupCount} group${payload.groupCount === 1 ? "" : "s"} and ${payload.snippetCount} snippet${payload.snippetCount === 1 ? "" : "s"}.`,
-              outputPath: result.outputPath
-            });
-          }
-          await showAppAlert(`Snippet groups exported:\n${result.outputPath}`, {
-            title: "Export Snippet Groups"
-          });
-        } else if (operationJobId) {
-          removeOperationCenterAppJob(operationJobId);
-        }
-        return;
-      }
-      const copied = await copyTextToClipboard(content);
-      if (operationJobId) {
-        finishOperationCenterAppJob(operationJobId, "succeeded", {
-          detail: copied
-            ? `Exported ${payload.groupCount} group${payload.groupCount === 1 ? "" : "s"} to clipboard JSON.`
-            : `Prepared snippet group export JSON for manual copy (${payload.groupCount} groups).`
-        });
-      }
-      await showAppAlert(copied ? "Snippet groups JSON copied to clipboard." : content, {
-        title: "Export Snippet Groups",
-        detailText: copied ? undefined : content
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      if (operationJobId) {
-        finishOperationCenterAppJob(operationJobId, "failed", {
-          detail: message
-        });
-      }
-      setError(message);
-    }
-  }, [
+  const { runCommandSnippet } = useCommandSnippetRuntime({
+    activeTabIdRef,
+    buildCommandSnippetScopedValueCacheKey,
     commandSnippetGroups,
-    finishOperationCenterAppJob,
-    removeOperationCenterAppJob,
+    commandSnippetScopedValues,
+    formatCommandSnippetVariableScopeLabel,
+    getCommandSnippetParameterPatternError,
+    guardedTerminalWrite,
+    mergeCommandSnippetParameters,
+    normalizeCommandSnippetScopedValues,
+    parameterTokenPattern: COMMAND_SNIPPET_PARAMETER_TOKEN_PATTERN,
+    sessionsRef,
+    setCommandSnippetScopedValues,
+    setError,
     showAppAlert,
-    startOperationCenterAppJob,
-    systemApi
-  ]);
+    showAppConfirm,
+    showAppPrompt,
+    systemApi,
+    terminalApi,
+    terminalTabsRef,
+    upsertTerminalCommandHistoryCommand
+  });
 
-  const selectedCommandSnippetManagerGroup = useMemo(
-    () =>
-      commandSnippetGroups.find((group) => group.id === commandSnippetManagerGroupId) ??
-      commandSnippetGroups[0] ??
-      null,
-    [commandSnippetGroups, commandSnippetManagerGroupId]
-  );
-  const selectedCommandSnippetManagerSnippet = useMemo(() => {
-    if (!selectedCommandSnippetManagerGroup) {
-      return null;
-    }
-    return (
-      selectedCommandSnippetManagerGroup.snippets.find(
-        (snippet) => snippet.id === commandSnippetManagerSnippetId
-      ) ??
-      selectedCommandSnippetManagerGroup.snippets[0] ??
-      null
-    );
-  }, [commandSnippetManagerSnippetId, selectedCommandSnippetManagerGroup]);
-  const selectedCommandSnippetManagerPromptSet = useMemo(() => {
-    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerSnippet?.promptSetId) {
-      return null;
-    }
-    return (
-      selectedCommandSnippetManagerGroup.promptSets.find(
-        (promptSet) => promptSet.id === selectedCommandSnippetManagerSnippet.promptSetId
-      ) ?? null
-    );
-  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerSnippet]);
-  const selectedCommandSnippetEffectiveParameters = useMemo(
-    () =>
-      mergeCommandSnippetParameters(
-        selectedCommandSnippetManagerSnippet,
-        selectedCommandSnippetManagerPromptSet
-      ),
-    [selectedCommandSnippetManagerPromptSet, selectedCommandSnippetManagerSnippet]
-  );
-  const selectedCommandSnippetTemplateParameterKeys = useMemo(
-    () =>
-      selectedCommandSnippetManagerSnippet
-        ? listCommandSnippetTemplateParameterKeys(selectedCommandSnippetManagerSnippet.template)
-        : [],
-    [selectedCommandSnippetManagerSnippet]
-  );
-  const selectedCommandSnippetMissingParameterKeys = useMemo(() => {
-    if (!selectedCommandSnippetManagerSnippet) {
-      return [];
-    }
-    const definedKeys = new Set(
-      selectedCommandSnippetEffectiveParameters.map((entry) => entry.key)
-    );
-    return selectedCommandSnippetTemplateParameterKeys.filter((key) => !definedKeys.has(key));
-  }, [selectedCommandSnippetEffectiveParameters, selectedCommandSnippetManagerSnippet, selectedCommandSnippetTemplateParameterKeys]);
-  const selectedCommandSnippetUnusedParameterKeys = useMemo(() => {
-    if (!selectedCommandSnippetManagerSnippet) {
-      return [];
-    }
-    const usedKeys = new Set(selectedCommandSnippetTemplateParameterKeys);
-    return selectedCommandSnippetEffectiveParameters
-      .map((entry) => entry.key)
-      .filter((key) => !usedKeys.has(key));
-  }, [selectedCommandSnippetEffectiveParameters, selectedCommandSnippetManagerSnippet, selectedCommandSnippetTemplateParameterKeys]);
-  const selectedCommandSnippetShadowedPromptSetKeys = useMemo(() => {
-    if (!selectedCommandSnippetManagerPromptSet || !selectedCommandSnippetManagerSnippet) {
-      return [];
-    }
-    const snippetKeys = new Set(selectedCommandSnippetManagerSnippet.parameters.map((entry) => entry.key));
-    return selectedCommandSnippetManagerPromptSet.parameters
-      .map((entry) => entry.key)
-      .filter((key) => snippetKeys.has(key));
-  }, [selectedCommandSnippetManagerPromptSet, selectedCommandSnippetManagerSnippet]);
-  const selectedCommandSnippetHasInvalidPattern = useMemo(
-    () =>
-      !!selectedCommandSnippetEffectiveParameters.some((parameter) =>
-        Boolean(getCommandSnippetParameterPatternError(parameter.pattern))
-      ),
-    [selectedCommandSnippetEffectiveParameters]
-  );
-  useEffect(() => {
-    if (!isCommandSnippetManagerOpen) {
-      return;
-    }
-    if (commandSnippetGroups.length === 0) {
-      if (commandSnippetManagerGroupId) {
-        setCommandSnippetManagerGroupId("");
-      }
-      if (commandSnippetManagerSnippetId) {
-        setCommandSnippetManagerSnippetId("");
-      }
-      return;
-    }
-    const nextGroup =
-      commandSnippetGroups.find((group) => group.id === commandSnippetManagerGroupId) ??
-      commandSnippetGroups[0];
-    if (nextGroup.id !== commandSnippetManagerGroupId) {
-      setCommandSnippetManagerGroupId(nextGroup.id);
-    }
-    if (nextGroup.snippets.length === 0) {
-      if (commandSnippetManagerSnippetId) {
-        setCommandSnippetManagerSnippetId("");
-      }
-      return;
-    }
-    const hasSelectedSnippet = nextGroup.snippets.some(
-      (snippet) => snippet.id === commandSnippetManagerSnippetId
-    );
-    if (!hasSelectedSnippet) {
-      setCommandSnippetManagerSnippetId(nextGroup.snippets[0].id);
-    }
-  }, [
+  const {
+    addCommandSnippetManagerGroup,
+    addCommandSnippetManagerPromptSet,
+    addCommandSnippetManagerPromptSetParameter,
+    addCommandSnippetManagerSnippet,
+    addCommandSnippetManagerSnippetParameter,
+    clearAllCommandSnippetGroups,
+    clearCommandSnippetScopedValues,
+    deleteCommandSnippetManagerGroup,
+    deleteCommandSnippetManagerPromptSetParameter,
+    deleteCommandSnippetManagerSnippet,
+    deleteCommandSnippetManagerSnippetParameter,
+    deleteSelectedCommandSnippetManagerPromptSet,
+    insertCommandSnippetManagerPromptSetParameterToken,
+    insertCommandSnippetManagerSnippetParameterToken,
+    normalizeSelectedCommandSnippetManagerGroupName,
+    normalizeSelectedCommandSnippetManagerPromptSetName,
+    normalizeSelectedCommandSnippetManagerSnippetName,
+    runCommandSnippetManagerSnippetById,
+    runSelectedCommandSnippetManagerSnippet,
+    selectCommandSnippetManagerGroup,
+    selectCommandSnippetManagerSnippet,
+    selectedCommandSnippetHasInvalidPattern,
+    selectedCommandSnippetManagerGroup,
+    selectedCommandSnippetManagerPromptSet,
+    selectedCommandSnippetManagerSnippet,
+    selectedCommandSnippetMissingParameterKeys,
+    selectedCommandSnippetShadowedPromptSetKeys,
+    selectedCommandSnippetUnusedParameterKeys,
+    updateCommandSnippetManagerGroupName,
+    updateCommandSnippetManagerPromptSetName,
+    updateCommandSnippetManagerPromptSetParameterDefault,
+    updateCommandSnippetManagerPromptSetParameterKey,
+    updateCommandSnippetManagerPromptSetParameterLabel,
+    updateCommandSnippetManagerPromptSetParameterPattern,
+    updateCommandSnippetManagerPromptSetParameterRequired,
+    updateCommandSnippetManagerPromptSetParameterScope,
+    updateCommandSnippetManagerSnippetConfirm,
+    updateCommandSnippetManagerSnippetName,
+    updateCommandSnippetManagerSnippetParameterDefault,
+    updateCommandSnippetManagerSnippetParameterKey,
+    updateCommandSnippetManagerSnippetParameterLabel,
+    updateCommandSnippetManagerSnippetParameterPattern,
+    updateCommandSnippetManagerSnippetParameterRequired,
+    updateCommandSnippetManagerSnippetParameterScope,
+    updateCommandSnippetManagerSnippetPreview,
+    updateCommandSnippetManagerSnippetPromptSet,
+    updateCommandSnippetManagerSnippetTemplate
+  } = useCommandSnippetManager({
+    buildCommandSnippetParameterToken,
     commandSnippetGroups,
     commandSnippetManagerGroupId,
     commandSnippetManagerSnippetId,
-    isCommandSnippetManagerOpen
-  ]);
-  const updateSelectedCommandSnippet = useCallback(
-    (snippetId: string, updater: (snippet: CommandSnippetItem) => CommandSnippetItem) => {
-      if (!selectedCommandSnippetManagerGroup) {
-        return;
-      }
-      setCommandSnippetGroups((prev) =>
-        prev.map((group) =>
-          group.id === selectedCommandSnippetManagerGroup.id
-            ? {
-                ...group,
-                snippets: group.snippets.map((snippet) =>
-                  snippet.id === snippetId ? updater(snippet) : snippet
-                )
-              }
-            : group
-        )
-      );
-    },
-    [selectedCommandSnippetManagerGroup]
-  );
-  const updateSelectedCommandSnippetPromptSet = useCallback(
-    (promptSetId: string, updater: (promptSet: CommandSnippetPromptSet) => CommandSnippetPromptSet) => {
-      if (!selectedCommandSnippetManagerGroup) {
-        return;
-      }
-      setCommandSnippetGroups((prev) =>
-        prev.map((group) =>
-          group.id === selectedCommandSnippetManagerGroup.id
-            ? {
-                ...group,
-                promptSets: group.promptSets.map((promptSet) =>
-                  promptSet.id === promptSetId ? updater(promptSet) : promptSet
-                )
-              }
-            : group
-        )
-      );
-    },
-    [selectedCommandSnippetManagerGroup]
-  );
-  const updateCommandSnippetManagerGroupName = useCallback((groupId: string, nextName: string) => {
-    const normalizedName = nextName.slice(0, 80);
-    setCommandSnippetGroups((prev) =>
-      prev.map((group) =>
-        group.id === groupId
-          ? {
-              ...group,
-              name: normalizedName
-            }
-          : group
-      )
-    );
-  }, []);
-  const addCommandSnippetManagerGroup = useCallback(() => {
-    if (commandSnippetGroups.length >= MAX_COMMAND_SNIPPET_GROUPS) {
-      setError(`Snippet groups are limited to ${MAX_COMMAND_SNIPPET_GROUPS}.`);
-      return;
-    }
-    const nextGroupId = `sg-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    const nextGroupName = `Group ${commandSnippetGroups.length + 1}`;
-    setCommandSnippetGroups((prev) => [
-      ...prev,
-      {
-        id: nextGroupId,
-        name: nextGroupName,
-        promptSets: [],
-        snippets: []
-      }
-    ]);
-    setCommandSnippetManagerGroupId(nextGroupId);
-    setCommandSnippetManagerSnippetId("");
-  }, [commandSnippetGroups.length]);
-  const deleteCommandSnippetManagerGroup = useCallback(async () => {
-    if (!selectedCommandSnippetManagerGroup) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete snippet group "${selectedCommandSnippetManagerGroup.name}" and all snippets in it?`,
-      {
-        title: "Delete Snippet Group",
-        confirmLabel: "Delete Group",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setCommandSnippetGroups((prev) =>
-      prev.filter((group) => group.id !== selectedCommandSnippetManagerGroup.id)
-    );
-  }, [selectedCommandSnippetManagerGroup, showAppConfirm]);
-  const addCommandSnippetManagerSnippet = useCallback(() => {
-    if (!selectedCommandSnippetManagerGroup) {
-      addCommandSnippetManagerGroup();
-      return;
-    }
-    if (selectedCommandSnippetManagerGroup.snippets.length >= MAX_COMMAND_SNIPPETS_PER_GROUP) {
-      setError(
-        `Snippets per group are limited to ${MAX_COMMAND_SNIPPETS_PER_GROUP}. Delete or export existing snippets first.`
-      );
-      return;
-    }
-    const nextSnippetId = `sn-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    const nextSnippet: CommandSnippetItem = {
-      id: nextSnippetId,
-      name: `Snippet ${selectedCommandSnippetManagerGroup.snippets.length + 1}`,
-      template: "echo \"snippet\"",
-      confirmBeforeRun: false,
-      previewBeforeRun: false,
-      promptSetId: "",
-      parameters: []
-    };
-    setCommandSnippetGroups((prev) =>
-      prev.map((group) =>
-        group.id === selectedCommandSnippetManagerGroup.id
-          ? {
-              ...group,
-              snippets: [...group.snippets, nextSnippet]
-            }
-          : group
-      )
-    );
-    setCommandSnippetManagerSnippetId(nextSnippetId);
-  }, [addCommandSnippetManagerGroup, selectedCommandSnippetManagerGroup]);
-  const updateCommandSnippetManagerSnippetName = useCallback(
-    (snippetId: string, nextName: string) => {
-      const normalizedName = nextName.slice(0, 80);
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        name: normalizedName
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetTemplate = useCallback(
-    (snippetId: string, nextTemplate: string) => {
-      const normalizedTemplate = nextTemplate.slice(0, 4000);
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        template: normalizedTemplate
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetConfirm = useCallback(
-    (snippetId: string, nextConfirmBeforeRun: boolean) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        confirmBeforeRun: nextConfirmBeforeRun
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetPreview = useCallback(
-    (snippetId: string, nextPreviewBeforeRun: boolean) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        previewBeforeRun: nextPreviewBeforeRun
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetPromptSet = useCallback(
-    (snippetId: string, nextPromptSetId: string) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        promptSetId: nextPromptSetId
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const addCommandSnippetManagerPromptSet = useCallback(() => {
-    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerSnippet) {
-      return;
-    }
-    if (selectedCommandSnippetManagerGroup.promptSets.length >= MAX_COMMAND_SNIPPET_PROMPT_SETS) {
-      setError(`Prompt sets per group are limited to ${MAX_COMMAND_SNIPPET_PROMPT_SETS}.`);
-      return;
-    }
-    const nextPromptSetId = `sps-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-    const nextPromptSet: CommandSnippetPromptSet = {
-      id: nextPromptSetId,
-      name: `Prompt Set ${selectedCommandSnippetManagerGroup.promptSets.length + 1}`,
-      parameters: []
-    };
-    setCommandSnippetGroups((prev) =>
-      prev.map((group) =>
-        group.id === selectedCommandSnippetManagerGroup.id
-          ? {
-              ...group,
-              promptSets: [...group.promptSets, nextPromptSet],
-              snippets: group.snippets.map((snippet) =>
-                snippet.id === selectedCommandSnippetManagerSnippet.id
-                  ? {
-                      ...snippet,
-                      promptSetId: nextPromptSetId
-                    }
-                  : snippet
-              )
-            }
-          : group
-      )
-    );
-  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerSnippet]);
-  const updateCommandSnippetManagerPromptSetName = useCallback(
-    (promptSetId: string, nextName: string) => {
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        name: nextName.slice(0, MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH)
-      }));
-    },
-    [updateSelectedCommandSnippetPromptSet]
-  );
-  const deleteSelectedCommandSnippetManagerPromptSet = useCallback(async () => {
-    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerPromptSet) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete prompt set "${selectedCommandSnippetManagerPromptSet.name}" from "${selectedCommandSnippetManagerGroup.name}"? Linked snippets will fall back to snippet-only variables.`,
-      {
-        title: "Delete Prompt Set",
-        confirmLabel: "Delete",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setCommandSnippetGroups((prev) =>
-      prev.map((group) =>
-        group.id === selectedCommandSnippetManagerGroup.id
-          ? {
-              ...group,
-              promptSets: group.promptSets.filter(
-                (promptSet) => promptSet.id !== selectedCommandSnippetManagerPromptSet.id
-              ),
-              snippets: group.snippets.map((snippet) =>
-                snippet.promptSetId === selectedCommandSnippetManagerPromptSet.id
-                  ? {
-                      ...snippet,
-                      promptSetId: ""
-                    }
-                  : snippet
-              )
-            }
-          : group
-      )
-    );
-  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerPromptSet, showAppConfirm]);
-  const addCommandSnippetManagerSnippetParameter = useCallback(() => {
-    if (!selectedCommandSnippetManagerSnippet) {
-      return;
-    }
-    if (selectedCommandSnippetManagerSnippet.parameters.length >= MAX_COMMAND_SNIPPET_PARAMETERS) {
-      setError(`Snippet parameters are limited to ${MAX_COMMAND_SNIPPET_PARAMETERS}.`);
-      return;
-    }
-    const existingKeys = new Set(selectedCommandSnippetManagerSnippet.parameters.map((entry) => entry.key));
-    const nextParameter = createCommandSnippetParameter(
-      selectedCommandSnippetManagerSnippet.parameters.length + 1,
-      existingKeys,
-      "snippet"
-    );
-    updateSelectedCommandSnippet(selectedCommandSnippetManagerSnippet.id, (snippet) => ({
-      ...snippet,
-      parameters: [...snippet.parameters, nextParameter]
-    }));
-  }, [selectedCommandSnippetManagerSnippet, updateSelectedCommandSnippet]);
-  const updateCommandSnippetManagerSnippetParameterKey = useCallback(
-    (snippetId: string, parameterId: string, nextKeyInput: string) => {
-      if (!selectedCommandSnippetManagerSnippet) {
-        return;
-      }
-      const normalizedKey = normalizeCommandSnippetParameterKey(nextKeyInput);
-      if (!normalizedKey) {
-        setError("Snippet parameter keys must contain letters, numbers, '-' or '_'.");
-        return;
-      }
-      if (
-        selectedCommandSnippetManagerSnippet.parameters.some(
-          (parameter) => parameter.id !== parameterId && parameter.key === normalizedKey
-        )
-      ) {
-        setError(`Snippet parameter key "${normalizedKey}" already exists.`);
-        return;
-      }
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        parameters: snippet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                key: normalizedKey,
-                label: parameter.label || normalizedKey
-              }
-            : parameter
-        )
-      }));
-    },
-    [selectedCommandSnippetManagerSnippet, updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetParameterLabel = useCallback(
-    (snippetId: string, parameterId: string, nextLabel: string) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        parameters: snippet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                label: nextLabel.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH)
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetParameterDefault = useCallback(
-    (snippetId: string, parameterId: string, nextDefaultValue: string) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        parameters: snippet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                defaultValue: nextDefaultValue.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH)
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetParameterPattern = useCallback(
-    (snippetId: string, parameterId: string, nextPattern: string) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        parameters: snippet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                pattern: nextPattern.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH)
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetParameterScope = useCallback(
-    (snippetId: string, parameterId: string, nextScope: CommandSnippetVariableScopeId) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        parameters: snippet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                scope: nextScope
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const updateCommandSnippetManagerSnippetParameterRequired = useCallback(
-    (snippetId: string, parameterId: string, nextRequired: boolean) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        parameters: snippet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                required: nextRequired
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const deleteCommandSnippetManagerSnippetParameter = useCallback(
-    (snippetId: string, parameterId: string) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => ({
-        ...snippet,
-        parameters: snippet.parameters.filter((parameter) => parameter.id !== parameterId)
-      }));
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const insertCommandSnippetManagerSnippetParameterToken = useCallback(
-    (snippetId: string, parameterKey: string) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => {
-        const token = buildCommandSnippetParameterToken(parameterKey);
-        const nextTemplate = snippet.template.includes(token)
-          ? snippet.template
-          : snippet.template.trim()
-            ? `${snippet.template}\n${token}`
-            : token;
-        return {
-          ...snippet,
-          template: nextTemplate.slice(0, 4000)
-        };
-      });
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const addCommandSnippetManagerPromptSetParameter = useCallback(() => {
-    if (!selectedCommandSnippetManagerPromptSet) {
-      return;
-    }
-    if (selectedCommandSnippetManagerPromptSet.parameters.length >= MAX_COMMAND_SNIPPET_PARAMETERS) {
-      setError(`Prompt-set parameters are limited to ${MAX_COMMAND_SNIPPET_PARAMETERS}.`);
-      return;
-    }
-    const existingKeys = new Set(selectedCommandSnippetManagerPromptSet.parameters.map((entry) => entry.key));
-    const nextParameter = createCommandSnippetParameter(
-      selectedCommandSnippetManagerPromptSet.parameters.length + 1,
-      existingKeys,
-      "group"
-    );
-    updateSelectedCommandSnippetPromptSet(selectedCommandSnippetManagerPromptSet.id, (promptSet) => ({
-      ...promptSet,
-      parameters: [...promptSet.parameters, nextParameter]
-    }));
-  }, [selectedCommandSnippetManagerPromptSet, updateSelectedCommandSnippetPromptSet]);
-  const updateCommandSnippetManagerPromptSetParameterKey = useCallback(
-    (promptSetId: string, parameterId: string, nextKeyInput: string) => {
-      if (!selectedCommandSnippetManagerPromptSet) {
-        return;
-      }
-      const normalizedKey = normalizeCommandSnippetParameterKey(nextKeyInput);
-      if (!normalizedKey) {
-        setError("Prompt-set parameter keys must contain letters, numbers, '-' or '_'.");
-        return;
-      }
-      if (
-        selectedCommandSnippetManagerPromptSet.parameters.some(
-          (parameter) => parameter.id !== parameterId && parameter.key === normalizedKey
-        )
-      ) {
-        setError(`Prompt-set parameter key "${normalizedKey}" already exists.`);
-        return;
-      }
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        parameters: promptSet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                key: normalizedKey,
-                label: parameter.label || normalizedKey
-              }
-            : parameter
-        )
-      }));
-    },
-    [selectedCommandSnippetManagerPromptSet, updateSelectedCommandSnippetPromptSet]
-  );
-  const updateCommandSnippetManagerPromptSetParameterLabel = useCallback(
-    (promptSetId: string, parameterId: string, nextLabel: string) => {
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        parameters: promptSet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                label: nextLabel.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH)
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippetPromptSet]
-  );
-  const updateCommandSnippetManagerPromptSetParameterDefault = useCallback(
-    (promptSetId: string, parameterId: string, nextDefaultValue: string) => {
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        parameters: promptSet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                defaultValue: nextDefaultValue.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH)
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippetPromptSet]
-  );
-  const updateCommandSnippetManagerPromptSetParameterPattern = useCallback(
-    (promptSetId: string, parameterId: string, nextPattern: string) => {
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        parameters: promptSet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                pattern: nextPattern.slice(0, MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH)
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippetPromptSet]
-  );
-  const updateCommandSnippetManagerPromptSetParameterScope = useCallback(
-    (promptSetId: string, parameterId: string, nextScope: CommandSnippetVariableScopeId) => {
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        parameters: promptSet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                scope: nextScope
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippetPromptSet]
-  );
-  const updateCommandSnippetManagerPromptSetParameterRequired = useCallback(
-    (promptSetId: string, parameterId: string, nextRequired: boolean) => {
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        parameters: promptSet.parameters.map((parameter) =>
-          parameter.id === parameterId
-            ? {
-                ...parameter,
-                required: nextRequired
-              }
-            : parameter
-        )
-      }));
-    },
-    [updateSelectedCommandSnippetPromptSet]
-  );
-  const deleteCommandSnippetManagerPromptSetParameter = useCallback(
-    (promptSetId: string, parameterId: string) => {
-      updateSelectedCommandSnippetPromptSet(promptSetId, (promptSet) => ({
-        ...promptSet,
-        parameters: promptSet.parameters.filter((parameter) => parameter.id !== parameterId)
-      }));
-    },
-    [updateSelectedCommandSnippetPromptSet]
-  );
-  const insertCommandSnippetManagerPromptSetParameterToken = useCallback(
-    (snippetId: string, parameterKey: string) => {
-      updateSelectedCommandSnippet(snippetId, (snippet) => {
-        const token = buildCommandSnippetParameterToken(parameterKey);
-        const nextTemplate = snippet.template.includes(token)
-          ? snippet.template
-          : snippet.template.trim()
-            ? `${snippet.template}\n${token}`
-            : token;
-        return {
-          ...snippet,
-          template: nextTemplate.slice(0, 4000)
-        };
-      });
-    },
-    [updateSelectedCommandSnippet]
-  );
-  const runSelectedCommandSnippetManagerSnippet = useCallback(async () => {
-    if (!selectedCommandSnippetManagerSnippet) {
-      return;
-    }
-    await runCommandSnippet(
-      selectedCommandSnippetManagerSnippet,
-      selectedCommandSnippetManagerGroup?.id ?? ""
-    );
-  }, [runCommandSnippet, selectedCommandSnippetManagerGroup?.id, selectedCommandSnippetManagerSnippet]);
-  const deleteCommandSnippetManagerSnippet = useCallback(async () => {
-    if (!selectedCommandSnippetManagerGroup || !selectedCommandSnippetManagerSnippet) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Delete snippet "${selectedCommandSnippetManagerSnippet.name}" from "${selectedCommandSnippetManagerGroup.name}"?`,
-      {
-        title: "Delete Snippet",
-        confirmLabel: "Delete",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setCommandSnippetGroups((prev) =>
-      prev.map((group) =>
-        group.id === selectedCommandSnippetManagerGroup.id
-          ? {
-              ...group,
-              snippets: group.snippets.filter(
-                (snippet) => snippet.id !== selectedCommandSnippetManagerSnippet.id
-              )
-            }
-          : group
-      )
-    );
-  }, [selectedCommandSnippetManagerGroup, selectedCommandSnippetManagerSnippet, showAppConfirm]);
-  const clearAllCommandSnippetGroups = useCallback(async () => {
-    const confirmed = await showAppConfirm(
-      `Delete all snippet groups and snippets (${commandSnippetGroups.length} group(s), ${totalCommandSnippetCount} snippet(s))?`,
-      {
-        title: "Clear Snippet Groups",
-        confirmLabel: "Delete All",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setCommandSnippetGroups([]);
-    setCommandSnippetManagerGroupId("");
-    setCommandSnippetManagerSnippetId("");
-    setCommandSnippetScopedValues({});
-  }, [commandSnippetGroups.length, showAppConfirm, totalCommandSnippetCount]);
-  const clearCommandSnippetScopedValues = useCallback(async () => {
-    const scopedValueCount = Object.keys(commandSnippetScopedValues).length;
-    if (scopedValueCount === 0) {
-      return;
-    }
-    const confirmed = await showAppConfirm(
-      `Clear ${scopedValueCount} remembered scoped snippet value(s)?`,
-      {
-        title: "Clear Scoped Values",
-        confirmLabel: "Clear",
-        cancelLabel: "Cancel",
-        danger: true
-      }
-    );
-    if (!confirmed) {
-      return;
-    }
-    setCommandSnippetScopedValues({});
-  }, [commandSnippetScopedValues, showAppConfirm]);
-  const importCommandSnippetGroupsWithUiError = useCallback(() => {
-    void importCommandSnippetGroups().catch((caughtError) => {
-      setError(toLogMessage(caughtError));
+    commandSnippetScopedValues,
+    createCommandSnippetParameter,
+    getCommandSnippetParameterPatternError,
+    isCommandSnippetManagerOpen,
+    listCommandSnippetTemplateParameterKeys,
+    maxGroups: MAX_COMMAND_SNIPPET_GROUPS,
+    maxParameters: MAX_COMMAND_SNIPPET_PARAMETERS,
+    maxPromptSets: MAX_COMMAND_SNIPPET_PROMPT_SETS,
+    maxPromptSetNameLength: MAX_COMMAND_SNIPPET_PROMPT_SET_NAME_LENGTH,
+    maxSnippetsPerGroup: MAX_COMMAND_SNIPPETS_PER_GROUP,
+    maxParameterDefaultLength: MAX_COMMAND_SNIPPET_PARAMETER_DEFAULT_LENGTH,
+    maxParameterLabelLength: MAX_COMMAND_SNIPPET_PARAMETER_LABEL_LENGTH,
+    maxParameterPatternLength: MAX_COMMAND_SNIPPET_PARAMETER_PATTERN_LENGTH,
+    mergeCommandSnippetParameters,
+    normalizeCommandSnippetParameterKey,
+    runCommandSnippet,
+    setCommandSnippetGroups,
+    setCommandSnippetManagerGroupId,
+    setCommandSnippetManagerSnippetId,
+    setCommandSnippetScopedValues,
+    setError,
+    showAppConfirm,
+    totalCommandSnippetCount
+  });
+  const buildWorkbenchDialogCompositePropsForApp = () =>
+      buildWorkbenchDialogCompositeProps({
+      appDialog: buildAppDialogArgs({
+        actions: {
+          onClose: closeAppDialog,
+          onInputChange: setAppDialogInput,
+          onResolveOption: resolveAppDialog,
+          onSubmit: submitAppDialog
+        },
+        values: {
+          dialog: appDialog,
+          inputElementRef: appDialogInputRef,
+          inputValue: appDialogInput
+        }
+      }),
+      appInlineHint: buildAppInlineHintArgs({
+        actions: {
+          approveDangerousCommandWithScope,
+          onDismissHint: clearAppHintMessage,
+          resolveDangerousCommandApproval,
+          saveDangerousCommandPersistentApproval
+        },
+        values: {
+          dangerousCommandApproval,
+          hintMessage: appHintMessage,
+          language: appLanguage
+        }
+      }),
+      commandHistoryManager: buildCommandHistoryManagerDialogArgs({
+        actions: {
+          addTerminalCommandHistoryEntry,
+          editTerminalCommandHistoryEntry,
+          exportTerminalCommandHistory,
+          importTerminalCommandHistory,
+          onClearSelection: clearCommandHistorySelection,
+          onClose: closeCommandHistoryManager,
+          onDeleteAll: deleteAllCommandHistoryEntries,
+          onDeleteSelected: deleteSelectedCommandHistoryEntries,
+          onDeleteVisible: deleteVisibleCommandHistoryEntries,
+          onToggleEntrySelection: toggleCommandHistorySelection,
+          onToggleSelectVisible: toggleSelectAllVisibleCommandHistory,
+          pasteTerminalCommandHistoryEntry
+        },
+        values: {
+          allVisibleSelected: allVisibleCommandHistorySelected,
+          canClearSelection: commandHistorySelection.length > 0,
+          canExport: terminalCommandHistoryEntries.length > 0,
+          canToggleSelectVisible: visibleCommandHistoryIds.length > 0,
+          entries: visibleTerminalCommandHistoryEntryViews,
+          labels: i18n.commandHistoryManager,
+          open: isCommandHistoryManagerOpen,
+          selectedCount: commandHistorySelection.length,
+          totalCount: terminalCommandHistoryEntries.length,
+          visibleCommandHistoryEntryById,
+          visibleCount: visibleTerminalCommandHistoryEntries.length
+        }
+      }),
+      commandSnippetManager: buildCommandSnippetManagerDialogArgs({
+        actions: {
+          clearAllCommandSnippetGroups,
+          clearCommandSnippetScopedValues,
+          deleteCommandSnippetManagerGroup,
+          deleteCommandSnippetManagerSnippet,
+          deleteSelectedCommandSnippetManagerPromptSet,
+          exportCommandSnippetGroups,
+          onAddGroup: addCommandSnippetManagerGroup,
+          onAddPromptSet: addCommandSnippetManagerPromptSet,
+          onAddPromptSetParameter: addCommandSnippetManagerPromptSetParameter,
+          onAddSnippet: addCommandSnippetManagerSnippet,
+          onAddSnippetParameter: addCommandSnippetManagerSnippetParameter,
+          onClose: closeCommandSnippetManager,
+          onDeletePromptSetParameter:
+            deleteCommandSnippetManagerPromptSetParameter,
+          onDeleteSnippetParameter: deleteCommandSnippetManagerSnippetParameter,
+          onGroupNameChange: updateCommandSnippetManagerGroupName,
+          onImportJson: importCommandSnippetGroupsWithUiError,
+          onInsertPromptSetParameterToken:
+            insertCommandSnippetManagerPromptSetParameterToken,
+          onInsertSnippetParameterToken:
+            insertCommandSnippetManagerSnippetParameterToken,
+          onPromptSetNameChange: updateCommandSnippetManagerPromptSetName,
+          onPromptSetParameterDefaultChange:
+            updateCommandSnippetManagerPromptSetParameterDefault,
+          onPromptSetParameterKeyChange:
+            updateCommandSnippetManagerPromptSetParameterKey,
+          onPromptSetParameterLabelChange:
+            updateCommandSnippetManagerPromptSetParameterLabel,
+          onPromptSetParameterPatternChange:
+            updateCommandSnippetManagerPromptSetParameterPattern,
+          onPromptSetParameterRequiredChange:
+            updateCommandSnippetManagerPromptSetParameterRequired,
+          onPromptSetParameterScopeChange:
+            updateCommandSnippetManagerPromptSetParameterScope,
+          onRunSnippet: runCommandSnippetManagerSnippetById,
+          onSelectGroup: selectCommandSnippetManagerGroup,
+          onSelectedGroupNameBlur:
+            normalizeSelectedCommandSnippetManagerGroupName,
+          onSelectedPromptSetNameBlur:
+            normalizeSelectedCommandSnippetManagerPromptSetName,
+          onSelectedSnippetNameBlur:
+            normalizeSelectedCommandSnippetManagerSnippetName,
+          onSelectSnippet: selectCommandSnippetManagerSnippet,
+          onSnippetConfirmChange: updateCommandSnippetManagerSnippetConfirm,
+          onSnippetNameChange: updateCommandSnippetManagerSnippetName,
+          onSnippetParameterDefaultChange:
+            updateCommandSnippetManagerSnippetParameterDefault,
+          onSnippetParameterKeyChange:
+            updateCommandSnippetManagerSnippetParameterKey,
+          onSnippetParameterLabelChange:
+            updateCommandSnippetManagerSnippetParameterLabel,
+          onSnippetParameterPatternChange:
+            updateCommandSnippetManagerSnippetParameterPattern,
+          onSnippetParameterRequiredChange:
+            updateCommandSnippetManagerSnippetParameterRequired,
+          onSnippetParameterScopeChange:
+            updateCommandSnippetManagerSnippetParameterScope,
+          onSnippetPreviewChange: updateCommandSnippetManagerSnippetPreview,
+          onSnippetPromptSetChange:
+            updateCommandSnippetManagerSnippetPromptSet,
+          onSnippetTemplateChange: updateCommandSnippetManagerSnippetTemplate
+        },
+        values: {
+          buildParameterToken: buildCommandSnippetParameterToken,
+          formatScopeLabel: formatCommandSnippetVariableScopeLabel,
+          getPatternError: getCommandSnippetParameterPatternError,
+          groupCount: commandSnippetGroups.length,
+          groups: commandSnippetGroups,
+          maxGroupCount: MAX_COMMAND_SNIPPET_GROUPS,
+          maxParameters: MAX_COMMAND_SNIPPET_PARAMETERS,
+          maxPromptSets: MAX_COMMAND_SNIPPET_PROMPT_SETS,
+          maxSnippetsPerGroup: MAX_COMMAND_SNIPPETS_PER_GROUP,
+          missingParameterKeys: selectedCommandSnippetMissingParameterKeys,
+          open: isCommandSnippetManagerOpen,
+          runSelectedCommandSnippetManagerSnippet,
+          scopedValueCount: commandSnippetScopedValueCount,
+          scopeOptions: COMMAND_SNIPPET_VARIABLE_SCOPES,
+          selectedGroup: selectedCommandSnippetManagerGroup,
+          selectedPromptSet: selectedCommandSnippetManagerPromptSet,
+          selectedSnippet: selectedCommandSnippetManagerSnippet,
+          selectedSnippetHasInvalidPattern:
+            selectedCommandSnippetHasInvalidPattern,
+          shadowedPromptSetKeys: selectedCommandSnippetShadowedPromptSetKeys,
+          totalPromptSetCount: totalCommandSnippetPromptSetCount,
+          totalSnippetCount: totalCommandSnippetCount,
+          unusedParameterKeys: selectedCommandSnippetUnusedParameterKeys
+        }
+      }),
+      globalErrorBar: buildGlobalErrorBarDialogArgs({
+        actions: {
+          copyGlobalErrorMessage,
+          copyLatestDisconnectReport,
+          onDismiss: dismissGlobalError,
+          onExportBugReport: exportBugReportFromError,
+          onOpenConnectionSettings: openConnectionSettingsFromError,
+          onOpenDiagnostics: openDiagnosticsFromError,
+          onOpenFileOpeningSettings: openFileOpeningSettingsFromError,
+          onOpenHotkeysSettings: openHotkeysSettingsFromError,
+          onOpenOperationCenter: openOperationCenterFromError,
+          onOpenPortForwardingSettings: openPortForwardingSettingsFromError,
+          onOpenRetryCenter: openRetryCenterFromError,
+          onOpenSafetySettings: openSafetySettingsFromError,
+          onOpenServerHealthSettings: openServerHealthSettingsFromError,
+          onOpenSftpSettings: openSftpSettingsFromError,
+          onOpenWorkspaceSettings: openWorkspaceSettingsFromError,
+          openLogDirectory,
+          reconnectActiveTabFromError
+        },
+        values: {
+          canCopyLatestDisconnectReport:
+            globalErrorRecovery.canCopyLatestDisconnectReport,
+          canExportBugReport: globalErrorRecovery.canExportBugReport,
+          canOpenLogs: globalErrorRecovery.canOpenLogs,
+          canOpenOperationCenter: globalErrorRecovery.canOpenOperationCenter,
+          canOpenRetryCenter: globalErrorRecovery.canOpenRetryCenter,
+          canReconnect: globalErrorRecovery.canReconnect,
+          error,
+          hint: globalErrorRecovery.hint,
+          settingsAction: globalErrorRecovery.settingsAction
+        }
+      }),
+      moveGroupDialog: buildMoveGroupDialogArgs({
+        actions: {
+          onClose: closeMoveGroupDialog,
+          setMoveGroupDialog,
+          submitMoveGroupDialog
+        },
+        values: {
+          dialog: moveGroupDialog,
+          groupOptions: sessionGroupOptions
+        }
+      }),
+      operationCenter: buildOperationCenterDialogArgs({
+        actions: {
+          cancelAllActiveDownloads,
+          cancelAllActiveUploads,
+          cancelAllTransfersAcrossTabs,
+          cancelTransferTasksForTab,
+          clearFinishedOperationCenterAppJobs,
+          copyOperationCenterAppJobOutputPath,
+          onClose: closeOperationCenter,
+          onFocusTab: setActiveTabId,
+          onOpenDiagnostics: openDiagnosticsFromOperationCenter,
+          onOpenDiagnosticsJobs: openDiagnosticsFromOperationCenter,
+          onOpenPortForward: openPortForwardingFromOperationCenter,
+          onOpenSnippets: openCommandSnippetManagerFromOperationCenter,
+          reconnectDisconnectedOperationTabs,
+          reconnectOperationTabById,
+          retryAllFailedTransfersWithScopeChoice,
+          retryFailedDownloads,
+          retryFailedUploads
+        },
+        values: {
+          canRetryAllFailedTransfers,
+          canRetryFailedDownloads,
+          canRetryFailedUploads,
+          deleteProgressLabel: operationCenterDeleteProgressLabel,
+          downloadSummary: operationCenterDownloadSummary,
+          failedRetryCandidateTotal,
+          finishedAppJobCount: operationCenterFinishedAppJobCount,
+          hasActiveTab: Boolean(activeTabId),
+          hasActivity: hasOperationCenterActivity,
+          hasDiagnosticsJobs: hasOperationCenterDiagnosticsJobs,
+          hasSnippetJobs: hasOperationCenterSnippetJobs,
+          isBulkCancelingTabs: isOperationCenterBulkCanceling,
+          isReconnectingTabs: isOperationCenterReconnecting,
+          labels: i18n.operationCenter,
+          open: isOperationCenterOpen,
+          portForwardBusy,
+          portForwardSummary: operationCenterPortForwardSummary,
+          recentAppJobs: operationCenterRecentAppJobViews,
+          runningAppJobCount: operationCenterRunningAppJobCount,
+          timelineItems: operationCenterTimelineItems,
+          transferTabSummaries: operationCenterTransferTabSummaries,
+          uploadSummary: operationCenterUploadSummary
+        }
+      }),
+      retryCenter: buildRetryCenterDialogArgs({
+        actions: {
+          changeRetryBatchConfirmThreshold,
+          clearAllRetryCenterEntries,
+          clearRetryCenterGroupEntries,
+          clearSelectedRetryCenterEntries,
+          clearVisibleRetryCenterEntries,
+          clearVisibleRetryCenterEntriesByFailureReason,
+          exportRetryCenterAnalyticsCsv,
+          exportRetryCenterAnalyticsJson,
+          exportRetryCenterGroupHistoryCsvWithScopeChoice,
+          exportRetryCenterGroupHistoryJsonWithScopeChoice,
+          exportRetryCenterVisibleHistoryCsv,
+          exportRetryCenterVisibleHistoryJson,
+          onClearSelection: clearRetryCenterSelection,
+          onClose: closeRetryCenter,
+          onCollapseAllGroups: collapseAllRetryCenterGroups,
+          onDirectionChange: setRetryCenterDirection,
+          onExpandAllGroups: expandAllRetryCenterGroups,
+          onFailureReasonFilterChange: setRetryCenterFailureReasonFilter,
+          onLastRetryScopeChange: setRetryCenterLastRetryScope,
+          onListModeChange: setRetryCenterListMode,
+          onQueryChange: setRetryCenterQuery,
+          onResetFilters: resetRetryCenterViewFilters,
+          onScopeChange: setRetryCenterScope,
+          onSelectAllVisible: selectAllVisibleRetryCenterEntries,
+          onSelectGroupEntries: selectRetryCenterGroupEntries,
+          onStatusChange: setRetryCenterStatus,
+          onTimeRangeChange: setRetryCenterTimeRange,
+          onToggleEntrySelection: toggleRetryCenterEntrySelection,
+          onToggleGroupCollapsed: toggleRetryCenterGroupCollapsed,
+          retryAllFailedTransfersWithScopeChoice,
+          retryFailedDownloads,
+          retryFailedUploads,
+          retryRetryCenterGroupFailedEntries,
+          retrySelectedRetryCenterEntriesWithScopeChoice,
+          retryVisibleRetryCenterEntriesWithScopeChoice,
+          toggleRetryCenterAutoUseLastRetryScope
+        },
+        values: {
+          analytics: retryCenterAnalytics,
+          autoUseLastRetryScope: retryCenterAutoUseLastRetryScope,
+          canClearAllEntries: canClearAllRetryCenterEntries,
+          canClearSelectedEntries: canClearSelectedRetryCenterEntries,
+          canClearVisibleEntries: canClearVisibleRetryCenterEntries,
+          canCollapseAllGroups: canCollapseAllRetryCenterGroups,
+          canExpandAllGroups: canExpandAllRetryCenterGroups,
+          canExportAnalytics: canExportRetryCenterAnalytics,
+          canRetryAllFailedTransfers,
+          canRetryFailedDownloads,
+          canRetryFailedUploads,
+          canRetrySelectedEntries: canRetrySelectedRetryCenterEntries,
+          canRetryVisibleEntries: canRetryVisibleRetryCenterEntries,
+          collapsedGroupKeySet: retryCenterCollapsedGroupKeySet,
+          direction: retryCenterDirection,
+          entries: retryCenterEntries,
+          entryCount: retryCenterEntries.length,
+          failedDownloadCandidateCount: failedDownloadRetryCandidates.length,
+          failedRetryCandidateTotal,
+          failedUploadCandidateCount: failedUploadRetryCandidates.length,
+          failureReasonAllValue: RETRY_CENTER_FAILURE_REASON_ALL,
+          failureReasonFilter: retryCenterResolvedFailureReasonFilter,
+          failureReasonOptions: retryCenterFailureReasonOptions,
+          failureSuggestionRows: retryCenterFailureSuggestionRows,
+          formatHistoryTimestamp,
+          formatPercent,
+          groupedEntries: retryCenterGroupedEntries,
+          hasActiveTab: Boolean(activeTabId),
+          hasCustomizedView: hasCustomizedRetryCenterView,
+          isGroupedView: isRetryCenterGroupedView,
+          labels: i18n.retryCenter,
+          lastRetryScope: retryCenterLastRetryScope,
+          lastRetryScopeLabel: retryCenterLastRetryScopeLabel,
+          listMode: retryCenterListMode,
+          maxRetryBatchConfirmThreshold: MAX_RETRY_BATCH_CONFIRM_THRESHOLD,
+          minRetryBatchConfirmThreshold: MIN_RETRY_BATCH_CONFIRM_THRESHOLD,
+          open: isRetryCenterOpen,
+          query: retryCenterQuery,
+          retryBatchConfirmThreshold,
+          scope: retryCenterScope,
+          selectedCount: retryCenterSelection.length,
+          selectedFailedCount: selectedRetryCenterFailedEntries.length,
+          selectedFailureReasonLabel: retryCenterSelectedFailureReasonLabel,
+          selectionSet: retryCenterSelectionSet,
+          status: retryCenterStatus,
+          timeRange: retryCenterTimeRange,
+          topFailureReasonRetryRows: retryCenterTopFailureReasonRetryRows,
+          totalHistoryCount: transferHistory.length,
+          visibleFailedCount: visibleRetryCenterFailedEntries.length
+        }
+      }),
+      serverHealthDetail: buildServerHealthDetailDialogArgs({
+        actions: {
+          onClose: () => setIsServerHealthDetailOpen(false),
+          onSelectTab: setServerHealthDetailTab,
+          refreshServerHealth,
+          refreshServerProcesses
+        },
+        values: {
+          alertStatus: serverHealthAlertStatus,
+          canRefresh:
+            Boolean(activeTerminalTab) &&
+            isActiveTabConnected &&
+            !serverHealthLoading &&
+            !serverProcessLoading,
+          collectedAtLabel: serverHealthCollectedAtLabel,
+          cpuCoreLabel: serverHealthCpuCoreLabel,
+          detailTab: serverHealthDetailTab,
+          filesystems: serverHealthFilesystems,
+          formatOptionalPercent,
+          formatPercent,
+          formatProcessPercent,
+          formatTransferBytes,
+          formatUptime: formatServerUptime,
+          isConnected: isActiveTabConnected,
+          kernelLabel: serverHealthKernelLabel,
+          loadPerCore: serverHealthLoadPerCore,
+          memoryAvailableBytes: serverHealthMemoryAvailableBytes,
+          memoryProcesses: serverHealthMemoryProcesses,
+          metrics: serverHealthMetrics,
+          networkInterfaces: serverHealthNetworkInterfaces,
+          open: isServerHealthDetailOpen,
+          processError: serverProcessError,
+          processLoading: serverProcessLoading,
+          processSnapshot: serverProcessSnapshot,
+          serverHealth,
+          serverHealthError,
+          subtitle: activeTerminalTab?.title ?? "No active tab",
+          swapUsagePercent: serverHealthSwapUsagePercent
+        }
+      }),
+      sessionCreate: buildSessionCreateDialogArgs({
+        actions: {
+          chooseSessionTemplateAndApply,
+          handleTestConnection,
+          onClose: closeCreateModal,
+          onFormChange: updateCreateSessionFormFields,
+          onSubmit: handleCreateSession,
+          openSessionTemplateManager,
+          pickPrivateKeyFile
+        },
+        values: {
+          editingSessionId,
+          form,
+          groupOptions: sessionGroupOptions,
+          maxTemplateCount: MAX_SESSION_TEMPLATES,
+          open: isCreateModalOpen,
+          saving,
+          sessionTemplateCount: sessionTemplates.length,
+          testConnectionResult,
+          testingConnection
+        }
+      }),
+      sessionTemplateManager: buildSessionTemplateManagerDialogArgs({
+        actions: {
+          applySessionTemplateToForm,
+          deleteEditingSessionTemplate,
+          onAddEnvVar: addSessionTemplateEnvVar,
+          onClose: closeSessionTemplateManager,
+          onDraftFieldChange: updateSessionTemplateDraftFields,
+          onRemoveEnvVar: removeSessionTemplateEnvVar,
+          onResetDraft: resetSessionTemplateDraft,
+          onSelectTemplate: loadSessionTemplateForEditing,
+          onUpdateEnvVar: updateSessionTemplateEnvVar,
+          saveSessionTemplateDraft,
+          startSessionTemplateDraftFromForm
+        },
+        values: {
+          draft: sessionTemplateDraft,
+          editingTemplate: editingSessionTemplate,
+          editingTemplateId: editingSessionTemplateId,
+          error: sessionTemplateError,
+          form,
+          isCreateModalOpen,
+          maxEnvVarCount: MAX_SESSION_TEMPLATE_ENV_VARS,
+          maxTemplateCount: MAX_SESSION_TEMPLATES,
+          open: isSessionTemplateManagerOpen,
+          templates: sessionTemplates
+        }
+      })
     });
-  }, [importCommandSnippetGroups]);
-  const selectCommandSnippetManagerGroup = useCallback(
-    (groupId: string) => {
-      const nextGroup = commandSnippetGroups.find((group) => group.id === groupId);
-      setCommandSnippetManagerGroupId(groupId);
-      setCommandSnippetManagerSnippetId(nextGroup?.snippets[0]?.id ?? "");
-    },
-    [commandSnippetGroups]
-  );
-  const selectCommandSnippetManagerSnippet = useCallback((snippetId: string) => {
-    setCommandSnippetManagerSnippetId(snippetId);
-  }, []);
-  const runCommandSnippetManagerSnippetById = useCallback(
-    (snippetId: string) => {
-      if (!selectedCommandSnippetManagerGroup) {
-        return;
-      }
-      const snippet =
-        selectedCommandSnippetManagerGroup.snippets.find((entry) => entry.id === snippetId) ?? null;
-      if (!snippet) {
-        return;
-      }
-      setCommandSnippetManagerSnippetId(snippetId);
-      void runCommandSnippet(snippet, selectedCommandSnippetManagerGroup.id);
-    },
-    [runCommandSnippet, selectedCommandSnippetManagerGroup]
-  );
-  const normalizeSelectedCommandSnippetManagerGroupName = useCallback(() => {
-    if (!selectedCommandSnippetManagerGroup) {
-      return;
-    }
-    if (selectedCommandSnippetManagerGroup.name.trim()) {
-      return;
-    }
-    updateCommandSnippetManagerGroupName(selectedCommandSnippetManagerGroup.id, "Unnamed Group");
-  }, [selectedCommandSnippetManagerGroup, updateCommandSnippetManagerGroupName]);
-  const normalizeSelectedCommandSnippetManagerSnippetName = useCallback(() => {
-    if (!selectedCommandSnippetManagerSnippet) {
-      return;
-    }
-    if (selectedCommandSnippetManagerSnippet.name.trim()) {
-      return;
-    }
-    updateCommandSnippetManagerSnippetName(selectedCommandSnippetManagerSnippet.id, "Unnamed Snippet");
-  }, [selectedCommandSnippetManagerSnippet, updateCommandSnippetManagerSnippetName]);
-  const normalizeSelectedCommandSnippetManagerPromptSetName = useCallback(() => {
-    if (!selectedCommandSnippetManagerPromptSet) {
-      return;
-    }
-    if (selectedCommandSnippetManagerPromptSet.name.trim()) {
-      return;
-    }
-    updateCommandSnippetManagerPromptSetName(
-      selectedCommandSnippetManagerPromptSet.id,
-      "Unnamed Prompt Set"
-    );
-  }, [selectedCommandSnippetManagerPromptSet, updateCommandSnippetManagerPromptSetName]);
 
   const closeTerminalTabs = useCallback((tabIds: string[]) => {
     const uniqueTabIds = Array.from(new Set(tabIds.filter(Boolean)));
@@ -15789,367 +14193,60 @@ export function App() {
     setIsSettingsOpen(false);
   }, []);
 
-  const dismissGlobalError = useCallback(() => {
-    setError(null);
-  }, []);
-
-  const openConnectionSettingsFromError = useCallback(() => {
-    openSettingsPanel("connection");
-  }, [openSettingsPanel]);
-
-  const openFileOpeningSettingsFromError = useCallback(() => {
-    openSettingsPanel("fileOpening");
-  }, [openSettingsPanel]);
-
-  const openHotkeysSettingsFromError = useCallback(() => {
-    openSettingsPanel("hotkeys");
-  }, [openSettingsPanel]);
-
-  const openSftpSettingsFromError = useCallback(() => {
-    openSettingsPanel("sftp");
-  }, [openSettingsPanel]);
-
-  const openPortForwardingSettingsFromError = useCallback(() => {
-    openSettingsPanel("portForwarding");
-  }, [openSettingsPanel]);
-
-  const openSafetySettingsFromError = useCallback(() => {
-    openSettingsPanel("safety");
-  }, [openSettingsPanel]);
-
-  const openWorkspaceSettingsFromError = useCallback(() => {
-    openSettingsPanel("workspace");
-  }, [openSettingsPanel]);
-
-  const openServerHealthSettingsFromError = useCallback(() => {
-    openSettingsPanel("serverHealth");
-  }, [openSettingsPanel]);
-
-  const openDiagnosticsFromError = useCallback(() => {
-    openSettingsPanel("diagnostics");
-  }, [openSettingsPanel]);
-
-  const openRetryCenterFromError = useCallback(() => {
-    setIsRetryCenterOpen(true);
-  }, []);
-
-  const openOperationCenterFromError = useCallback(() => {
-    setIsOperationCenterOpen(true);
-  }, []);
-
-  const reconnectActiveTabFromError = useCallback(async () => {
-    try {
-      if (!terminalApi) {
-        throw new Error("Terminal bridge unavailable. Restart `pnpm dev`.");
-      }
-      if (!activeTabId || !activeSessionId) {
-        throw new Error("Open and select a terminal tab, then retry reconnect.");
-      }
-      await terminalApi.connect(activeTabId, activeSessionId);
-      setError(null);
-      writeAppLog("info", "renderer:error-bar", "Manual reconnect requested from global error bar.", {
-        tabId: activeTabId,
-        sessionId: activeSessionId
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog(
-        "error",
-        "renderer:error-bar",
-        "Manual reconnect action failed from global error bar.",
-        caughtError
-      );
-    }
-  }, [activeSessionId, activeTabId, terminalApi, writeAppLog]);
-
-  const copyGlobalErrorMessage = useCallback(async () => {
-    if (!error) {
-      return;
-    }
-    try {
-      const copied = await copyTextToClipboard(error);
-      if (!copied) {
-        throw new Error("Clipboard unavailable.");
-      }
-      await showAppAlert("Error message copied to clipboard.", {
-        title: "Diagnostics"
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog("error", "renderer:error-bar", "Failed to copy global error message.", caughtError);
-    }
-  }, [error, showAppAlert, writeAppLog]);
-
-  const globalErrorRecovery = useMemo(() => {
-    const message = error?.trim() ?? "";
-    if (!message) {
-      return {
-        canReconnect: false,
-        canOpenLogs: false,
-        canCopyLatestDisconnectReport: false,
-        canOpenRetryCenter: false,
-        canOpenOperationCenter: false,
-        canExportBugReport: false,
-        settingsAction: null as SettingsSectionId | null,
-        hint: ""
-      };
-    }
-    const reconnectLike = isReconnectRecoverableError(message);
-    const bridgeLike = isBridgeUnavailableError(message);
-    const clipboardLike = isClipboardUnavailableError(message);
-    const openerLike = isPreferredOpenerConfigurationError(message);
-    const hotkeyLike = isHotkeyRecoverableError(message);
-    const portForwardLike = isPortForwardRecoverableError(message);
-    const safetyLike = isSafetyRecoverableError(message);
-    const workspaceLike = isWorkspaceRecoverableError(message);
-    const serverHealthLike = isServerHealthRecoverableError(message);
-    const diagnosticsLike = isDiagnosticsRecoverableError(message);
-    const transferReason = resolveTransferRecoveryReasonForError(message);
-    const canReconnect =
-      reconnectLike &&
-      !!terminalApi &&
-      !!activeTabId &&
-      !!activeSessionId &&
-      !isActiveTabConnected;
-    const canOpenRetryCenter =
-      !!transferReason && transferHistory.some((entry) => entry.status === "failed");
-    const canOpenOperationCenter = !!(
-      (transferReason || reconnectLike || portForwardLike) &&
-      hasOperationCenterActivity
-    );
-    const canExportBugReport = !!(
-      bridgeLike ||
-      transferReason ||
-      portForwardLike ||
-      diagnosticsLike ||
-      serverHealthLike
-    );
-    let settingsAction: SettingsSectionId | null = null;
-    if (openerLike) {
-      settingsAction = "fileOpening";
-    } else if (hotkeyLike) {
-      settingsAction = "hotkeys";
-    } else if (safetyLike) {
-      settingsAction = "safety";
-    } else if (workspaceLike) {
-      settingsAction = "workspace";
-    } else if (portForwardLike) {
-      settingsAction = "portForwarding";
-    } else if (serverHealthLike) {
-      settingsAction = "serverHealth";
-    } else if (transferReason) {
-      settingsAction = "sftp";
-    } else if (reconnectLike && !canReconnect) {
-      settingsAction = "connection";
-    } else if (diagnosticsLike) {
-      settingsAction = "diagnostics";
-    }
-    let hint = "";
-    if (openerLike) {
-      hint =
-        "Preferred file opener looks invalid. Open File Opening settings and fix the configured command or path.";
-    } else if (hotkeyLike) {
-      hint =
-        "Hotkey import or shortcut configuration issue detected. Open Hotkeys to review conflicts or re-import a valid file.";
-    } else if (safetyLike) {
-      hint =
-        "Safety guardrail or shared-bundle issue detected. Open Safety to review policy packs, templates, sync file, or approvals.";
-    } else if (workspaceLike) {
-      hint =
-        "Workspace profile issue detected. Open Workspace to review the active profile and Safety sync defaults.";
-    } else if (portForwardLike) {
-      hint = canOpenOperationCenter
-        ? "Port-forwarding issue detected. Review bind/target settings, then check Operation Center for affected work."
-        : "Port-forwarding issue detected. Review bind/target settings and active forwards in Port Fwd settings.";
-    } else if (serverHealthLike) {
-      hint =
-        "Server health collection issue detected. Open Monitor settings to review alert thresholds, then use Diagnostics if the remote command keeps failing.";
-    } else if (transferReason) {
-      hint = getTransferFailureSuggestion(transferReason) ?? "";
-      if (canOpenRetryCenter) {
-        hint = hint
-          ? `${hint} Retry Center can requeue failed items after the root cause is fixed.`
-          : "Retry Center can requeue failed items after the root cause is fixed.";
-      }
-    } else if (diagnosticsLike) {
-      hint = canExportBugReport
-        ? "Diagnostics issue detected. Open Diagnostics, export a bug report, or copy the error for handoff."
-        : "Diagnostics issue detected. Open Diagnostics or copy the error for handoff.";
-    } else if (bridgeLike) {
-      hint = "Bridge/runtime issue detected. Open logs or export a bug report.";
-    } else if (reconnectLike) {
-      hint = canOpenOperationCenter
-        ? "Connection issue detected. Reconnect may recover quickly. Operation Center can show interrupted work."
-        : "Connection issue detected. Reconnect may recover quickly.";
-    } else if (clipboardLike) {
-      hint =
-        "Clipboard is unavailable in the current environment. Use the manual-copy fallback from the active workflow.";
-    }
-    return {
-      canReconnect,
-      canOpenLogs: !!(systemApi?.openLocalPath && systemApi.getLogInfo),
-      canCopyLatestDisconnectReport: disconnectReports.length > 0,
-      canOpenRetryCenter,
-      canOpenOperationCenter,
-      canExportBugReport,
-      settingsAction,
-      hint
-    };
-  }, [
+  const globalErrorRecovery = useGlobalErrorRecovery({
     activeSessionId,
     activeTabId,
-    hasOperationCenterActivity,
-    disconnectReports.length,
+    classifyTransferFailureReason,
+    disconnectReportCount: disconnectReports.length,
     error,
+    getTransferFailureSuggestion,
+    hasOperationCenterActivity,
     isActiveTabConnected,
-    transferHistory,
     systemApi,
-    terminalApi
-  ]);
-
-  const openLogDirectory = useCallback(async () => {
-    try {
-      if (!systemApi?.openLocalPath || !systemApi.getLogInfo) {
-        throw new Error("Log bridge unavailable. Restart `pnpm dev`.");
-      }
-      const info = logInfo ?? (await systemApi.getLogInfo());
-      setLogInfo(info);
-      await systemApi.openLocalPath(info.logDirectoryPath);
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog("error", "renderer:diagnostics", "Failed to open log directory.", caughtError);
-    }
-  }, [logInfo, systemApi, writeAppLog]);
-
-  const copyLogFilePath = useCallback(async () => {
-    try {
-      if (!systemApi?.getLogInfo) {
-        throw new Error("Log bridge unavailable. Restart `pnpm dev`.");
-      }
-      const info = logInfo ?? (await systemApi.getLogInfo());
-      setLogInfo(info);
-      const copied = await copyTextToClipboard(info.logFilePath);
-      if (!copied) {
-        throw new Error("Clipboard unavailable.");
-      }
-      await showAppAlert("Log file path copied to clipboard.", {
-        title: "Diagnostics"
-      });
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      setError(message);
-      writeAppLog("error", "renderer:diagnostics", "Failed to copy log file path.", caughtError);
-    }
-  }, [logInfo, showAppAlert, systemApi, writeAppLog]);
-
-  const exportBugReportBundle = useCallback(async () => {
-    let operationJobId: string | null = null;
-    try {
-      if (!systemApi?.exportBugReport) {
-        throw new Error("Bug report bridge unavailable. Restart `pnpm dev`.");
-      }
-      setIsExportingBugReport(true);
-      operationJobId = startOperationCenterAppJob({
-        category: "diagnostics",
-        title: "Bug Report Export",
-        description: "Bundling logs, runtime metadata, and disconnect-report context."
-      });
-      const disconnectReportSnapshot = {
-        capturedAtIso: new Date().toISOString(),
-        totalReports: disconnectReports.length,
-        latestReportId: disconnectReports[0]?.id ?? "",
-        latestCreatedAt: disconnectReports[0]?.createdAt ?? "",
-        reports: disconnectReports.slice(0, 64)
-      };
-      const result = await systemApi.exportBugReport({
-        settingsSnapshot: {
-          appVersion: APP_VERSION,
-          connectionPreferences,
-          hotkeyPreferences,
-          fileOpenPreferences,
-          sftpTransferPreferences,
-          serverHealthAlertPreferences,
-          sessionSortMode
-        },
-        runtimeSnapshot: {
-          capturedAtIso: new Date().toISOString(),
-          sessionCount: sessions.length,
-          sessionGroupCount: sessionGroupOptions.length,
-          openTabCount: terminalTabs.length,
-          activeTabId,
-          selectedSessionId,
-          disconnectReportCount: disconnectReports.length
-        },
-        disconnectReports: disconnectReportSnapshot
-      });
-      if (result.canceled || !result.outputPath) {
-        if (operationJobId) {
-          removeOperationCenterAppJob(operationJobId);
-        }
-        return;
-      }
-      if (operationJobId) {
-        finishOperationCenterAppJob(operationJobId, "succeeded", {
-          detail: `Exported bug report bundle with ${disconnectReports.length} disconnect report${disconnectReports.length === 1 ? "" : "s"}.`,
-          outputPath: result.outputPath
-        });
-      }
-      const copied = await copyTextToClipboard(result.outputPath);
-      await showAppAlert(
-        copied
-          ? `Bug report exported.\nPath copied to clipboard:\n${result.outputPath}`
-          : `Bug report exported:\n${result.outputPath}`,
-        {
-          title: "Diagnostics"
-        }
-      );
-    } catch (caughtError) {
-      const message = toLogMessage(caughtError);
-      if (operationJobId) {
-        finishOperationCenterAppJob(operationJobId, "failed", {
-          detail: message
-        });
-      }
-      setError(message);
-      writeAppLog("error", "renderer:diagnostics", "Failed to export bug report.", caughtError);
-    } finally {
-      setIsExportingBugReport(false);
-    }
-  }, [
-    activeTabId,
-    connectionPreferences,
+    terminalApi,
+    transferHistory
+  });
+  const {
+    copyGlobalErrorMessage,
+    copyLogFilePath,
+    dismissGlobalError,
+    exportBugReportBundle,
+    exportBugReportFromError,
+    openLogDirectory,
+    refreshDiagnosticsLogInfo
+  } = useGlobalDiagnosticsActions({
+    appVersion: APP_VERSION,
+    copyTextToClipboard,
     disconnectReports,
+    error,
     finishOperationCenterAppJob,
-    fileOpenPreferences,
-    hotkeyPreferences,
+    logInfo,
     removeOperationCenterAppJob,
-    selectedSessionId,
-    serverHealthAlertPreferences,
-    sessionGroupOptions.length,
-    sessionSortMode,
-    sessions.length,
-    sftpTransferPreferences,
+    runtimeSnapshotBase: {
+      activeTabId,
+      disconnectReportCount: disconnectReports.length,
+      openTabCount: terminalTabs.length,
+      selectedSessionId,
+      sessionCount: sessions.length,
+      sessionGroupCount: sessionGroupOptions.length
+    },
+    setError,
+    setIsExportingBugReport,
+    setLogInfo,
+    settingsSnapshot: {
+      connectionPreferences,
+      hotkeyPreferences,
+      fileOpenPreferences,
+      sftpTransferPreferences,
+      serverHealthAlertPreferences,
+      sessionSortMode
+    },
     showAppAlert,
     startOperationCenterAppJob,
     systemApi,
-    terminalTabs.length,
+    toLogMessage,
     writeAppLog
-  ]);
-
-  const exportBugReportFromError = useCallback(() => {
-    void exportBugReportBundle();
-  }, [exportBugReportBundle]);
-  const setDisconnectReportCaptureEnabled = useCallback((enabled: boolean) => {
-    setDisconnectReportCapturePreferences({
-      enabled
-    });
-  }, []);
-  const setDisconnectReportQueryValue = useCallback((value: string) => {
-    setDisconnectReportQuery(value.slice(0, 160));
-  }, []);
+  });
   const {
     clearDisconnectReportsHistory,
     clearVisibleDisconnectReportsHistory,
@@ -17883,20 +15980,6 @@ export function App() {
     writeAppLog
   });
 
-  const clearFinishedTransfers = (direction: "upload" | "download") => {
-    if (!activeTabId) {
-      return;
-    }
-    setSftpTransfers((prev) =>
-      prev.filter((transfer) => {
-        if (transfer.tabId !== activeTabId || transfer.direction !== direction) {
-          return true;
-        }
-        return transfer.status === "queued" || transfer.status === "running";
-      })
-    );
-  };
-
   const markTransferHistoryRetryQueued = useCallback(
     (
       direction: SftpTransferEvent["direction"],
@@ -17949,51 +16032,58 @@ export function App() {
     [activeSessionId]
   );
 
-  const openRetryCenter = useCallback(() => {
-    setIsRetryCenterOpen(true);
-  }, []);
-
-  const closeRetryCenter = useCallback(() => {
-    setIsRetryCenterOpen(false);
-    setRetryCenterSelection([]);
-  }, []);
-
-  const openOperationCenter = useCallback(() => {
-    setIsOperationCenterOpen(true);
-  }, []);
-
-  const closeOperationCenter = useCallback(() => {
-    setIsOperationCenterOpen(false);
-  }, []);
-  const openDiagnosticsFromOperationCenter = useCallback(() => {
-    closeOperationCenter();
-    openSettingsPanel("diagnostics");
-  }, [closeOperationCenter, openSettingsPanel]);
-  const openCommandSnippetManagerFromOperationCenter = useCallback(() => {
-    closeOperationCenter();
-    openCommandSnippetManager();
-  }, [closeOperationCenter, openCommandSnippetManager]);
-
-  const toggleRetryCenterEntrySelection = useCallback((key: string) => {
-    const normalized = key.trim();
-    if (!normalized) {
-      return;
-    }
-    setRetryCenterSelection((prev) => {
-      if (prev.includes(normalized)) {
-        return prev.filter((entryKey) => entryKey !== normalized);
-      }
-      return [...prev, normalized];
-    });
-  }, []);
-
-  const selectAllVisibleRetryCenterEntries = useCallback(() => {
-    setRetryCenterSelection(retryCenterEntries.map((entry) => entry.key));
-  }, [retryCenterEntries]);
-
-  const clearRetryCenterSelection = useCallback(() => {
-    setRetryCenterSelection([]);
-  }, []);
+  const {
+    changeRetryBatchConfirmThreshold,
+    clearFinishedTransfers,
+    clearRetryCenterSelection,
+    closeOperationCenter,
+    closeRetryCenter,
+    openCommandSnippetManagerFromOperationCenter,
+    openDiagnosticsFromOperationCenter,
+    openOperationCenter,
+    openPortForwardingFromOperationCenter,
+    openRetryCenter,
+    selectAllVisibleRetryCenterEntries,
+    toggleRetryCenterAutoUseLastRetryScope,
+    toggleRetryCenterEntrySelection
+  } = useTransferCenterUiActions({
+    activeTabId,
+    openCommandSnippetManager,
+    openSettingsPanel,
+    parseRetryBatchConfirmThreshold,
+    retryCenterEntries,
+    setIsOperationCenterOpen,
+    setIsRetryCenterOpen,
+    setRetryBatchConfirmThreshold,
+    setRetryCenterAutoUseLastRetryScope,
+    setRetryCenterSelection,
+    setSftpTransfers
+  });
+  const {
+    openConnectionSettingsFromError,
+    openDiagnosticsFromError,
+    openFileOpeningSettingsFromError,
+    openHotkeysSettingsFromError,
+    openOperationCenterFromError,
+    openPortForwardingSettingsFromError,
+    openRetryCenterFromError,
+    openSafetySettingsFromError,
+    openServerHealthSettingsFromError,
+    openSftpSettingsFromError,
+    openWorkspaceSettingsFromError,
+    reconnectActiveTabFromError
+  } = useGlobalErrorBarActions({
+    activeSessionId,
+    activeTabId,
+    isActiveTabConnected,
+    openOperationCenter,
+    openRetryCenter,
+    openSettingsPanel,
+    setError,
+    terminalApi,
+    toLogMessage,
+    writeAppLog
+  });
   const {
     exportRetryCenterAnalyticsCsv,
     exportRetryCenterAnalyticsJson,
@@ -18069,218 +16159,56 @@ export function App() {
     totalHistoryCount: transferHistory.length,
     visibleRetryCenterFailedEntries
   });
+  const {
+    appDialogModalProps,
+    appInlineHintPanelProps,
+    commandHistoryManagerModalProps,
+    commandSnippetManagerModalProps,
+    globalErrorBarProps,
+    moveGroupDialogModalProps,
+    operationCenterModalProps,
+    retryCenterModalProps,
+    serverHealthDetailModalProps,
+    sessionCreateModalProps,
+    sessionTemplateManagerModalProps
+  } = buildWorkbenchDialogCompositePropsForApp();
 
-  const onSftpDragOver = (event: DragEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    if (!sftpDropActive) {
-      setSftpDropActive(true);
-    }
-  };
-
-  const onSftpDragLeave = (event: DragEvent<HTMLElement>) => {
-    if (
-      event.currentTarget instanceof HTMLElement &&
-      event.relatedTarget instanceof Node &&
-      event.currentTarget.contains(event.relatedTarget)
-    ) {
-      return;
-    }
-    setSftpDropActive(false);
-  };
-
-  const onSftpDrop = (event: DragEvent<HTMLElement>) => {
-    event.preventDefault();
-    setSftpDropActive(false);
-    const droppedFiles = event.dataTransfer.files;
-    void (async () => {
-      const localPaths = await getLocalPathsFromDroppedFiles(
-        droppedFiles,
-        systemApi?.getPathForDroppedFile
-      );
-      if (localPaths.length === 0) {
-        setSftpError("Cannot resolve local paths from dropped files. Try the Upload button.");
-        return;
-      }
-      await uploadLocalPathsToSftp(localPaths);
-    })();
-  };
-
-  const runSftpContextAction = (action: SftpContextAction) => {
-    if (action.disabled) {
-      return;
-    }
-    closeSftpContextMenu();
-    action.run();
-  };
-
-  const runSessionContextAction = (action: SessionContextAction) => {
-    if (action.disabled) {
-      return;
-    }
-    closeSessionContextMenu();
-    action.run();
-  };
-
-  const runSftpToolbarAction = (action: SftpContextAction) => {
-    if (action.disabled) {
-      return;
-    }
-    closeSftpToolbarMenu();
-    action.run();
-  };
-
-  const copySftpPathWithFallback = useCallback(
-    (path: string) => {
-      void (async () => {
-        try {
-          const copied = await copyTextToClipboard(path);
-          if (copied) {
-            return;
-          }
-        } catch {
-          // Fallback to dialog for manual copy.
-        }
-        await showAppAlert("Clipboard unavailable. Copy the path below manually.", {
-          title: "Manual Copy",
-          confirmLabel: "Close",
-          detailText: path
-        });
-      })();
-    },
-    [showAppAlert]
-  );
-
-  const promptCreateSessionGroup = async () => {
-    const groupNameInput = await showAppPrompt("Enter a name for the new group.", "", {
-      title: "New Group",
-      confirmLabel: "Create"
-    });
-    if (groupNameInput === null) {
-      return;
-    }
-    addSessionGroup(groupNameInput);
-  };
-
-  const sessionContextActions: SessionContextAction[] = buildSessionContextActions({
-    activeGroupSessions,
-    assignSessionsToGroup,
-    chooseSessionTemplateAndApply,
-    contextTarget: sessionContextMenu?.target ?? null,
-    copyClashDirectRules,
-    copySessionConnectionCommand,
-    createSessionQuickProfileForSession,
-    deleteSessionGroup,
-    deleteSessionGroupsBatch,
-    exportAllSessionGroups,
-    exportAllSessionsWithGroups,
-    exportEncryptedSessionMigration,
-    groupedSessions,
-    importEncryptedSessionMigration,
-    importSessionsFromJson,
-    importSessionsFromSshConfig,
-    manageSessionQuickProfilesForSession,
-    openCreateModal,
-    openDuplicateSessionModal,
-    openEditModal,
-    openMoveSessionsToGroupDialog,
-    openSessionTemplateManager,
-    openTerminalTab,
-    patchSession,
-    promptCreateSessionGroup,
-    removeSessionsByIds,
-    renameSessionGroup,
-    runSessionQuickProfileChooser,
-    selectedGroupKeySet,
-    selectedGroupKeys,
-    selectedGroupNames,
-    selectedGroups,
-    selectedSession,
-    selectedSessionIds,
-    selectedSessionsInActiveGroup,
-    sessionContextTarget,
-    sessionQuickProfilesCount: sessionQuickProfiles.length,
-    sessionSortMode,
-    sessionTemplatesCount: sessionTemplates.length,
-    setActiveSessionGroupKey,
-    setSelectedGroupKeys,
-    setSelectedSessionId,
-    setSelectedSessionIds,
-    setSessionSortMode,
-    toFormFromSession,
-    tr,
-    viewSessionDetails
+  const {
+    copySftpPathWithFallback,
+    onSftpDragLeave,
+    onSftpDragOver,
+    onSftpDrop,
+    runSftpContextAction,
+    runSftpToolbarAction
+  } = useSftpExplorerActions({
+    closeSftpContextMenu,
+    closeSftpToolbarMenu,
+    copyTextToClipboard,
+    setSftpDropActive,
+    setSftpError,
+    sftpDropActive,
+    showAppAlert,
+    systemApi,
+    uploadLocalPathsToSftp
+  });
+  const { promptCreateSessionGroup, runSessionContextAction } = useSessionExplorerActions({
+    addSessionGroup,
+    closeSessionContextMenu,
+    showAppPrompt
   });
 
   const isSftpActionDisabled = sftpLoading || sftpActionLoading;
-  const sftpToolbarActions: SftpContextAction[] = buildSftpToolbarActions({
-    canDownloadSelectedEntry: canDownloadSelectedSftpEntry,
-    currentDirectoryCwd: sftpDirectory?.cwd ?? null,
-    currentDirectoryParent: sftpDirectory?.parent ?? null,
-    hasSelectedEntry: Boolean(selectedSftpEntry),
-    inputPath: sftpPath,
-    isActionDisabled: isSftpActionDisabled,
-    onCreateDirectory: () => {
-      void createSftpDirectory();
-    },
-    onDeleteSelected: () => {
-      void deleteSelectedSftpEntry();
-    },
-    onDownloadSelected: () => {
-      void downloadSelectedSftpEntry();
-    },
-    onLoadDirectory: (path) => {
-      void loadSftpDirectory(path);
-    },
-    onRenameSelected: () => {
-      void renameSelectedSftpEntry();
-    },
-    onUploadFile: () => {
-      void uploadLocalFileToSftp();
-    },
-    tr
-  });
-
-  const sftpContextActions: SftpContextAction[] = buildSftpContextActions({
-    contextEntry: sftpContextEntry,
-    currentDirectoryCwd: sftpDirectory?.cwd ?? null,
-    currentPathInput: sftpPath,
-    isActionDisabled: isSftpActionDisabled,
-    onCopyPath: copySftpPathWithFallback,
-    onCreateDirectory: () => {
-      void createSftpDirectory();
-    },
-    onDeleteEntry: (entry) => {
-      void deleteSelectedSftpEntry(entry);
-    },
-    onDownloadDirectory: (entry) => {
-      void downloadSftpDirectory(entry);
-    },
-    onDownloadFile: (entry) => {
-      void downloadSelectedSftpEntry(entry);
-    },
-    onLoadDirectory: (path) => {
-      void loadSftpDirectory(path);
-    },
-    onOpenFile: (entry) => {
-      void openSftpEntryFile(entry);
-    },
-    onRefreshDirectory: (path) => {
-      void loadSftpDirectory(path);
-    },
-    onRenameEntry: (entry) => {
-      void renameSelectedSftpEntry(entry);
-    },
-    onUploadFile: () => {
-      void uploadLocalFileToSftp();
-    },
-    tr
-  });
-  const commandHistoryContextMenuActions: WorkbenchContextMenuAction[] =
-    buildCommandHistoryContextMenuActions({
+  const {
+    commandHistoryContextMenuProps,
+    sessionContextMenuProps,
+    sftpEntryContextMenuProps,
+    sftpToolbarContextMenuProps
+  } = buildWorkbenchContextMenuCompositeProps({
+    commandHistory: {
       closeMenu: closeCommandHistoryContextMenu,
       entry: selectedCommandHistoryContextEntry,
       entryCount: terminalCommandHistoryEntries.length,
+      menu: commandHistoryContextMenu,
       onAdd: () => {
         void addTerminalCommandHistoryEntry();
       },
@@ -18300,1506 +16228,766 @@ export function App() {
         void runTerminalCommandHistoryEntry(entry);
       },
       totalSnippetCount: totalCommandSnippetCount
+    },
+    session: {
+      activeGroupSessions,
+      assignSessionsToGroup,
+      chooseSessionTemplateAndApply,
+      contextTarget: sessionContextMenu?.target ?? null,
+      copyClashDirectRules,
+      copySessionConnectionCommand,
+      createSessionQuickProfileForSession,
+      deleteSessionGroup,
+      deleteSessionGroupsBatch,
+      exportAllSessionGroups,
+      exportAllSessionsWithGroups,
+      exportEncryptedSessionMigration,
+      groupedSessions,
+      importEncryptedSessionMigration,
+      importSessionsFromJson,
+      importSessionsFromSshConfig,
+      manageSessionQuickProfilesForSession,
+      menu: sessionContextMenu,
+      onSelect: runSessionContextAction,
+      openCreateModal,
+      openDuplicateSessionModal,
+      openEditModal,
+      openMoveSessionsToGroupDialog,
+      openSessionTemplateManager,
+      openTerminalTab,
+      patchSession,
+      promptCreateSessionGroup,
+      removeSessionsByIds,
+      renameSessionGroup,
+      runSessionQuickProfileChooser,
+      selectedGroupKeySet,
+      selectedGroupKeys,
+      selectedGroupNames,
+      selectedGroups,
+      selectedSession,
+      selectedSessionIds,
+      selectedSessionsInActiveGroup,
+      sessionContextTarget,
+      sessionQuickProfilesCount: sessionQuickProfiles.length,
+      sessionSortMode,
+      sessionTemplatesCount: sessionTemplates.length,
+      setActiveSessionGroupKey,
+      setSelectedGroupKeys,
+      setSelectedSessionId,
+      setSelectedSessionIds,
+      setSessionSortMode,
+      toFormFromSession,
+      tr,
+      viewSessionDetails
+    },
+    sftpEntry: {
+      contextEntry: sftpContextEntry,
+      currentDirectoryCwd: sftpDirectory?.cwd ?? null,
+      currentPathInput: sftpPath,
+      isActionDisabled: isSftpActionDisabled,
+      menu: sftpContextMenu,
+      onCopyPath: copySftpPathWithFallback,
+      onCreateDirectory: () => {
+        void createSftpDirectory();
+      },
+      onDeleteEntry: (entry) => {
+        void deleteSelectedSftpEntry(entry);
+      },
+      onDownloadDirectory: (entry) => {
+        void downloadSftpDirectory(entry);
+      },
+      onDownloadFile: (entry) => {
+        void downloadSelectedSftpEntry(entry);
+      },
+      onLoadDirectory: (path) => {
+        void loadSftpDirectory(path);
+      },
+      onOpenFile: (entry) => {
+        void openSftpEntryFile(entry);
+      },
+      onRefreshDirectory: (path) => {
+        void loadSftpDirectory(path);
+      },
+      onRenameEntry: (entry) => {
+        void renameSelectedSftpEntry(entry);
+      },
+      onSelect: runSftpContextAction,
+      onUploadFile: () => {
+        void uploadLocalFileToSftp();
+      },
+      tr
+    },
+    sftpToolbar: {
+      canDownloadSelectedEntry: canDownloadSelectedSftpEntry,
+      currentDirectoryCwd: sftpDirectory?.cwd ?? null,
+      currentDirectoryParent: sftpDirectory?.parent ?? null,
+      hasSelectedEntry: Boolean(selectedSftpEntry),
+      inputPath: sftpPath,
+      isActionDisabled: isSftpActionDisabled,
+      menu: sftpToolbarMenu,
+      onCreateDirectory: () => {
+        void createSftpDirectory();
+      },
+      onDeleteSelected: () => {
+        void deleteSelectedSftpEntry();
+      },
+      onDownloadSelected: () => {
+        void downloadSelectedSftpEntry();
+      },
+      onLoadDirectory: (path) => {
+        void loadSftpDirectory(path);
+      },
+      onRenameSelected: () => {
+        void renameSelectedSftpEntry();
+      },
+      onSelect: runSftpToolbarAction,
+      onUploadFile: () => {
+        void uploadLocalFileToSftp();
+      },
+      tr
+    }
+  });
+  const { settingsModalContentProps, settingsModalShellProps } =
+    buildSettingsCompositeProps({
+      connection: buildConnectionSettingsArgs({
+        autoReconnect: connectionPreferences.autoReconnect,
+        onAutoReconnectChange: setAutoReconnect,
+        onReconnectDelayChange: setReconnectDelaySeconds,
+        reconnectDelaySeconds: connectionPreferences.reconnectDelaySeconds
+      }),
+      diagnostics: buildDisconnectDiagnosticsSettingsArgs({
+        actions: {
+          onClearAllDisconnectsAction: clearDisconnectReportsHistory,
+          onClearVisibleDisconnectsAction: clearVisibleDisconnectReportsHistory,
+          onCopyDisconnectReportJson: copyVisibleDisconnectReportJsonById,
+          onCopyLatestVisibleDisconnectAction: copyLatestVisibleDisconnectReport,
+          onCopyLogFilePathAction: copyLogFilePath,
+          onDisconnectCaptureEnabledChange: setDisconnectReportCaptureEnabled,
+          onDisconnectQueryChange: setDisconnectReportQueryValue,
+          onDisconnectScopeChange: setDisconnectReportScopeValue,
+          onDisconnectTimeRangeChange: setDisconnectReportTimeRangeValue,
+          onDisconnectTriggerChange: setDisconnectReportTriggerFilterValue,
+          onExportBugReportAction: exportBugReportBundle,
+          onExportDisconnectCsvAction: exportDisconnectReportsCsv,
+          onExportDisconnectJsonAction: exportDisconnectReportsJson,
+          onFocusDisconnectTab: focusVisibleDisconnectReportTab,
+          onOpenLogDirectoryAction: openLogDirectory,
+          onRefreshLogInfo: refreshDiagnosticsLogInfo,
+          onResetDisconnectFilters: resetDisconnectReportViewFilters
+        },
+        values: {
+          disconnectCaptureEnabled: disconnectReportCapturePreferences.enabled,
+          disconnectCaptureHint: diagnosticsDisconnectCaptureHint,
+          disconnectEmptyStateLabel: diagnosticsDisconnectEmptyStateLabel,
+          disconnectQuery: disconnectReportQuery,
+          disconnectReportViews: diagnosticsDisconnectReportViews,
+          disconnectScope: disconnectReportScope,
+          disconnectTimeRange: disconnectReportTimeRange,
+          disconnectTotalCount: disconnectReports.length,
+          disconnectTrigger: disconnectReportTriggerFilter,
+          disconnectVisibleCount: visibleDisconnectReports.length,
+          hasCustomizedDisconnectView: hasCustomizedDisconnectReportView,
+          isExportingBugReport,
+          logDirectoryPath: diagnosticsLogDirectoryPath,
+          logFilePath: diagnosticsLogFilePath
+        }
+      }),
+      fileOpening: buildFileOpeningSettingsArgs({
+        isMacPlatform,
+        onBrowseProgramAction: pickPreferredOpenProgram,
+        onPreferredProgramPathChange: setPreferredOpenProgramPath,
+        preferredProgramPath: fileOpenPreferences.preferredProgramPath
+      }),
+      hotkeys: buildHotkeySettingsArgs({
+        hotkeyConflictCursorIndex,
+        hotkeyConflicts: hotkeyConflictViews,
+        hotkeyKeyPlaceholder: HOTKEY_KEY_PLACEHOLDER,
+        hotkeyModifierOptions,
+        hotkeyRows: hotkeySettingRowViews,
+        onBindingEnabledChangeAction: setHotkeyBindingEnabled,
+        onBindingKeyChangeAction: setHotkeyBindingKey,
+        onBindingModifierChangeAction: setHotkeyBindingModifier,
+        onExportHotkeysAction: exportHotkeyPreferences,
+        onFocusConflictAtIndex: focusHotkeyConflictAtIndex,
+        onFocusNextConflict: focusNextHotkeyConflict,
+        onFocusPreviousConflict: focusPreviousHotkeyConflict,
+        onImportHotkeysAction: importHotkeyPreferences,
+        onRegisterRowRefAction: registerHotkeyRowRef,
+        onResetHotkeys: () =>
+          setHotkeyPreferences(createDefaultHotkeyPreferences()),
+        onResolveConflicts: resolveHotkeyConflicts
+      }),
+      portForwarding: buildPortForwardingSettingsArgs({
+        actions: {
+          onClearSessionHistoryAction: clearSessionPortForwardHistory,
+          onClearVisibleHistoryAction: clearVisiblePortForwardHistory,
+          onCreateForwardAction: createPortForward,
+          onEventCorrelationQueryChange: setPortForwardEventCorrelationQuery,
+          onEventErrorCodeChange: setPortForwardEventErrorCode,
+          onEventFilterChange: (value: string) =>
+            setPortForwardEventFilter(value as PortForwardEventFilter),
+          onEventTimeRangeChange: (value: string) =>
+            setPortForwardEventTimeRange(value as PortForwardEventTimeRange),
+          onExportAnalyticsCsvAction: exportPortForwardEventAnalyticsCsv,
+          onExportAnalyticsJsonAction: exportPortForwardEventAnalyticsJson,
+          onExportSnapshotAction: exportPortForwardSnapshot,
+          onExportVisibleCsvAction: exportVisiblePortForwardEventsCsv,
+          onExportVisibleJsonAction: exportVisiblePortForwardEventsJson,
+          onFormBindHostChange: setPortForwardFormBindHost,
+          onFormBindPortChange: setPortForwardFormBindPort,
+          onFormTargetHostChange: setPortForwardFormTargetHost,
+          onFormTargetPortChange: setPortForwardFormTargetPort,
+          onFormTypeChange: setPortForwardFormType,
+          onPresetApply: applyActivePortForwardPreset,
+          onPresetAutoRestoreChange: setPortForwardPresetAutoRestore,
+          onPresetDelete: deleteActivePortForwardPreset,
+          onPresetFillForm: fillPortForwardFormFromActivePreset,
+          onRefresh: refreshActivePortForwards,
+          onRefreshDiagnostics: refreshActivePortForwardDiagnostics,
+          onRemoveForward: removeVisiblePortForward,
+          onResetEventFilters: resetPortForwardEventViewFilters,
+          onSavePresetAction: savePortForwardPreset
+        },
+        values: {
+          activeEventHistoryCount: activePortForwardEventHistory.length,
+          activeTabSummary: portForwardActiveTabSummary,
+          analyticsView: portForwardAnalyticsView,
+          eventCorrelationQuery: portForwardEventCorrelationQuery,
+          eventErrorCode: portForwardEventErrorCode,
+          eventErrorCodeOptions: portForwardEventErrorCodeOptions,
+          eventFilter: portForwardEventFilter,
+          eventSummaryLabel: portForwardEventSummaryLabel,
+          eventTimeRange: portForwardEventTimeRange,
+          eventViews: portForwardEventViews,
+          formBindHost: portForwardForm.bindHost,
+          formBindPort: portForwardForm.bindPort,
+          formTargetHost: portForwardForm.targetHost,
+          formTargetPort: portForwardForm.targetPort,
+          formType: portForwardForm.type,
+          forwardViews: portForwardRecordViews,
+          hasActiveSession: !!activeSessionId,
+          hasActiveTab: !!activeTabId,
+          hasCustomizedEventView: hasCustomizedPortForwardEventView,
+          isActiveTabConnected,
+          portForwardBusy,
+          portForwardStatusMessage,
+          presetViews: portForwardPresetViews,
+          visibleEventHistoryCount: visiblePortForwardEventHistory.length
+        }
+      }),
+      safety: buildSafetySettingsArgs({
+        actions: {
+          onApplyPolicyBundleAction: applyDangerousCommandPolicyBundle,
+          onBuiltinRuleEnabledChangeAction: setDangerousCommandBuiltinRuleEnabled,
+          onChangePolicyBundleSyncTargetAction:
+            changeDangerousCommandPolicyBundleSyncTarget,
+          onClearPersistentApprovalsAction:
+            clearDangerousCommandPersistentApprovals,
+          onClearPolicyBundleSyncTargetAction:
+            clearDangerousCommandPolicyBundleSyncTarget,
+          onClearTemporaryApprovalsAction:
+            clearDangerousCommandTemporaryApprovals,
+          onCustomPatternsTextChange: setDangerousCommandCustomPatternsText,
+          onDeleteGroupAssignmentAction: deleteDangerousCommandGroupAssignment,
+          onDeletePersistentApprovalAction:
+            removeDangerousCommandPersistentApproval,
+          onDeletePolicyBundleAction: deleteDangerousCommandPolicyBundle,
+          onDeleteTargetGroupOverrideGroupName:
+            activeDangerousCommandGroupAssignment?.groupName ?? null,
+          onDeleteTemporaryApproval: removeDangerousCommandTemporaryApproval,
+          onEnvironmentTemplateSelectAction:
+            applyDangerousCommandEnvironmentTemplate,
+          onExecutionSourceEnabledChangeAction:
+            setDangerousCommandSourceEnabled,
+          onExportPolicyBundleAction: exportDangerousCommandPolicyBundle,
+          onExportPolicyBundlesAction: exportDangerousCommandPolicyBundles,
+          onGuardEnabledChange: setDangerousCommandGuardEnabled,
+          onImportPolicyBundlesAction: importDangerousCommandPolicyBundles,
+          onPolicyPackSelectAction: setDangerousCommandPolicyPackId,
+          onPullPolicyBundlesFromSyncAction:
+            pullDangerousCommandPolicyBundlesFromSync,
+          onPushPolicyBundlesToSyncAction:
+            pushDangerousCommandPolicyBundlesToSync,
+          onResetSafetyRules: resetDangerousCommandGuardPreferences,
+          onSaveCurrentPolicyBundleAction:
+            saveCurrentDangerousCommandPolicyBundle,
+          onSaveTargetGroupOverrideAction:
+            saveDangerousCommandGroupAssignment
+        },
+        values: {
+          activeTargetGroupAssignmentName:
+            activeDangerousCommandGroupAssignment?.groupName ?? null,
+          builtinRuleViews: dangerousCommandBuiltinRuleViews,
+          customPatternCount:
+            dangerousCommandCustomPatternSummary.activePatterns,
+          customPatternInvalidLineCount:
+            dangerousCommandCustomPatternSummary.invalidLines,
+          customPatternsText:
+            dangerousCommandGuardPreferences.customPatternsText,
+          enabled: dangerousCommandGuardPreferences.enabled,
+          enabledBuiltinRuleCount: enabledDangerousCommandBuiltinRuleCount,
+          enabledSourceCount: enabledDangerousCommandSourceCount,
+          environmentTemplateViews:
+            dangerousCommandEnvironmentTemplateViews,
+          executionSourceViews: dangerousCommandExecutionSourceViews,
+          groupAssignmentLimitReached:
+            dangerousCommandGroupAssignmentLimitReached,
+          groupAssignmentViews: dangerousCommandGroupAssignmentViews,
+          maxGroupOverrideCount:
+            MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS,
+          maxPersistentApprovalCount:
+            MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS,
+          maxPolicyBundleCount: MAX_DANGEROUS_COMMAND_POLICY_BUNDLES,
+          maxTemporaryApprovalCount:
+            MAX_DANGEROUS_COMMAND_TEMP_APPROVALS,
+          persistentApprovalViews: dangerousCommandPersistentApprovalViews,
+          policyBundleLastPulledLabel:
+            dangerousCommandPolicyBundleLastPulledLabel,
+          policyBundleLastPushedLabel:
+            dangerousCommandPolicyBundleLastPushedLabel,
+          policyBundleSyncBusyAction:
+            dangerousCommandPolicyBundleSyncBusyAction,
+          policyBundleSyncFilePath:
+            dangerousCommandPolicyBundleSyncState.filePath,
+          policyBundleViews: dangerousCommandPolicyBundleViews,
+          policyPackViews: dangerousCommandPolicyPackViews,
+          savedGroupOverrideCount:
+            dangerousCommandGuardPreferences.groupAssignments.length,
+          selectedEnvironmentTemplateExtraRuleCount:
+            selectedDangerousCommandEnvironmentTemplate.extraRules.length,
+          selectedEnvironmentTemplateLabel:
+            selectedDangerousCommandEnvironmentTemplate.label,
+          selectedPolicyPackExtraRuleCount:
+            selectedDangerousCommandPolicyPack.extraRules.length,
+          selectedPolicyPackLabel: selectedDangerousCommandPolicyPack.label,
+          selectedWorkspaceProfileLabel: selectedWorkspaceProfile.label,
+          storedPolicyBundleCount: dangerousCommandPolicyBundles.length,
+          supplementalRuleViews: dangerousCommandSupplementalRuleViews,
+          syncDangerousCommandSafety:
+            workspaceProfilePreferences.syncDangerousCommandSafety,
+          targetGroupHint: dangerousCommandTargetGroupHint,
+          targetGroupName: dangerousCommandSettingsTargetGroupName,
+          temporaryApprovalViews: dangerousCommandTemporaryApprovalViews,
+          totalBuiltinRuleCount:
+            DANGEROUS_COMMAND_BUILTIN_RULES.length,
+          totalExecutionSourceCount:
+            DANGEROUS_COMMAND_EXECUTION_SOURCES.length
+        }
+      }),
+      serverHealth: buildServerHealthSettingsArgs({
+        cpuWarnPercent: serverHealthAlertPreferences.cpuWarnPercent,
+        diskWarnPercent: serverHealthAlertPreferences.diskWarnPercent,
+        enabled: serverHealthAlertPreferences.enabled,
+        memoryWarnPercent: serverHealthAlertPreferences.memoryWarnPercent,
+        onEnabledChange: setServerHealthAlertEnabled,
+        onThresholdChange: setServerHealthAlertThreshold
+      }),
+      sftp: buildSftpSettingsArgs({
+        actions: {
+          onApplyPolicyPackAction: applySftpTransferPolicyPack,
+          onApplySchedulePreset: applySftpTransferSchedulePreset,
+          onChangePolicyPackSyncTargetAction:
+            changeSftpTransferPolicyPackSyncTarget,
+          onClearAllDefaults: clearActiveSessionConflictDefaults,
+          onClearDownloadDefault:
+            clearActiveSessionDownloadConflictDefault,
+          onClearPolicyPackSyncTargetAction:
+            clearSftpTransferPolicyPackSyncTarget,
+          onClearUploadDefault: clearActiveSessionUploadConflictDefault,
+          onDeletePolicyPackAction: deleteSftpTransferPolicyPack,
+          onDownloadConcurrencyChange: setDownloadConcurrency,
+          onDownloadRateLimitChange: setDownloadRateLimitKiBps,
+          onExportAllPolicyPacksAction: exportSftpTransferPolicyPacks,
+          onExportPolicyPackAction: exportSftpTransferPolicyPack,
+          onImportPolicyPacksAction: importSftpTransferPolicyPacks,
+          onPolicyPackAutoPullOnLaunchChange:
+            setSftpTransferPolicyPackAutoPullOnLaunch,
+          onPolicyPackAutoPushOnChangeChange:
+            setSftpTransferPolicyPackAutoPushOnChange,
+          onPullPolicyPacksFromSyncAction:
+            pullSftpTransferPolicyPacksFromSync,
+          onPushPolicyPacksToSyncAction:
+            pushSftpTransferPolicyPacksToSync,
+          onRetryBatchConfirmThresholdChange:
+            setRetryBatchConfirmThresholdFromInput,
+          onSaveCurrentPolicyPackAction:
+            saveCurrentSftpTransferPolicyPack,
+          onScheduleWindowEnabledChange:
+            setSftpTransferScheduleWindowEnabled,
+          onScheduleWindowEndChange: setSftpTransferScheduleWindowEnd,
+          onScheduleWindowStartChange:
+            setSftpTransferScheduleWindowStart,
+          onToggleScheduleDay: toggleSftpTransferScheduleWindowDay,
+          onUploadConcurrencyChange: setUploadConcurrency,
+          onUploadRateLimitChange: setUploadRateLimitKiBps
+        },
+        values: {
+          activeSessionConflictHint: sftpActiveSessionConflictHint,
+          canClearAllDefaults:
+            !!activeSessionTransferConflictStrategy?.upload ||
+            !!activeSessionTransferConflictStrategy?.download,
+          canClearDownloadDefault:
+            !!activeSessionTransferConflictStrategy?.download,
+          canClearUploadDefault:
+            !!activeSessionTransferConflictStrategy?.upload,
+          concurrencyHint: sftpConcurrencyHint,
+          downloadConcurrency:
+            sftpTransferPreferences.downloadConcurrency,
+          downloadRateLimitKiBps:
+            sftpTransferPreferences.downloadRateLimitKiBps,
+          hasActiveSessionConflictControls: !!activeSessionId,
+          maxConcurrency: MAX_SFTP_TRANSFER_CONCURRENCY,
+          maxPolicyPackCount: MAX_SFTP_TRANSFER_POLICY_PACKS,
+          maxRateLimitKiBps: MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS,
+          maxRetryBatchConfirmThreshold:
+            MAX_RETRY_BATCH_CONFIRM_THRESHOLD,
+          minRetryBatchConfirmThreshold:
+            MIN_RETRY_BATCH_CONFIRM_THRESHOLD,
+          policyPackAutoPullOnLaunch:
+            sftpTransferPolicyPackSyncState.autoPullOnLaunch,
+          policyPackAutoPushOnChange:
+            sftpTransferPolicyPackSyncState.autoPushOnChange,
+          policyPackLastSyncLabel: sftpTransferPolicyPackLastSyncLabel,
+          policyPackSyncBusyAction: sftpTransferPolicyPackSyncBusyAction,
+          policyPackSyncFilePath:
+            sftpTransferPolicyPackSyncState.filePath,
+          policyPackViews: sftpTransferPolicyPackViews,
+          rateLimitHint: sftpRateLimitHint,
+          retryBatchConfirmThreshold,
+          retryThresholdHint: sftpRetryThresholdHint,
+          scheduleDayOptions: sftpScheduleDayViews,
+          scheduleHint: sftpScheduleHint,
+          schedulePresetViews: sftpSchedulePresetViews,
+          scheduleWindowEnabled:
+            sftpTransferPreferences.scheduleWindowEnabled,
+          scheduleWindowEndValue: formatSftpScheduleTimeInputValue(
+            sftpTransferPreferences.scheduleWindowEndMinutes
+          ),
+          scheduleWindowStartValue: formatSftpScheduleTimeInputValue(
+            sftpTransferPreferences.scheduleWindowStartMinutes
+          ),
+          storedPolicyPackCount: sftpTransferPolicyPacks.length,
+          uploadConcurrency: sftpTransferPreferences.uploadConcurrency,
+          uploadRateLimitKiBps:
+            sftpTransferPreferences.uploadRateLimitKiBps
+        }
+      }),
+      shell: buildSettingsShellArgs({
+        activeSectionId: activeSettingsSection,
+        doneLabel: i18n.settings.done,
+        onClose: closeSettingsPanel,
+        open: isSettingsOpen,
+        sectionTitle:
+          i18n.settings.sections[getSettingsSectionI18nKey(activeSettingsSection)]
+            .title,
+        sections: settingsSections,
+        sectionsAriaLabel: i18n.settings.sectionsAriaLabel,
+        setActiveSectionId: setActiveSettingsSection,
+        titleLabel: i18n.settings.title,
+        versionLabel: i18n.settings.version(APP_VERSION)
+      }),
+      workspace: buildWorkspaceSettingsArgs({
+        cursorOptions: TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
+        editorFocusAutoLayoutEnabled:
+          terminalEditorFocusPreferences.autoLayoutEnabled,
+        fontOptions: TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
+        labels: i18n.settings.workspace,
+        languageOptions: APP_LANGUAGE_OPTIONS,
+        onLanguageSelect: setAppLanguage,
+        onCursorSelectAction: setTerminalEditorFocusCursorId,
+        onEditorFocusAutoLayoutEnabledChange:
+          setTerminalEditorAutoLayoutEnabled,
+        onFontSelectAction: setTerminalEditorFocusFontId,
+        onRhythmSelectAction: setTerminalEditorFocusRhythmId,
+        onSyncDangerousCommandSafetyChange:
+          setWorkspaceProfileDangerousCommandSync,
+        onThemeSelectAction: setTerminalEditorFocusThemeId,
+        onTypographySelectAction: setTerminalEditorFocusTypographyId,
+        onWorkspaceProfileSelectAction: setWorkspaceProfileId,
+        rhythmOptions: TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
+        selectedCursorId: terminalEditorFocusPreferences.cursorId,
+        selectedCursorLabel: selectedTerminalEditorFocusCursor.label,
+        selectedFontId: terminalEditorFocusPreferences.fontId,
+        selectedFontLabel: selectedTerminalEditorFocusFont.label,
+        selectedLanguage: appLanguage,
+        selectedLanguageLabel: selectedLanguageOption.label,
+        selectedRhythmId: terminalEditorFocusPreferences.rhythmId,
+        selectedRhythmLabel: selectedTerminalEditorFocusRhythm.label,
+        selectedThemeId: terminalEditorFocusPreferences.themeId,
+        selectedThemeLabel: selectedTerminalEditorFocusTheme.label,
+        selectedTypographyId: terminalEditorFocusPreferences.typographyId,
+        selectedTypographyLabel:
+          selectedTerminalEditorFocusTypography.label,
+        selectedWorkspaceProfileId: workspaceProfilePreferences.profileId,
+        selectedWorkspaceProfileLabel: selectedWorkspaceProfile.label,
+        syncDangerousCommandSafety:
+          workspaceProfilePreferences.syncDangerousCommandSafety,
+        themeOptions: TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
+        typographyOptions: TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
+        workspaceProfileCards: workspaceProfileCardViews
+      })
     });
-  const sftpToolbarMenuActions: WorkbenchContextMenuAction[] = sftpToolbarActions.map(
-    (action) => ({
-      id: action.id,
-      label: action.label,
-      disabled: action.disabled,
-      danger: action.id === "delete-selected",
-      onSelect: () => runSftpToolbarAction(action)
+  const workbenchFrameCompositeArgs = buildWorkbenchFrameArgs(
+    buildWorkbenchRootFrameArgs({
+      inspectorSidebar: buildWorkbenchInspectorSidebarArgs({
+        activeTabId: activeInspectorSidebarTab,
+        historyBadge: `${inspectorTerminalCommandHistoryEntries.length}/${visibleTerminalCommandHistoryEntries.length}`,
+        onSelectTab: setActiveInspectorSidebarTab,
+        sessionBadgeText
+      }),
+      rootFrame: {
+        appClassName: isMacPlatform ? "app app--mac" : "app app--windows",
+        appRootRef
+      },
+      serverHealthInspectorContent: buildServerHealthInspectorContentArgs({
+        alertStatus: serverHealthAlertStatus,
+        formatPercent,
+        formatTransferBytes,
+        isConnected: isActiveTabConnected,
+        loading: serverHealthLoading,
+        metrics: serverHealthMetrics,
+        serverHealth,
+        serverHealthError,
+        updatedLabel: serverHealthUpdatedLabel
+      }),
+      serverHealthInspectorSection: buildServerHealthInspectorSectionArgs({
+        activeTabTitle: activeTerminalTab?.title ?? null,
+        hasAlert: serverHealthAlertStatus.hasAny,
+        healthyLabel: tr("Healthy"),
+        isConnected: isActiveTabConnected,
+        isDetailOpen: isServerHealthDetailOpen,
+        onOpenDetail: () => setIsServerHealthDetailOpen(true),
+        refreshDisabled:
+          !activeTerminalTab ||
+          !isActiveTabConnected ||
+          serverHealthLoading ||
+          (isServerHealthDetailOpen && serverProcessLoading),
+        refreshServerHealth,
+        refreshServerProcesses,
+        toggleDisabled: !activeTerminalTab
+      }),
+      topbar: buildWorkbenchTopbarArgs({
+        autoReconnectEnabled: connectionPreferences.autoReconnect,
+        isMacPlatform,
+        labels: i18n.topbar,
+        reconnectDelaySeconds: connectionPreferences.reconnectDelaySeconds,
+        workspaceProfileId: workspaceProfilePreferences.profileId,
+        workspaceProfileShortLabel: selectedWorkspaceProfile.shortLabel
+      })
     })
   );
-  const sftpEntryContextMenuActions: WorkbenchContextMenuAction[] = sftpContextActions.map(
-    (action) => ({
-      id: action.id,
-      label: action.label,
-      disabled: action.disabled,
-      onSelect: () => runSftpContextAction(action)
+
+  const workbenchRootFrameProps = buildWorkbenchCompositeProps({
+    appShell: buildWorkbenchAppShellArgs({
+      appInlineHintPanelProps,
+      isEditorFocusMode: isTerminalEditorFocusMode
+    }),
+    commandHistoryInspector: buildCommandHistoryInspectorArgs({
+      activeTabConnected: isActiveTabConnected,
+      activeTabTitle: activeTerminalTab?.title ?? null,
+      entries: inspectorTerminalCommandHistoryEntries,
+      hiddenEntryCount: hiddenInspectorCommandHistoryCount,
+      isCollapsed: isCommandHistoryInspectorCollapsed,
+      onEntryContextMenu: openCommandHistoryContextMenu,
+      onEntryDoubleClick: pasteTerminalCommandHistoryEntry,
+      onOpenContextMenu: openCommandHistoryPanelContextMenu,
+      onOpenManager: openCommandHistoryManager,
+      onOpenSnippets: openCommandSnippetManager,
+      onQueryChange: (event) =>
+        setTerminalCommandHistoryQuery(event.target.value),
+      onScopeChange: (event) =>
+        setTerminalCommandHistoryScope(
+          event.target.value as TerminalCommandHistoryScope
+        ),
+      onToggleCollapsed: () =>
+        setIsCommandHistoryInspectorCollapsed((prev) => !prev),
+      query: terminalCommandHistoryQuery,
+      scope: terminalCommandHistoryScope,
+      totalCommandSnippetCount,
+      visibleEntryCount: inspectorTerminalCommandHistoryEntries.length,
+      visibleTotalCount: visibleTerminalCommandHistoryEntries.length
+    }),
+    ...workbenchFrameCompositeArgs,
+    overlayStack: buildWorkbenchOverlayStackArgs({
+      chrome: {
+        globalErrorBarProps,
+        settingsModalContentProps,
+        settingsModalShellProps
+      },
+      dialogs: {
+        appDialogModalProps,
+        commandHistoryManagerModalProps,
+        commandSnippetManagerModalProps,
+        moveGroupDialogModalProps,
+        operationCenterModalProps,
+        retryCenterModalProps,
+        serverHealthDetailModalProps,
+        sessionCreateModalProps,
+        sessionTemplateManagerModalProps
+      },
+      menus: {
+        commandHistoryContextMenuProps,
+        commandHistoryContextMenuRef,
+        sessionContextMenuProps,
+        sessionContextMenuRef,
+        sftpEntryContextMenuProps,
+        sftpEntryContextMenuRef: sftpContextMenuRef,
+        sftpToolbarContextMenuProps,
+        sftpToolbarContextMenuRef: sftpToolbarMenuRef
+      }
+    }),
+    sessionsInspector: buildSessionsInspectorArgs({
+      activeGroupSessions,
+      activeSessionGroup,
+      activeSessionId,
+      activeTerminalTab,
+      dismissFirstRunOnboarding,
+      filteredSessionCount: filteredSessions.length,
+      groupedSessions,
+      importSessionsFromSshConfig,
+      isActiveTabConnected,
+      isFirstRunOnboardingDismissed,
+      loading,
+      openCreateModal,
+      openFirstRunSecurityNotes,
+      openSessionBlankContextMenu,
+      openSessionContextMenu,
+      openSettingsPanelConnection: () => openSettingsPanel("connection"),
+      openTerminalTab,
+      selectedGroupKeySet,
+      selectedSession,
+      selectedSessionIdSet,
+      sessionBadgeText,
+      sessionFavoritesOnly,
+      sessionFilterQuery,
+      sessions,
+      setActiveSessionGroupKey,
+      setSelectedGroupKeys,
+      setSelectedSessionId,
+      setSelectedSessionIds,
+      setSessionFavoritesOnly,
+      setSessionFilterQuery,
+      totalSessionCount: sessions.length,
+      workspaceProfile:
+        workspaceProfilePreferences.profileId !== "none"
+          ? {
+              id: workspaceProfilePreferences.profileId,
+              shortLabel: selectedWorkspaceProfile.shortLabel
+            }
+          : null
+    }),
+    sftpExplorer: buildSftpExplorerArgs({
+      activeTerminalTab,
+      formatExactByteCount,
+      formatSftpLinksForLs,
+      formatSftpMtimeForLs,
+      formatSftpSizeForLs,
+      formatTransferBytes,
+      loadSftpDirectory,
+      onSftpDragLeave,
+      onSftpDragOver,
+      onSftpDrop,
+      openSftpContextMenu,
+      openSftpEntryFile,
+      selectedSftpPath,
+      setSelectedSftpPath,
+      setSftpExplorerViewMode,
+      setSftpPath,
+      sftpActionLoading,
+      sftpDeleteProgress,
+      sftpDirectory,
+      sftpDropActive,
+      sftpError,
+      sftpExplorerViewMode,
+      sftpLoading,
+      sftpPath,
+      sftpSummary,
+      toggleSftpToolbarMenu
+    }),
+    terminalWorkspace: buildTerminalWorkspaceArgs({
+      actions: {
+        getDangerousCommandSessionGroupName: getSessionGroupNameForTab,
+        onActiveEditorModeChange: setIsTerminalEditorFocusMode,
+        onCloseAllTabs: closeAllTabs,
+        onCloseOtherTabs: closeOtherTabs,
+        onCloseTab: closeTerminalTab,
+        onCloseTabsLeft: closeTabsLeft,
+        onCloseTabsRight: closeTabsRight,
+        onCommandHistoryChange: setTerminalCommandHistoryEntries,
+        onError: setError,
+        onSelectTab: setActiveTabId,
+        requestDangerousCommandApproval
+      },
+      values: {
+        activeTabId,
+        connectionPreferences,
+        dangerousCommandGuardPreferences,
+        editorFocusCursorId: terminalEditorFocusPreferences.cursorId,
+        editorFocusFontId: terminalEditorFocusPreferences.fontId,
+        editorFocusModeEnabled:
+          terminalEditorFocusPreferences.autoLayoutEnabled,
+        editorFocusRhythmId: terminalEditorFocusPreferences.rhythmId,
+        editorFocusThemeId: terminalEditorFocusPreferences.themeId,
+        editorFocusTypographyId:
+          terminalEditorFocusPreferences.typographyId,
+        hotkeyPreferences,
+        language: appLanguage,
+        systemApi,
+        tabs: terminalTabs,
+        terminalApi
+      }
+    }),
+    transferDock: buildTransferDockArgs({
+      actions: {
+        cancelAllActiveDownloads,
+        cancelAllActiveUploads,
+        cancelSftpDownload,
+        cancelSftpUpload,
+        clearFinishedTransfers,
+        discardPendingTransferRestoreQueue,
+        onOpenOperationCenter: openOperationCenter,
+        onOpenRetryCenter: openRetryCenter,
+        restorePendingTransferRestoreQueue,
+        retryAllFailedTransfersWithScopeChoice,
+        retryFailedDownloads,
+        retryFailedUploads
+      },
+      values: {
+        activeDownloadProgressStats,
+        activeDownloadQueueStats,
+        activeDownloadTransfers,
+        activeTabId,
+        activeTerminalTabTitle: activeTerminalTab?.title ?? null,
+        activeUploadProgressStats,
+        activeUploadQueueStats,
+        activeUploadTransfers,
+        canClearFinishedDownloads,
+        canClearFinishedUploads,
+        canRetryAllFailedTransfers,
+        canRetryFailedDownloads,
+        canRetryFailedUploads,
+        downloadConcurrency: sftpTransferPreferences.downloadConcurrency,
+        downloadPauseReason: activeDownloadPauseReason,
+        failedDownloadHistoryCount,
+        failedDownloadRetryCandidateCount: failedDownloadRetryCandidates.length,
+        failedRetryCandidateTotal,
+        failedUploadHistoryCount,
+        failedUploadRetryCandidateCount: failedUploadRetryCandidates.length,
+        formatTransferProgress,
+        hasOperationCenterActivity,
+        isActiveDownloadQueuePaused,
+        isActiveUploadQueuePaused,
+        labels: i18n.transfer,
+        nextSftpTransferWindowOpeningLabel,
+        notice: activeTransferDockNotice,
+        operationCenterActiveCount,
+        pendingRestoreCount: pendingTransferRestoreCount,
+        sftpTransferScheduleSummary,
+        uploadConcurrency: sftpTransferPreferences.uploadConcurrency,
+        uploadPauseReason: activeUploadPauseReason
+      }
     })
-  );
-  const sessionContextMenuItems: WorkbenchContextMenuAction[] = sessionContextActions.map(
-    (action) => ({
-      id: action.id,
-      label: action.label,
-      disabled: action.disabled,
-      danger: action.danger,
-      onSelect: () => runSessionContextAction(action)
-    })
-  );
-  const connectionSettingsSectionProps = buildConnectionSettingsSectionProps({
-    autoReconnect: connectionPreferences.autoReconnect,
-    onAutoReconnectChange: setAutoReconnect,
-    onReconnectDelayChange: setReconnectDelaySeconds,
-    reconnectDelaySeconds: connectionPreferences.reconnectDelaySeconds
-  });
-  const workspaceSettingsSectionProps = buildWorkspaceSettingsSectionProps({
-    cursorOptions: TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
-    editorFocusAutoLayoutEnabled: terminalEditorFocusPreferences.autoLayoutEnabled,
-    fontOptions: TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
-    labels: i18n.settings.workspace,
-    languageOptions: APP_LANGUAGE_OPTIONS,
-    onLanguageSelect: setAppLanguage,
-    onCursorSelectAction: setTerminalEditorFocusCursorId,
-    onEditorFocusAutoLayoutEnabledChange: setTerminalEditorAutoLayoutEnabled,
-    onFontSelectAction: setTerminalEditorFocusFontId,
-    onRhythmSelectAction: setTerminalEditorFocusRhythmId,
-    onSyncDangerousCommandSafetyChange: setWorkspaceProfileDangerousCommandSync,
-    onThemeSelectAction: setTerminalEditorFocusThemeId,
-    onTypographySelectAction: setTerminalEditorFocusTypographyId,
-    onWorkspaceProfileSelectAction: setWorkspaceProfileId,
-    rhythmOptions: TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
-    selectedCursorId: terminalEditorFocusPreferences.cursorId,
-    selectedCursorLabel: selectedTerminalEditorFocusCursor.label,
-    selectedFontId: terminalEditorFocusPreferences.fontId,
-    selectedFontLabel: selectedTerminalEditorFocusFont.label,
-    selectedLanguage: appLanguage,
-    selectedLanguageLabel: selectedLanguageOption.label,
-    selectedRhythmId: terminalEditorFocusPreferences.rhythmId,
-    selectedRhythmLabel: selectedTerminalEditorFocusRhythm.label,
-    selectedThemeId: terminalEditorFocusPreferences.themeId,
-    selectedThemeLabel: selectedTerminalEditorFocusTheme.label,
-    selectedTypographyId: terminalEditorFocusPreferences.typographyId,
-    selectedTypographyLabel: selectedTerminalEditorFocusTypography.label,
-    selectedWorkspaceProfileId: workspaceProfilePreferences.profileId,
-    selectedWorkspaceProfileLabel: selectedWorkspaceProfile.label,
-    syncDangerousCommandSafety: workspaceProfilePreferences.syncDangerousCommandSafety,
-    themeOptions: TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
-    typographyOptions: TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
-    workspaceProfileCards: workspaceProfileCardViews
-  });
-  const safetySettingsSectionProps = buildSafetySettingsSectionProps({
-    activeTargetGroupAssignmentName:
-      activeDangerousCommandGroupAssignment?.groupName ?? null,
-    builtinRuleViews: dangerousCommandBuiltinRuleViews,
-    customPatternCount: dangerousCommandCustomPatternSummary.activePatterns,
-    customPatternInvalidLineCount: dangerousCommandCustomPatternSummary.invalidLines,
-    customPatternsText: dangerousCommandGuardPreferences.customPatternsText,
-    enabled: dangerousCommandGuardPreferences.enabled,
-    enabledBuiltinRuleCount: enabledDangerousCommandBuiltinRuleCount,
-    enabledSourceCount: enabledDangerousCommandSourceCount,
-    environmentTemplateViews: dangerousCommandEnvironmentTemplateViews,
-    executionSourceViews: dangerousCommandExecutionSourceViews,
-    groupAssignmentLimitReached: dangerousCommandGroupAssignmentLimitReached,
-    groupAssignmentViews: dangerousCommandGroupAssignmentViews,
-    maxGroupOverrideCount: MAX_DANGEROUS_COMMAND_GROUP_ASSIGNMENTS,
-    maxPersistentApprovalCount: MAX_DANGEROUS_COMMAND_PERSISTENT_APPROVALS,
-    maxPolicyBundleCount: MAX_DANGEROUS_COMMAND_POLICY_BUNDLES,
-    maxTemporaryApprovalCount: MAX_DANGEROUS_COMMAND_TEMP_APPROVALS,
-    onApplyPolicyBundleAction: applyDangerousCommandPolicyBundle,
-    onBuiltinRuleEnabledChangeAction: setDangerousCommandBuiltinRuleEnabled,
-    onChangePolicyBundleSyncTargetAction:
-      changeDangerousCommandPolicyBundleSyncTarget,
-    onClearPersistentApprovalsAction: clearDangerousCommandPersistentApprovals,
-    onClearPolicyBundleSyncTargetAction:
-      clearDangerousCommandPolicyBundleSyncTarget,
-    onClearTemporaryApprovalsAction: clearDangerousCommandTemporaryApprovals,
-    onCustomPatternsTextChange: setDangerousCommandCustomPatternsText,
-    onDeleteGroupAssignmentAction: deleteDangerousCommandGroupAssignment,
-    onDeletePersistentApprovalAction: removeDangerousCommandPersistentApproval,
-    onDeletePolicyBundleAction: deleteDangerousCommandPolicyBundle,
-    onDeleteTargetGroupOverrideGroupName:
-      activeDangerousCommandGroupAssignment?.groupName ?? null,
-    onDeleteTemporaryApproval: removeDangerousCommandTemporaryApproval,
-    onEnvironmentTemplateSelectAction:
-      applyDangerousCommandEnvironmentTemplate,
-    onExecutionSourceEnabledChangeAction: setDangerousCommandSourceEnabled,
-    onExportPolicyBundleAction: exportDangerousCommandPolicyBundle,
-    onExportPolicyBundlesAction: exportDangerousCommandPolicyBundles,
-    onGuardEnabledChange: setDangerousCommandGuardEnabled,
-    onImportPolicyBundlesAction: importDangerousCommandPolicyBundles,
-    onPolicyPackSelectAction: setDangerousCommandPolicyPackId,
-    onPullPolicyBundlesFromSyncAction:
-      pullDangerousCommandPolicyBundlesFromSync,
-    onPushPolicyBundlesToSyncAction:
-      pushDangerousCommandPolicyBundlesToSync,
-    onResetSafetyRules: resetDangerousCommandGuardPreferences,
-    onSaveCurrentPolicyBundleAction: saveCurrentDangerousCommandPolicyBundle,
-    onSaveTargetGroupOverrideAction: saveDangerousCommandGroupAssignment,
-    persistentApprovalViews: dangerousCommandPersistentApprovalViews,
-    policyBundleLastPulledLabel: dangerousCommandPolicyBundleLastPulledLabel,
-    policyBundleLastPushedLabel: dangerousCommandPolicyBundleLastPushedLabel,
-    policyBundleSyncBusyAction: dangerousCommandPolicyBundleSyncBusyAction,
-    policyBundleSyncFilePath: dangerousCommandPolicyBundleSyncState.filePath,
-    policyBundleViews: dangerousCommandPolicyBundleViews,
-    policyPackViews: dangerousCommandPolicyPackViews,
-    savedGroupOverrideCount: dangerousCommandGuardPreferences.groupAssignments.length,
-    selectedEnvironmentTemplateExtraRuleCount:
-      selectedDangerousCommandEnvironmentTemplate.extraRules.length,
-    selectedEnvironmentTemplateLabel:
-      selectedDangerousCommandEnvironmentTemplate.label,
-    selectedPolicyPackExtraRuleCount:
-      selectedDangerousCommandPolicyPack.extraRules.length,
-    selectedPolicyPackLabel: selectedDangerousCommandPolicyPack.label,
-    selectedWorkspaceProfileLabel: selectedWorkspaceProfile.label,
-    storedPolicyBundleCount: dangerousCommandPolicyBundles.length,
-    supplementalRuleViews: dangerousCommandSupplementalRuleViews,
-    syncDangerousCommandSafety:
-      workspaceProfilePreferences.syncDangerousCommandSafety,
-    targetGroupHint: dangerousCommandTargetGroupHint,
-    targetGroupName: dangerousCommandSettingsTargetGroupName,
-    temporaryApprovalViews: dangerousCommandTemporaryApprovalViews,
-    totalBuiltinRuleCount: DANGEROUS_COMMAND_BUILTIN_RULES.length,
-    totalExecutionSourceCount: DANGEROUS_COMMAND_EXECUTION_SOURCES.length
-  });
-  const hotkeySettingsSectionProps = buildHotkeySettingsSectionProps({
-    hotkeyConflictCursorIndex,
-    hotkeyConflicts: hotkeyConflictViews,
-    hotkeyKeyPlaceholder: HOTKEY_KEY_PLACEHOLDER,
-    hotkeyModifierOptions,
-    hotkeyRows: hotkeySettingRowViews,
-    onBindingEnabledChangeAction: setHotkeyBindingEnabled,
-    onBindingKeyChangeAction: setHotkeyBindingKey,
-    onBindingModifierChangeAction: setHotkeyBindingModifier,
-    onExportHotkeysAction: exportHotkeyPreferences,
-    onFocusConflictAtIndex: focusHotkeyConflictAtIndex,
-    onFocusNextConflict: focusNextHotkeyConflict,
-    onFocusPreviousConflict: focusPreviousHotkeyConflict,
-    onImportHotkeysAction: importHotkeyPreferences,
-    onRegisterRowRefAction: registerHotkeyRowRef,
-    onResetHotkeys: () => setHotkeyPreferences(createDefaultHotkeyPreferences()),
-    onResolveConflicts: resolveHotkeyConflicts
-  });
-  const serverHealthSettingsSectionProps = buildServerHealthSettingsSectionProps({
-    cpuWarnPercent: serverHealthAlertPreferences.cpuWarnPercent,
-    diskWarnPercent: serverHealthAlertPreferences.diskWarnPercent,
-    enabled: serverHealthAlertPreferences.enabled,
-    memoryWarnPercent: serverHealthAlertPreferences.memoryWarnPercent,
-    onEnabledChange: setServerHealthAlertEnabled,
-    onThresholdChange: setServerHealthAlertThreshold
-  });
-  const fileOpeningSettingsSectionProps = buildFileOpeningSettingsSectionProps({
-    isMacPlatform,
-    onBrowseProgramAction: pickPreferredOpenProgram,
-    onPreferredProgramPathChange: setPreferredOpenProgramPath,
-    preferredProgramPath: fileOpenPreferences.preferredProgramPath
-  });
-  const sftpSettingsSectionProps = buildSftpSettingsSectionProps({
-    activeSessionConflictHint: sftpActiveSessionConflictHint,
-    canClearAllDefaults:
-      !!activeSessionTransferConflictStrategy?.upload ||
-      !!activeSessionTransferConflictStrategy?.download,
-    canClearDownloadDefault: !!activeSessionTransferConflictStrategy?.download,
-    canClearUploadDefault: !!activeSessionTransferConflictStrategy?.upload,
-    concurrencyHint: sftpConcurrencyHint,
-    downloadConcurrency: sftpTransferPreferences.downloadConcurrency,
-    downloadRateLimitKiBps: sftpTransferPreferences.downloadRateLimitKiBps,
-    hasActiveSessionConflictControls: !!activeSessionId,
-    maxConcurrency: MAX_SFTP_TRANSFER_CONCURRENCY,
-    maxPolicyPackCount: MAX_SFTP_TRANSFER_POLICY_PACKS,
-    maxRateLimitKiBps: MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS,
-    maxRetryBatchConfirmThreshold: MAX_RETRY_BATCH_CONFIRM_THRESHOLD,
-    minRetryBatchConfirmThreshold: MIN_RETRY_BATCH_CONFIRM_THRESHOLD,
-    onApplyPolicyPackAction: applySftpTransferPolicyPack,
-    onApplySchedulePreset: applySftpTransferSchedulePreset,
-    onChangePolicyPackSyncTargetAction:
-      changeSftpTransferPolicyPackSyncTarget,
-    onClearAllDefaults: clearActiveSessionConflictDefaults,
-    onClearDownloadDefault: clearActiveSessionDownloadConflictDefault,
-    onClearPolicyPackSyncTargetAction:
-      clearSftpTransferPolicyPackSyncTarget,
-    onClearUploadDefault: clearActiveSessionUploadConflictDefault,
-    onDeletePolicyPackAction: deleteSftpTransferPolicyPack,
-    onDownloadConcurrencyChange: setDownloadConcurrency,
-    onDownloadRateLimitChange: setDownloadRateLimitKiBps,
-    onExportAllPolicyPacksAction: exportSftpTransferPolicyPacks,
-    onExportPolicyPackAction: exportSftpTransferPolicyPack,
-    onImportPolicyPacksAction: importSftpTransferPolicyPacks,
-    onPolicyPackAutoPullOnLaunchChange: setSftpTransferPolicyPackAutoPullOnLaunch,
-    onPolicyPackAutoPushOnChangeChange: setSftpTransferPolicyPackAutoPushOnChange,
-    onPullPolicyPacksFromSyncAction: pullSftpTransferPolicyPacksFromSync,
-    onPushPolicyPacksToSyncAction: pushSftpTransferPolicyPacksToSync,
-    onRetryBatchConfirmThresholdChange: setRetryBatchConfirmThresholdFromInput,
-    onSaveCurrentPolicyPackAction: saveCurrentSftpTransferPolicyPack,
-    onScheduleWindowEnabledChange: setSftpTransferScheduleWindowEnabled,
-    onScheduleWindowEndChange: setSftpTransferScheduleWindowEnd,
-    onScheduleWindowStartChange: setSftpTransferScheduleWindowStart,
-    onToggleScheduleDay: toggleSftpTransferScheduleWindowDay,
-    onUploadConcurrencyChange: setUploadConcurrency,
-    onUploadRateLimitChange: setUploadRateLimitKiBps,
-    policyPackAutoPullOnLaunch: sftpTransferPolicyPackSyncState.autoPullOnLaunch,
-    policyPackAutoPushOnChange: sftpTransferPolicyPackSyncState.autoPushOnChange,
-    policyPackLastSyncLabel: sftpTransferPolicyPackLastSyncLabel,
-    policyPackSyncBusyAction: sftpTransferPolicyPackSyncBusyAction,
-    policyPackSyncFilePath: sftpTransferPolicyPackSyncState.filePath,
-    policyPackViews: sftpTransferPolicyPackViews,
-    rateLimitHint: sftpRateLimitHint,
-    retryBatchConfirmThreshold,
-    retryThresholdHint: sftpRetryThresholdHint,
-    scheduleDayOptions: sftpScheduleDayViews,
-    scheduleHint: sftpScheduleHint,
-    schedulePresetViews: sftpSchedulePresetViews,
-    scheduleWindowEnabled: sftpTransferPreferences.scheduleWindowEnabled,
-    scheduleWindowEndValue: formatSftpScheduleTimeInputValue(
-      sftpTransferPreferences.scheduleWindowEndMinutes
-    ),
-    scheduleWindowStartValue: formatSftpScheduleTimeInputValue(
-      sftpTransferPreferences.scheduleWindowStartMinutes
-    ),
-    storedPolicyPackCount: sftpTransferPolicyPacks.length,
-    uploadConcurrency: sftpTransferPreferences.uploadConcurrency,
-    uploadRateLimitKiBps: sftpTransferPreferences.uploadRateLimitKiBps
-  });
-  const portForwardingSettingsSectionProps =
-    buildPortForwardingSettingsSectionProps({
-    activeEventHistoryCount: activePortForwardEventHistory.length,
-    activeTabSummary: portForwardActiveTabSummary,
-    analyticsView: portForwardAnalyticsView,
-    eventCorrelationQuery: portForwardEventCorrelationQuery,
-    eventErrorCode: portForwardEventErrorCode,
-    eventErrorCodeOptions: portForwardEventErrorCodeOptions,
-    eventFilter: portForwardEventFilter,
-    eventSummaryLabel: portForwardEventSummaryLabel,
-    eventTimeRange: portForwardEventTimeRange,
-    eventViews: portForwardEventViews,
-    formBindHost: portForwardForm.bindHost,
-    formBindPort: portForwardForm.bindPort,
-    formTargetHost: portForwardForm.targetHost,
-    formTargetPort: portForwardForm.targetPort,
-    formType: portForwardForm.type,
-    forwardViews: portForwardRecordViews,
-    hasActiveSession: !!activeSessionId,
-    hasActiveTab: !!activeTabId,
-    hasCustomizedEventView: hasCustomizedPortForwardEventView,
-    isActiveTabConnected,
-    onClearSessionHistoryAction: clearSessionPortForwardHistory,
-    onClearVisibleHistoryAction: clearVisiblePortForwardHistory,
-    onCreateForwardAction: createPortForward,
-    onEventCorrelationQueryChange: setPortForwardEventCorrelationQuery,
-    onEventErrorCodeChange: setPortForwardEventErrorCode,
-    onEventFilterChange: (value: string) =>
-      setPortForwardEventFilter(value as PortForwardEventFilter),
-    onEventTimeRangeChange: (value: string) =>
-      setPortForwardEventTimeRange(value as PortForwardEventTimeRange),
-    onExportAnalyticsCsvAction: exportPortForwardEventAnalyticsCsv,
-    onExportAnalyticsJsonAction: exportPortForwardEventAnalyticsJson,
-    onExportSnapshotAction: exportPortForwardSnapshot,
-    onExportVisibleCsvAction: exportVisiblePortForwardEventsCsv,
-    onExportVisibleJsonAction: exportVisiblePortForwardEventsJson,
-    onFormBindHostChange: setPortForwardFormBindHost,
-    onFormBindPortChange: setPortForwardFormBindPort,
-    onFormTargetHostChange: setPortForwardFormTargetHost,
-    onFormTargetPortChange: setPortForwardFormTargetPort,
-    onFormTypeChange: setPortForwardFormType,
-    onPresetApply: applyActivePortForwardPreset,
-    onPresetAutoRestoreChange: setPortForwardPresetAutoRestore,
-    onPresetDelete: deleteActivePortForwardPreset,
-    onPresetFillForm: fillPortForwardFormFromActivePreset,
-    onRefresh: refreshActivePortForwards,
-    onRefreshDiagnostics: refreshActivePortForwardDiagnostics,
-    onRemoveForward: removeVisiblePortForward,
-    onResetEventFilters: resetPortForwardEventViewFilters,
-    onSavePresetAction: savePortForwardPreset,
-    portForwardBusy,
-    portForwardStatusMessage,
-    presetViews: portForwardPresetViews,
-    visibleEventHistoryCount: visiblePortForwardEventHistory.length
-  });
-  const diagnosticsSettingsSectionProps = buildDiagnosticsSettingsSectionProps({
-    disconnectCaptureEnabled: disconnectReportCapturePreferences.enabled,
-    disconnectCaptureHint: diagnosticsDisconnectCaptureHint,
-    disconnectEmptyStateLabel: diagnosticsDisconnectEmptyStateLabel,
-    disconnectQuery: disconnectReportQuery,
-    disconnectReportViews: diagnosticsDisconnectReportViews,
-    disconnectScope: disconnectReportScope,
-    disconnectTimeRange: disconnectReportTimeRange,
-    disconnectTotalCount: disconnectReports.length,
-    disconnectTrigger: disconnectReportTriggerFilter,
-    disconnectVisibleCount: visibleDisconnectReports.length,
-    hasCustomizedDisconnectView: hasCustomizedDisconnectReportView,
-    isExportingBugReport,
-    logDirectoryPath: diagnosticsLogDirectoryPath,
-    logFilePath: diagnosticsLogFilePath,
-    onClearAllDisconnectsAction: clearDisconnectReportsHistory,
-    onClearVisibleDisconnectsAction: clearVisibleDisconnectReportsHistory,
-    onCopyDisconnectReportJson: copyVisibleDisconnectReportJsonById,
-    onCopyLatestVisibleDisconnectAction: copyLatestVisibleDisconnectReport,
-    onCopyLogFilePathAction: copyLogFilePath,
-    onDisconnectCaptureEnabledChange: setDisconnectReportCaptureEnabled,
-    onDisconnectQueryChange: setDisconnectReportQueryValue,
-    onDisconnectScopeChange: (value: string) => {
-      setDisconnectReportScope(value as DisconnectReportScope);
-    },
-    onDisconnectTimeRangeChange: (value: string) => {
-      setDisconnectReportTimeRange(value as DisconnectReportTimeRange);
-    },
-    onDisconnectTriggerChange: (value: string) => {
-      setDisconnectReportTriggerFilter(value as DisconnectReportTriggerFilter);
-    },
-    onExportBugReportAction: exportBugReportBundle,
-    onExportDisconnectCsvAction: exportDisconnectReportsCsv,
-    onExportDisconnectJsonAction: exportDisconnectReportsJson,
-    onFocusDisconnectTab: focusVisibleDisconnectReportTab,
-    onOpenLogDirectoryAction: openLogDirectory,
-    onRefreshLogInfo: refreshDiagnosticsLogInfo,
-    onResetDisconnectFilters: resetDisconnectReportViewFilters
   });
 
-  return (
-    <div className={isMacPlatform ? "app app--mac" : "app app--windows"} ref={appRootRef}>
-      <WorkbenchTopbar
-        autoReconnectLabel={
-          connectionPreferences.autoReconnect
-            ? i18n.topbar.autoReconnect(connectionPreferences.reconnectDelaySeconds)
-            : i18n.topbar.autoReconnectOff
-        }
-        isMacPlatform={isMacPlatform}
-        labels={i18n.topbar}
-        workspaceProfile={
-          workspaceProfilePreferences.profileId !== "none"
-            ? {
-                id: workspaceProfilePreferences.profileId,
-                shortLabel: selectedWorkspaceProfile.shortLabel
-              }
-            : null
-        }
-      />
-
-      <WorkbenchLayout
-        isEditorFocusMode={isTerminalEditorFocusMode}
-        leftSidebar={(
-          <WorkbenchExplorerSidebar>
-            <SftpExplorerSection
-              bindingTabTitle={activeTerminalTab?.title ?? null}
-              currentPathLabel={sftpDirectory?.cwd ?? "(not loaded)"}
-              deleteProgressLabel={
-                sftpDeleteProgress
-                  ? `Deleting ${
-                      sftpDeleteProgress.kind === "directory" ? "directory" : "file"
-                    } "${sftpDeleteProgress.name}"...`
-                  : null
-              }
-              directorySizeLabel={`Current directory size: ${formatExactByteCount(sftpSummary.totalSize)} (${formatTransferBytes(sftpSummary.totalSize)})`}
-              dropActive={sftpDropActive}
-              entries={(sftpDirectory?.entries ?? []).map((entry) => ({
-                compactSizeLabel: entry.kind === "directory" ? "Folder" : formatTransferBytes(entry.size),
-                group: entry.group,
-                id: `${entry.path}-${entry.modifiedAt ?? ""}`,
-                isSelected: selectedSftpPath === entry.path,
-                kind: entry.kind,
-                linksLabel: formatSftpLinksForLs(entry.links),
-                modifiedAtLabel: formatSftpMtimeForLs(entry.modifiedAt),
-                name: entry.name,
-                onClick: () => {
-                  setSelectedSftpPath(entry.path);
-                },
-                onContextMenu: (event) => openSftpContextMenu(event, entry),
-                onDoubleClick: () => {
-                  if (entry.kind === "directory") {
-                    return;
-                  }
-                  void openSftpEntryFile(entry);
-                },
-                onOpenDirectory:
-                  entry.kind === "directory"
-                    ? () => {
-                        void loadSftpDirectory(entry.path);
-                      }
-                    : undefined,
-                owner: entry.owner,
-                path: entry.path,
-                permissions: entry.permissions,
-                sizeLabel: formatSftpSizeForLs(entry.size)
-              }))}
-              entrySummaryLabel={`Entries: ${sftpSummary.entryCount} (Files: ${sftpSummary.fileCount}, Dirs: ${sftpSummary.directoryCount})`}
-              errorMessage={sftpError}
-              loading={sftpLoading}
-              onActionsMenu={toggleSftpToolbarMenu}
-              onBodyContextMenu={(event) => openSftpContextMenu(event)}
-              onDragLeave={onSftpDragLeave}
-              onDragOver={onSftpDragOver}
-              onDrop={onSftpDrop}
-              onGoUp={() => {
-                if (!sftpDirectory?.parent) {
-                  return;
-                }
-                void loadSftpDirectory(sftpDirectory.parent);
-              }}
-              onPathChange={(event) => setSftpPath(event.target.value)}
-              onPathKeyDown={(event) => {
-                if (event.key !== "Enter") {
-                  return;
-                }
-                event.preventDefault();
-                void loadSftpDirectory(sftpPath);
-              }}
-              onRefresh={() => {
-                void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
-              }}
-              onViewModeChange={setSftpExplorerViewMode}
-              pathUpDisabled={sftpLoading || sftpActionLoading || !sftpDirectory?.parent}
-              pathValue={sftpPath}
-              refreshDisabled={sftpLoading || sftpActionLoading}
-              viewMode={sftpExplorerViewMode}
-            />
-          </WorkbenchExplorerSidebar>
-        )}
-        centerPane={(
-
-        <section className="panel panel--center">
-          <TerminalWorkspace
-            activeTabId={activeTabId}
-            connectionPreferences={connectionPreferences}
-            dangerousCommandGuardPreferences={dangerousCommandGuardPreferences}
-            editorFocusModeEnabled={terminalEditorFocusPreferences.autoLayoutEnabled}
-            editorFocusCursorId={terminalEditorFocusPreferences.cursorId}
-            editorFocusFontId={terminalEditorFocusPreferences.fontId}
-            editorFocusRhythmId={terminalEditorFocusPreferences.rhythmId}
-            editorFocusThemeId={terminalEditorFocusPreferences.themeId}
-            editorFocusTypographyId={terminalEditorFocusPreferences.typographyId}
-            getDangerousCommandSessionGroupName={getSessionGroupNameForTab}
-            hotkeyPreferences={hotkeyPreferences}
-            language={appLanguage}
-            onActiveEditorModeChange={setIsTerminalEditorFocusMode}
-            onCloseAllTabs={closeAllTabs}
-            onCloseTab={closeTerminalTab}
-            onCloseTabsLeft={closeTabsLeft}
-            onCloseTabsRight={closeTabsRight}
-            onCloseOtherTabs={closeOtherTabs}
-            onCommandHistoryChange={setTerminalCommandHistoryEntries}
-            onError={setError}
-            onSelectTab={setActiveTabId}
-            requestDangerousCommandApproval={requestDangerousCommandApproval}
-            systemApi={systemApi}
-            terminalApi={terminalApi}
-            tabs={terminalTabs}
-          />
-        </section>
-        )}
-        rightSidebar={(
-          <WorkbenchInspectorSidebar
-            activeTabId={activeInspectorSidebarTab}
-            onSelectTab={(tabId) => setActiveInspectorSidebarTab(tabId as InspectorSidebarTabId)}
-            tabs={[
-              { badge: sessionBadgeText, id: "sessions", label: "Sessions" },
-              { id: "health", label: "Health" },
-              {
-                badge: `${inspectorTerminalCommandHistoryEntries.length}/${visibleTerminalCommandHistoryEntries.length}`,
-                id: "history",
-                label: "History"
-              }
-            ]}
-          >
-            <div
-              className={
-                activeInspectorSidebarTab === "sessions"
-                  ? "workbench-inspector-panel is-active"
-                  : "workbench-inspector-panel"
-              }
-              data-inspector-tab="sessions"
-            >
-              <SessionsInspectorSection
-              activeGroupLabel={activeSessionGroup?.label ?? null}
-              activeContext={
-                selectedSession
-                  ? {
-                      detail: `${selectedSession.username}@${selectedSession.host}:${selectedSession.port}`,
-                      stateLabel:
-                        activeSessionId === selectedSession.id
-                          ? isActiveTabConnected
-                            ? "Live Tab"
-                            : "Tab Open"
-                          : selectedSession.favorite
-                            ? "Favorite"
-                            : "Saved",
-                      stateTone:
-                        activeSessionId === selectedSession.id
-                          ? isActiveTabConnected
-                            ? "ok"
-                            : "warn"
-                          : "neutral",
-                      title: selectedSession.name
-                    }
-                  : activeTerminalTab
-                    ? {
-                        detail: activeTerminalTab.sessionId
-                          ? `Active terminal tab for session ${activeTerminalTab.sessionId}`
-                          : "Active terminal tab",
-                        stateLabel: isActiveTabConnected ? "Live Tab" : "Offline",
-                        stateTone: isActiveTabConnected ? "ok" : "warn",
-                        title: activeTerminalTab.title
-                      }
-                    : null
-              }
-              emptyStateLabel={
-                !activeSessionGroup
-                  ? !loading && filteredSessions.length === 0
-                    ? sessions.length === 0
-                      ? "No sessions yet."
-                      : "No sessions match current filters."
-                    : null
-                  : !loading && activeGroupSessions.length === 0
-                    ? "No sessions in this group."
-                    : null
-              }
-              favoritesOnly={sessionFavoritesOnly}
-              filterQuery={sessionFilterQuery}
-              groups={groupedSessions.map((group) => ({
-                count: group.sessions.length,
-                isSelected: selectedGroupKeySet.has(group.key),
-                key: group.key,
-                label: group.label,
-                onClick: (event) => {
-                  const isMultiSelect = event.ctrlKey || event.metaKey;
-                  if (isMultiSelect) {
-                    setSelectedGroupKeys((prev) =>
-                      prev.includes(group.key)
-                        ? prev.filter((groupKey) => groupKey !== group.key)
-                        : [...prev, group.key]
-                    );
-                    return;
-                  }
-                  setSelectedGroupKeys([group.key]);
-                  setActiveSessionGroupKey(group.key);
-                },
-                onContextMenu: (event) =>
-                  openSessionContextMenu(event, {
-                    type: "group",
-                    groupKey: group.key,
-                    groupName: group.groupName,
-                    label: group.label
-                  })
-              }))}
-              isGroupView={Boolean(activeSessionGroup)}
-              loading={loading}
-              onBackToGroups={() => setActiveSessionGroupKey(null)}
-              onCreateFirstSession={() => {
-                openCreateModal(activeSessionGroup?.groupName ?? "");
-              }}
-              onDismissWelcome={dismissFirstRunOnboarding}
-              onFilterQueryChange={(event) => setSessionFilterQuery(event.target.value)}
-              onImportSshConfig={() => {
-                void importSessionsFromSshConfig();
-              }}
-              onOpenSecurityNotes={openFirstRunSecurityNotes}
-              onOpenSettings={() => openSettingsPanel("connection")}
-              onRootContextMenu={openSessionBlankContextMenu}
-              onToggleFavoritesOnly={() => setSessionFavoritesOnly((prev) => !prev)}
-              sessionBadgeText={sessionBadgeText}
-              showWelcome={!isFirstRunOnboardingDismissed && sessions.length === 0 && !loading}
-              sessions={activeGroupSessions.map((session) => ({
-                host: session.host,
-                id: session.id,
-                isSelected: selectedSessionIdSet.has(session.id),
-                name: session.name,
-                onClick: (event) => {
-                  const isMultiSelect = event.ctrlKey || event.metaKey;
-                  if (isMultiSelect) {
-                    setSelectedSessionIds((prev) => {
-                      if (prev.includes(session.id)) {
-                        const next = prev.filter((sessionId) => sessionId !== session.id);
-                        setSelectedSessionId(next[0] ?? null);
-                        return next;
-                      }
-                      setSelectedSessionId(session.id);
-                      return [...prev, session.id];
-                    });
-                    return;
-                  }
-                  setSelectedSessionId(session.id);
-                  setSelectedSessionIds([session.id]);
-                },
-                onContextMenu: (event) =>
-                  openSessionContextMenu(event, {
-                    type: "session",
-                    sessionId: session.id
-                  }),
-                onDoubleClick: () =>
-                  openTerminalTab(session, {
-                    forceNewTab: true
-                  }),
-                onKeyDown: (event) => {
-                  if (
-                    event.key !== "Enter" ||
-                    event.altKey ||
-                    event.ctrlKey ||
-                    event.metaKey ||
-                    event.shiftKey
-                  ) {
-                    return;
-                  }
-                  event.preventDefault();
-                  openTerminalTab(session);
-                },
-                title: `${session.username}@${session.host}:${session.port}`
-              }))}
-              workspaceProfile={
-                workspaceProfilePreferences.profileId !== "none"
-                  ? {
-                      id: workspaceProfilePreferences.profileId,
-                      shortLabel: selectedWorkspaceProfile.shortLabel
-                    }
-                  : null
-              }
-              />
-            </div>
-            <div
-              className={
-                activeInspectorSidebarTab === "health"
-                  ? "workbench-inspector-panel is-active"
-                  : "workbench-inspector-panel"
-              }
-              data-inspector-tab="health"
-            >
-              <ServerHealthInspectorSection
-              activeTabTitle={activeTerminalTab?.title ?? null}
-              hasAlert={serverHealthAlertStatus.hasAny}
-              healthyLabel={tr("Healthy")}
-              isConnected={isActiveTabConnected}
-              isDetailOpen={isServerHealthDetailOpen}
-              onRefresh={() => {
-                void refreshServerHealth();
-                if (isServerHealthDetailOpen) {
-                  void refreshServerProcesses();
-                }
-              }}
-              onToggleDetail={() => setIsServerHealthDetailOpen(true)}
-              refreshDisabled={
-                !activeTerminalTab ||
-                !isActiveTabConnected ||
-                serverHealthLoading ||
-                (isServerHealthDetailOpen && serverProcessLoading)
-              }
-              toggleDisabled={!activeTerminalTab}
-            >
-              {!isActiveTabConnected ? (
-                <p className="hint">Connect the active terminal tab to collect metrics.</p>
-              ) : null}
-              {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
-              {serverHealthAlertStatus.hasAny ? (
-                <p className="hint server-health__alert-text">
-                  Threshold reached:
-                  {serverHealthAlertStatus.cpuHigh ? " CPU" : ""}
-                  {serverHealthAlertStatus.memoryHigh ? " Memory" : ""}
-                  {serverHealthAlertStatus.diskHigh ? " Disk" : ""}
-                </p>
-              ) : null}
-              {serverHealthLoading ? (
-                <p className="hint" role="status" aria-live="polite">
-                  Collecting server metrics...
-                </p>
-              ) : null}
-              {serverHealth ? (
-                <>
-                  <div className="server-health-grid">
-                    <div
-                      className={
-                        serverHealthAlertStatus.cpuHigh
-                          ? "server-health-card server-health-card--cpu is-alert"
-                          : "server-health-card server-health-card--cpu"
-                      }
-                    >
-                      <span className="server-health-card__label">CPU</span>
-                      <strong className="server-health-card__value">
-                        {formatPercent(serverHealthMetrics?.cpuUsagePercent ?? 0)}
-                      </strong>
-                    </div>
-                    <div
-                      className={
-                        serverHealthAlertStatus.memoryHigh
-                          ? "server-health-card server-health-card--memory is-alert"
-                          : "server-health-card server-health-card--memory"
-                      }
-                    >
-                      <span className="server-health-card__label">Memory</span>
-                      <strong className="server-health-card__value">
-                        {formatPercent(serverHealthMetrics?.memoryUsagePercent ?? 0)}
-                      </strong>
-                      <span className="server-health-card__meta">
-                        {formatTransferBytes(serverHealth.memoryUsedBytes)}/
-                        {formatTransferBytes(serverHealth.memoryTotalBytes)}
-                      </span>
-                    </div>
-                    <div
-                      className={
-                        serverHealthAlertStatus.diskHigh
-                          ? "server-health-card server-health-card--disk is-alert"
-                          : "server-health-card server-health-card--disk"
-                      }
-                    >
-                      <span className="server-health-card__label">Disk</span>
-                      <strong className="server-health-card__value">
-                        {formatPercent(serverHealthMetrics?.diskUsagePercent ?? 0)}
-                      </strong>
-                    </div>
-                  </div>
-                  <p className="hint server-health__footnote">Updated: {serverHealthUpdatedLabel}</p>
-                </>
-              ) : null}
-              </ServerHealthInspectorSection>
-            </div>
-            <div
-              className={
-                activeInspectorSidebarTab === "history"
-                  ? "workbench-inspector-panel is-active"
-                  : "workbench-inspector-panel"
-              }
-              data-inspector-tab="history"
-            >
-              <CommandHistoryInspectorSection
-              activeTabConnected={isActiveTabConnected}
-              activeTabTitle={activeTerminalTab?.title ?? null}
-              entries={inspectorTerminalCommandHistoryEntries.map((entry) => ({
-                command: entry.command,
-                id: entry.id,
-                onContextMenu: (event) => openCommandHistoryContextMenu(event, entry.id),
-                onDoubleClick: () => {
-                  void pasteTerminalCommandHistoryEntry(entry);
-                },
-                title: `${entry.command}\n\nDouble-click to paste into active terminal. Right-click for actions.`
-              }))}
-              hiddenEntryCount={hiddenInspectorCommandHistoryCount}
-              isCollapsed={isCommandHistoryInspectorCollapsed}
-              onOpenContextMenu={openCommandHistoryPanelContextMenu}
-              onOpenManager={openCommandHistoryManager}
-              onOpenSnippets={() => {
-                void openCommandSnippetManager();
-              }}
-              onQueryChange={(event) => setTerminalCommandHistoryQuery(event.target.value)}
-              onScopeChange={(event) =>
-                setTerminalCommandHistoryScope(event.target.value as TerminalCommandHistoryScope)
-              }
-              onToggleCollapsed={() => setIsCommandHistoryInspectorCollapsed((prev) => !prev)}
-              query={terminalCommandHistoryQuery}
-              scope={terminalCommandHistoryScope}
-              totalCommandSnippetCount={totalCommandSnippetCount}
-              visibleCountLabel={`${inspectorTerminalCommandHistoryEntries.length}/${visibleTerminalCommandHistoryEntries.length}`}
-              />
-            </div>
-          </WorkbenchInspectorSidebar>
-        )}
-      />
-
-      <TransferDock
-        bindingLabel={
-          activeTerminalTab
-            ? i18n.transfer.boundTo(activeTerminalTab.title)
-            : i18n.transfer.emptyBinding
-        }
-        canRetryAllFailed={canRetryAllFailedTransfers}
-        downloadPanel={{
-          cancelAllDisabled: !activeTabId,
-          cancelAllLabel: i18n.transfer.cancelAllDownloadsLabel,
-          cancelAllTitle: i18n.transfer.cancelAllDownloadsTitle,
-          clearFinishedDisabled: !canClearFinishedDownloads,
-          emptyLabel: i18n.transfer.downloadEmpty,
-          historyMessage:
-            failedDownloadHistoryCount > 0
-              ? i18n.transfer.storedFailedRetries(failedDownloadHistoryCount)
-              : null,
-          onCancelAll: () => {
-            void cancelAllActiveDownloads();
-          },
-          onClearFinished: () => {
-            clearFinishedTransfers("download");
-          },
-          onRetryFailed: () => {
-            void retryFailedDownloads();
-          },
-          pauseMessage: isActiveDownloadQueuePaused
-            ? activeDownloadPauseReason === "schedule-window"
-              ? i18n.transfer.schedulePaused(
-                  sftpTransferScheduleSummary,
-                  nextSftpTransferWindowOpeningLabel
-                )
-              : i18n.transfer.downloadDisconnectedPaused
-            : null,
-          progressSummary: i18n.transfer.progressSummary(
-            activeDownloadProgressStats.completed,
-            activeDownloadProgressStats.total,
-            activeDownloadProgressStats.failed,
-            activeDownloadProgressStats.canceled,
-            activeDownloadProgressStats.running,
-            activeDownloadProgressStats.queued
-          ),
-          retryFailedCount: failedDownloadRetryCandidates.length,
-          retryFailedDisabled: !canRetryFailedDownloads,
-          title: i18n.transfer.downloadsTitle(
-            activeDownloadQueueStats.running,
-            activeDownloadQueueStats.queued,
-            sftpTransferPreferences.downloadConcurrency
-          ),
-          transfers: activeDownloadTransfers.map((transfer) => ({
-            canCancel: transfer.status === "queued" || transfer.status === "running",
-            direction: "download" as const,
-            name: transfer.name,
-            onCancel: () => {
-              void cancelSftpDownload(transfer);
-            },
-            progressLabel: formatTransferProgress(transfer),
-            status: transfer.status,
-            transferId: transfer.transferId
-          }))
-        }}
-        failedRetryCandidateTotal={failedRetryCandidateTotal}
-        hasOperationCenterActivity={hasOperationCenterActivity}
-        labels={i18n.transfer}
-        notice={activeTransferDockNotice}
-        onDiscardPending={() => {
-          void discardPendingTransferRestoreQueue();
-        }}
-        onOpenOperationCenter={openOperationCenter}
-        onOpenRetryCenter={openRetryCenter}
-        onRestorePending={() => {
-          void restorePendingTransferRestoreQueue();
-        }}
-        onRetryAllFailed={() => {
-          void retryAllFailedTransfersWithScopeChoice();
-        }}
-        operationCenterActiveCount={operationCenterActiveCount}
-        pendingRestoreCount={pendingTransferRestoreCount}
-        uploadPanel={{
-          cancelAllDisabled: !activeTabId,
-          cancelAllLabel: i18n.transfer.cancelAllUploadsLabel,
-          cancelAllTitle: i18n.transfer.cancelAllUploadsTitle,
-          clearFinishedDisabled: !canClearFinishedUploads,
-          emptyLabel: i18n.transfer.uploadEmpty,
-          historyMessage:
-            failedUploadHistoryCount > 0
-              ? i18n.transfer.storedFailedRetries(failedUploadHistoryCount)
-              : null,
-          onCancelAll: () => {
-            void cancelAllActiveUploads();
-          },
-          onClearFinished: () => {
-            clearFinishedTransfers("upload");
-          },
-          onRetryFailed: () => {
-            void retryFailedUploads();
-          },
-          pauseMessage: isActiveUploadQueuePaused
-            ? activeUploadPauseReason === "schedule-window"
-              ? i18n.transfer.schedulePaused(
-                  sftpTransferScheduleSummary,
-                  nextSftpTransferWindowOpeningLabel
-                )
-              : i18n.transfer.uploadDisconnectedPaused
-            : null,
-          progressSummary: i18n.transfer.progressSummary(
-            activeUploadProgressStats.completed,
-            activeUploadProgressStats.total,
-            activeUploadProgressStats.failed,
-            activeUploadProgressStats.canceled,
-            activeUploadProgressStats.running,
-            activeUploadProgressStats.queued
-          ),
-          retryFailedCount: failedUploadRetryCandidates.length,
-          retryFailedDisabled: !canRetryFailedUploads,
-          title: i18n.transfer.uploadsTitle(
-            activeUploadQueueStats.running,
-            activeUploadQueueStats.queued,
-            sftpTransferPreferences.uploadConcurrency
-          ),
-          transfers: activeUploadTransfers.map((transfer) => ({
-            canCancel: transfer.status === "queued" || transfer.status === "running",
-            direction: "upload" as const,
-            name: transfer.name,
-            onCancel: () => {
-              void cancelSftpUpload(transfer);
-            },
-            progressLabel: formatTransferProgress(transfer),
-            status: transfer.status,
-            transferId: transfer.transferId
-          }))
-        }}
-      />
-      <AppInlineHintPanel
-        approval={
-          dangerousCommandApproval
-            ? {
-                allowInGroup: Boolean(dangerousCommandApproval.request.result.sessionGroupName),
-                commandText: dangerousCommandApproval.request.result.commandText,
-                contextSummary: dangerousCommandApproval.contextSummary,
-                preview: dangerousCommandApproval.request.result.preview,
-                ruleSummary: dangerousCommandApproval.ruleSummary,
-                severity: dangerousCommandApproval.request.result.severity,
-                sourceLabel: dangerousCommandApproval.sourceLabel
-              }
-            : null
-        }
-        hintMessage={appHintMessage}
-        language={appLanguage}
-        onAllowInGroup={() => approveDangerousCommandWithScope("sessionGroup")}
-        onAllowInTab={() => approveDangerousCommandWithScope("tab")}
-        onCancelApproval={() => resolveDangerousCommandApproval(false)}
-        onDismissHint={clearAppHintMessage}
-        onRunOnce={() => resolveDangerousCommandApproval(true)}
-        onSavePolicy={() => {
-          void saveDangerousCommandPersistentApproval();
-        }}
-      />
-
-      <ServerHealthDetailModal
-        alertStatus={serverHealthAlertStatus}
-        canRefresh={Boolean(activeTerminalTab) && isActiveTabConnected && !serverHealthLoading && !serverProcessLoading}
-        collectedAtLabel={serverHealthCollectedAtLabel}
-        cpuCoreLabel={serverHealthCpuCoreLabel}
-        detailTab={serverHealthDetailTab}
-        filesystems={serverHealthFilesystems}
-        formatOptionalPercent={formatOptionalPercent}
-        formatPercent={formatPercent}
-        formatProcessPercent={formatProcessPercent}
-        formatTransferBytes={formatTransferBytes}
-        formatUptime={formatServerUptime}
-        isConnected={isActiveTabConnected}
-        kernelLabel={serverHealthKernelLabel}
-        loadPerCore={serverHealthLoadPerCore}
-        memoryAvailableBytes={serverHealthMemoryAvailableBytes}
-        memoryProcesses={serverHealthMemoryProcesses}
-        metrics={serverHealthMetrics}
-        networkInterfaces={serverHealthNetworkInterfaces}
-        onClose={() => setIsServerHealthDetailOpen(false)}
-        onRefresh={() => {
-          void refreshServerHealth();
-          void refreshServerProcesses();
-        }}
-        onSelectTab={setServerHealthDetailTab}
-        open={isServerHealthDetailOpen}
-        processError={serverProcessError}
-        processLoading={serverProcessLoading}
-        processSnapshot={serverProcessSnapshot}
-        serverHealth={serverHealth}
-        serverHealthError={serverHealthError}
-        subtitle={activeTerminalTab?.title ?? "No active tab"}
-        swapUsagePercent={serverHealthSwapUsagePercent}
-      />
-
-      {isOperationCenterOpen ? (
-        <Suspense fallback={null}>
-          <LazyOperationCenterModal
-        canRetryAllFailedTransfers={canRetryAllFailedTransfers}
-        canRetryFailedDownloads={canRetryFailedDownloads}
-        canRetryFailedUploads={canRetryFailedUploads}
-        deleteProgressLabel={operationCenterDeleteProgressLabel}
-        downloadSummary={operationCenterDownloadSummary}
-        failedRetryCandidateTotal={failedRetryCandidateTotal}
-        finishedAppJobCount={operationCenterFinishedAppJobCount}
-        hasActiveTab={Boolean(activeTabId)}
-        hasActivity={hasOperationCenterActivity}
-        hasDiagnosticsJobs={hasOperationCenterDiagnosticsJobs}
-        hasSnippetJobs={hasOperationCenterSnippetJobs}
-        isBulkCancelingTabs={isOperationCenterBulkCanceling}
-        isReconnectingTabs={isOperationCenterReconnecting}
-        labels={i18n.operationCenter}
-        onCancelActiveDownloads={() => {
-          void cancelAllActiveDownloads();
-        }}
-        onCancelActiveUploads={() => {
-          void cancelAllActiveUploads();
-        }}
-        onCancelAllTransfersAcrossTabs={() => {
-          void cancelAllTransfersAcrossTabs();
-        }}
-        onCancelTabTasks={(tabId) => {
-          void cancelTransferTasksForTab(tabId);
-        }}
-        onClearFinishedAppJobs={clearFinishedOperationCenterAppJobs}
-        onClose={closeOperationCenter}
-        onCopyAppJobOutputPath={(jobId) => {
-          void copyOperationCenterAppJobOutputPath(jobId);
-        }}
-        onFocusTab={setActiveTabId}
-        onOpenDiagnostics={() => {
-          closeOperationCenter();
-          openSettingsPanel("diagnostics");
-        }}
-        onOpenDiagnosticsJobs={openDiagnosticsFromOperationCenter}
-        onOpenPortForward={() => {
-          closeOperationCenter();
-          openSettingsPanel("portForwarding");
-        }}
-        onOpenSnippets={openCommandSnippetManagerFromOperationCenter}
-        onReconnectDisconnectedTabs={() => {
-          void reconnectDisconnectedOperationTabs();
-        }}
-        onReconnectTab={(tabId) => {
-          void reconnectOperationTabById(tabId);
-        }}
-        onRetryActiveDownloads={() => {
-          void retryFailedDownloads();
-        }}
-        onRetryActiveUploads={() => {
-          void retryFailedUploads();
-        }}
-        onRetryAllFailedTransfers={() => {
-          void retryAllFailedTransfersWithScopeChoice();
-        }}
-        open={isOperationCenterOpen}
-        portForwardBusy={portForwardBusy}
-        portForwardSummary={operationCenterPortForwardSummary}
-        recentAppJobs={operationCenterRecentAppJobViews}
-        runningAppJobCount={operationCenterRunningAppJobCount}
-        timelineItems={operationCenterTimelineItems}
-        transferTabSummaries={operationCenterTransferTabSummaries}
-        uploadSummary={operationCenterUploadSummary}
-          />
-        </Suspense>
-      ) : null}
-
-      {isRetryCenterOpen ? (
-        <Suspense fallback={null}>
-          <LazyRetryCenterModal
-        analytics={retryCenterAnalytics}
-        autoUseLastRetryScope={retryCenterAutoUseLastRetryScope}
-        canClearAllEntries={canClearAllRetryCenterEntries}
-        canClearSelectedEntries={canClearSelectedRetryCenterEntries}
-        canClearVisibleEntries={canClearVisibleRetryCenterEntries}
-        canCollapseAllGroups={canCollapseAllRetryCenterGroups}
-        canExpandAllGroups={canExpandAllRetryCenterGroups}
-        canExportAnalytics={canExportRetryCenterAnalytics}
-        canRetryAllFailedTransfers={canRetryAllFailedTransfers}
-        canRetryFailedDownloads={canRetryFailedDownloads}
-        canRetryFailedUploads={canRetryFailedUploads}
-        canRetrySelectedEntries={canRetrySelectedRetryCenterEntries}
-        canRetryVisibleEntries={canRetryVisibleRetryCenterEntries}
-        collapsedGroupKeySet={retryCenterCollapsedGroupKeySet}
-        direction={retryCenterDirection}
-        entries={retryCenterEntries}
-        entryCount={retryCenterEntries.length}
-        failedDownloadCandidateCount={failedDownloadRetryCandidates.length}
-        failedRetryCandidateTotal={failedRetryCandidateTotal}
-        failedUploadCandidateCount={failedUploadRetryCandidates.length}
-        failureReasonAllValue={RETRY_CENTER_FAILURE_REASON_ALL}
-        failureReasonFilter={retryCenterResolvedFailureReasonFilter}
-        failureReasonOptions={retryCenterFailureReasonOptions}
-        failureSuggestionRows={retryCenterFailureSuggestionRows}
-        formatHistoryTimestamp={formatHistoryTimestamp}
-        formatPercent={formatPercent}
-        groupedEntries={retryCenterGroupedEntries}
-        hasActiveTab={Boolean(activeTabId)}
-        hasCustomizedView={hasCustomizedRetryCenterView}
-        isGroupedView={isRetryCenterGroupedView}
-        lastRetryScope={retryCenterLastRetryScope}
-        lastRetryScopeLabel={retryCenterLastRetryScopeLabel}
-        labels={i18n.retryCenter}
-        listMode={retryCenterListMode}
-        maxRetryBatchConfirmThreshold={MAX_RETRY_BATCH_CONFIRM_THRESHOLD}
-        minRetryBatchConfirmThreshold={MIN_RETRY_BATCH_CONFIRM_THRESHOLD}
-        onClearAllEntries={() => {
-          void clearAllRetryCenterEntries();
-        }}
-        onClearGroupEntries={(groupKey) => {
-          void clearRetryCenterGroupEntries(groupKey);
-        }}
-        onClearSelectedEntries={() => {
-          void clearSelectedRetryCenterEntries();
-        }}
-        onClearSelection={clearRetryCenterSelection}
-        onClearVisibleEntries={() => {
-          void clearVisibleRetryCenterEntries();
-        }}
-        onClearVisibleFailureReason={(reason) => {
-          void clearVisibleRetryCenterEntriesByFailureReason(reason);
-        }}
-        onClose={closeRetryCenter}
-        onCollapseAllGroups={collapseAllRetryCenterGroups}
-        onDirectionChange={setRetryCenterDirection}
-        onExpandAllGroups={expandAllRetryCenterGroups}
-        onExportAnalyticsCsv={() => {
-          void exportRetryCenterAnalyticsCsv();
-        }}
-        onExportAnalyticsJson={() => {
-          void exportRetryCenterAnalyticsJson();
-        }}
-        onExportGroupHistoryCsv={(groupKey) => {
-          void exportRetryCenterGroupHistoryCsvWithScopeChoice(groupKey);
-        }}
-        onExportGroupHistoryJson={(groupKey) => {
-          void exportRetryCenterGroupHistoryJsonWithScopeChoice(groupKey);
-        }}
-        onExportVisibleHistoryCsv={() => {
-          void exportRetryCenterVisibleHistoryCsv();
-        }}
-        onExportVisibleHistoryJson={() => {
-          void exportRetryCenterVisibleHistoryJson();
-        }}
-        onFailureReasonFilterChange={setRetryCenterFailureReasonFilter}
-        onLastRetryScopeChange={setRetryCenterLastRetryScope}
-        onListModeChange={setRetryCenterListMode}
-        onQueryChange={setRetryCenterQuery}
-        onResetFilters={resetRetryCenterViewFilters}
-        onRetryAllFailedTransfers={() => {
-          void retryAllFailedTransfersWithScopeChoice();
-        }}
-        onRetryFailedDownloads={() => {
-          void retryFailedDownloads();
-        }}
-        onRetryFailedUploads={() => {
-          void retryFailedUploads();
-        }}
-        onRetryGroupFailedEntries={(groupKey) => {
-          void retryRetryCenterGroupFailedEntries(groupKey);
-        }}
-        onRetrySelectedEntries={() => {
-          void retrySelectedRetryCenterEntriesWithScopeChoice();
-        }}
-        onRetryVisibleEntries={() => {
-          void retryVisibleRetryCenterEntriesWithScopeChoice();
-        }}
-        onRetryVisibleFailureReason={(reason) => {
-          void retryVisibleRetryCenterEntriesWithScopeChoice(reason);
-        }}
-        onScopeChange={setRetryCenterScope}
-        onSelectAllVisible={selectAllVisibleRetryCenterEntries}
-        onSelectGroupEntries={selectRetryCenterGroupEntries}
-        onStatusChange={setRetryCenterStatus}
-        onTimeRangeChange={setRetryCenterTimeRange}
-        onToggleAutoUseLastRetryScope={() => {
-          setRetryCenterAutoUseLastRetryScope((prev) => !prev);
-        }}
-        onToggleEntrySelection={toggleRetryCenterEntrySelection}
-        onToggleGroupCollapsed={toggleRetryCenterGroupCollapsed}
-        open={isRetryCenterOpen}
-        query={retryCenterQuery}
-        retryBatchConfirmThreshold={retryBatchConfirmThreshold}
-        scope={retryCenterScope}
-        selectedCount={retryCenterSelection.length}
-        selectedFailedCount={selectedRetryCenterFailedEntries.length}
-        selectedFailureReasonLabel={retryCenterSelectedFailureReasonLabel}
-        selectionSet={retryCenterSelectionSet}
-        status={retryCenterStatus}
-        timeRange={retryCenterTimeRange}
-        topFailureReasonRetryRows={retryCenterTopFailureReasonRetryRows}
-        totalHistoryCount={transferHistory.length}
-        visibleFailedCount={visibleRetryCenterFailedEntries.length}
-        onRetryBatchConfirmThresholdChange={(value) => {
-          setRetryBatchConfirmThreshold((prev) =>
-            parseRetryBatchConfirmThreshold(value, prev)
-          );
-        }}
-          />
-        </Suspense>
-      ) : null}
-
-      {isCommandHistoryManagerOpen ? (
-        <Suspense fallback={null}>
-          <LazyCommandHistoryManagerModal
-        allVisibleSelected={allVisibleCommandHistorySelected}
-        canClearSelection={commandHistorySelection.length > 0}
-        canExport={terminalCommandHistoryEntries.length > 0}
-        canToggleSelectVisible={visibleCommandHistoryIds.length > 0}
-        entries={visibleTerminalCommandHistoryEntryViews}
-        labels={i18n.commandHistoryManager}
-        onAdd={() => {
-          void addTerminalCommandHistoryEntry();
-        }}
-        onClearSelection={clearCommandHistorySelection}
-        onClose={closeCommandHistoryManager}
-        onDeleteAll={deleteAllCommandHistoryEntries}
-        onDeleteSelected={deleteSelectedCommandHistoryEntries}
-        onDeleteVisible={deleteVisibleCommandHistoryEntries}
-        onEditEntry={(entryId) => {
-          const entry = visibleCommandHistoryEntryById.get(entryId);
-          if (!entry) {
-            return;
-          }
-          void editTerminalCommandHistoryEntry(entry);
-        }}
-        onExport={() => {
-          void exportTerminalCommandHistory();
-        }}
-        onImport={() => {
-          void importTerminalCommandHistory();
-        }}
-        onPasteEntry={(entryId) => {
-          const entry = visibleCommandHistoryEntryById.get(entryId);
-          if (!entry) {
-            return;
-          }
-          void pasteTerminalCommandHistoryEntry(entry);
-        }}
-        onToggleEntrySelection={toggleCommandHistorySelection}
-        onToggleSelectVisible={toggleSelectAllVisibleCommandHistory}
-        open={isCommandHistoryManagerOpen}
-        selectedCount={commandHistorySelection.length}
-        totalCount={terminalCommandHistoryEntries.length}
-        visibleCount={visibleTerminalCommandHistoryEntries.length}
-          />
-        </Suspense>
-      ) : null}
-
-      {isCommandSnippetManagerOpen ? (
-        <Suspense fallback={null}>
-          <LazyCommandSnippetManagerModal
-        buildParameterToken={buildCommandSnippetParameterToken}
-        formatScopeLabel={formatCommandSnippetVariableScopeLabel}
-        getPatternError={getCommandSnippetParameterPatternError}
-        groupCount={commandSnippetGroups.length}
-        groups={commandSnippetGroups}
-        maxGroupCount={MAX_COMMAND_SNIPPET_GROUPS}
-        maxParameters={MAX_COMMAND_SNIPPET_PARAMETERS}
-        maxPromptSets={MAX_COMMAND_SNIPPET_PROMPT_SETS}
-        maxSnippetsPerGroup={MAX_COMMAND_SNIPPETS_PER_GROUP}
-        missingParameterKeys={selectedCommandSnippetMissingParameterKeys}
-        onAddGroup={addCommandSnippetManagerGroup}
-        onAddPromptSet={addCommandSnippetManagerPromptSet}
-        onAddPromptSetParameter={addCommandSnippetManagerPromptSetParameter}
-        onAddSnippet={addCommandSnippetManagerSnippet}
-        onAddSnippetParameter={addCommandSnippetManagerSnippetParameter}
-        onClearAll={() => {
-          void clearAllCommandSnippetGroups();
-        }}
-        onClearScopedValues={() => {
-          void clearCommandSnippetScopedValues();
-        }}
-        onClose={closeCommandSnippetManager}
-        onDeleteGroup={() => {
-          void deleteCommandSnippetManagerGroup();
-        }}
-        onDeletePromptSetParameter={deleteCommandSnippetManagerPromptSetParameter}
-        onDeleteSelectedPromptSet={() => {
-          void deleteSelectedCommandSnippetManagerPromptSet();
-        }}
-        onDeleteSnippet={() => {
-          void deleteCommandSnippetManagerSnippet();
-        }}
-        onDeleteSnippetParameter={deleteCommandSnippetManagerSnippetParameter}
-        onExportJson={() => {
-          void exportCommandSnippetGroups();
-        }}
-        onGroupNameChange={updateCommandSnippetManagerGroupName}
-        onImportJson={importCommandSnippetGroupsWithUiError}
-        onInsertPromptSetParameterToken={insertCommandSnippetManagerPromptSetParameterToken}
-        onInsertSnippetParameterToken={insertCommandSnippetManagerSnippetParameterToken}
-        onPromptSetNameChange={updateCommandSnippetManagerPromptSetName}
-        onPromptSetParameterDefaultChange={updateCommandSnippetManagerPromptSetParameterDefault}
-        onPromptSetParameterKeyChange={updateCommandSnippetManagerPromptSetParameterKey}
-        onPromptSetParameterLabelChange={updateCommandSnippetManagerPromptSetParameterLabel}
-        onPromptSetParameterPatternChange={updateCommandSnippetManagerPromptSetParameterPattern}
-        onPromptSetParameterRequiredChange={updateCommandSnippetManagerPromptSetParameterRequired}
-        onPromptSetParameterScopeChange={updateCommandSnippetManagerPromptSetParameterScope}
-        onRunSelectedSnippet={() => {
-          void runSelectedCommandSnippetManagerSnippet();
-        }}
-        onRunSnippet={runCommandSnippetManagerSnippetById}
-        onSelectGroup={selectCommandSnippetManagerGroup}
-        onSelectedGroupNameBlur={normalizeSelectedCommandSnippetManagerGroupName}
-        onSelectedPromptSetNameBlur={normalizeSelectedCommandSnippetManagerPromptSetName}
-        onSelectedSnippetNameBlur={normalizeSelectedCommandSnippetManagerSnippetName}
-        onSelectSnippet={selectCommandSnippetManagerSnippet}
-        onSnippetConfirmChange={updateCommandSnippetManagerSnippetConfirm}
-        onSnippetNameChange={updateCommandSnippetManagerSnippetName}
-        onSnippetParameterDefaultChange={updateCommandSnippetManagerSnippetParameterDefault}
-        onSnippetParameterKeyChange={updateCommandSnippetManagerSnippetParameterKey}
-        onSnippetParameterLabelChange={updateCommandSnippetManagerSnippetParameterLabel}
-        onSnippetParameterPatternChange={updateCommandSnippetManagerSnippetParameterPattern}
-        onSnippetParameterRequiredChange={updateCommandSnippetManagerSnippetParameterRequired}
-        onSnippetParameterScopeChange={updateCommandSnippetManagerSnippetParameterScope}
-        onSnippetPreviewChange={updateCommandSnippetManagerSnippetPreview}
-        onSnippetPromptSetChange={updateCommandSnippetManagerSnippetPromptSet}
-        onSnippetTemplateChange={updateCommandSnippetManagerSnippetTemplate}
-        open={isCommandSnippetManagerOpen}
-        scopedValueCount={commandSnippetScopedValueCount}
-        scopeOptions={COMMAND_SNIPPET_VARIABLE_SCOPES}
-        selectedGroup={selectedCommandSnippetManagerGroup}
-        selectedPromptSet={selectedCommandSnippetManagerPromptSet}
-        selectedSnippet={selectedCommandSnippetManagerSnippet}
-        selectedSnippetHasInvalidPattern={selectedCommandSnippetHasInvalidPattern}
-        shadowedPromptSetKeys={selectedCommandSnippetShadowedPromptSetKeys}
-        totalPromptSetCount={totalCommandSnippetPromptSetCount}
-        totalSnippetCount={totalCommandSnippetCount}
-        unusedParameterKeys={selectedCommandSnippetUnusedParameterKeys}
-          />
-        </Suspense>
-      ) : null}
-
-      {commandHistoryContextMenu ? (
-        <WorkbenchContextMenu
-          actions={commandHistoryContextMenuActions}
-          height={selectedCommandHistoryContextEntry ? 152 : 192}
-          ref={commandHistoryContextMenuRef}
-          width={196}
-          x={commandHistoryContextMenu.x}
-          y={commandHistoryContextMenu.y}
-        />
-      ) : null}
-
-      {sftpToolbarMenu ? (
-        <WorkbenchContextMenu
-          actions={sftpToolbarMenuActions}
-          height={sftpToolbarActions.length * 26 + 16}
-          ref={sftpToolbarMenuRef}
-          width={236}
-          x={sftpToolbarMenu.x}
-          y={sftpToolbarMenu.y}
-        />
-      ) : null}
-
-      {sftpContextMenu ? (
-        <WorkbenchContextMenu
-          actions={sftpEntryContextMenuActions}
-          height={232}
-          ref={sftpContextMenuRef}
-          width={196}
-          x={sftpContextMenu.x}
-          y={sftpContextMenu.y}
-        />
-      ) : null}
-
-      {sessionContextMenu && sessionContextMenuItems.length > 0 ? (
-        <WorkbenchContextMenu
-          actions={sessionContextMenuItems}
-          height={sessionContextActions.length * 26 + 16}
-          ref={sessionContextMenuRef}
-          width={236}
-          x={sessionContextMenu.x}
-          y={sessionContextMenu.y}
-        />
-      ) : null}
-
-      <SettingsModalShell
-        activeSectionId={activeSettingsSection}
-        doneLabel={i18n.settings.done}
-        onClose={closeSettingsPanel}
-        onSelectSection={(sectionId) => setActiveSettingsSection(sectionId as SettingsSectionId)}
-        open={isSettingsOpen}
-        sectionTitle={i18n.settings.sections[getSettingsSectionI18nKey(activeSettingsSection)].title}
-        sectionsAriaLabel={i18n.settings.sectionsAriaLabel}
-        sections={settingsSections}
-        titleLabel={i18n.settings.title}
-        versionLabel={i18n.settings.version(APP_VERSION)}
-      >
-        <SettingsModalContent
-          activeSectionId={activeSettingsSection}
-          connectionSectionProps={connectionSettingsSectionProps}
-          diagnosticsSectionProps={diagnosticsSettingsSectionProps}
-          fileOpeningSectionProps={fileOpeningSettingsSectionProps}
-          hotkeySectionProps={hotkeySettingsSectionProps}
-          portForwardingSectionProps={portForwardingSettingsSectionProps}
-          safetySectionProps={safetySettingsSectionProps}
-          serverHealthSectionProps={serverHealthSettingsSectionProps}
-          sftpSectionProps={sftpSettingsSectionProps}
-          workspaceSectionProps={workspaceSettingsSectionProps}
-        />
-      </SettingsModalShell>
-
-      <SessionCreateModal
-        editingSessionId={editingSessionId}
-        form={form}
-        groupOptions={sessionGroupOptions}
-        maxTemplateCount={MAX_SESSION_TEMPLATES}
-        onApplyTemplate={() => {
-          void chooseSessionTemplateAndApply();
-        }}
-        onClose={closeCreateModal}
-        onFormChange={updateCreateSessionFormFields}
-        onManageTemplates={() => openSessionTemplateManager()}
-        onPickPrivateKeyFile={() => {
-          void pickPrivateKeyFile();
-        }}
-        onSaveAsTemplate={() =>
-          openSessionTemplateManager({
-            sourceForm: form
-          })
-        }
-        onSubmit={handleCreateSession}
-        onTestConnection={() => {
-          void handleTestConnection();
-        }}
-        open={isCreateModalOpen}
-        saving={saving}
-        sessionTemplateCount={sessionTemplates.length}
-        testConnectionResult={testConnectionResult}
-        testingConnection={testingConnection}
-      />
-
-      <SessionTemplateManagerModal
-        draft={sessionTemplateDraft}
-        editingTemplate={editingSessionTemplate}
-        editingTemplateId={editingSessionTemplateId}
-        error={sessionTemplateError}
-        maxEnvVarCount={MAX_SESSION_TEMPLATE_ENV_VARS}
-        maxTemplateCount={MAX_SESSION_TEMPLATES}
-        onAddEnvVar={addSessionTemplateEnvVar}
-        onClose={closeSessionTemplateManager}
-        onDeleteEditingTemplate={() => {
-          void deleteEditingSessionTemplate();
-        }}
-        onDraftFieldChange={updateSessionTemplateDraftFields}
-        onRemoveEnvVar={removeSessionTemplateEnvVar}
-        onResetDraft={resetSessionTemplateDraft}
-        onSelectTemplate={loadSessionTemplateForEditing}
-        onSubmit={(event) => saveSessionTemplateDraft(sessionTemplateDraft, event)}
-        onUpdateEnvVar={updateSessionTemplateEnvVar}
-        onUseCurrentForm={() => startSessionTemplateDraftFromForm(form)}
-        onUseEditingTemplate={() => {
-          if (!editingSessionTemplate) {
-            return;
-          }
-          void applySessionTemplateToForm(editingSessionTemplate, {
-            openCreateModal: true,
-            forceNewSession: !isCreateModalOpen
-          });
-        }}
-        open={isSessionTemplateManagerOpen}
-        templates={sessionTemplates}
-      />
-
-      <MoveGroupDialogModal
-        dialog={moveGroupDialog}
-        groupOptions={sessionGroupOptions}
-        onClose={closeMoveGroupDialog}
-        onSubmit={() => {
-          void submitMoveGroupDialog();
-        }}
-        onTargetGroupChange={(targetGroup) => {
-          setMoveGroupDialog((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  targetGroup
-                }
-              : prev
-          );
-        }}
-      />
-
-      <AppDialogModal
-        dialog={appDialog}
-        inputElementRef={appDialogInputRef}
-        inputValue={appDialogInput}
-        onClose={closeAppDialog}
-        onInputChange={setAppDialogInput}
-        onResolveOption={resolveAppDialog}
-        onSubmit={submitAppDialog}
-      />
-
-      <GlobalErrorBar
-        canCopyLatestDisconnectReport={globalErrorRecovery.canCopyLatestDisconnectReport}
-        canExportBugReport={globalErrorRecovery.canExportBugReport}
-        canOpenLogs={globalErrorRecovery.canOpenLogs}
-        canOpenOperationCenter={globalErrorRecovery.canOpenOperationCenter}
-        canOpenRetryCenter={globalErrorRecovery.canOpenRetryCenter}
-        canReconnect={globalErrorRecovery.canReconnect}
-        error={error}
-        hint={globalErrorRecovery.hint}
-        onCopyError={() => {
-          void copyGlobalErrorMessage();
-        }}
-        onCopyLatestDisconnect={() => {
-          void copyLatestDisconnectReport();
-        }}
-        onDismiss={dismissGlobalError}
-        onExportBugReport={exportBugReportFromError}
-        onOpenConnectionSettings={openConnectionSettingsFromError}
-        onOpenDiagnostics={openDiagnosticsFromError}
-        onOpenFileOpeningSettings={openFileOpeningSettingsFromError}
-        onOpenHotkeysSettings={openHotkeysSettingsFromError}
-        onOpenLogDirectory={() => {
-          void openLogDirectory();
-        }}
-        onOpenOperationCenter={openOperationCenterFromError}
-        onOpenPortForwardingSettings={openPortForwardingSettingsFromError}
-        onOpenRetryCenter={openRetryCenterFromError}
-        onOpenSafetySettings={openSafetySettingsFromError}
-        onOpenServerHealthSettings={openServerHealthSettingsFromError}
-        onOpenSftpSettings={openSftpSettingsFromError}
-        onOpenWorkspaceSettings={openWorkspaceSettingsFromError}
-        onReconnect={() => {
-          void reconnectActiveTabFromError();
-        }}
-        settingsAction={globalErrorRecovery.settingsAction}
-      />
-    </div>
-  );
+  return <WorkbenchRootFrame {...workbenchRootFrameProps} />;
 }

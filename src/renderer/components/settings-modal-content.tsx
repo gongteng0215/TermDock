@@ -12,7 +12,7 @@ import {
   WorkspaceSettingsSection
 } from "./settings-sections";
 
-type SettingsSectionId =
+export type SettingsSectionId =
   | "connection"
   | "workspace"
   | "safety"
@@ -23,7 +23,7 @@ type SettingsSectionId =
   | "portForwarding"
   | "diagnostics";
 
-interface SettingsModalContentProps {
+export interface SettingsModalContentProps {
   activeSectionId: SettingsSectionId;
   connectionSectionProps: ComponentProps<typeof ConnectionSettingsSection>;
   workspaceSectionProps: ComponentProps<typeof WorkspaceSettingsSection>;

@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 
 import type { SessionCreateInput } from "../../shared/session";
 
-interface SessionCreateModalProps {
+export interface SessionCreateModalProps {
   open: boolean;
   editingSessionId: string | null;
   form: SessionCreateInput;

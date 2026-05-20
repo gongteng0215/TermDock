@@ -1,46 +1,24 @@
 import { UiIcon } from "./ui-icon";
 
-type CommandSnippetVariableScopeId = "snippet" | "group" | "session" | "global";
+import type {
+  CommandSnippetGroup,
+  CommandSnippetItem,
+  CommandSnippetParameter,
+  CommandSnippetPromptSet,
+  CommandSnippetVariableScopeId
+} from "../command-snippets";
 
-interface CommandSnippetParameterView {
-  id: string;
-  key: string;
-  label: string;
-  defaultValue: string;
-  required: boolean;
-  pattern: string;
-  scope: CommandSnippetVariableScopeId;
-}
-
-interface CommandSnippetPromptSetView {
-  id: string;
-  name: string;
-  parameters: CommandSnippetParameterView[];
-}
-
-interface CommandSnippetItemView {
-  id: string;
-  name: string;
-  template: string;
-  confirmBeforeRun: boolean;
-  previewBeforeRun: boolean;
-  promptSetId: string;
-  parameters: CommandSnippetParameterView[];
-}
-
-interface CommandSnippetGroupView {
-  id: string;
-  name: string;
-  promptSets: CommandSnippetPromptSetView[];
-  snippets: CommandSnippetItemView[];
-}
+type CommandSnippetParameterView = CommandSnippetParameter;
+type CommandSnippetPromptSetView = CommandSnippetPromptSet;
+type CommandSnippetItemView = CommandSnippetItem;
+type CommandSnippetGroupView = CommandSnippetGroup;
 
 interface CommandSnippetVariableScopeOption {
   id: CommandSnippetVariableScopeId;
   label: string;
 }
 
-interface CommandSnippetManagerModalProps {
+export interface CommandSnippetManagerModalProps {
   open: boolean;
   onClose: () => void;
   groupCount: number;

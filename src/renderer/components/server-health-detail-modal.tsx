@@ -9,15 +9,20 @@ import type { ServerHealthDerivedMetrics } from "../use-server-health-monitor";
 
 import { UiIcon } from "./ui-icon";
 
-type ServerHealthDetailTab = "overview" | "disk" | "network" | "processes" | "services";
+export type ServerHealthDetailTab =
+  | "overview"
+  | "disk"
+  | "network"
+  | "processes"
+  | "services";
 
-interface ServerHealthDetailAlertStatus {
+export interface ServerHealthDetailAlertStatus {
   cpuHigh: boolean;
   diskHigh: boolean;
   memoryHigh: boolean;
 }
 
-interface ServerHealthDetailModalProps {
+export interface ServerHealthDetailModalProps {
   alertStatus: ServerHealthDetailAlertStatus;
   canRefresh: boolean;
   collectedAtLabel: string;

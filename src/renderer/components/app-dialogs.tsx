@@ -2,12 +2,12 @@ import type { MutableRefObject } from "react";
 
 import { UiIcon } from "./ui-icon";
 
-interface MoveGroupDialogView {
+export interface MoveGroupDialogView {
   sessionIds: string[];
   targetGroup: string;
 }
 
-interface MoveGroupDialogModalProps {
+export interface MoveGroupDialogModalProps {
   dialog: MoveGroupDialogView | null;
   groupOptions: string[];
   onClose: () => void;
@@ -15,9 +15,9 @@ interface MoveGroupDialogModalProps {
   onTargetGroupChange: (value: string) => void;
 }
 
-type AppDialogMode = "alert" | "confirm" | "prompt" | "choice";
+export type AppDialogMode = "alert" | "confirm" | "prompt" | "choice";
 
-interface AppDialogOptionView {
+export interface AppDialogOptionView {
   value: string;
   label: string;
   danger?: boolean;
@@ -54,13 +54,13 @@ interface AppChoiceDialogView extends AppDialogBaseView {
   options: AppDialogOptionView[];
 }
 
-type AppDialogView =
+export type AppDialogView =
   | AppAlertDialogView
   | AppConfirmDialogView
   | AppPromptDialogView
   | AppChoiceDialogView;
 
-interface AppDialogModalProps {
+export interface AppDialogModalProps {
   dialog: AppDialogView | null;
   inputElementRef: MutableRefObject<HTMLInputElement | HTMLTextAreaElement | null>;
   inputValue: string;

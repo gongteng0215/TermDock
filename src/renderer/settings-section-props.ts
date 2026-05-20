@@ -38,7 +38,7 @@ type PortForwardingSectionProps = ComponentProps<typeof PortForwardingSettingsSe
 type DiagnosticsSectionProps = ComponentProps<typeof DiagnosticsSettingsSection>;
 type HotkeyActionId = keyof HotkeyPreferences;
 
-interface BuildConnectionSettingsSectionPropsArgs
+export interface BuildConnectionSettingsSectionPropsArgs
   extends Pick<
     ConnectionSectionProps,
     "autoReconnect" | "reconnectDelaySeconds" | "onAutoReconnectChange" | "onReconnectDelayChange"
@@ -72,7 +72,7 @@ type WorkspaceSectionValueProps = Pick<
   | "workspaceProfileCards"
 >;
 
-interface BuildWorkspaceSettingsSectionPropsArgs extends WorkspaceSectionValueProps {
+export interface BuildWorkspaceSettingsSectionPropsArgs extends WorkspaceSectionValueProps {
   onCursorSelectAction: (value: TerminalEditorFocusCursorId) => void;
   onEditorFocusAutoLayoutEnabledChange:
     WorkspaceSectionProps["onEditorFocusAutoLayoutEnabledChange"];
@@ -95,7 +95,7 @@ type HotkeySectionValueProps = Pick<
   | "hotkeyRows"
 >;
 
-interface BuildHotkeySettingsSectionPropsArgs extends HotkeySectionValueProps {
+export interface BuildHotkeySettingsSectionPropsArgs extends HotkeySectionValueProps {
   onBindingEnabledChangeAction: (actionId: HotkeyActionId, value: boolean) => void;
   onBindingKeyChangeAction: (actionId: HotkeyActionId, value: string) => void;
   onBindingModifierChangeAction: (
@@ -115,7 +115,7 @@ interface BuildHotkeySettingsSectionPropsArgs extends HotkeySectionValueProps {
   onResolveConflicts: HotkeySectionProps["onResolveConflicts"];
 }
 
-interface BuildServerHealthSettingsSectionPropsArgs
+export interface BuildServerHealthSettingsSectionPropsArgs
   extends Pick<
     ServerHealthSectionProps,
     | "cpuWarnPercent"
@@ -126,7 +126,7 @@ interface BuildServerHealthSettingsSectionPropsArgs
     | "onThresholdChange"
   > {}
 
-interface BuildFileOpeningSettingsSectionPropsArgs
+export interface BuildFileOpeningSettingsSectionPropsArgs
   extends Pick<
     FileOpeningSectionProps,
     "isMacPlatform" | "preferredProgramPath" | "onPreferredProgramPathChange"
@@ -175,7 +175,7 @@ type SafetySectionValueProps = Pick<
   | "totalExecutionSourceCount"
 >;
 
-interface BuildSafetySettingsSectionPropsArgs extends SafetySectionValueProps {
+export interface BuildSafetySettingsSectionPropsArgs extends SafetySectionValueProps {
   onApplyPolicyBundleAction: (bundleId: string) => Promise<unknown> | void;
   onBuiltinRuleEnabledChangeAction: (
     ruleId: DangerousCommandBuiltinRuleId,
@@ -245,7 +245,7 @@ type SftpSectionValueProps = Pick<
   | "uploadRateLimitKiBps"
 >;
 
-interface BuildSftpSettingsSectionPropsArgs extends SftpSectionValueProps {
+export interface BuildSftpSettingsSectionPropsArgs extends SftpSectionValueProps {
   onApplyPolicyPackAction: (packId: string) => Promise<unknown> | void;
   onApplySchedulePreset: SftpSectionProps["onApplySchedulePreset"];
   onChangePolicyPackSyncTargetAction: () => Promise<unknown> | void;
@@ -304,7 +304,7 @@ type PortForwardingSectionValueProps = Pick<
   | "visibleEventHistoryCount"
 >;
 
-interface BuildPortForwardingSettingsSectionPropsArgs
+export interface BuildPortForwardingSettingsSectionPropsArgs
   extends PortForwardingSectionValueProps {
   onClearSessionHistoryAction: () => Promise<unknown> | void;
   onClearVisibleHistoryAction: () => Promise<unknown> | void;
@@ -336,7 +336,7 @@ interface BuildPortForwardingSettingsSectionPropsArgs
   onSavePresetAction: () => Promise<unknown> | void;
 }
 
-type DiagnosticsSectionValueProps = Pick<
+export type DiagnosticsSectionValueProps = Pick<
   DiagnosticsSectionProps,
   | "disconnectCaptureEnabled"
   | "disconnectCaptureHint"
@@ -354,7 +354,7 @@ type DiagnosticsSectionValueProps = Pick<
   | "logFilePath"
 >;
 
-interface BuildDiagnosticsSettingsSectionPropsArgs
+export interface BuildDiagnosticsSettingsSectionPropsArgs
   extends DiagnosticsSectionValueProps {
   onClearAllDisconnectsAction: () => Promise<unknown> | void;
   onClearVisibleDisconnectsAction: () => Promise<unknown> | void;

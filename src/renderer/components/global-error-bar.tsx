@@ -11,7 +11,7 @@ type ErrorSettingsAction =
   | "portForwarding"
   | "diagnostics";
 
-interface GlobalErrorBarProps {
+export interface GlobalErrorBarProps {
   canCopyLatestDisconnectReport: boolean;
   canExportBugReport: boolean;
   canOpenLogs: boolean;
