@@ -8,22 +8,41 @@
 
 ### 主要变化
 
-- 加密会话迁移：
-  - 新增 `Export Encrypted Migration...` / `导出加密迁移包...` 和 `Import Encrypted Migration...` / `导入加密迁移包...` 会话动作。
-  - 加密 `.tdmigration` 文件可以在用户提供的 passphrase 保护下包含已保存密码、私钥 passphrase 和可选私钥文件内容。
-  - 导入预览只解密展示，不会恢复私钥文件；只有用户确认导入后才会写入嵌入的私钥文件。
-  - 恢复出的私钥文件会写入 TermDock app data，不会覆盖来源机器上的原始路径。
-  - 解密后的私钥文件内容只在主进程处理，不会返回 renderer。
-- 文档：
-  - 新增英文 / 简体中文配套会话迁移文档，并从 README、安全说明和文档索引链接。
+- 还没有记录新的未发布变更。
 
 ### 验证
 
-- Type check 通过：`pnpm run typecheck`
-- Build 通过：`pnpm run build`
-- 会话迁移 targeted test 通过：`pnpm run test:session-migration`
-- 最新 workspace smoke 通过：`PASS 48 / FAIL 0 / SKIP 0`
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`
+- 下一个候选版本发布时再补充验证结果。
+
+## v0.1.27 (2026-05-20)
+
+发布类型：稳定版
+
+### 主要变化
+
+- 新增加密会话迁移：
+  - 新增 `Export Encrypted Migration...` 和 `Import Encrypted Migration...`
+  - 支持带口令保护的 `.tdmigration`，可包含已保存密码、私钥口令，以及可选的私钥文件内容
+  - 嵌入的私钥文件会恢复到 TermDock 自己的 app data 目录，不会覆盖源机器路径
+  - 导入预览可以先解密、先检查内容，再决定是否真正写入恢复后的密钥文件
+- 刷新 editor-workbench UI：
+  - topbar、侧栏、terminal stage、transfer dock、modal chrome 统一成更扁平的代码编辑器工作台语言
+  - SFTP explorer 现在支持持久化的 `Compact` / `Details` 双视图
+  - 右侧 inspector 支持可折叠 command history，以及窄宽度下的 `Sessions` / `Health` / `History` tabs
+  - 英文 / 简体中文覆盖继续扩展到了 settings、dialogs、context menus、command history、retry center、operation center 和 diagnostics
+- 强化 renderer 可维护性和启动结构：
+  - 大块 renderer 区域被拆成更清晰的 hooks、props builders、modal hosts 和 workbench shell 分层
+  - renderer bundle 现在拆成 workbench / settings / terminal 等独立 chunk，不再由一个超大的主包承担
+  - `App.tsx` 现在更接近总装层，负责组装 workbench、dialogs、overlays、settings 和 transfer UI
+- 提升发版信心：
+  - encrypted migration 已有针对性测试覆盖
+  - smoke 自动化现在覆盖 encrypted migration 可见性、workbench UI、live SSH/SFTP、remote-open-file 冲突流程、retry/operation center 和 diagnostics capture
+
+### 验证
+
+- `pnpm run typecheck` 通过。
+- `pnpm run build` 通过。
+- `pnpm run smoke:ui` 通过，结果为 `PASS 50 / FAIL 0 / SKIP 0`，见 `artifacts/smoke/2026-05-20T02-46-53-664Z/summary.json`。
 
 ## v0.1.26 (2026-05-14)
 

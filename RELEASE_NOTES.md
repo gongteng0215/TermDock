@@ -8,22 +8,41 @@ Release type: In development
 
 ### Highlights
 
-- Encrypted session migration:
-  - added `Export Encrypted Migration...` and `Import Encrypted Migration...` session actions
-  - encrypted `.tdmigration` files can include saved passwords, private-key passphrases, and optional private-key file contents behind a user-provided passphrase
-  - import preview decrypts without restoring private-key files; embedded key files are restored only after the user confirms import
-  - restored private-key files are written into TermDock app data instead of overwriting source-machine paths
-  - decrypted private-key file contents stay in the main process and are not returned to the renderer
-- Documentation:
-  - added paired English/Simplified Chinese session migration docs and linked them from README, Security, and the documentation index
+- No unreleased notes have been recorded yet.
 
 ### Validation
 
-- Type check passed: `pnpm run typecheck`
-- Build passed: `pnpm run build`
-- Session migration targeted test passed: `pnpm run test:session-migration`
-- Latest workspace smoke passed: `PASS 48 / FAIL 0 / SKIP 0`
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`
+- Validation will be added with the next release candidate.
+
+## v0.1.27 (2026-05-20)
+
+Release type: Stable
+
+### Highlights
+
+- Encrypted session migration:
+  - added `Export Encrypted Migration...` and `Import Encrypted Migration...` flows
+  - passphrase-protected `.tdmigration` packages can include saved passwords, private-key passphrases, and optional private-key file contents
+  - embedded private-key files are restored into TermDock app data instead of overwriting source-machine paths
+  - import preview can decrypt and inspect migration content before writing restored key files
+- Refreshed the editor-workbench UI:
+  - flatter code-editor workbench shell across topbar, sidebars, terminal stage, transfer dock, and modal chrome
+  - SFTP explorer now supports persisted `Compact` / `Details` views
+  - right inspector supports collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs
+  - English and Simplified Chinese UI coverage now extends across settings, dialogs, context menus, command history, retry center, operation center, and diagnostics
+- Hardened renderer maintainability and startup structure:
+  - large renderer regions were split into focused hooks, prop builders, modal hosts, and workbench shell layers
+  - renderer bundles are now split into dedicated workbench/settings/terminal chunks instead of one oversized main bundle
+  - `App.tsx` now behaves much more like an assembly layer for workbench, dialogs, overlays, settings, and transfer UI
+- Expanded release confidence:
+  - encrypted migration now has targeted test coverage
+  - smoke automation now covers encrypted migration visibility, workbench UI, live SSH/SFTP, remote-open-file conflict flows, retry/operation center, and diagnostics capture
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run smoke:ui` passed with `PASS 50 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-20T02-46-53-664Z/summary.json`.
 
 ## v0.1.26 (2026-05-14)
 
