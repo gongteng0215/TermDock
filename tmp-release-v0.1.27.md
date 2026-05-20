@@ -32,5 +32,5 @@ Last updated: 2026-05-20
 
 ## Notes for Release Page
 
-- Version in `package.json` is still `0.1.26`; bump/version-tagging should happen as part of final release prep.
+- Package version is now `0.1.27`; tagging/publishing is the remaining release step.
 - Keep this release focused on user-visible encrypted migration, the refreshed editor-workbench UI, and stability/maintainability wins.

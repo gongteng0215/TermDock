@@ -32,5 +32,5 @@ Last updated: 2026-05-20
 
 ## 发版备注
 
-- `package.json` 里的版本号目前仍是 `0.1.26`，最终发版前还需要做版本 bump 和 tag。
+- `package.json` 里的版本号现在已经是 `0.1.27`，剩下的就是 tag 和发布动作。
 - 这次 release 建议聚焦在用户可感知的 encrypted migration、刷新后的 editor-workbench UI，以及稳定性/可维护性提升。

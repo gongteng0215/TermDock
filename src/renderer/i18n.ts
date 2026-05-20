@@ -381,6 +381,7 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Cancel": "取消",
   "OK": "确定",
   "Done": "完成",
+  "Continue": "继续",
   "Close": "关闭",
   "Save": "保存",
   "Add": "添加",
@@ -401,6 +402,7 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Manage": "管理",
   "Import": "导入",
   "Export": "导出",
+  "Decrypt": "解密",
   "Choose Action": "选择操作",
   "Input Required": "需要输入",
   "Notice": "提示",
@@ -440,6 +442,7 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Offline": "离线",
   "Private Key": "私钥",
   "Password": "密码",
+  "password": "密码",
   "Password · Secret Stored": "密码 · 已保存密钥",
   "Ungrouped": "未分组",
   "SFTP view mode": "SFTP 视图模式",
@@ -610,9 +613,55 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Manage Session Templates...": "管理会话模板...",
   "Import SSH Config...": "导入 SSH 配置...",
   "Import Sessions JSON...": "导入会话 JSON...",
+  "Import Sessions JSON": "导入会话 JSON",
+  "Sessions JSON Preview": "会话 JSON 预览",
+  "Sessions JSON Import": "会话 JSON 导入",
   "Import Encrypted Migration...": "导入加密迁移包...",
   "Export All Sessions...": "导出所有会话...",
   "Export Encrypted Migration...": "导出加密迁移包...",
+  "SSH Config Import": "SSH 配置导入",
+  "SSH Config Preview": "SSH 配置预览",
+  "Encrypted Migration Export": "加密迁移导出",
+  "Encrypted Migration Import": "加密迁移导入",
+  "Encrypted Migration Preview": "加密迁移预览",
+  "Enter the migration passphrase.": "输入迁移口令。",
+  "Enter a migration passphrase. You will need it to import this file.": "输入迁移口令。导入这个文件时还需要再次输入。",
+  "Migration passphrase must be at least 8 characters.": "迁移口令至少需要 8 个字符。",
+  "Confirm migration passphrase.": "确认迁移口令。",
+  "Import Encrypted Migration": "导入加密迁移包",
+  "Passphrases do not match.": "两次输入的口令不一致。",
+  "Include private key file contents in the encrypted migration file?": "要把私钥文件内容一起放进加密迁移文件吗？",
+  "Include Keys": "包含私钥",
+  "Paths Only": "仅保留路径",
+  "Including private key files makes migration work on another computer, but anyone with this file and passphrase can use those keys. Passwords and private-key passphrases are always encrypted in this migration file.": "包含私钥文件后，迁移到另一台电脑时可以直接使用；但任何同时拿到这个文件和口令的人，也可能使用这些私钥。密码和私钥口令始终会在迁移文件中加密保存。",
+  "No importable sessions found in this migration file.": "这个迁移文件里没有可导入的会话。",
+  "Review decrypted sessions before import.": "导入前请先检查已解密的会话。",
+  "Group Strategy": "分组策略",
+  "Choose target group strategy for imported sessions.": "为导入会话选择目标分组策略。",
+  "Set target group for imported sessions. Leave empty for Ungrouped.": "为导入会话设置目标分组。留空则导入到未分组。",
+  "Choose Duplicates": "处理重复项",
+  "Review Import": "查看导入计划",
+  "Review parsed sessions before import.": "导入前请先检查已解析的会话。",
+  "No importable sessions found.": "没有找到可导入的会话。",
+  "No importable Host entries were found.": "没有找到可导入的 Host 条目。",
+  "Keep Group from File": "保留文件中的分组",
+  "Force Active Group": "强制使用当前分组",
+  "Duplicate Strategy": "重复项策略",
+  "Skip Duplicates": "跳过重复项",
+  "Overwrite Existing": "覆盖现有会话",
+  "Create Renamed Copies": "创建重命名副本",
+  "skip": "跳过重复项",
+  "overwrite": "覆盖现有会话",
+  "rename": "创建重命名副本",
+  "keepSource": "保留文件中的分组",
+  "forceCurrent": "强制使用当前分组",
+  "ungrouped": "移动到未分组",
+  "Import completed.": "导入完成。",
+  "Open First Imported": "打开首个已导入会话",
+  "Open the first imported session now?": "现在打开首个已导入会话吗？",
+  "Imported Session": "已导入会话",
+  "Imported JSON:": "已导入 JSON：",
+  "Warnings:": "警告：",
   "Export All Groups...": "导出所有分组...",
   "Select All Groups": "选择所有分组",
   "Clear Group Selection": "清除分组选择",
@@ -1645,6 +1694,192 @@ const SIMPLIFIED_CHINESE_REPLACEMENTS: TextReplacement[] = [
   {
     pattern: /^Imported (\d+) command\(s\) from:\n(.+)$/u,
     replace: (_match, count, path) => `已从以下位置导入 ${count} 条命令：\n${path}`
+  },
+  {
+    pattern: /^Invalid JSON format\.\n([\s\S]+)$/u,
+    replace: (_match, detail) => `JSON 格式无效。\n${detail}`
+  },
+  {
+    pattern: /^No importable sessions found\.\n\n([\s\S]+)$/u,
+    replace: (_match, warnings) => `没有找到可导入的会话。\n\n${warnings}`
+  },
+  {
+    pattern: /^No importable Host entries were found\.\n\n([\s\S]+)$/u,
+    replace: (_match, warnings) => `没有找到可导入的 Host 条目。\n\n${warnings}`
+  },
+  {
+    pattern: /^File: (.+)$/u,
+    replace: (_match, path) => `文件：${path}`
+  },
+  {
+    pattern: /^Parsed hosts: (\d+)$/u,
+    replace: (_match, count) => `解析到的主机：${count}`
+  },
+  {
+    pattern: /^New sessions: (\d+)$/u,
+    replace: (_match, count) => `新建会话：${count}`
+  },
+  {
+    pattern: /^Duplicate targets: (\d+)$/u,
+    replace: (_match, count) => `重复目标：${count}`
+  },
+  {
+    pattern: /^Target group: (.+)$/u,
+    replace: (_match, group) => `目标分组：${translateAppText("zh-CN", group)}`
+  },
+  {
+    pattern: /^Duplicate strategy: (.+)$/u,
+    replace: (_match, strategy) => `重复项策略：${translateAppText("zh-CN", strategy)}`
+  },
+  {
+    pattern: /^\.\.\. (\d+) more host entries$/u,
+    replace: (_match, count) => `... 还有 ${count} 个 Host 条目`
+  },
+  {
+    pattern: /^Import (\d+) host entr(?:y|ies) from (.+)\?$/u,
+    replace: (_match, count, fileName) => `要从 ${fileName} 导入 ${count} 个 Host 条目吗？`
+  },
+  {
+    pattern: /^Importing (\d+) host entr(?:y|ies) from SSH config\.$/u,
+    replace: (_match, count) => `正在从 SSH 配置导入 ${count} 个 Host 条目。`
+  },
+  {
+    pattern: /^Import (\d+) session\(s\) from (.+)\?\nGroup strategy: (.+)\nDuplicate strategy: (.+)$/u,
+    replace: (_match, count, fileName, groupStrategy, duplicateStrategy) =>
+      `要从 ${fileName} 导入 ${count} 个会话吗？\n分组策略：${translateAppText("zh-CN", groupStrategy)}\n重复项策略：${translateAppText("zh-CN", duplicateStrategy)}`
+  },
+  {
+    pattern: /^Importing (\d+) session(?:s)? from JSON\.$/u,
+    replace: (_match, count) => `正在从 JSON 导入 ${count} 个会话。`
+  },
+  {
+    pattern: /^Importable sessions: (\d+)$/u,
+    replace: (_match, count) => `可导入会话：${count}`
+  },
+  {
+    pattern: /^\.\.\. (\d+) more entries$/u,
+    replace: (_match, count) => `... 还有 ${count} 条记录`
+  },
+  {
+    pattern: /^Created (\d+), updated (\d+), skipped (\d+), failed (\d+), warnings (\d+)\.$/u,
+    replace: (_match, created, updated, skipped, failed, warnings) =>
+      `已创建 ${created}，已更新 ${updated}，已跳过 ${skipped}，失败 ${failed}，警告 ${warnings}。`
+  },
+  {
+    pattern: /^Import completed\.\nCreated: (\d+)\nUpdated: (\d+)\nSkipped: (\d+)\nFailed: (\d+)\nWarnings: (\d+)$/u,
+    replace: (_match, created, updated, skipped, failed, warnings) =>
+      `导入完成。\n已创建：${created}\n已更新：${updated}\n已跳过：${skipped}\n失败：${failed}\n警告：${warnings}`
+  },
+  {
+    pattern: /^Imported JSON: (.+)$/u,
+    replace: (_match, path) => `已导入 JSON：${path}`
+  },
+  {
+    pattern: /^Row (\d+): missing required field \(name\/host\/username\), skipped\.$/u,
+    replace: (_match, row) => `第 ${row} 行缺少必填字段（name/host/username），已跳过。`
+  },
+  {
+    pattern: /^Row (\d+): privateKey auth without key path; using password auth\.$/u,
+    replace: (_match, row) => `第 ${row} 行是 privateKey 认证但没有私钥路径；已改用密码认证。`
+  },
+  {
+    pattern: /^Encrypting (\d+) session(?:s)? for migration\.$/u,
+    replace: (_match, count) => `正在为迁移加密 ${count} 个会话。`
+  },
+  {
+    pattern: /^Encrypted (\d+) session(?:s)? with (\d+) password secret\(s\), (\d+) private-key passphrase\(s\), and (\d+) embedded private key file\(s\)\.$/u,
+    replace: (_match, sessions, passwords, passphrases, keyFiles) =>
+      `已加密 ${sessions} 个会话，包含 ${passwords} 个密码密钥、${passphrases} 个私钥口令，以及 ${keyFiles} 个嵌入式私钥文件。`
+  },
+  {
+    pattern: /^Encrypted migration exported:\n(.+)$/u,
+    replace: (_match, path) => `加密迁移包已导出：\n${path}`
+  },
+  {
+    pattern: /^Encrypted migration exported\.\nPath copied to clipboard:\n(.+?)(?:\n\nWarnings:\n([\s\S]+))?$/u,
+    replace: (_match, path, warnings = "") =>
+      `加密迁移包已导出。\n路径已复制到剪贴板：\n${path}${warnings ? `\n\n警告：\n${warnings}` : ""}`
+  },
+  {
+    pattern: /^Decrypting (.+)\.$/u,
+    replace: (_match, fileName) => `正在解密 ${fileName}。`
+  },
+  {
+    pattern: /^Importable sessions: (\d+)$/u,
+    replace: (_match, count) => `可导入会话：${count}`
+  },
+  {
+    pattern: /^Encrypted passwords restored: (\d+)$/u,
+    replace: (_match, count) => `已恢复加密密码：${count}`
+  },
+  {
+    pattern: /^Private-key sessions: (\d+)$/u,
+    replace: (_match, count) => `私钥会话：${count}`
+  },
+  {
+    pattern: /^Private-key passphrases restored: (\d+)$/u,
+    replace: (_match, count) => `已恢复私钥口令：${count}`
+  },
+  {
+    pattern: /^Source app version: (.+)$/u,
+    replace: (_match, version) => `来源应用版本：${version}`
+  },
+  {
+    pattern: /^Exported at: (.+)$/u,
+    replace: (_match, exportedAt) => `导出时间：${exportedAt}`
+  },
+  {
+    pattern: /^Found (\d+) duplicate connection target\(s\)\. Choose duplicate strategy\.$/u,
+    replace: (_match, count) => `发现 ${count} 个重复连接目标。请选择重复项策略。`
+  },
+  {
+    pattern: /^Found (\d+) duplicate connection target\(s\)\. Choose how to handle duplicates\.$/u,
+    replace: (_match, count) => `发现 ${count} 个重复连接目标。请选择重复项处理方式。`
+  },
+  {
+    pattern: /^Import (\d+) session\(s\) from encrypted migration\?\nGroup strategy: (.+)\nDuplicate strategy: (.+)$/u,
+    replace: (_match, count, groupStrategy, duplicateStrategy) =>
+      `要从加密迁移包导入 ${count} 个会话吗？\n分组策略：${translateAppText("zh-CN", groupStrategy)}\n重复项策略：${translateAppText("zh-CN", duplicateStrategy)}`
+  },
+  {
+    pattern: /^Created (\d+), updated (\d+), skipped (\d+), failed (\d+), restored secrets (\d+), warnings (\d+)\.$/u,
+    replace: (_match, created, updated, skipped, failed, restoredSecrets, warnings) =>
+      `已创建 ${created}，已更新 ${updated}，已跳过 ${skipped}，失败 ${failed}，已恢复密钥 ${restoredSecrets}，警告 ${warnings}。`
+  },
+  {
+    pattern: /^Import completed\.\nCreated: (\d+)\nUpdated: (\d+)\nSkipped: (\d+)\nFailed: (\d+)\nRestored secrets: (\d+)\nWarnings: (\d+)$/u,
+    replace: (_match, created, updated, skipped, failed, restoredSecrets, warnings) =>
+      `导入完成。\n已创建：${created}\n已更新：${updated}\n已跳过：${skipped}\n失败：${failed}\n已恢复密钥：${restoredSecrets}\n警告：${warnings}`
+  },
+  {
+    pattern: /^Imported encrypted migration: (.+)$/u,
+    replace: (_match, path) => `已导入加密迁移包：${path}`
+  },
+  {
+    pattern: /^key=(.+)$/u,
+    replace: (_match, keyPath) => `私钥=${keyPath}`
+  },
+  {
+    pattern: /^(.+): (.+)@(.+):(\d+) \[(.+)\] \((.+)\)$/u,
+    replace: (_match, name, username, host, port, group, authLabel) =>
+      `- ${name}: ${username}@${host}:${port} [${translateAppText("zh-CN", group)}] (${translateAppText("zh-CN", authLabel)})`
+  },
+  {
+    pattern: /^- (.+): (.+)@(.+):(\d+) \((.+)\)$/u,
+    replace: (_match, name, username, host, port, authLabel) =>
+      `- ${name}: ${username}@${host}:${port} (${translateAppText("zh-CN", authLabel)})`
+  },
+  {
+    pattern: /^key=(.+), passphrase restored$/u,
+    replace: (_match, keyPath) => `私钥=${keyPath}，已恢复口令`
+  },
+  {
+    pattern: /^password restored$/u,
+    replace: () => "已恢复密码"
+  },
+  {
+    pattern: /^password missing$/u,
+    replace: () => "密码缺失"
   }
 ];
 
