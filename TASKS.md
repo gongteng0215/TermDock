@@ -2,14 +2,14 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-05-14
+Last updated: 2026-05-20
 
 ## Current Release State
 
 - Stable release: `v0.1.26`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: encrypted session migration validation and first-import/first-connect conversion
+- Priority direction: v0.1.27 release prep and final release-page copy
 
 ## P0 Matrix
 
@@ -91,6 +91,12 @@ Last updated: 2026-05-14
    - targeted `pnpm run test:session-migration` now covers encrypted export, wrong-passphrase failure, preview without key restore, confirmed key restore, renderer-safe payload stripping, and paths-only migration
    - `pnpm run smoke:ui` now asserts the encrypted migration import/export menu entries are visible
    - `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed with `PASS 48 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`
+0. v0.1.27 release-candidate prep:
+   - encrypted migration is now paired with refreshed release smoke coverage and release-note drafts
+   - editor-workbench UI refresh plus renderer maintainability refactor are now fully landed on `master`
+   - renderer workbench/settings/terminal bundles are split into dedicated chunks instead of one oversized main bundle
+   - renderer assembly now leans on focused hooks, modal hosts, prop builders, and shell/composite args layers
+   - final `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-20 with `PASS 50 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-20T02-46-53-664Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling
