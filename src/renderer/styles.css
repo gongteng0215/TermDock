@@ -2210,8 +2210,23 @@ body::before {
   height: 12px;
 }
 
+.sftp-transfer__meta {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
 .sftp-transfer__name,
 .sftp-transfer__progress {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sftp-transfer__time {
+  color: #7f94a8;
+  font-size: 9px;
+  line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

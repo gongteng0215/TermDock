@@ -45,6 +45,7 @@ export interface BuildTransferDockCompositePropsArgs<TTransfer extends TransferL
   failedUploadHistoryCount: number;
   failedUploadRetryCandidateCount: number;
   formatTransferProgress: (transfer: TTransfer) => string;
+  formatTransferTimestamp: (transfer: TTransfer) => string | null;
   hasOperationCenterActivity: boolean;
   isActiveDownloadQueuePaused: boolean;
   isActiveUploadQueuePaused: boolean;
@@ -116,6 +117,7 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
   failedUploadHistoryCount,
   failedUploadRetryCandidateCount,
   formatTransferProgress,
+  formatTransferTimestamp,
   hasOperationCenterActivity,
   isActiveDownloadQueuePaused,
   isActiveUploadQueuePaused,
@@ -157,6 +159,7 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
     getTransferName: (transfer) => transfer.name,
     getTransferProgressLabel: formatTransferProgress,
     getTransferStatus: (transfer) => transfer.status,
+    getTransferTimeLabel: formatTransferTimestamp,
     historyMessage:
       failedUploadHistoryCount > 0 ? labels.storedFailedRetries(failedUploadHistoryCount) : null,
     onCancelTransferAction: cancelSftpUpload,
@@ -203,6 +206,7 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
     getTransferName: (transfer) => transfer.name,
     getTransferProgressLabel: formatTransferProgress,
     getTransferStatus: (transfer) => transfer.status,
+    getTransferTimeLabel: formatTransferTimestamp,
     historyMessage:
       failedDownloadHistoryCount > 0
         ? labels.storedFailedRetries(failedDownloadHistoryCount)

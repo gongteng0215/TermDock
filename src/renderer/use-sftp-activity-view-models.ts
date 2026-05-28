@@ -5,6 +5,7 @@ import type { SftpTransferEvent } from "../shared/sftp";
 interface SftpTransferLike extends SftpTransferEvent {
   transferId: string;
   tabId: string;
+  createdAt: number;
   updatedAt: number;
   batchId?: string;
 }

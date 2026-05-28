@@ -160,6 +160,7 @@ interface BuildTransferDockPanelPropsArgs<TTransfer>
   getTransferName: (transfer: TTransfer) => string;
   getTransferProgressLabel: (transfer: TTransfer) => string;
   getTransferStatus: (transfer: TTransfer) => string;
+  getTransferTimeLabel: (transfer: TTransfer) => string | null;
   onCancelTransferAction: (transfer: TTransfer) => Promise<void>;
   retryFailedAction: () => Promise<void>;
   transfers: TTransfer[];
@@ -174,6 +175,7 @@ export function buildTransferDockPanelProps<TTransfer>({
   getTransferName,
   getTransferProgressLabel,
   getTransferStatus,
+  getTransferTimeLabel,
   onCancelTransferAction,
   retryFailedAction,
   transfers,
@@ -197,6 +199,7 @@ export function buildTransferDockPanelProps<TTransfer>({
       },
       progressLabel: getTransferProgressLabel(transfer),
       status: getTransferStatus(transfer),
+      timeLabel: getTransferTimeLabel(transfer),
       transferId: getTransferId(transfer)
     }))
   };

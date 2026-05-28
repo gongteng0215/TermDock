@@ -42,6 +42,7 @@ type TransferDockValueArgs<TTransfer extends TransferLike> = Pick<
   | "failedUploadHistoryCount"
   | "failedUploadRetryCandidateCount"
   | "formatTransferProgress"
+  | "formatTransferTimestamp"
   | "hasOperationCenterActivity"
   | "isActiveDownloadQueuePaused"
   | "isActiveUploadQueuePaused"

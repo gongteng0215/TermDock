@@ -24,6 +24,7 @@ interface TransferDockItemView {
   direction: "upload" | "download";
   name: string;
   progressLabel: string;
+  timeLabel?: string | null;
   status: string;
   canCancel: boolean;
   onCancel: () => void;
@@ -284,7 +285,10 @@ function TransferDockPanel({
               <span className="sftp-transfer__icon">
                 <UiIcon name={transfer.direction} />
               </span>
-              <span className="sftp-transfer__name">{transfer.name}</span>
+              <span className="sftp-transfer__meta">
+                <span className="sftp-transfer__name">{transfer.name}</span>
+                {transfer.timeLabel ? <span className="sftp-transfer__time">{transfer.timeLabel}</span> : null}
+              </span>
               <span className="sftp-transfer__progress">{transfer.progressLabel}</span>
               {transfer.canCancel ? (
                 <button

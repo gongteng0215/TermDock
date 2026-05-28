@@ -1,6 +1,8 @@
 import {
+  type Dispatch,
   DragEvent,
   FormEvent,
+  type SetStateAction,
   useCallback,
   useEffect,
   useMemo,
@@ -642,6 +644,7 @@ function createDefaultHotkeyPreferences(): HotkeyPreferences {
 }
 
 interface SftpTransferItem extends SftpTransferEvent {
+  createdAt: number;
   updatedAt: number;
   batchId?: string;
   sessionId?: string;
@@ -2297,6 +2300,23 @@ function formatHistoryTimestamp(timestamp: number): string {
     return "-";
   }
   return value.toLocaleString();
+}
+
+function formatTransferTimestamp(transfer: SftpTransferItem): string {
+  const timestamp =
+    transfer.status === "queued"
+      ? transfer.createdAt
+      : transfer.updatedAt > 0
+        ? transfer.updatedAt
+        : transfer.createdAt;
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "";
+  }
+  const value = new Date(timestamp);
+  if (!Number.isFinite(value.getTime())) {
+    return "";
+  }
+  return value.toLocaleTimeString();
 }
 
 function formatSshConfigPreview(
@@ -5198,6 +5218,7 @@ export function App() {
   const sessionsRef = useRef<SessionRecord[]>([]);
   const terminalTabsRef = useRef<TerminalTab[]>([]);
   const activeTabIdRef = useRef<string | null>(null);
+  const sftpPathByTabRef = useRef<Record<string, string>>({});
   const sftpTransfersRef = useRef<SftpTransferItem[]>([]);
   const transferHistoryRef = useRef<SftpTransferHistoryItem[]>([]);
   const portForwardsRef = useRef<PortForwardRecord[]>([]);
@@ -5280,6 +5301,17 @@ export function App() {
   const sftpError = activeTabId
     ? activeRemoteOpenFileIssue?.message ?? sftpErrorsByTab[activeTabId] ?? null
     : globalSftpError;
+
+  const setSftpPathForActiveTab = useCallback<Dispatch<SetStateAction<string>>>((value) => {
+    setSftpPath((previousPath) => {
+      const nextPath = typeof value === "function" ? value(previousPath) : value;
+      const targetTabId = activeTabIdRef.current;
+      if (targetTabId) {
+        sftpPathByTabRef.current[targetTabId] = nextPath;
+      }
+      return nextPath;
+    });
+  }, []);
 
   const setSftpError = useCallback((message: string | null, tabId?: string | null) => {
     const normalizedTabId = typeof tabId === "string" ? tabId.trim() : "";
@@ -8058,6 +8090,7 @@ export function App() {
         terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.sessionId ?? "";
       const nextItem: SftpTransferItem = {
         ...event,
+        createdAt: now,
         updatedAt: now
       };
       if (tabSessionId) {
@@ -8096,6 +8129,7 @@ export function App() {
         ...next[existingIndex],
         ...nextItem
       };
+      mergedItem.createdAt = next[existingIndex].createdAt ?? now;
       if (event.batchId === undefined && next[existingIndex].batchId !== undefined) {
         mergedItem.batchId = next[existingIndex].batchId;
       }
@@ -8483,16 +8517,19 @@ export function App() {
       setSftpError(null, targetTabId);
       try {
         const result = await sftpApi.listDirectory(targetTabId, path ?? ".");
-        setSftpDirectory(result);
-        setSftpPath(result.cwd);
-        setSelectedSftpPath((previousPath) => {
-          if (!previousPath) {
-            return null;
-          }
-          return result.entries.some((entry) => entry.path === previousPath)
-            ? previousPath
-            : null;
-        });
+        sftpPathByTabRef.current[targetTabId] = result.cwd;
+        if (targetTabId === activeTabIdRef.current) {
+          setSftpDirectory(result);
+          setSftpPath(result.cwd);
+          setSelectedSftpPath((previousPath) => {
+            if (!previousPath) {
+              return null;
+            }
+            return result.entries.some((entry) => entry.path === previousPath)
+              ? previousPath
+              : null;
+          });
+        }
       } catch (caughtError) {
         const message = (caughtError as Error).message;
         if (options?.suppressDisconnectedError && isTabNotConnectedError(message)) {
@@ -9297,12 +9334,13 @@ export function App() {
 
   useEffect(() => {
     setSftpDirectory(null);
-    setSftpPath(".");
     setSelectedSftpPath(null);
+    const nextPath = activeTabId ? sftpPathByTabRef.current[activeTabId] ?? "." : ".";
+    setSftpPath(nextPath);
     if (!activeTabId || !sftpApi) {
       return;
     }
-    void loadSftpDirectory(".", {
+    void loadSftpDirectory(nextPath, {
       tabId: activeTabId,
       suppressDisconnectedError: true
     });
@@ -9321,6 +9359,7 @@ export function App() {
     ensuringRemoteDirectoriesRef.current.clear();
     readyUploadDirectoriesRef.current.clear();
     warmingUploadDirectoriesRef.current.clear();
+    sftpPathByTabRef.current = {};
     runningUploadCountsByTabRef.current.clear();
     adaptiveUploadConcurrencyByTabRef.current.clear();
     adaptiveUploadConcurrencyRecoveryByTabRef.current.clear();
@@ -9528,7 +9567,7 @@ export function App() {
       if (!activeTabIdRef.current || event.tabId !== activeTabIdRef.current) {
         return;
       }
-      void loadSftpDirectory(".", {
+      void loadSftpDirectory(sftpPathByTabRef.current[event.tabId] ?? ".", {
         tabId: event.tabId,
         suppressDisconnectedError: true
       });
@@ -16892,7 +16931,7 @@ export function App() {
       selectedSftpPath,
       setSelectedSftpPath,
       setSftpExplorerViewMode,
-      setSftpPath,
+      setSftpPath: setSftpPathForActiveTab,
       sftpActionLoading,
       sftpDeleteProgress,
       sftpDirectory,
@@ -16974,6 +17013,7 @@ export function App() {
         failedUploadHistoryCount,
         failedUploadRetryCandidateCount: failedUploadRetryCandidates.length,
         formatTransferProgress,
+        formatTransferTimestamp,
         hasOperationCenterActivity,
         isActiveDownloadQueuePaused,
         isActiveUploadQueuePaused,
