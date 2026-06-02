@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { initializeAutoUpdate } from "./auto-update.js";
 import { registerSftpHandlers } from "./ipc/register-sftp-handlers.js";
 import { registerSessionHandlers } from "./ipc/register-session-handlers.js";
 import { registerSystemHandlers } from "./ipc/register-system-handlers.js";
@@ -211,6 +212,7 @@ async function bootstrap(): Promise<void> {
     await applyMacDockIcon();
   }
   createWindow();
+  initializeAutoUpdate();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

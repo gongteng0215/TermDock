@@ -6,10 +6,10 @@ Last updated: 2026-06-02
 
 ## Current Release State
 
-- Stable release: `v0.1.28`
+- Stable release: `v0.1.29`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: post-`v0.1.28` runtime hardening and release validation
+- Priority direction: post-`v0.1.29` update verification and release follow-up
 
 ## P0 Matrix
 
@@ -46,7 +46,7 @@ Last updated: 2026-06-02
 | P0-F1 | TODO | Unit tests; low priority for current self-use track |
 | P0-F2 | TODO | Integration tests; low priority for current self-use track |
 | P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP, remote-open-file save-back, unexpected-disconnect, and SFTP fault-recovery smoke landed; remaining macOS evidence and targeted external-host validation are low priority for current self-use track |
-| P0-F4 | PARTIAL | Release preflight/verify baseline and self-use Windows path landed; public-trust signing secret provisioning and first signed/notarized evidence are low priority for current self-use track |
+| P0-F4 | PARTIAL | Release preflight/verify baseline, self-use Windows path, and GitHub Release auto-update metadata upload landed; public-trust signing secret provisioning and first signed/notarized evidence are low priority for current self-use track |
 | P0-G1 | DONE | Server health panel baseline plus tab-scoped monitor-state hardening shipped |
 
 ## In Progress Track (v0.1.3+)

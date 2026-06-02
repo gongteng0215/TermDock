@@ -1,6 +1,6 @@
 {
   "name": "termdock",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
@@ -19,6 +19,7 @@
     "release:set-secrets": "node scripts/set-release-secrets.mjs",
     "release:verify": "node scripts/verify-release-artifacts.mjs",
     "test:session-migration": "pnpm run build:main && node scripts/test-session-migration.mjs",
+    "test:main-auto-update": "node scripts/test-main-auto-update.mjs",
     "test:main-single-instance": "node scripts/test-main-single-instance.mjs",
     "build": "pnpm run build:renderer && pnpm run build:main",
     "build:renderer": "vite build",
@@ -38,6 +39,7 @@
   "license": "MIT",
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
+    "electron-updater": "^6.8.3",
     "jszip": "^3.10.1",
     "keytar": "^7.9.0",
     "lucide-react": "^0.576.0",
@@ -98,6 +100,8 @@
     "publish": [
       {
         "provider": "github",
+        "owner": "gongteng0215",
+        "repo": "TermDock",
         "releaseType": "draft"
       }
     ]

@@ -1,4 +1,4 @@
-﻿# TermDock Release Notes
+# TermDock Release Notes
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
@@ -13,6 +13,26 @@ Release type: In development
 ### Validation
 
 - Validation will be added with the next release candidate.
+
+## v0.1.29 (2026-06-02)
+
+Release type: Stable
+
+### Highlights
+
+- Auto update support:
+  - packaged TermDock builds now check GitHub Releases for newer versions after startup
+  - available updates download in the background and prompt the user to restart once installation is ready
+  - development, smoke, and explicitly disabled runs skip update checks
+- Release publishing now uploads electron-updater metadata files such as `latest.yml` alongside installers and blockmaps.
+
+### Validation
+
+- `pnpm run test:main-auto-update` passed.
+- `pnpm run test:main-single-instance` passed.
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm exec electron-builder --win nsis zip --publish never --config.win.signAndEditExecutable=false` passed and produced `latest.yml`.
 
 ## v0.1.28 (2026-06-02)
 

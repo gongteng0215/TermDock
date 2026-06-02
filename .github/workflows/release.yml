@@ -211,6 +211,8 @@ jobs:
             release/*.zip
             release/*.exe
             release/*.blockmap
+            release/*.yml
+            release/*.yaml
           if-no-files-found: error
 
   publish:
@@ -262,6 +264,8 @@ jobs:
             release-assets/*.zip
             release-assets/*.exe
             release-assets/*.blockmap
+            release-assets/*.yml
+            release-assets/*.yaml
           )
 
           if [ ${#ASSETS[@]} -eq 0 ]; then

@@ -14,6 +14,26 @@
 
 - 下一个候选版本发布时再补充验证结果。
 
+## v0.1.29 (2026-06-02)
+
+发布类型：稳定版
+
+### 主要变化
+
+- 自动更新支持：
+  - 打包后的 TermDock 启动后会检查 GitHub Releases 上的新版本。
+  - 发现新版本后会在后台下载，下载完成后提示用户是否立即重启安装。
+  - 开发模式、smoke 运行和显式禁用自动更新的运行不会触发更新检查。
+- 发布流程现在会把 `latest.yml` 等 electron-updater 元数据文件和安装包、blockmap 一起上传。
+
+### 验证
+
+- `pnpm run test:main-auto-update` 已通过。
+- `pnpm run test:main-single-instance` 已通过。
+- `pnpm run typecheck` 已通过。
+- `pnpm run build` 已通过。
+- `pnpm exec electron-builder --win nsis zip --publish never --config.win.signAndEditExecutable=false` 已通过，并生成了 `latest.yml`。
+
 ## v0.1.28 (2026-06-02)
 
 鍙戝竷绫诲瀷锛氱ǔ瀹氱増

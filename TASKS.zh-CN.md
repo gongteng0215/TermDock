@@ -2,13 +2,13 @@
 
 [English](TASKS.md)
 
-Last updated: 2026-05-14
+Last updated: 2026-06-02
 
 ## 当前发布状态
 
-- 当前稳定版：`v0.1.26`
+- 当前稳定版：`v0.1.29`
 - 当前分支：`master`
-- 当前方向：加密会话迁移验证、首次导入和首次连接转化优化。
+- 当前方向：`v0.1.29` 后更新验证和发布跟进。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
 - 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 
@@ -25,7 +25,7 @@ Last updated: 2026-05-14
 | 服务器健康 | DONE | CPU、内存、磁盘、网络、进程、失败服务等信息已可见。 |
 | 跨平台 smoke | PARTIAL | 自动化 smoke 已覆盖核心流程，仍需持续补充真实环境证据。 |
 | 签名 / notarization | PARTIAL | 预检和验证脚本已可用，公开可信签名证据仍在推进。 |
-| 自动更新 | TODO | 暂未实现。 |
+| 自动更新 | PARTIAL | 打包应用会检查 GitHub Releases，新版本后台下载完成后提示重启安装；后续需要真实跨版本安装验证。 |
 | SQLite 迁移 | TODO | 当前仍使用 JSON 持久化。 |
 
 ## 当前进行中
