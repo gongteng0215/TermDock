@@ -14,6 +14,26 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.28 (2026-06-02)
+
+Release type: Stable
+
+### Highlights
+
+- Single-instance app guard:
+  - launching TermDock again now restores and focuses the existing window instead of opening another app instance
+  - secondary app processes quit before bootstrapping services or creating windows
+- Smoke automation cleanup:
+  - Electron smoke runs now force-close the spawned Electron process if graceful shutdown does not finish in time
+  - added a targeted regression check for the main-process single-instance guard
+
+### Validation
+
+- `pnpm run test:main-single-instance` passed.
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run smoke:ui` passed with `PASS 50 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-06-02T08-48-20-888Z/summary.json`.
+
 ## v0.1.27 (2026-05-20)
 
 Release type: Stable

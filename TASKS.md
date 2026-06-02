@@ -2,14 +2,14 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-05-20
+Last updated: 2026-06-02
 
 ## Current Release State
 
-- Stable release: `v0.1.26`
+- Stable release: `v0.1.28`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: v0.1.27 release prep and final release-page copy
+- Priority direction: post-`v0.1.28` runtime hardening and release validation
 
 ## P0 Matrix
 
@@ -98,6 +98,12 @@ Last updated: 2026-05-20
    - renderer assembly now leans on focused hooks, modal hosts, prop builders, and shell/composite args layers
    - package version is now bumped to `0.1.27`
    - final `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-05-20 with `PASS 50 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-05-20T02-46-53-664Z/summary.json`
+0. v0.1.28 single-instance release prep:
+   - launching TermDock again now restores/focuses the existing window instead of opening a second app instance
+   - secondary app processes quit before bootstrapping services or creating windows
+   - smoke automation now force-closes the spawned Electron process if graceful shutdown does not finish in time
+   - package version is now bumped to `0.1.28`
+   - final `pnpm run test:main-single-instance`, `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed on 2026-06-02 with `PASS 50 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-06-02T08-48-20-888Z/summary.json`
 0. UI compactness and list-shell stability governance:
    - enforce compact density defaults across pages
    - enforce fixed-height list shells with internal scrolling

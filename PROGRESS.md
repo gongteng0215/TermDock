@@ -2,13 +2,13 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-05-14
+Last updated: 2026-06-02
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.26`
+- Stable release shipped: `v0.1.28`
 - Active branch: `master`
-- Active focus: encrypted session migration and first-import/first-connect conversion
+- Active focus: post-release runtime hardening and release validation
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -35,12 +35,14 @@ Last updated: 2026-05-14
 - Master branch now includes a paired English/Simplified Chinese SSH config import guide linked from the README and documentation index
 - Master branch now includes first-connect SSH error diagnostics with reason/suggestion/raw-error output plus a paired troubleshooting guide
 - Master branch now includes encrypted `.tdmigration` session migration with passphrase-protected passwords, private-key passphrases, optional embedded private-key files, and paired English/Simplified Chinese migration docs
+- Master branch now enforces a single running app instance and restores/focuses the existing window when TermDock is launched again
+- Smoke automation now force-closes its spawned Electron process if graceful shutdown does not finish in time
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
 - Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
 - Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
 - Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-05-14: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
+- Latest master validation on 2026-06-02: `pnpm run test:main-single-instance`, `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-06-02T08-48-20-888Z/summary.json` (`PASS 50 / FAIL 0 / SKIP 0`).
 - Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
 - Milestone status:
   - `M0` (technical validation): complete

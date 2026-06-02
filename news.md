@@ -2,7 +2,7 @@
 
 [中文](news.zh-CN.md)
 
-Last updated: 2026-05-09
+Last updated: 2026-06-02
 
 ## Confirmed Direction
 
@@ -14,12 +14,14 @@ Last updated: 2026-05-09
 
 ## Release Baseline
 
-- Current stable release: `v0.1.22` (2026-04-12)
-- Active branch: `feature/editor-workbench-ui`
-- Active branch focus: editor-workbench UI refresh and post-refactor validation
+- Current stable release: `v0.1.28` (2026-06-02)
+- Active branch: `master`
+- Active branch focus: post-release runtime hardening and release validation
 
 ## Shipped in Recent Cycles
 
+- v0.1.28: launching TermDock again now restores/focuses the existing window instead of opening a second app instance
+- v0.1.28: smoke automation now force-closes its spawned Electron process if graceful shutdown does not finish in time
 - feature/editor-workbench-ui: the main renderer now reads as a dark code-editor workbench with a flatter shell, SFTP Explorer rail, right Inspector rail, terminal-dominant center stage, and bottom transfer panel
 - feature/editor-workbench-ui: the right Inspector now supports collapsible command history and narrow-width `Sessions` / `Health` / `History` tabs
 - feature/editor-workbench-ui: SFTP Explorer view mode now persists as `Compact` / `Details`

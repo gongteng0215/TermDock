@@ -39,6 +39,23 @@ if (shouldDisableGpu) {
   app.commandLine.appendSwitch("disable-gpu");
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+}
+
+function focusExistingWindow(): void {
+  const existingWindow = BrowserWindow.getAllWindows().find((windowRef) => !windowRef.isDestroyed());
+  if (!existingWindow) {
+    return;
+  }
+  if (existingWindow.isMinimized()) {
+    existingWindow.restore();
+  }
+  existingWindow.show();
+  existingWindow.focus();
+}
+
 function createWindow(): void {
   const windowOptions: BrowserWindowConstructorOptions = {
     width: 1440,
@@ -171,6 +188,10 @@ function setupApplicationMenu(mainWindow: BrowserWindow): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+app.on("second-instance", () => {
+  focusExistingWindow();
+});
+
 async function bootstrap(): Promise<void> {
   await app.whenReady();
   appLogger.initialize();
@@ -204,9 +225,11 @@ app.on("window-all-closed", () => {
   }
 });
 
-void bootstrap().catch((error: Error) => {
-  appLogger.log("error", "main:bootstrap", "Bootstrap failed.", error);
-});
+if (hasSingleInstanceLock) {
+  void bootstrap().catch((error: Error) => {
+    appLogger.log("error", "main:bootstrap", "Bootstrap failed.", error);
+  });
+}
 
 function resolveRuntimeIconCandidates(): string[] {
   const candidates =

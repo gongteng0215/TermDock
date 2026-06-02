@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { basename, join, relative, resolve } from "node:path";
 
@@ -447,6 +448,48 @@ async function waitForFileContents(targetPath, expectedText, timeout = 10_000) {
       description: `file contents for ${targetPath}`
     }
   );
+}
+
+async function closeElectronApp(app, timeout = 8_000) {
+  let closed = false;
+  const appProcess = typeof app.process === "function" ? app.process() : null;
+  const appProcessId = appProcess?.pid;
+  try {
+    await Promise.race([
+      app.close().then(() => {
+        closed = true;
+      }),
+      new Promise((resolvePromise) => {
+        setTimeout(resolvePromise, timeout);
+      })
+    ]);
+  } finally {
+    if (!closed && appProcess && !appProcess.killed) {
+      appProcess.kill();
+    }
+    if (!closed && appProcessId && process.platform === "win32") {
+      await forceKillProcessTree(appProcessId);
+    }
+  }
+}
+
+async function forceKillProcessTree(processId) {
+  await new Promise((resolvePromise) => {
+    const child = spawn("taskkill", ["/PID", String(processId), "/T", "/F"], {
+      stdio: "ignore"
+    });
+    child.on("close", () => resolvePromise());
+    child.on("error", () => resolvePromise());
+  });
+}
+
+async function closeSmokeFixture(fixture, timeout = 8_000) {
+  await Promise.race([
+    fixture.close(),
+    new Promise((resolvePromise) => {
+      setTimeout(resolvePromise, timeout);
+    })
+  ]);
 }
 
 async function removeLocalPathIfPresent(targetPath) {
@@ -3437,15 +3480,19 @@ async function main() {
       await removeLocalPathIfPresent(targetPath);
     }
     if (app) {
-      await app.close();
+      await closeElectronApp(app);
     }
     if (!fixtureClosed) {
-      await fixture.close();
+      await closeSmokeFixture(fixture);
     }
   }
 }
 
-void main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+void main()
+  .then(() => {
+    process.exit(process.exitCode ?? 0);
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
