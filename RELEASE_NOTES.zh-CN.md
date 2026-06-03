@@ -14,6 +14,21 @@
 
 - 下一个候选版本发布时再补充验证结果。
 
+## v0.1.30 (2026-06-03)
+
+发布类型：稳定热修复
+
+### 主要变化
+
+- 修复打包应用在自动更新模块启动时崩溃的问题。
+- `electron-updater` 现在通过兼容 CommonJS 的默认导入读取 `autoUpdater`，匹配 Electron 打包后的 ESM loader 行为。
+- 自动更新专项检查现在会拒绝不兼容的 named import 写法，避免该启动崩溃路径再次发布。
+
+### 验证
+
+- `pnpm run test:main-auto-update` 已通过。
+- `pnpm run build:main` 已通过。
+
 ## v0.1.29 (2026-06-02)
 
 发布类型：稳定版

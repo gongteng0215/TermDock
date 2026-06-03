@@ -6,10 +6,10 @@ Last updated: 2026-06-02
 
 ## Current Release State
 
-- Stable release: `v0.1.29`
+- Stable release: `v0.1.30`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: post-`v0.1.29` update verification and release follow-up
+- Priority direction: post-`v0.1.30` hotfix verification and release follow-up
 
 ## P0 Matrix
 

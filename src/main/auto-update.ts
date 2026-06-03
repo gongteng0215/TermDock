@@ -1,9 +1,10 @@
 import { app, dialog } from "electron";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from "electron-updater";
 
 import { appLogger } from "./logging/app-logger.js";
 
+const { autoUpdater } = electronUpdater;
 const AUTO_UPDATE_CHECK_DELAY_MS = 8_000;
 const DISABLE_AUTO_UPDATE_ENV = "TERMDOCK_DISABLE_AUTO_UPDATE";
 const SMOKE_USER_DATA_ENV = "TERMDOCK_SMOKE_USER_DATA_DIR";

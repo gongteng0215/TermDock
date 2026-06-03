@@ -8,8 +8,8 @@ Last updated: 2026-06-02
 
 - 当前主分支：`master`
 - 远端：`origin/master`
-- 当前稳定版：`v0.1.29`
-- 当前方向：`v0.1.29` 后更新验证和发布跟进。
+- 当前稳定版：`v0.1.30`
+- 当前方向：`v0.1.30` 热修复验证和发布跟进。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
 - 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
@@ -54,7 +54,7 @@ Last updated: 2026-06-02
 - 当前质量：适合自用、早期用户和 power users 试用。
 - 尚未完全 GA：
   - 公开可信签名 / notarization 证据仍在完善。
-  - 已接入应用内自动更新：打包应用检查 GitHub Releases，后台下载新版本，并在更新就绪后提示重启安装。
+  - 已接入应用内自动更新：打包应用检查 GitHub Releases，后台下载新版本，并在更新就绪后提示重启安装；已修复 electron-updater 在打包 ESM 环境下的 CommonJS 导入兼容问题。
   - 数据持久化仍基于 JSON，SQLite 迁移待做。
 - 近期推广重点：
   - 降低下载和首次启动困惑。

@@ -14,6 +14,21 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.30 (2026-06-03)
+
+Release type: Stable hotfix
+
+### Highlights
+
+- Fixed a packaged-app startup crash in the auto-update module.
+- `electron-updater` is now imported through its CommonJS-compatible default export before reading `autoUpdater`, matching Electron packaged ESM loader behavior.
+- The targeted auto-update guard now rejects the incompatible named import form so this crash path is covered before release.
+
+### Validation
+
+- `pnpm run test:main-auto-update` passed.
+- `pnpm run build:main` passed.
+
 ## v0.1.29 (2026-06-02)
 
 Release type: Stable

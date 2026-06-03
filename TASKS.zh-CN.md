@@ -6,9 +6,9 @@ Last updated: 2026-06-02
 
 ## 当前发布状态
 
-- 当前稳定版：`v0.1.29`
+- 当前稳定版：`v0.1.30`
 - 当前分支：`master`
-- 当前方向：`v0.1.29` 后更新验证和发布跟进。
+- 当前方向：`v0.1.30` 热修复验证和发布跟进。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
 - 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 

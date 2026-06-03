@@ -14,12 +14,13 @@ Last updated: 2026-06-02
 
 ## 当前发布基线
 
-- 当前公开稳定版本：`v0.1.29`
+- 当前公开稳定版本：`v0.1.30`
 - 当前主分支：`master`
-- 当前重点：`v0.1.29` 后更新验证和发布跟进。
+- 当前重点：`v0.1.30` 热修复验证和发布跟进。
 
 ## 最近周期已交付
 
+- v0.1.30：修复打包应用因从 `electron-updater` named import `autoUpdater` 导致的主进程启动崩溃。
 - v0.1.29：打包应用现在会检查 GitHub Releases，新版本后台下载完成后提示重启安装。
 - 主界面已调整为深色 code-editor workbench：
   - SFTP Explorer rail。

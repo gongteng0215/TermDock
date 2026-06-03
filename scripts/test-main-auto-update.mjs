@@ -56,6 +56,13 @@ const checks = [
       /quitAndInstall/.test(autoUpdateSource)
   },
   {
+    name: "uses a default electron-updater import for packaged ESM/CommonJS compatibility",
+    pass:
+      !/import\s+\{\s*autoUpdater\s*\}\s+from\s+["']electron-updater["']/.test(autoUpdateSource) &&
+      /import\s+\w+\s+from\s+["']electron-updater["']/.test(autoUpdateSource) &&
+      /const\s+\{\s*autoUpdater\s*\}\s*=/.test(autoUpdateSource)
+  },
+  {
     name: "wires auto-update initialization into packaged app bootstrap",
     pass:
       /initializeAutoUpdate/.test(mainSource) &&

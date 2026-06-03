@@ -6,9 +6,9 @@ Last updated: 2026-06-02
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.29`
+- Stable release shipped: `v0.1.30`
 - Active branch: `master`
-- Active focus: post-`v0.1.29` update verification and release follow-up
+- Active focus: post-`v0.1.30` hotfix verification and release follow-up
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -36,7 +36,7 @@ Last updated: 2026-06-02
 - Master branch now includes first-connect SSH error diagnostics with reason/suggestion/raw-error output plus a paired troubleshooting guide
 - Master branch now includes encrypted `.tdmigration` session migration with passphrase-protected passwords, private-key passphrases, optional embedded private-key files, and paired English/Simplified Chinese migration docs
 - Master branch now enforces a single running app instance and restores/focuses the existing window when TermDock is launched again
-- Master branch now includes packaged-app auto-update checks against GitHub Releases, background update downloads, and a restart prompt after the update is ready
+- Master branch now includes packaged-app auto-update checks against GitHub Releases, background update downloads, a restart prompt after the update is ready, and a packaged ESM/CommonJS import compatibility fix for electron-updater
 - Smoke automation now force-closes its spawned Electron process if graceful shutdown does not finish in time
 - Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
