@@ -1,6 +1,6 @@
 {
   "name": "termdock",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
@@ -94,6 +94,7 @@
       ]
     },
     "nsis": {
+      "artifactName": "TermDock.Setup.${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },

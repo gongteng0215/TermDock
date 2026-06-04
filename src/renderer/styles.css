@@ -466,6 +466,9 @@ body::before {
 }
 
 .icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border-main);
   border-radius: var(--radius-control);
   background: var(--bg-panel-2);
@@ -473,7 +476,7 @@ body::before {
   font-size: var(--ui-control-font-size);
   height: 20px;
   min-width: 20px;
-  padding: 0 5px;
+  padding: 0;
   cursor: pointer;
   transition: border-color 140ms ease, background 140ms ease, color 140ms ease, box-shadow 140ms ease;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
@@ -502,8 +505,15 @@ body::before {
 .panel--right .icon-button {
   height: 18px;
   min-width: 18px;
-  padding: 0 4px;
+  padding: 0;
   font-size: 9px;
+}
+
+.icon-button > svg,
+.icon-button .ui-icon {
+  display: block;
+  margin: auto;
+  flex-shrink: 0;
 }
 
 .ui-icon {
@@ -4009,6 +4019,52 @@ body::before {
   align-items: center;
   row-gap: 4px;
   gap: 4px;
+}
+
+.settings-diagnostics-update-card {
+  border: 1px solid var(--ui-card-border);
+  border-radius: 8px;
+  background: rgba(16, 28, 41, 0.72);
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-diagnostics-update-card__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  color: #d4e8fb;
+  font-size: 11px;
+}
+
+.settings-diagnostics-update-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border: 1px solid rgba(78, 97, 118, 0.86);
+  border-radius: 999px;
+  background: rgba(22, 32, 45, 0.9);
+  color: #dce8f4;
+  font-size: 9px;
+  text-transform: capitalize;
+}
+
+.settings-diagnostics-update-card__badge.is-available,
+.settings-diagnostics-update-card__badge.is-downloaded {
+  border-color: rgba(104, 171, 255, 0.44);
+  background: rgba(38, 65, 96, 0.88);
+  color: #eef6fd;
+}
+
+.settings-diagnostics-update-card__badge.is-error {
+  border-color: rgba(163, 74, 97, 0.88);
+  background: rgba(59, 26, 36, 0.92);
+  color: #ffd5df;
 }
 
 .session-template-tools {

@@ -3,6 +3,7 @@ import {
   BarChart3,
   ChevronLeft,
   Download,
+  History,
   Menu,
   Minus,
   Plus,
@@ -21,6 +22,7 @@ export type UiIconName =
   | "arrowUp"
   | "upload"
   | "download"
+  | "history"
   | "menu"
   | "close"
   | "plus"
@@ -34,6 +36,7 @@ const UI_ICONS: Record<UiIconName, LucideIcon> = {
   arrowUp: ArrowUp,
   upload: Upload,
   download: Download,
+  history: History,
   menu: Menu,
   close: X,
   plus: Plus,

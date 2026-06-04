@@ -94,6 +94,22 @@ const api = {
         logDirectoryPath: string;
         logFilePath: string;
       }>,
+    getAutoUpdateStatus: () =>
+      ipcRenderer.invoke("system:getAutoUpdateStatus") as Promise<{
+        availability: "disabled" | "idle" | "checking" | "available" | "not-available" | "downloaded" | "error";
+        statusLabel: string;
+        currentVersion: string;
+        lastCheckedAtIso: string | null;
+        latestVersion: string | null;
+        downloadedVersion: string | null;
+        downloadProgressPercent: number | null;
+        updateReadyToInstall: boolean;
+      }>,
+    checkForUpdates: () =>
+      ipcRenderer.invoke("system:checkForUpdates") as Promise<{
+        status: "disabled" | "checking" | "available" | "not-available";
+        version?: string;
+      }>,
     exportBugReport: (payload?: {
       settingsSnapshot?: unknown;
       runtimeSnapshot?: unknown;

@@ -4960,6 +4960,17 @@ export function App() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("connection");
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
+  const [autoUpdateStatus, setAutoUpdateStatus] = useState<{
+    availability: "disabled" | "idle" | "checking" | "available" | "not-available" | "downloaded" | "error";
+    statusLabel: string;
+    currentVersion: string;
+    lastCheckedAtIso: string | null;
+    latestVersion: string | null;
+    downloadedVersion: string | null;
+    downloadProgressPercent: number | null;
+    updateReadyToInstall: boolean;
+  } | null>(null);
   const [connectionPreferences, setConnectionPreferences] = useState<ConnectionPreferences>(
     () => readConnectionPreferences()
   );
@@ -9227,8 +9238,12 @@ export function App() {
           setError("Log bridge unavailable. Restart `pnpm dev`.");
           return;
         }
-        const info = await systemApi.getLogInfo();
+        const [info, nextAutoUpdateStatus] = await Promise.all([
+          systemApi.getLogInfo(),
+          systemApi.getAutoUpdateStatus ? systemApi.getAutoUpdateStatus() : Promise.resolve(null)
+        ]);
         setLogInfo(info);
+        setAutoUpdateStatus(nextAutoUpdateStatus);
       } catch (caughtError) {
         const message = toLogMessage(caughtError);
         setError(message);
@@ -14246,12 +14261,14 @@ export function App() {
     transferHistory
   });
   const {
+    checkForUpdatesManually,
     copyGlobalErrorMessage,
     copyLogFilePath,
     dismissGlobalError,
     exportBugReportBundle,
     exportBugReportFromError,
     openLogDirectory,
+    refreshAutoUpdateStatus,
     refreshDiagnosticsLogInfo
   } = useGlobalDiagnosticsActions({
     appVersion: APP_VERSION,
@@ -14270,6 +14287,8 @@ export function App() {
       sessionGroupCount: sessionGroupOptions.length
     },
     setError,
+    setAutoUpdateStatus,
+    setIsCheckingForUpdates,
     setIsExportingBugReport,
     setLogInfo,
     settingsSnapshot: {
@@ -16406,6 +16425,7 @@ export function App() {
           onDisconnectScopeChange: setDisconnectReportScopeValue,
           onDisconnectTimeRangeChange: setDisconnectReportTimeRangeValue,
           onDisconnectTriggerChange: setDisconnectReportTriggerFilterValue,
+          onCheckForUpdatesAction: checkForUpdatesManually,
           onExportBugReportAction: exportBugReportBundle,
           onExportDisconnectCsvAction: exportDisconnectReportsCsv,
           onExportDisconnectJsonAction: exportDisconnectReportsJson,
@@ -16415,6 +16435,18 @@ export function App() {
           onResetDisconnectFilters: resetDisconnectReportViewFilters
         },
         values: {
+          appVersion: APP_VERSION,
+          autoUpdateAvailability: autoUpdateStatus?.availability ?? "disabled",
+          autoUpdateDownloadedVersion: autoUpdateStatus?.downloadedVersion ?? null,
+          autoUpdateDownloadProgressPercent: autoUpdateStatus?.downloadProgressPercent ?? null,
+          autoUpdateLatestVersion: autoUpdateStatus?.latestVersion ?? null,
+          autoUpdateLastCheckedLabel: autoUpdateStatus?.lastCheckedAtIso
+            ? new Date(autoUpdateStatus.lastCheckedAtIso).toLocaleString()
+            : null,
+          autoUpdateReadyToInstall: autoUpdateStatus?.updateReadyToInstall ?? false,
+          autoUpdateStatusLabel:
+            autoUpdateStatus?.statusLabel ??
+            "Open a packaged build to check for updates.",
           disconnectCaptureEnabled: disconnectReportCapturePreferences.enabled,
           disconnectCaptureHint: diagnosticsDisconnectCaptureHint,
           disconnectEmptyStateLabel: diagnosticsDisconnectEmptyStateLabel,
@@ -16426,6 +16458,7 @@ export function App() {
           disconnectTrigger: disconnectReportTriggerFilter,
           disconnectVisibleCount: visibleDisconnectReports.length,
           hasCustomizedDisconnectView: hasCustomizedDisconnectReportView,
+          isCheckingForUpdates,
           isExportingBugReport,
           logDirectoryPath: diagnosticsLogDirectoryPath,
           logFilePath: diagnosticsLogFilePath

@@ -10,7 +10,23 @@ interface LogInfo {
   logFilePath: string;
 }
 
+interface AutoUpdateStatusInfo {
+  availability: "disabled" | "idle" | "checking" | "available" | "not-available" | "downloaded" | "error";
+  statusLabel: string;
+  currentVersion: string;
+  lastCheckedAtIso: string | null;
+  latestVersion: string | null;
+  downloadedVersion: string | null;
+  downloadProgressPercent: number | null;
+  updateReadyToInstall: boolean;
+}
+
 interface SystemApiLike {
+  getAutoUpdateStatus?: () => Promise<AutoUpdateStatusInfo>;
+  checkForUpdates?: () => Promise<{
+    status: "disabled" | "checking" | "available" | "not-available";
+    version?: string;
+  }>;
   exportBugReport?: (payload?: {
     settingsSnapshot?: unknown;
     runtimeSnapshot?: unknown;
@@ -65,6 +81,8 @@ interface UseGlobalDiagnosticsActionsArgs<TDisconnectReport extends DisconnectRe
     sessionGroupCount: number;
   };
   setError: Dispatch<SetStateAction<string | null>>;
+  setAutoUpdateStatus: Dispatch<SetStateAction<AutoUpdateStatusInfo | null>>;
+  setIsCheckingForUpdates: Dispatch<SetStateAction<boolean>>;
   setIsExportingBugReport: Dispatch<SetStateAction<boolean>>;
   setLogInfo: Dispatch<SetStateAction<LogInfo | null>>;
   settingsSnapshot: unknown;
@@ -89,6 +107,8 @@ export function useGlobalDiagnosticsActions<TDisconnectReport extends Disconnect
   removeOperationCenterAppJob,
   runtimeSnapshotBase,
   setError,
+  setAutoUpdateStatus,
+  setIsCheckingForUpdates,
   setIsExportingBugReport,
   setLogInfo,
   settingsSnapshot,
@@ -142,6 +162,15 @@ export function useGlobalDiagnosticsActions<TDisconnectReport extends Disconnect
       writeAppLog("error", "renderer:diagnostics", "Failed to refresh log info.", caughtError);
     });
   }, [refreshLogInfo, setError, toLogMessage, writeAppLog]);
+
+  const refreshAutoUpdateStatus = useCallback(async (): Promise<void> => {
+    if (!systemApi?.getAutoUpdateStatus) {
+      setAutoUpdateStatus(null);
+      return;
+    }
+    const nextStatus = await systemApi.getAutoUpdateStatus();
+    setAutoUpdateStatus(nextStatus);
+  }, [setAutoUpdateStatus, systemApi]);
 
   const openLogDirectory = useCallback(async () => {
     try {
@@ -272,13 +301,79 @@ export function useGlobalDiagnosticsActions<TDisconnectReport extends Disconnect
     void exportBugReportBundle();
   }, [exportBugReportBundle]);
 
+  const checkForUpdatesManually = useCallback(async () => {
+    try {
+      if (!systemApi?.checkForUpdates) {
+        throw new Error("Update bridge unavailable. Restart `pnpm dev`.");
+      }
+      setIsCheckingForUpdates(true);
+      const result = await systemApi.checkForUpdates();
+      if (result.status === "disabled") {
+        await showAppAlert("Auto update checks are disabled for this run.", {
+          title: "Diagnostics"
+        });
+        return;
+      }
+      if (result.status === "available") {
+        await showAppAlert(
+          `TermDock ${result.version ?? "update"} is available. It is downloading in the background and you will be prompted when installation is ready.`,
+          {
+            title: "Diagnostics"
+          }
+        );
+        return;
+      }
+      if (result.status === "not-available") {
+        await showAppAlert(
+          `No update is available right now${result.version ? `.\nCurrent latest version: ${result.version}` : "."}`,
+          {
+            title: "Diagnostics"
+          }
+        );
+        return;
+      }
+      await showAppAlert("Update check started.", {
+        title: "Diagnostics"
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      setError(message);
+      writeAppLog(
+        "error",
+        "renderer:diagnostics",
+        "Failed to check for updates manually.",
+        caughtError
+      );
+    } finally {
+      void refreshAutoUpdateStatus().catch((caughtError) => {
+        writeAppLog(
+          "error",
+          "renderer:diagnostics",
+          "Failed to refresh auto update status after manual check.",
+          caughtError
+        );
+      });
+      setIsCheckingForUpdates(false);
+    }
+  }, [
+    refreshAutoUpdateStatus,
+    setError,
+    setIsCheckingForUpdates,
+    showAppAlert,
+    systemApi,
+    toLogMessage,
+    writeAppLog
+  ]);
+
   return {
+    checkForUpdatesManually,
     copyGlobalErrorMessage,
     copyLogFilePath,
     dismissGlobalError,
     exportBugReportBundle,
     exportBugReportFromError,
     openLogDirectory,
+    refreshAutoUpdateStatus,
     refreshDiagnosticsLogInfo
   };
 }

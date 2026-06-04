@@ -10,6 +10,7 @@ import type { Stats } from "node:fs";
 import type { WebContents } from "electron";
 import JSZip from "jszip";
 
+import { checkForUpdatesManually, getAutoUpdateStatus } from "../auto-update.js";
 import { appLogger } from "../logging/app-logger.js";
 import type {
   RemoteOpenFileAutoSyncEvent,
@@ -240,6 +241,8 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
   );
 
   ipcMain.handle("system:getLogInfo", async () => appLogger.getLogInfo());
+  ipcMain.handle("system:getAutoUpdateStatus", async () => getAutoUpdateStatus());
+  ipcMain.handle("system:checkForUpdates", async () => checkForUpdatesManually());
 
   ipcMain.handle(
     "system:exportBugReport",

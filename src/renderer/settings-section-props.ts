@@ -338,6 +338,14 @@ export interface BuildPortForwardingSettingsSectionPropsArgs
 
 export type DiagnosticsSectionValueProps = Pick<
   DiagnosticsSectionProps,
+  | "appVersion"
+  | "autoUpdateAvailability"
+  | "autoUpdateDownloadedVersion"
+  | "autoUpdateDownloadProgressPercent"
+  | "autoUpdateLatestVersion"
+  | "autoUpdateLastCheckedLabel"
+  | "autoUpdateReadyToInstall"
+  | "autoUpdateStatusLabel"
   | "disconnectCaptureEnabled"
   | "disconnectCaptureHint"
   | "disconnectEmptyStateLabel"
@@ -349,6 +357,7 @@ export type DiagnosticsSectionValueProps = Pick<
   | "disconnectTrigger"
   | "disconnectVisibleCount"
   | "hasCustomizedDisconnectView"
+  | "isCheckingForUpdates"
   | "isExportingBugReport"
   | "logDirectoryPath"
   | "logFilePath"
@@ -370,6 +379,7 @@ export interface BuildDiagnosticsSettingsSectionPropsArgs
     DiagnosticsSectionProps["onDisconnectTimeRangeChange"];
   onDisconnectTriggerChange:
     DiagnosticsSectionProps["onDisconnectTriggerChange"];
+  onCheckForUpdatesAction: () => Promise<unknown> | void;
   onExportBugReportAction: () => Promise<unknown> | void;
   onExportDisconnectCsvAction: () => Promise<unknown> | void;
   onExportDisconnectJsonAction: () => Promise<unknown> | void;
@@ -794,6 +804,14 @@ export function buildDiagnosticsSettingsSectionProps(
   args: BuildDiagnosticsSettingsSectionPropsArgs
 ): DiagnosticsSectionProps {
   return {
+    appVersion: args.appVersion,
+    autoUpdateAvailability: args.autoUpdateAvailability,
+    autoUpdateDownloadedVersion: args.autoUpdateDownloadedVersion,
+    autoUpdateDownloadProgressPercent: args.autoUpdateDownloadProgressPercent,
+    autoUpdateLatestVersion: args.autoUpdateLatestVersion,
+    autoUpdateLastCheckedLabel: args.autoUpdateLastCheckedLabel,
+    autoUpdateReadyToInstall: args.autoUpdateReadyToInstall,
+    autoUpdateStatusLabel: args.autoUpdateStatusLabel,
     disconnectCaptureEnabled: args.disconnectCaptureEnabled,
     disconnectCaptureHint: args.disconnectCaptureHint,
     disconnectEmptyStateLabel: args.disconnectEmptyStateLabel,
@@ -805,6 +823,7 @@ export function buildDiagnosticsSettingsSectionProps(
     disconnectTrigger: args.disconnectTrigger,
     disconnectVisibleCount: args.disconnectVisibleCount,
     hasCustomizedDisconnectView: args.hasCustomizedDisconnectView,
+    isCheckingForUpdates: args.isCheckingForUpdates,
     isExportingBugReport: args.isExportingBugReport,
     logDirectoryPath: args.logDirectoryPath,
     logFilePath: args.logFilePath,
@@ -828,6 +847,9 @@ export function buildDiagnosticsSettingsSectionProps(
     onDisconnectTriggerChange: args.onDisconnectTriggerChange,
     onExportBugReport: () => {
       void args.onExportBugReportAction();
+    },
+    onCheckForUpdates: () => {
+      void args.onCheckForUpdatesAction();
     },
     onExportDisconnectCsv: () => {
       void args.onExportDisconnectCsvAction();

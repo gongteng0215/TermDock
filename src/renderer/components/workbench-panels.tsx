@@ -221,7 +221,7 @@ export function SessionsInspectorSection({
                 title="Dismiss"
                 type="button"
               >
-                ×
+                <UiIcon name="close" />
               </button>
             </div>
             <div className="first-run-card__actions">

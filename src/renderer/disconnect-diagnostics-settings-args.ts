@@ -2,6 +2,14 @@ import type { BuildDiagnosticsSettingsSectionPropsArgs } from "./settings-sectio
 
 type DiagnosticsValueArgs = Pick<
   BuildDiagnosticsSettingsSectionPropsArgs,
+  | "appVersion"
+  | "autoUpdateAvailability"
+  | "autoUpdateDownloadedVersion"
+  | "autoUpdateDownloadProgressPercent"
+  | "autoUpdateLatestVersion"
+  | "autoUpdateLastCheckedLabel"
+  | "autoUpdateReadyToInstall"
+  | "autoUpdateStatusLabel"
   | "disconnectCaptureEnabled"
   | "disconnectCaptureHint"
   | "disconnectEmptyStateLabel"
@@ -13,6 +21,7 @@ type DiagnosticsValueArgs = Pick<
   | "disconnectTrigger"
   | "disconnectVisibleCount"
   | "hasCustomizedDisconnectView"
+  | "isCheckingForUpdates"
   | "isExportingBugReport"
   | "logDirectoryPath"
   | "logFilePath"
@@ -30,6 +39,7 @@ type DiagnosticsActionArgs = Pick<
   | "onDisconnectScopeChange"
   | "onDisconnectTimeRangeChange"
   | "onDisconnectTriggerChange"
+  | "onCheckForUpdatesAction"
   | "onExportBugReportAction"
   | "onExportDisconnectCsvAction"
   | "onExportDisconnectJsonAction"

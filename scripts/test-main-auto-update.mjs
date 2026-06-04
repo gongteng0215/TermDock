@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 const packageJson = JSON.parse(await readFile(resolve("package.json"), "utf8"));
 const mainSource = await readFile(resolve("src/main/main.ts"), "utf8");
 const workflowSource = await readFile(resolve(".github/workflows/release.yml"), "utf8");
+const preloadSource = await readFile(resolve("src/main/preload.cts"), "utf8");
+const systemHandlersSource = await readFile(resolve("src/main/ipc/register-system-handlers.ts"), "utf8");
 
 let autoUpdateSource = "";
 try {
@@ -16,6 +18,7 @@ const buildConfig = packageJson.build ?? {};
 const winTargets = buildConfig.win?.target ?? [];
 const macTargets = buildConfig.mac?.target ?? [];
 const publishConfig = Array.isArray(buildConfig.publish) ? buildConfig.publish : [];
+const nsisConfig = buildConfig.nsis ?? {};
 
 const checks = [
   {
@@ -29,6 +32,10 @@ const checks = [
   {
     name: "builds NSIS and ZIP Windows artifacts for differential updates and manual fallback",
     pass: winTargets.includes("nsis") && winTargets.includes("zip")
+  },
+  {
+    name: "pins the NSIS installer artifact name so latest.yml matches the published GitHub asset",
+    pass: nsisConfig.artifactName === "TermDock.Setup.${version}.${ext}"
   },
   {
     name: "builds macOS DMG and ZIP artifacts for updater compatibility",
@@ -47,6 +54,8 @@ const checks = [
     pass:
       /from\s+["']electron-updater["']/.test(autoUpdateSource) &&
       /function\s+initializeAutoUpdate|const\s+initializeAutoUpdate/.test(autoUpdateSource) &&
+      /function\s+checkForUpdatesManually|const\s+checkForUpdatesManually/.test(autoUpdateSource) &&
+      /function\s+getAutoUpdateStatus|const\s+getAutoUpdateStatus/.test(autoUpdateSource) &&
       /checkForUpdates/.test(autoUpdateSource) &&
       /TERMDOCK_DISABLE_AUTO_UPDATE/.test(autoUpdateSource) &&
       /TERMDOCK_SMOKE_USER_DATA_DIR/.test(autoUpdateSource) &&
@@ -68,6 +77,14 @@ const checks = [
       /initializeAutoUpdate/.test(mainSource) &&
       /from\s+["']\.\/auto-update\.js["']/.test(mainSource) &&
       /createWindow\(\)[\s\S]*initializeAutoUpdate/.test(mainSource)
+  },
+  {
+    name: "exposes update status and manual update-check bridges to the renderer",
+    pass:
+      /system:getAutoUpdateStatus/.test(preloadSource) &&
+      /system:getAutoUpdateStatus/.test(systemHandlersSource) &&
+      /system:checkForUpdates/.test(preloadSource) &&
+      /system:checkForUpdates/.test(systemHandlersSource)
   }
 ];
 

@@ -438,9 +438,18 @@ interface DiagnosticsReportView {
 }
 
 interface DiagnosticsSettingsSectionProps {
+  appVersion: string;
+  autoUpdateAvailability: "disabled" | "idle" | "checking" | "available" | "not-available" | "downloaded" | "error";
+  autoUpdateDownloadedVersion: string | null;
+  autoUpdateDownloadProgressPercent: number | null;
+  autoUpdateLatestVersion: string | null;
+  autoUpdateLastCheckedLabel: string | null;
+  autoUpdateReadyToInstall: boolean;
+  autoUpdateStatusLabel: string;
   logDirectoryPath: string;
   logFilePath: string;
   isExportingBugReport: boolean;
+  isCheckingForUpdates: boolean;
   disconnectVisibleCount: number;
   disconnectTotalCount: number;
   disconnectCaptureEnabled: boolean;
@@ -456,6 +465,7 @@ interface DiagnosticsSettingsSectionProps {
   onOpenLogDirectory: () => void;
   onCopyLogFilePath: () => void;
   onExportBugReport: () => void;
+  onCheckForUpdates: () => void;
   onDisconnectCaptureEnabledChange: (value: boolean) => void;
   onDisconnectScopeChange: (value: string) => void;
   onDisconnectTriggerChange: (value: string) => void;
@@ -2174,9 +2184,18 @@ export function PortForwardingSettingsSection({
 }
 
 export function DiagnosticsSettingsSection({
+  appVersion,
+  autoUpdateAvailability,
+  autoUpdateDownloadedVersion,
+  autoUpdateDownloadProgressPercent,
+  autoUpdateLatestVersion,
+  autoUpdateLastCheckedLabel,
+  autoUpdateReadyToInstall,
+  autoUpdateStatusLabel,
   logDirectoryPath,
   logFilePath,
   isExportingBugReport,
+  isCheckingForUpdates,
   disconnectVisibleCount,
   disconnectTotalCount,
   disconnectCaptureEnabled,
@@ -2192,6 +2211,7 @@ export function DiagnosticsSettingsSection({
   onOpenLogDirectory,
   onCopyLogFilePath,
   onExportBugReport,
+  onCheckForUpdates,
   onDisconnectCaptureEnabledChange,
   onDisconnectScopeChange,
   onDisconnectTriggerChange,
@@ -2216,6 +2236,26 @@ export function DiagnosticsSettingsSection({
         Export Bug Report bundles logs, runtime metadata, and a safe settings snapshot into one zip
         package.
       </p>
+      <div className="settings-diagnostics-update-card">
+        <p className="settings-port-forward-section__title">App Updates</p>
+        <div className="settings-diagnostics-update-card__summary">
+          <span>Current version: {appVersion}</span>
+          <span
+            className={`settings-diagnostics-update-card__badge is-${autoUpdateAvailability}`}
+          >
+            {autoUpdateReadyToInstall ? "Ready to Install" : autoUpdateAvailability.replaceAll("-", " ")}
+          </span>
+        </div>
+        <p className="hint">{autoUpdateStatusLabel}</p>
+        {autoUpdateLatestVersion ? <p className="hint">Latest version: {autoUpdateLatestVersion}</p> : null}
+        {autoUpdateDownloadedVersion ? (
+          <p className="hint">Downloaded version: {autoUpdateDownloadedVersion}</p>
+        ) : null}
+        {typeof autoUpdateDownloadProgressPercent === "number" ? (
+          <p className="hint">Download progress: {autoUpdateDownloadProgressPercent}%</p>
+        ) : null}
+        {autoUpdateLastCheckedLabel ? <p className="hint">Last checked: {autoUpdateLastCheckedLabel}</p> : null}
+      </div>
       <label>
         Log Directory
         <input readOnly value={logDirectoryPath} />
@@ -2233,6 +2273,14 @@ export function DiagnosticsSettingsSection({
         </button>
         <button className="secondary-button" onClick={onCopyLogFilePath} type="button">
           Copy Log File Path
+        </button>
+        <button
+          className="secondary-button"
+          disabled={isCheckingForUpdates}
+          onClick={onCheckForUpdates}
+          type="button"
+        >
+          {isCheckingForUpdates ? "Checking for Updates..." : "Check for Updates"}
         </button>
         <button
           className="primary-button"

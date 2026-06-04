@@ -7,7 +7,7 @@
 ## 模板
 
 ```md
-## TermDock v0.1.31
+## TermDock v0.1.32
 
 TermDock 是一个面向个人开发者和小团队的本地优先 SSH + SFTP 服务器工作台。
 
@@ -55,7 +55,7 @@ TermDock v0.1.31 主要刷新了公开发版文案：补清楚下载指引，强
 
 ## Asset 命名检查
 
-- `TermDock.Setup.0.1.31.exe`
+- `TermDock.Setup.0.1.32.exe`
 - Windows portable `.zip`
 - macOS `arm64` `.dmg` / `.zip`
 - macOS `x64` `.dmg` / `.zip`

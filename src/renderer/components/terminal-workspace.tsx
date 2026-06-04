@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
-import { History, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "xterm";
@@ -15,6 +15,7 @@ import {
   type DangerousCommandExecutionSource,
   type DangerousCommandGuardPreferences
 } from "../dangerous-command-guard";
+import { UiIcon } from "./ui-icon";
 
 export interface TerminalTab {
   id: string;
@@ -2402,7 +2403,7 @@ export function TerminalWorkspace({
             title="Command History (Ctrl+Shift+H)"
             type="button"
           >
-            <History aria-hidden="true" className="ui-icon" strokeWidth={2} />
+            <UiIcon name="history" />
           </button>
         </div>
       </div>

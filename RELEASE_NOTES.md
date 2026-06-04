@@ -14,6 +14,29 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.32 (2026-06-04)
+
+Release type: Stable
+
+### Highlights
+
+- Auto-update UX follow-up:
+  - added a manual `Check for Updates` action in `Settings > Diagnostics`
+  - packaged builds now expose the current auto-update status in the diagnostics panel, including current version, latest version, download progress, and last checked time
+  - the renderer now refreshes update status after a manual check instead of only showing a one-off alert
+- Auto-update wiring hardening:
+  - the main process now keeps a structured auto-update status snapshot for the renderer bridge
+  - targeted auto-update checks now verify both the manual check bridge and the update-status bridge before release
+- UI polish:
+  - normalized icon-button centering so toolbar and inspector icons sit visually centered more consistently
+  - aligned the terminal history action and first-run dismiss button with the shared icon system
+
+### Validation
+
+- `pnpm run test:main-auto-update` passed.
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+
 ## v0.1.31 (2026-06-04)
 
 Release type: Stable

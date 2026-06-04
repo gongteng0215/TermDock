@@ -14,12 +14,13 @@ Last updated: 2026-06-04
 
 ## Release Baseline
 
-- Current stable release: `v0.1.31` (2026-06-04)
+- Current stable release: `v0.1.32` (2026-06-04)
 - Active branch: `master`
-- Active branch focus: post-`v0.1.31` release follow-up, download guidance feedback, and trust-message polish
+- Active branch focus: post-`v0.1.32` release follow-up, update-feedback polish, and release-trust cleanup
 
 ## Shipped in Recent Cycles
 
+- v0.1.32: added a visible update-status card in `Settings > Diagnostics`, kept manual update checks in-app, hardened the update-status bridge, and polished icon alignment across high-frequency controls
 - v0.1.31: refreshed README, release-page copy, product notes, and release notes so public messaging matches the shipped auto-update baseline and local-first positioning
 - v0.1.30: fixed the packaged-app startup crash caused by importing `autoUpdater` as a named ESM export from `electron-updater`.
 - v0.1.28: launching TermDock again now restores/focuses the existing window instead of opening a second app instance

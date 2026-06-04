@@ -7,7 +7,7 @@ Use this copy for the GitHub Releases page. Keep the release page simple: users 
 ## Template
 
 ```md
-## TermDock v0.1.31
+## TermDock v0.1.32
 
 Local-first SSH + SFTP server workspace for solo developers and small teams.
 
@@ -50,12 +50,12 @@ See `README.md`, `README.zh-CN.md`, and `SECURITY.md` for screenshots, feature d
 ## Short Release Summary
 
 ```text
-TermDock v0.1.31 refreshes the public product story: clearer download guidance, local-first trust messaging, dangerous-command guardrails front and center, and stale no-auto-update messaging removed from release copy.
+TermDock v0.1.32 tightens the update experience with a manual update check, a visible in-app update status card, and cleaner icon alignment across high-frequency controls.
 ```
 
 ## Asset Naming Checklist
 
-- `TermDock.Setup.0.1.31.exe`
+- `TermDock.Setup.0.1.32.exe`
 - Windows portable `.zip`
 - macOS `arm64` `.dmg` / `.zip`
 - macOS `x64` `.dmg` / `.zip`
