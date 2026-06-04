@@ -2,7 +2,7 @@
 
 [中文](news.zh-CN.md)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
 ## Confirmed Direction
 
@@ -14,12 +14,13 @@ Last updated: 2026-06-02
 
 ## Release Baseline
 
-- Current stable release: `v0.1.30` (2026-06-03)
+- Current stable release: `v0.1.31` (2026-06-04)
 - Active branch: `master`
-- Active branch focus: post-`v0.1.30` hotfix verification and release follow-up
+- Active branch focus: post-`v0.1.31` release follow-up, download guidance feedback, and trust-message polish
 
 ## Shipped in Recent Cycles
 
+- v0.1.31: refreshed README, release-page copy, product notes, and release notes so public messaging matches the shipped auto-update baseline and local-first positioning
 - v0.1.30: fixed the packaged-app startup crash caused by importing `autoUpdater` as a named ESM export from `electron-updater`.
 - v0.1.28: launching TermDock again now restores/focuses the existing window instead of opening a second app instance
 - v0.1.28: smoke automation now force-closes its spawned Electron process if graceful shutdown does not finish in time

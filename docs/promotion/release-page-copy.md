@@ -7,21 +7,18 @@ Use this copy for the GitHub Releases page. Keep the release page simple: users 
 ## Template
 
 ```md
-## TermDock v0.1.24
+## TermDock v0.1.31
 
-A safer SSH + SFTP desktop workspace for developers and operators.
+Local-first SSH + SFTP server workspace for solo developers and small teams.
 
-TermDock brings multi-tab SSH, SFTP transfer, server health monitoring, port forwarding, dangerous-command guardrails, transfer retry, and diagnostics export into one local-first desktop app.
+TermDock brings SSH terminal tabs, SFTP transfer recovery, server health, port forwarding, dangerous-command guardrails, and diagnostics into one local-first desktop app.
 
-### Highlights
+### Why download this build
 
-- Multi-tab SSH terminal and session management
-- SFTP file browser with upload/download queues
 - Dangerous-command guardrails before risky terminal writes
-- Retry Center for failed transfer recovery
-- Server health panel with CPU, memory, disk, network, load, processes, and failed services
-- Port forwarding manager for Local, Remote, and Dynamic SOCKS5 forwards
-- Operation Center for active transfers, deletes, port forwards, diagnostics jobs, and reconnect actions
+- Retry Center for failed upload/download recovery
+- Server health in the same workspace as SSH and SFTP
+- Local-first workflow with no cloud account required
 - English and Simplified Chinese interface
 
 ### Downloads
@@ -34,15 +31,15 @@ TermDock brings multi-tab SSH, SFTP transfer, server health monitoring, port for
 ### First Run Notes
 
 - TermDock is a local-first desktop app and does not require a cloud account.
-- Session data and diagnostics are stored locally.
+- SSH credentials, session data, and diagnostics are stored locally.
 - Session/group exports exclude decrypted credentials.
 - Review diagnostic bundles before sharing them publicly.
 - Windows may show SmartScreen or publisher warnings for new open-source builds.
 - macOS may show Gatekeeper warnings while public-trust signing/notarization is still in progress.
 
-### Known Limitations
+### Current Limitations
 
-- No in-app auto-update yet.
+- In-app auto-update is supported, but public-trust signing/notarization is still in progress.
 - Persistence is still JSON-based; SQLite migration is planned.
 - Public-trust signing/notarization evidence is still in progress.
 - macOS or Windows may show trust warnings depending on the asset and platform policy.
@@ -53,12 +50,12 @@ See `README.md`, `README.zh-CN.md`, and `SECURITY.md` for screenshots, feature d
 ## Short Release Summary
 
 ```text
-TermDock v0.1.24 packages the safer SSH + SFTP desktop workspace: multi-tab SSH, SFTP queues, dangerous-command guardrails, Retry Center, server health, port forwarding, diagnostics, and English/Simplified Chinese UI.
+TermDock v0.1.31 refreshes the public product story: clearer download guidance, local-first trust messaging, dangerous-command guardrails front and center, and stale no-auto-update messaging removed from release copy.
 ```
 
 ## Asset Naming Checklist
 
-- `TermDock.Setup.0.1.24.exe`
+- `TermDock.Setup.0.1.31.exe`
 - Windows portable `.zip`
 - macOS `arm64` `.dmg` / `.zip`
 - macOS `x64` `.dmg` / `.zip`

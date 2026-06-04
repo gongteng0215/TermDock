@@ -2,13 +2,15 @@
 
 [English](TASKS.md)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
 ## 当前发布状态
 
-- 当前稳定版：`v0.1.30`
+- 当前稳定版：`v0.1.31`
 - 当前分支：`master`
-- 当前方向：`v0.1.30` 热修复验证和发布跟进。
+- 当前方向：`v0.1.31` 文档/发版整理后的反馈跟进和下载路径验证。
+- 当前发布说明：README 和 release 页面文案已经对齐到现有自动更新能力与本地优先定位。
+- 最新验证（2026-06-04）：`pnpm run typecheck` 和 `pnpm run build` 已通过。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
 - 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 

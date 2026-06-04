@@ -2,14 +2,16 @@
 
 [English](PROGRESS.md)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
 ## 当前快照
 
 - 当前主分支：`master`
 - 远端：`origin/master`
-- 当前稳定版：`v0.1.30`
-- 当前方向：`v0.1.30` 热修复验证和发布跟进。
+- 当前稳定版：`v0.1.31`
+- 当前方向：`v0.1.31` 发布后的下载清晰度、信任提示和文案反馈跟进。
+- 公开文档已经对齐到现有自动更新能力、本地优先信任模型和推荐下载包说明。
+- 最新验证（2026-06-04）：`pnpm run typecheck` 和 `pnpm run build` 已通过。
 - 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
 - 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。

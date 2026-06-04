@@ -1,8 +1,8 @@
 # TermDock
 
-**面向开发者和运维的安全 SSH + SFTP 桌面工作台。**
+**面向个人开发者和小团队的本地优先 SSH + SFTP 服务器工作台。**
 
-TermDock 把日常服务器操作放在一个桌面应用里：多标签 SSH 终端、SFTP 文件传输、服务器健康监控、端口转发、危险命令保护、失败重试中心和诊断导出。
+TermDock 帮你在一个桌面应用里连接服务器、传输文件、查看服务器健康状态、恢复失败传输、管理端口转发，并在危险命令真正打到生产环境前拦下来。
 
 [English README](README.md) · [下载](https://github.com/gongteng0215/TermDock/releases) · [SSH 配置导入](docs/SSH_CONFIG_IMPORT.zh-CN.md) · [SSH 连接排查](docs/SSH_CONNECTION_TROUBLESHOOTING.zh-CN.md) · [安全说明](SECURITY.zh-CN.md) · [参与贡献](CONTRIBUTING.zh-CN.md) · [更新记录](RELEASE_NOTES.zh-CN.md)
 
@@ -10,20 +10,32 @@ TermDock 把日常服务器操作放在一个桌面应用里：多标签 SSH 终
 
 ## 为什么做 TermDock？
 
-TermDock 不想成为另一个“大而全”的终端工具。它更像一个个人开发者、小团队和运维人员使用的服务器工作台，解决 SSH、SFTP、端口转发、服务器状态检查和故障恢复之间来回切换的问题。
+TermDock 不想成为另一个“大而全”的终端工具。它更像一个把 SSH、SFTP、传输恢复和服务器检查放在同一个工作台里的实用型服务器桌面应用。
 
-- SSH + SFTP 集成在一个桌面应用里
-- 多标签终端，适合同时管理多台服务器
-- 内置服务器健康面板：CPU、内存、磁盘、网络、负载、运行时间
-- 危险命令执行前拦截确认，减少手滑风险
-- 上传/下载队列、失败重试中心、限速和时间窗口
-- 远程文件打开/编辑，并带有覆盖保护
-- 端口转发管理：Local、Remote、Dynamic SOCKS5
-- 一键导出诊断日志和 bug report
+### TermDock 最特别的地方
+
+1. 危险命令保护
+在命令真正打到服务器前先拦一次，减少手滑风险。
+
+2. SFTP 失败传输恢复
+上传或下载失败后，可以直接在 Retry Center 里重试，而不是从头来过。
+
+3. 同一个工作台里看服务器健康状态
+SSH 登录后就能顺手查看 CPU、内存、磁盘、网络、进程和失败服务。
+
+4. 本地优先
+不需要云账号，SSH 凭据默认留在本机。
 
 ## 下载
 
 从 [GitHub Releases](https://github.com/gongteng0215/TermDock/releases) 下载最新版本。
+
+### 推荐先下载这个
+
+- Windows 安装包：`TermDock.Setup.*.exe`
+- Windows 便携版：Windows `.zip`
+- macOS Apple Silicon：`arm64` `.dmg`
+- macOS Intel：`x64` `.dmg`
 
 ### 我应该下载哪个文件？
 
@@ -114,6 +126,8 @@ TermDock 当前主要面向 macOS 和 Windows 11。
 
 TermDock 是本地桌面应用，不需要云账号来管理服务器。
 
+本地优先：TermDock 不需要云账号，也不会上传你的 SSH 密码、私钥和服务器配置。
+
 - 会话数据保存在本地。
 - 凭据会尽量通过应用凭据层使用系统安全存储。
 - 会话和分组导出不会包含解密后的凭据。
@@ -180,7 +194,7 @@ docs/assets    README 截图和产品素材
 ## 已知限制
 
 - 数据持久化仍基于 JSON，SQLite 迁移在计划中。
-- 暂无应用内自动更新。
+- 已支持应用内自动更新，但公开可信签名和 notarization 仍在完善。
 - 公开可信签名和 notarization 证据仍在完善。
 - 运行中的端口转发目前按标签页管理。
 - Dynamic 转发当前支持 SOCKS5 no-auth `CONNECT` 基线。

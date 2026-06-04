@@ -14,6 +14,22 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.31 (2026-06-04)
+
+Release type: Stable
+
+### Highlights
+
+- Refined the public product positioning around a local-first SSH + SFTP workspace for solo developers and small teams.
+- Removed stale "no in-app auto-update yet" messaging from README and GitHub Release copy now that packaged builds already support auto-update.
+- Improved download guidance so GitHub Release visitors can more quickly choose the right Windows or macOS asset.
+- Brought README, product notes, progress/task snapshots, and release-page templates back into sync for the current release baseline.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+
 ## v0.1.30 (2026-06-03)
 
 Release type: Stable hotfix

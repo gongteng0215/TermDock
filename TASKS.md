@@ -2,14 +2,16 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
 ## Current Release State
 
-- Stable release: `v0.1.30`
+- Stable release: `v0.1.31`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: post-`v0.1.30` hotfix verification and release follow-up
+- Priority direction: post-`v0.1.31` docs/release cleanup follow-up and download-path feedback
+- Current release note: README/release-page messaging now matches the shipped auto-update baseline and local-first positioning
+- Latest validation on 2026-06-04: `pnpm run typecheck` and `pnpm run build` passed
 
 ## P0 Matrix
 

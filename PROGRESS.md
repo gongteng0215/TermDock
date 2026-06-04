@@ -2,13 +2,15 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-06-02
+Last updated: 2026-06-04
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.30`
+- Stable release shipped: `v0.1.31`
 - Active branch: `master`
-- Active focus: post-`v0.1.30` hotfix verification and release follow-up
+- Active focus: post-`v0.1.31` release follow-up, download clarity, and trust-message feedback
+- Public docs now align with the shipped auto-update baseline, local-first trust model, and recommended download assets
+- Latest validation on 2026-06-04: `pnpm run typecheck` and `pnpm run build` passed
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar

@@ -1,8 +1,8 @@
 # TermDock
 
-**A safer SSH + SFTP desktop workspace for developers and operators.**
+**Local-first SSH + SFTP server workspace for solo developers and small teams.**
 
-TermDock helps you manage remote servers in one place: multi-tab SSH terminal, SFTP file transfer, server health monitoring, port forwarding, dangerous-command guardrails, transfer retry center, and diagnostics export.
+TermDock helps you connect to servers, transfer files, check server health, recover failed transfers, manage port forwarding, and catch risky commands before they hit production.
 
 [中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [SSH Config Import](docs/SSH_CONFIG_IMPORT.md) · [SSH Troubleshooting](docs/SSH_CONNECTION_TROUBLESHOOTING.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release Notes](RELEASE_NOTES.md)
 
@@ -10,20 +10,32 @@ TermDock helps you manage remote servers in one place: multi-tab SSH terminal, S
 
 ## Why TermDock?
 
-TermDock is not trying to be another giant terminal app. It is built as a practical server operations workspace for individual developers, small teams, and operators who frequently switch between SSH, SFTP, port forwarding, health checks, and recovery work.
+TermDock is not trying to be another giant terminal app. It is built as a practical server workspace for people who need SSH, SFTP, transfer recovery, and server checks in the same place.
 
-- SSH + SFTP in one desktop app
-- Multi-tab terminal for multiple servers
-- Built-in server health panel: CPU, memory, disk, network, load, uptime
-- Dangerous-command guardrails before risky operations
-- Transfer queue, retry center, rate limits, and schedule windows
-- Remote file open/edit with overwrite protection
-- Port forwarding manager: Local, Remote, and Dynamic SOCKS5
-- One-click diagnostics and bug report export
+## What makes TermDock different?
+
+1. Dangerous command guardrails
+Catch risky commands before they hit your server.
+
+2. SFTP transfer recovery
+Retry failed uploads and downloads from Retry Center instead of starting over.
+
+3. Server health in the same workspace
+Check CPU, memory, disk, network, processes, and failed services after SSH login.
+
+4. Local-first workflow
+No cloud account required, and SSH credentials stay local.
 
 ## Download
 
 Get the latest build from [GitHub Releases](https://github.com/gongteng0215/TermDock/releases).
+
+### Download This First
+
+- Windows installer: `TermDock.Setup.*.exe`
+- Windows portable: the Windows `.zip`
+- macOS Apple Silicon: the `arm64` `.dmg`
+- macOS Intel: the `x64` `.dmg`
 
 ### Which File Should I Download?
 
@@ -114,6 +126,8 @@ If the app cannot be installed or opened, see [Install And Launch Troubleshootin
 
 TermDock is designed as a local desktop app. It does not require a cloud account to manage servers.
 
+Local-first: TermDock does not require a cloud account and does not upload your SSH credentials.
+
 - Session data is stored locally.
 - Credentials use secure OS storage through the app credential layer where available.
 - Session and group exports exclude decrypted credentials.
@@ -180,7 +194,7 @@ For detailed progress, release validation, and planning notes, see:
 ## Known Limitations
 
 - Data persistence is still JSON-based; SQLite migration is planned.
-- No in-app auto-update yet.
+- In-app auto-update is supported, but public-trust signing/notarization is still in progress.
 - Public-trust signing/notarization evidence is still in progress.
 - Active runtime port forwards are tab-scoped.
 - Dynamic forwarding currently supports SOCKS5 no-auth `CONNECT` baseline.
