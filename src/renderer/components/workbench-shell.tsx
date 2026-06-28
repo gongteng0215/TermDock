@@ -161,8 +161,18 @@ export function TransferDock({
   uploadPanel,
   downloadPanel
 }: TransferDockProps) {
+  const hasTransferActivity =
+    uploadPanel.transfers.length > 0 ||
+    downloadPanel.transfers.length > 0 ||
+    Boolean(uploadPanel.pauseMessage || downloadPanel.pauseMessage) ||
+    Boolean(uploadPanel.historyMessage || downloadPanel.historyMessage) ||
+    pendingRestoreCount > 0 ||
+    failedRetryCandidateTotal > 0 ||
+    operationCenterActiveCount > 0 ||
+    Boolean(notice);
+
   return (
-    <section className="transfer-dock">
+    <section className={hasTransferActivity ? "transfer-dock" : "transfer-dock transfer-dock--compact"}>
       <div className="transfer-dock__heading">
         <h3>{labels.title}</h3>
         <div className="transfer-dock__heading-actions">

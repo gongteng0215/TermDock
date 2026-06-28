@@ -94,7 +94,10 @@ export function ServerHealthInspectorContent({
               </strong>
             </div>
           </div>
-          <p className="hint server-health__footnote">Updated: {updatedLabel}</p>
+          <p className="hint server-health__footnote">
+            Updated: {updatedLabel}
+            {loading ? <span className="server-health__refreshing"> · refreshing...</span> : null}
+          </p>
         </>
       ) : null}
     </>

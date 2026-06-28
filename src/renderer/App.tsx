@@ -1591,7 +1591,7 @@ function formatSftpLinksForLs(links: number): string {
   return `${Math.trunc(links)}`;
 }
 
-function formatSftpMtimeForLs(isoString?: string): string {
+function formatSftpMtimeForLs(isoString?: string, language: AppLanguage = "en"): string {
   if (!isoString) {
     return "-";
   }
@@ -1600,7 +1600,8 @@ function formatSftpMtimeForLs(isoString?: string): string {
     return "-";
   }
   const now = new Date();
-  const month = date.toLocaleString(undefined, { month: "short" });
+  const locale = language === "zh-CN" ? "zh-CN" : "en-US";
+  const month = date.toLocaleString(locale, { month: "short" });
   const day = String(date.getDate()).padStart(2, " ");
   if (date.getFullYear() === now.getFullYear()) {
     const hours = String(date.getHours()).padStart(2, "0");
@@ -16952,7 +16953,7 @@ export function App() {
       activeTerminalTab,
       formatExactByteCount,
       formatSftpLinksForLs,
-      formatSftpMtimeForLs,
+      formatSftpMtimeForLs: (isoString) => formatSftpMtimeForLs(isoString, appLanguage),
       formatSftpSizeForLs,
       formatTransferBytes,
       loadSftpDirectory,

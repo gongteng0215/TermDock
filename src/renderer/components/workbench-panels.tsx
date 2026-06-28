@@ -213,7 +213,7 @@ export function SessionsInspectorSection({
               <div>
                 <strong>Start with your first server</strong>
                 <p className="hint">
-                  Import existing SSH hosts or create a session manually.
+                  Import your SSH config for the fastest setup, or create one session by hand.
                 </p>
               </div>
               <button
@@ -236,6 +236,11 @@ export function SessionsInspectorSection({
               <button className="secondary-button secondary-button--small" onClick={onOpenSecurityNotes} type="button">
                 Security Notes
               </button>
+            </div>
+            <div className="first-run-card__steps" aria-label="Suggested setup path">
+              <span>1. Import hosts</span>
+              <span>2. Test connection</span>
+              <span>3. Open terminal + SFTP</span>
             </div>
           </div>
         ) : null}

@@ -421,9 +421,15 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Loading sessions...": "正在加载会话...",
   "Start with your first server": "从第一台服务器开始",
   "Import existing SSH hosts or create a session manually.": "导入已有 SSH 主机，或手动创建会话。",
+  "Import your SSH config for the fastest setup, or create one session by hand.":
+    "最快的方式是导入 SSH config，也可以手动创建一个会话。",
   "Dismiss first-run tips": "关闭首次启动提示",
   "Import SSH Config": "导入 SSH 配置",
   "Security Notes": "安全说明",
+  "Suggested setup path": "建议配置路径",
+  "1. Import hosts": "1. 导入主机",
+  "2. Test connection": "2. 测试连接",
+  "3. Open terminal + SFTP": "3. 打开终端 + SFTP",
   "Filter name/host/user/group": "筛选名称/主机/用户/分组",
   "Show all sessions": "显示全部会话",
   "Show favorite sessions only": "仅显示收藏会话",
@@ -1378,6 +1384,10 @@ const SIMPLIFIED_CHINESE_REPLACEMENTS: TextReplacement[] = [
   {
     pattern: /^(.+)\n\nSource: (.+)$/u,
     replace: (_match, command, source) => `${command}\n\n来源：${translateAppText("zh-CN", source)}`
+  },
+  {
+    pattern: /^Updated: (.+) · refreshing\.\.\.$/u,
+    replace: (_match, label) => `更新：${label} · 正在刷新...`
   },
   {
     pattern: /^Updated: (.+)$/u,

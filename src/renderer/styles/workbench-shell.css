@@ -113,6 +113,33 @@
   overflow: hidden;
 }
 
+.transfer-dock--compact {
+  height: 112px;
+  min-height: 112px;
+  max-height: 112px;
+  padding-top: 4px;
+  padding-bottom: 5px;
+}
+
+.transfer-dock--compact .transfer-dock__heading {
+  min-height: 20px;
+  margin-bottom: 3px;
+  padding-bottom: 3px;
+}
+
+.transfer-dock--compact .transfer-dock__panel {
+  padding: 4px;
+}
+
+.transfer-dock--compact .sftp-transfer-panel__batch-progress {
+  margin-bottom: 1px;
+  min-height: 10px;
+}
+
+.transfer-dock--compact .transfer-dock__empty {
+  display: none;
+}
+
 .transfer-dock__heading {
   display: flex;
   align-items: center;

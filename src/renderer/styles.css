@@ -161,6 +161,27 @@ body::before {
   gap: 4px;
 }
 
+.first-run-card__steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.first-run-card__steps span {
+  min-width: 0;
+  border: 1px solid rgba(104, 171, 255, 0.18);
+  border-radius: 5px;
+  background: rgba(12, 24, 36, 0.38);
+  color: #9fb8d4;
+  font-size: 8px;
+  line-height: 1.2;
+  padding: 3px 4px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .session-explorer__active-row {
   min-height: 22px;
   display: grid;
@@ -2071,6 +2092,7 @@ body::before {
 }
 
 .sftp-drop-zone__body {
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   display: block;
@@ -2292,11 +2314,22 @@ body::before {
   transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
+.sftp-list--details {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb-hover) var(--scrollbar-track-elevated);
+}
+
 .sftp-list__item--details {
   display: grid;
-  grid-template-columns: minmax(88px, 1fr) 88px 78px 20px 48px 48px 60px;
+  grid-template-columns: minmax(100px, 1fr) 78px 64px 48px;
   align-items: center;
   gap: 3px;
+  min-width: 300px;
 }
 
 .sftp-list__item--compact {
@@ -2337,6 +2370,12 @@ body::before {
 .sftp-list__links {
   color: var(--text-soft);
   text-align: right;
+}
+
+.sftp-list__item--details .sftp-list__links,
+.sftp-list__item--details .sftp-list__owner,
+.sftp-list__item--details .sftp-list__group {
+  display: none;
 }
 
 .sftp-list__mode--directory {
@@ -2435,6 +2474,8 @@ body::before {
 .sftp-list__mtime {
   color: #7f91a4;
   text-align: left;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
 }
 
 .sftp-list__compact-meta {
@@ -3032,6 +3073,10 @@ body::before {
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
   font-size: 9px;
   color: #8598ab;
+}
+
+.server-health__refreshing {
+  color: #9fbfe0;
 }
 
 .server-health__alert-text {
