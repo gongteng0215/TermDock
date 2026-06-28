@@ -14,12 +14,13 @@ Last updated: 2026-06-28
 
 ## Release Baseline
 
-- Current stable release: `v0.1.33` (2026-06-28)
+- Current stable release: `v0.1.34` (2026-06-28)
 - Active branch: `master`
-- Active branch focus: post-`v0.1.33` workspace panel polish, SFTP Details readability, and refresh-stability follow-up
+- Active branch focus: post-`v0.1.34` renderer performance follow-up (startup, large-list rendering, transfer-time re-renders)
 
 ## Shipped in Recent Cycles
 
+- v0.1.34: renderer performance pass — lazy-loaded heavy modals and renderer bundle splitting for faster startup, virtualized Retry Center and Command History lists, memoized SFTP and session rows, and animation-frame-batched SFTP transfer progress updates
 - v0.1.33: polished workspace panels with language-aware SFTP Details timestamps, horizontally scrollable SFTP Details rows, a compact idle Transfers dock, clearer first-run onboarding steps, and flicker-free Server Health refreshes
 - v0.1.32: added a visible update-status card in `Settings > Diagnostics`, kept manual update checks in-app, hardened the update-status bridge, and polished icon alignment across high-frequency controls
 - v0.1.31: refreshed README, release-page copy, product notes, and release notes so public messaging matches the shipped auto-update baseline and local-first positioning

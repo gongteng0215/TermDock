@@ -14,6 +14,23 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.34 (2026-06-28)
+
+Release type: Stable
+
+### Highlights
+
+- Renderer performance pass:
+  - Faster startup: heavy modals (Settings, Server Health detail, session create, and session template manager) now load on demand, and the renderer bundle is split to remove a circular chunk so the initial payload is smaller.
+  - Smoother large lists: the Retry Center and Command History manager now virtualize their rows, and SFTP and session list rows are memoized to avoid redundant re-renders.
+  - Less jank during transfers: high-frequency SFTP transfer progress updates are now batched per animation frame, while status and terminal-state changes still flush immediately.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run smoke:ui` passed (50/50).
+
 ## v0.1.33 (2026-06-28)
 
 Release type: Stable

@@ -6,11 +6,15 @@ import { CommandSnippetManagerModalHost } from "./command-snippet-manager-modal-
 import { GlobalErrorBar } from "./global-error-bar";
 import { OperationCenterModalHost } from "./operation-center-modal-host";
 import { RetryCenterModalHost } from "./retry-center-modal-host";
-import { ServerHealthDetailModal } from "./server-health-detail-modal";
-import { SessionCreateModal } from "./session-create-modal";
-import { SessionTemplateManagerModal } from "./session-template-manager-modal";
-import { SettingsModalContent } from "./settings-modal-content";
-import { SettingsModalShell } from "./settings-modal-shell";
+import { ServerHealthDetailModalHost } from "./server-health-detail-modal-host";
+import type { ServerHealthDetailModal } from "./server-health-detail-modal";
+import { SessionCreateModalHost } from "./session-create-modal-host";
+import type { SessionCreateModal } from "./session-create-modal";
+import { SessionTemplateManagerModalHost } from "./session-template-manager-modal-host";
+import type { SessionTemplateManagerModal } from "./session-template-manager-modal";
+import { SettingsModalHost } from "./settings-modal-host";
+import type { SettingsModalContent } from "./settings-modal-content";
+import type { SettingsModalShell } from "./settings-modal-shell";
 import { WorkbenchContextMenu } from "./workbench-context-menus";
 
 export interface WorkbenchOverlayStackProps {
@@ -60,7 +64,7 @@ export function WorkbenchOverlayStack({
 }: WorkbenchOverlayStackProps) {
   return (
     <>
-      <ServerHealthDetailModal {...serverHealthDetailModalProps} />
+      <ServerHealthDetailModalHost modalProps={serverHealthDetailModalProps} />
       <OperationCenterModalHost modalProps={operationCenterModalProps} />
       <RetryCenterModalHost modalProps={retryCenterModalProps} />
       <CommandHistoryManagerModalHost modalProps={commandHistoryManagerModalProps} />
@@ -85,12 +89,13 @@ export function WorkbenchOverlayStack({
         <WorkbenchContextMenu {...sessionContextMenuProps} ref={sessionContextMenuRef} />
       ) : null}
 
-      <SettingsModalShell {...settingsModalShellProps}>
-        <SettingsModalContent {...settingsModalContentProps} />
-      </SettingsModalShell>
+      <SettingsModalHost
+        shellProps={settingsModalShellProps}
+        contentProps={settingsModalContentProps}
+      />
 
-      <SessionCreateModal {...sessionCreateModalProps} />
-      <SessionTemplateManagerModal {...sessionTemplateManagerModalProps} />
+      <SessionCreateModalHost modalProps={sessionCreateModalProps} />
+      <SessionTemplateManagerModalHost modalProps={sessionTemplateManagerModalProps} />
       <MoveGroupDialogModal {...moveGroupDialogModalProps} />
       <AppDialogModal {...appDialogModalProps} />
       <GlobalErrorBar {...globalErrorBarProps} />

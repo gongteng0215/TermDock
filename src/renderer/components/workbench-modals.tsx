@@ -1,9 +1,13 @@
+import { useRef } from "react";
+import type { RefObject } from "react";
+
 import type {
   CommandHistoryManagerLabels,
   OperationCenterLabels,
   RetryCenterLabels
 } from "../i18n";
 import { UiIcon } from "./ui-icon";
+import { VirtualRows } from "./virtual-rows";
 
 type TransferHistoryScope = "activeSession" | "allSessions";
 type TransferHistoryDirectionFilter = "all" | "upload" | "download";
@@ -947,6 +951,8 @@ export function RetryCenterModal({
   formatHistoryTimestamp,
   formatPercent
 }: RetryCenterModalProps) {
+  const listShellRef = useRef<HTMLDivElement | null>(null);
+
   if (!open) {
     return null;
   }
@@ -1208,7 +1214,7 @@ export function RetryCenterModal({
             </button>
           </div>
         ) : null}
-        <div className="retry-center__list-shell">
+        <div className="retry-center__list-shell" ref={listShellRef}>
           {entries.length > 0 ? (
             isGroupedView ? (
               <ul className="retry-center__group-list">
@@ -1291,11 +1297,12 @@ export function RetryCenterModal({
                 })}
               </ul>
             ) : (
-              <RetryCenterEntriesList
+              <VirtualRetryCenterEntriesList
                 entries={entries}
                 formatHistoryTimestamp={formatHistoryTimestamp}
                 labels={labels}
                 onToggleEntrySelection={onToggleEntrySelection}
+                scrollRef={listShellRef}
                 selectionSet={selectionSet}
               />
             )
@@ -1454,6 +1461,8 @@ export function CommandHistoryManagerModal({
   onDeleteVisible,
   onDeleteAll
 }: CommandHistoryManagerModalProps) {
+  const listShellRef = useRef<HTMLDivElement | null>(null);
+
   if (!open) {
     return null;
   }
@@ -1509,46 +1518,55 @@ export function CommandHistoryManagerModal({
             {labels.clearSelection}
           </button>
         </div>
-        <div className="command-history-manager__list-shell">
+        <div className="command-history-manager__list-shell" ref={listShellRef}>
           {entries.length === 0 ? (
             <p className="hint command-history-manager__empty">{labels.empty}</p>
           ) : (
-            <ul className="command-history-manager__list">
-              {entries.map((entry) => (
-                <li className="command-history-manager__item" key={entry.id}>
-                  <div
-                    className="command-history-manager__row"
-                    onDoubleClick={(event) => {
-                      const target = event.target as HTMLElement;
-                      if (target.closest("button, input")) {
-                        return;
-                      }
-                      onPasteEntry(entry.id);
-                    }}
-                    title={entry.title}
-                  >
-                    <label className="command-history-manager__checkbox">
-                      <input
-                        checked={entry.selected}
-                        onChange={() => onToggleEntrySelection(entry.id)}
-                        type="checkbox"
-                      />
-                      <span className="command-history-manager__command">
-                        <code>{entry.command}</code>
-                      </span>
-                    </label>
-                    <button
-                      className="secondary-button secondary-button--small command-history-manager__edit"
-                      onClick={() => onEditEntry(entry.id)}
-                      type="button"
+            <VirtualRows
+              className="command-history-manager__list"
+              count={entries.length}
+              estimateSize={52}
+              gap={4}
+              getKey={(index) => entries[index].id}
+              renderRow={(index) => {
+                const entry = entries[index];
+                return (
+                  <div className="command-history-manager__item">
+                    <div
+                      className="command-history-manager__row"
+                      onDoubleClick={(event) => {
+                        const target = event.target as HTMLElement;
+                        if (target.closest("button, input")) {
+                          return;
+                        }
+                        onPasteEntry(entry.id);
+                      }}
+                      title={entry.title}
                     >
-                      {labels.edit}
-                    </button>
+                      <label className="command-history-manager__checkbox">
+                        <input
+                          checked={entry.selected}
+                          onChange={() => onToggleEntrySelection(entry.id)}
+                          type="checkbox"
+                        />
+                        <span className="command-history-manager__command">
+                          <code>{entry.command}</code>
+                        </span>
+                      </label>
+                      <button
+                        className="secondary-button secondary-button--small command-history-manager__edit"
+                        onClick={() => onEditEntry(entry.id)}
+                        type="button"
+                      >
+                        {labels.edit}
+                      </button>
+                    </div>
+                    <p className="hint command-history-manager__meta">{entry.metaLabel}</p>
                   </div>
-                  <p className="hint command-history-manager__meta">{entry.metaLabel}</p>
-                </li>
-              ))}
-            </ul>
+                );
+              }}
+              scrollRef={listShellRef}
+            />
           )}
         </div>
         <div className="modal__actions">
@@ -1585,6 +1603,49 @@ export function CommandHistoryManagerModal({
   );
 }
 
+function RetryCenterEntryContent({
+  entry,
+  labels,
+  selected,
+  onToggleEntrySelection,
+  formatHistoryTimestamp
+}: {
+  entry: RetryCenterEntryView;
+  labels: RetryCenterLabels;
+  selected: boolean;
+  onToggleEntrySelection: (entryKey: string) => void;
+  formatHistoryTimestamp: (timestamp: number) => string;
+}) {
+  return (
+    <>
+      <label className="retry-center__checkbox">
+        <input
+          checked={selected}
+          onChange={() => onToggleEntrySelection(entry.key)}
+          type="checkbox"
+        />
+      </label>
+      <span className={`retry-center__status retry-center__status--${entry.status}`}>
+        {labels.statusLabel(entry.status)}
+      </span>
+      <div className="retry-center__body">
+        <p className="retry-center__name">{entry.name}</p>
+        <p className="retry-center__path" title={`${entry.localPath} -> ${entry.remotePath}`}>
+          {`${entry.localPath} -> ${entry.remotePath}`}
+        </p>
+        <p className="retry-center__meta">
+          {labels.entryMeta(
+            formatHistoryTimestamp(entry.updatedAt),
+            labels.directionLabel(entry.direction),
+            entry.attemptCount,
+            entry.message
+          )}
+        </p>
+      </div>
+    </>
+  );
+}
+
 function RetryCenterEntriesList({
   entries,
   labels,
@@ -1604,33 +1665,58 @@ function RetryCenterEntriesList({
         const selected = selectionSet.has(entry.key);
         return (
           <li className={selected ? "retry-center__item is-selected" : "retry-center__item"} key={entry.key}>
-            <label className="retry-center__checkbox">
-              <input
-                checked={selected}
-                onChange={() => onToggleEntrySelection(entry.key)}
-                type="checkbox"
-              />
-            </label>
-            <span className={`retry-center__status retry-center__status--${entry.status}`}>
-              {labels.statusLabel(entry.status)}
-            </span>
-            <div className="retry-center__body">
-              <p className="retry-center__name">{entry.name}</p>
-              <p className="retry-center__path" title={`${entry.localPath} -> ${entry.remotePath}`}>
-                {`${entry.localPath} -> ${entry.remotePath}`}
-              </p>
-              <p className="retry-center__meta">
-                {labels.entryMeta(
-                  formatHistoryTimestamp(entry.updatedAt),
-                  labels.directionLabel(entry.direction),
-                  entry.attemptCount,
-                  entry.message
-                )}
-              </p>
-            </div>
+            <RetryCenterEntryContent
+              entry={entry}
+              formatHistoryTimestamp={formatHistoryTimestamp}
+              labels={labels}
+              onToggleEntrySelection={onToggleEntrySelection}
+              selected={selected}
+            />
           </li>
         );
       })}
     </ul>
+  );
+}
+
+function VirtualRetryCenterEntriesList({
+  entries,
+  labels,
+  selectionSet,
+  onToggleEntrySelection,
+  formatHistoryTimestamp,
+  scrollRef
+}: {
+  entries: RetryCenterEntryView[];
+  labels: RetryCenterLabels;
+  selectionSet: Set<string>;
+  onToggleEntrySelection: (entryKey: string) => void;
+  formatHistoryTimestamp: (timestamp: number) => string;
+  scrollRef: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <VirtualRows
+      className="retry-center__list"
+      count={entries.length}
+      estimateSize={72}
+      gap={4}
+      getKey={(index) => entries[index].key}
+      renderRow={(index) => {
+        const entry = entries[index];
+        const selected = selectionSet.has(entry.key);
+        return (
+          <div className={selected ? "retry-center__item is-selected" : "retry-center__item"}>
+            <RetryCenterEntryContent
+              entry={entry}
+              formatHistoryTimestamp={formatHistoryTimestamp}
+              labels={labels}
+              onToggleEntrySelection={onToggleEntrySelection}
+              selected={selected}
+            />
+          </div>
+        );
+      }}
+      scrollRef={scrollRef}
+    />
   );
 }

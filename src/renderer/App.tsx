@@ -8094,102 +8094,157 @@ export function App() {
     };
   }, [serverHealthAlertPreferences, serverHealthMetrics]);
 
-  const applySftpTransferEvent = useCallback((event: SftpTransferEvent & { batchId?: string }) => {
-    const now = Date.now();
-    let historyCandidate: SftpTransferHistoryItem | null = null;
-    setSftpTransfers((prev) => {
-      const tabSessionId =
-        terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.sessionId ?? "";
-      const nextItem: SftpTransferItem = {
-        ...event,
-        createdAt: now,
-        updatedAt: now
-      };
-      if (tabSessionId) {
-        nextItem.sessionId = tabSessionId;
-      }
-      if (event.batchId !== undefined) {
-        nextItem.batchId = event.batchId;
-      }
-      const existingIndex = prev.findIndex(
-        (transfer) => transfer.transferId === event.transferId
-      );
+  const pendingSftpTransferEventsRef = useRef<(SftpTransferEvent & { batchId?: string })[]>([]);
+  const sftpTransferFlushHandleRef = useRef<number | null>(null);
+  const lastSftpTransferStatusRef = useRef<Map<string, SftpTransferItem["status"]>>(new Map());
+
+  const appendTransferHistoryCandidate = useCallback((candidate: SftpTransferHistoryItem) => {
+    setTransferHistory((prev) => {
+      const existingIndex = prev.findIndex((item) => item.key === candidate.key);
       if (existingIndex < 0) {
-        if (isTerminalTransferStatus(nextItem.status) && nextItem.sessionId) {
-          historyCandidate = {
-            key: createTransferHistoryKey(
-              nextItem.sessionId,
-              nextItem.direction,
-              nextItem.localPath.trim(),
-              nextItem.remotePath.trim()
-            ),
-            sessionId: nextItem.sessionId,
-            direction: nextItem.direction,
-            status: nextItem.status,
-            name: nextItem.name,
-            localPath: nextItem.localPath,
-            remotePath: nextItem.remotePath,
-            updatedAt: now,
-            attemptCount: 1,
-            message: nextItem.message?.trim() ? nextItem.message.trim() : undefined
-          };
-        }
-        return [nextItem, ...prev].slice(0, 160);
+        return [candidate, ...prev]
+          .sort((left, right) => right.updatedAt - left.updatedAt)
+          .slice(0, MAX_SFTP_TRANSFER_HISTORY);
       }
       const next = [...prev];
-      const mergedItem: SftpTransferItem = {
-        ...next[existingIndex],
-        ...nextItem
+      const current = next[existingIndex];
+      next[existingIndex] = {
+        ...current,
+        ...candidate,
+        attemptCount: current.attemptCount + 1
       };
-      mergedItem.createdAt = next[existingIndex].createdAt ?? now;
-      if (event.batchId === undefined && next[existingIndex].batchId !== undefined) {
-        mergedItem.batchId = next[existingIndex].batchId;
-      }
-      if (!mergedItem.sessionId && next[existingIndex].sessionId) {
-        mergedItem.sessionId = next[existingIndex].sessionId;
-      }
-      if (isTerminalTransferStatus(mergedItem.status) && mergedItem.sessionId) {
-        historyCandidate = {
-          key: createTransferHistoryKey(
-            mergedItem.sessionId,
-            mergedItem.direction,
-            mergedItem.localPath.trim(),
-            mergedItem.remotePath.trim()
-          ),
-          sessionId: mergedItem.sessionId,
-          direction: mergedItem.direction,
-          status: mergedItem.status,
-          name: mergedItem.name,
-          localPath: mergedItem.localPath,
-          remotePath: mergedItem.remotePath,
-          updatedAt: now,
-          attemptCount: 1,
-          message: mergedItem.message?.trim() ? mergedItem.message.trim() : undefined
-        };
-      }
-      next[existingIndex] = mergedItem;
       next.sort((left, right) => right.updatedAt - left.updatedAt);
-      return next;
+      return next.slice(0, MAX_SFTP_TRANSFER_HISTORY);
     });
-    if (historyCandidate) {
-      setTransferHistory((prev) => {
-        const existingIndex = prev.findIndex((item) => item.key === historyCandidate!.key);
-        if (existingIndex < 0) {
-          return [historyCandidate!, ...prev]
-            .sort((left, right) => right.updatedAt - left.updatedAt)
-            .slice(0, MAX_SFTP_TRANSFER_HISTORY);
-        }
-        const next = [...prev];
-        const current = next[existingIndex];
-        next[existingIndex] = {
-          ...current,
-          ...historyCandidate,
-          attemptCount: current.attemptCount + 1
-        };
-        next.sort((left, right) => right.updatedAt - left.updatedAt);
-        return next.slice(0, MAX_SFTP_TRANSFER_HISTORY);
-      });
+  }, []);
+
+  const flushSftpTransferEvents = useCallback(() => {
+    if (sftpTransferFlushHandleRef.current !== null) {
+      cancelAnimationFrame(sftpTransferFlushHandleRef.current);
+      sftpTransferFlushHandleRef.current = null;
     }
+    const events = pendingSftpTransferEventsRef.current;
+    if (events.length === 0) {
+      return;
+    }
+    pendingSftpTransferEventsRef.current = [];
+    const now = Date.now();
+    const historyCandidates: SftpTransferHistoryItem[] = [];
+    const buildHistoryCandidate = (item: SftpTransferItem): SftpTransferHistoryItem | null => {
+      if (!isTerminalTransferStatus(item.status) || !item.sessionId) {
+        return null;
+      }
+      const sessionId = item.sessionId;
+      return {
+        key: createTransferHistoryKey(
+          sessionId,
+          item.direction,
+          item.localPath.trim(),
+          item.remotePath.trim()
+        ),
+        sessionId,
+        direction: item.direction,
+        status: item.status,
+        name: item.name,
+        localPath: item.localPath,
+        remotePath: item.remotePath,
+        updatedAt: now,
+        attemptCount: 1,
+        message: item.message?.trim() ? item.message.trim() : undefined
+      };
+    };
+    setSftpTransfers((prevState) => {
+      let working = prevState;
+      let mutated = false;
+      for (const event of events) {
+        const tabSessionId =
+          terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.sessionId ?? "";
+        const nextItem: SftpTransferItem = {
+          ...event,
+          createdAt: now,
+          updatedAt: now
+        };
+        if (tabSessionId) {
+          nextItem.sessionId = tabSessionId;
+        }
+        if (event.batchId !== undefined) {
+          nextItem.batchId = event.batchId;
+        }
+        const existingIndex = working.findIndex(
+          (transfer) => transfer.transferId === event.transferId
+        );
+        if (existingIndex < 0) {
+          const candidate = buildHistoryCandidate(nextItem);
+          if (candidate) {
+            historyCandidates.push(candidate);
+          }
+          working = [nextItem, ...working].slice(0, 160);
+          mutated = true;
+          continue;
+        }
+        const next = [...working];
+        const mergedItem: SftpTransferItem = {
+          ...next[existingIndex],
+          ...nextItem
+        };
+        mergedItem.createdAt = next[existingIndex].createdAt ?? now;
+        if (event.batchId === undefined && next[existingIndex].batchId !== undefined) {
+          mergedItem.batchId = next[existingIndex].batchId;
+        }
+        if (!mergedItem.sessionId && next[existingIndex].sessionId) {
+          mergedItem.sessionId = next[existingIndex].sessionId;
+        }
+        const candidate = buildHistoryCandidate(mergedItem);
+        if (candidate) {
+          historyCandidates.push(candidate);
+        }
+        next[existingIndex] = mergedItem;
+        next.sort((left, right) => right.updatedAt - left.updatedAt);
+        working = next;
+        mutated = true;
+      }
+      return mutated ? working : prevState;
+    });
+    for (const candidate of historyCandidates) {
+      appendTransferHistoryCandidate(candidate);
+    }
+  }, [appendTransferHistoryCandidate]);
+
+  const applySftpTransferEvent = useCallback(
+    (event: SftpTransferEvent & { batchId?: string }) => {
+      pendingSftpTransferEventsRef.current.push(event);
+      const previousStatus = lastSftpTransferStatusRef.current.get(event.transferId);
+      const isTerminal = isTerminalTransferStatus(event.status);
+      const statusChanged = previousStatus !== undefined && previousStatus !== event.status;
+      if (isTerminal) {
+        lastSftpTransferStatusRef.current.delete(event.transferId);
+      } else {
+        lastSftpTransferStatusRef.current.set(event.transferId, event.status);
+      }
+      // Flush immediately for status transitions and terminal states so the
+      // transfer history and UI status changes are never delayed. Coalesce the
+      // far more frequent intermediate progress updates into one frame.
+      if (isTerminal || statusChanged) {
+        flushSftpTransferEvents();
+        return;
+      }
+      if (sftpTransferFlushHandleRef.current === null) {
+        sftpTransferFlushHandleRef.current = requestAnimationFrame(() => {
+          sftpTransferFlushHandleRef.current = null;
+          flushSftpTransferEvents();
+        });
+      }
+    },
+    [flushSftpTransferEvents]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (sftpTransferFlushHandleRef.current !== null) {
+        cancelAnimationFrame(sftpTransferFlushHandleRef.current);
+        sftpTransferFlushHandleRef.current = null;
+      }
+    };
   }, []);
 
   const resetEnsuredRemoteDirectoryCacheForTab = useCallback((tabId: string) => {

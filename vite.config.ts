@@ -17,6 +17,16 @@ function resolveManualChunk(id: string): string | undefined {
     return "vendor-jszip";
   }
 
+  // Shared leaf modules pulled by both terminal and workbench chunks. Keeping
+  // them in dedicated chunks avoids a renderer-terminal <-> renderer-workbench
+  // circular chunk dependency.
+  if (normalized.endsWith("/src/renderer/components/ui-icon.tsx")) {
+    return "renderer-shared";
+  }
+  if (normalized.endsWith("/src/renderer/dangerous-command-guard.ts")) {
+    return "renderer-guard";
+  }
+
   if (normalized.endsWith("/src/renderer/components/terminal-workspace.tsx")) {
     return "renderer-terminal";
   }
@@ -36,7 +46,6 @@ function resolveManualChunk(id: string): string | undefined {
     normalized.endsWith("/src/renderer/components/workbench-panels.tsx") ||
     normalized.endsWith("/src/renderer/components/workbench-sidebars.tsx") ||
     normalized.endsWith("/src/renderer/components/workbench-context-menus.tsx") ||
-    normalized.endsWith("/src/renderer/components/ui-icon.tsx") ||
     normalized.endsWith("/src/renderer/use-command-history-view-models.ts") ||
     normalized.endsWith("/src/renderer/use-dangerous-command-approval-flow.ts") ||
     normalized.endsWith("/src/renderer/use-port-forwarding-view-models.ts") ||

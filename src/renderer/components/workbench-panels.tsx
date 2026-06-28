@@ -1,7 +1,10 @@
+import { memo, useCallback, useRef } from "react";
 import type {
   ChangeEventHandler,
   DragEventHandler,
+  KeyboardEvent as ReactKeyboardEvent,
   KeyboardEventHandler,
+  MouseEvent,
   MouseEventHandler,
   ReactNode
 } from "react";
@@ -149,6 +152,169 @@ interface SftpExplorerSectionProps {
   viewMode: "compact" | "details";
 }
 
+const SessionGroupRow = memo(function SessionGroupRow({
+  groupKey,
+  label,
+  count,
+  isSelected,
+  onRowClick,
+  onRowContextMenu
+}: {
+  groupKey: string;
+  label: string;
+  count: number;
+  isSelected: boolean;
+  onRowClick: (event: MouseEvent<HTMLButtonElement>, key: string) => void;
+  onRowContextMenu: (event: MouseEvent<HTMLLIElement>, key: string) => void;
+}) {
+  return (
+    <li
+      className={isSelected ? "session-folder-list__item is-selected" : "session-folder-list__item"}
+      onContextMenu={(event) => onRowContextMenu(event, groupKey)}
+    >
+      <button
+        className="session-folder-list__main"
+        onClick={(event) => onRowClick(event, groupKey)}
+        title={label}
+        type="button"
+      >
+        <span className="session-folder-list__name">{label}</span>
+        <span className="session-folder-list__count">{count}</span>
+      </button>
+    </li>
+  );
+});
+
+const SessionRow = memo(function SessionRow({
+  id,
+  name,
+  host,
+  title,
+  isSelected,
+  onRowClick,
+  onRowContextMenu,
+  onRowDoubleClick,
+  onRowKeyDown
+}: {
+  id: string;
+  name: string;
+  host: string;
+  title: string;
+  isSelected: boolean;
+  onRowClick: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
+  onRowContextMenu: (event: MouseEvent<HTMLLIElement>, id: string) => void;
+  onRowDoubleClick: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
+  onRowKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>, id: string) => void;
+}) {
+  return (
+    <li
+      className={isSelected ? "session-list__item is-selected" : "session-list__item"}
+      onContextMenu={(event) => onRowContextMenu(event, id)}
+    >
+      <button
+        className="session-list__main"
+        onClick={(event) => onRowClick(event, id)}
+        onDoubleClick={(event) => onRowDoubleClick(event, id)}
+        onKeyDown={(event) => onRowKeyDown(event, id)}
+        title={title}
+        type="button"
+      >
+        <span className="session-list__name">{name}</span>
+        <span className="session-list__host">{host}</span>
+      </button>
+    </li>
+  );
+});
+
+const SftpEntryRow = memo(function SftpEntryRow({
+  id,
+  name,
+  path,
+  kind,
+  permissions,
+  linksLabel,
+  owner,
+  group,
+  sizeLabel,
+  compactSizeLabel,
+  modifiedAtLabel,
+  isSelected,
+  hasOpenDirectory,
+  viewMode,
+  onRowClick,
+  onRowContextMenu,
+  onRowDoubleClick,
+  onRowOpenDirectory
+}: {
+  id: string;
+  name: string;
+  path: string;
+  kind: string;
+  permissions: string;
+  linksLabel: string;
+  owner: string;
+  group: string;
+  sizeLabel: string;
+  compactSizeLabel: string;
+  modifiedAtLabel: string;
+  isSelected: boolean;
+  hasOpenDirectory: boolean;
+  viewMode: "compact" | "details";
+  onRowClick: (event: MouseEvent<HTMLLIElement>, id: string) => void;
+  onRowContextMenu: (event: MouseEvent<HTMLLIElement>, id: string) => void;
+  onRowDoubleClick: (event: MouseEvent<HTMLLIElement>, id: string) => void;
+  onRowOpenDirectory: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
+}) {
+  const variantClass = viewMode === "compact" ? "sftp-list__item--compact" : "sftp-list__item--details";
+  const nameCell = hasOpenDirectory ? (
+    <button
+      className="sftp-list__name sftp-list__name--directory"
+      onClick={(event) => onRowOpenDirectory(event, id)}
+      title={path}
+      type="button"
+    >
+      {name}/
+    </button>
+  ) : (
+    <span className="sftp-list__name sftp-list__name--plain" title={path}>
+      {name}
+    </span>
+  );
+
+  return (
+    <li
+      className={
+        isSelected
+          ? `sftp-list__item ${variantClass} is-selected`
+          : `sftp-list__item ${variantClass}`
+      }
+      onClick={(event) => onRowClick(event, id)}
+      onContextMenu={(event) => onRowContextMenu(event, id)}
+      onDoubleClick={(event) => onRowDoubleClick(event, id)}
+    >
+      {viewMode === "compact" ? (
+        <>
+          <div className="sftp-list__compact-main">
+            <span className={`sftp-list__kind-dot sftp-list__kind-dot--${kind}`} />
+            {nameCell}
+          </div>
+          <span className="sftp-list__meta sftp-list__meta--compact-size">{compactSizeLabel}</span>
+        </>
+      ) : (
+        <>
+          {nameCell}
+          <span className="sftp-list__mtime">{modifiedAtLabel}</span>
+          <span className={`sftp-list__mode sftp-list__mode--${kind}`}>{permissions}</span>
+          <span className="sftp-list__links">{linksLabel}</span>
+          <span className="sftp-list__owner">{owner}</span>
+          <span className="sftp-list__group">{group}</span>
+          <span className="sftp-list__meta">{sizeLabel}</span>
+        </>
+      )}
+    </li>
+  );
+});
+
 export function SessionsInspectorSection({
   activeGroupLabel,
   activeContext,
@@ -172,6 +338,33 @@ export function SessionsInspectorSection({
   showWelcome,
   workspaceProfile
 }: SessionsInspectorSectionProps) {
+  const groupMapRef = useRef(new Map<string, SessionsGroupView>());
+  groupMapRef.current = new Map(groups.map((group) => [group.key, group]));
+  const sessionMapRef = useRef(new Map<string, SessionsItemView>());
+  sessionMapRef.current = new Map(sessions.map((session) => [session.id, session]));
+
+  const handleGroupClick = useCallback((event: MouseEvent<HTMLButtonElement>, key: string) => {
+    groupMapRef.current.get(key)?.onClick(event);
+  }, []);
+  const handleGroupContextMenu = useCallback((event: MouseEvent<HTMLLIElement>, key: string) => {
+    groupMapRef.current.get(key)?.onContextMenu(event);
+  }, []);
+  const handleSessionClick = useCallback((event: MouseEvent<HTMLButtonElement>, id: string) => {
+    sessionMapRef.current.get(id)?.onClick(event);
+  }, []);
+  const handleSessionContextMenu = useCallback((event: MouseEvent<HTMLLIElement>, id: string) => {
+    sessionMapRef.current.get(id)?.onContextMenu(event);
+  }, []);
+  const handleSessionDoubleClick = useCallback((event: MouseEvent<HTMLButtonElement>, id: string) => {
+    sessionMapRef.current.get(id)?.onDoubleClick(event);
+  }, []);
+  const handleSessionKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLButtonElement>, id: string) => {
+      sessionMapRef.current.get(id)?.onKeyDown(event);
+    },
+    []
+  );
+
   return (
     <section className="panel__section workbench-section workbench-section--sessions" onContextMenu={onRootContextMenu}>
       <div className="panel__heading panel__heading--inspector">
@@ -278,20 +471,15 @@ export function SessionsInspectorSection({
             <div className="workbench-list-shell session-explorer__list-shell">
               <ul className="session-folder-list">
                 {groups.map((group) => (
-                  <li
-                    className={
-                      group.isSelected
-                        ? "session-folder-list__item is-selected"
-                        : "session-folder-list__item"
-                    }
+                  <SessionGroupRow
+                    count={group.count}
+                    groupKey={group.key}
+                    isSelected={group.isSelected}
                     key={group.key}
-                    onContextMenu={group.onContextMenu}
-                  >
-                    <button className="session-folder-list__main" onClick={group.onClick} title={group.label} type="button">
-                      <span className="session-folder-list__name">{group.label}</span>
-                      <span className="session-folder-list__count">{group.count}</span>
-                    </button>
-                  </li>
+                    label={group.label}
+                    onRowClick={handleGroupClick}
+                    onRowContextMenu={handleGroupContextMenu}
+                  />
                 ))}
               </ul>
             </div>
@@ -311,23 +499,18 @@ export function SessionsInspectorSection({
             <div className="workbench-list-shell session-explorer__list-shell">
               <ul className="session-list">
                 {sessions.map((session) => (
-                  <li
+                  <SessionRow
+                    host={session.host}
+                    id={session.id}
+                    isSelected={session.isSelected}
                     key={session.id}
-                    className={session.isSelected ? "session-list__item is-selected" : "session-list__item"}
-                    onContextMenu={session.onContextMenu}
-                  >
-                    <button
-                      className="session-list__main"
-                      onClick={session.onClick}
-                      onDoubleClick={session.onDoubleClick}
-                      onKeyDown={session.onKeyDown}
-                      title={session.title}
-                      type="button"
-                    >
-                      <span className="session-list__name">{session.name}</span>
-                      <span className="session-list__host">{session.host}</span>
-                    </button>
-                  </li>
+                    name={session.name}
+                    onRowClick={handleSessionClick}
+                    onRowContextMenu={handleSessionContextMenu}
+                    onRowDoubleClick={handleSessionDoubleClick}
+                    onRowKeyDown={handleSessionKeyDown}
+                    title={session.title}
+                  />
                 ))}
               </ul>
             </div>
@@ -363,21 +546,24 @@ export function SftpExplorerSection({
   onViewModeChange,
   viewMode
 }: SftpExplorerSectionProps) {
-  const renderNameCell = (entry: SftpExplorerEntryView) =>
-    entry.onOpenDirectory ? (
-      <button
-        className="sftp-list__name sftp-list__name--directory"
-        onClick={entry.onOpenDirectory}
-        title={entry.path}
-        type="button"
-      >
-        {entry.name}/
-      </button>
-    ) : (
-      <span className="sftp-list__name sftp-list__name--plain" title={entry.path}>
-        {entry.name}
-      </span>
-    );
+  const entryMapRef = useRef(new Map<string, SftpExplorerEntryView>());
+  entryMapRef.current = new Map(entries.map((entry) => [entry.id, entry]));
+
+  const handleEntryClick = useCallback((event: MouseEvent<HTMLLIElement>, id: string) => {
+    entryMapRef.current.get(id)?.onClick(event);
+  }, []);
+  const handleEntryContextMenu = useCallback((event: MouseEvent<HTMLLIElement>, id: string) => {
+    entryMapRef.current.get(id)?.onContextMenu(event);
+  }, []);
+  const handleEntryDoubleClick = useCallback((event: MouseEvent<HTMLLIElement>, id: string) => {
+    entryMapRef.current.get(id)?.onDoubleClick(event);
+  }, []);
+  const handleEntryOpenDirectory = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, id: string) => {
+      entryMapRef.current.get(id)?.onOpenDirectory?.(event);
+    },
+    []
+  );
 
   return (
     <section className="panel__section panel__section--sftp workbench-section workbench-section--sftp">
@@ -475,39 +661,27 @@ export function SftpExplorerSection({
             <div className="sftp-drop-zone__body" onContextMenu={onBodyContextMenu}>
               <ul className={viewMode === "compact" ? "sftp-list sftp-list--compact" : "sftp-list sftp-list--details"}>
                 {entries.map((entry) => (
-                  <li
-                    className={
-                      entry.isSelected
-                        ? `sftp-list__item ${viewMode === "compact" ? "sftp-list__item--compact" : "sftp-list__item--details"} is-selected`
-                        : `sftp-list__item ${viewMode === "compact" ? "sftp-list__item--compact" : "sftp-list__item--details"}`
-                    }
+                  <SftpEntryRow
+                    compactSizeLabel={entry.compactSizeLabel}
+                    group={entry.group}
+                    hasOpenDirectory={Boolean(entry.onOpenDirectory)}
+                    id={entry.id}
+                    isSelected={entry.isSelected}
                     key={entry.id}
-                    onClick={entry.onClick}
-                    onContextMenu={entry.onContextMenu}
-                    onDoubleClick={entry.onDoubleClick}
-                  >
-                    {viewMode === "compact" ? (
-                      <>
-                        <div className="sftp-list__compact-main">
-                          <span className={`sftp-list__kind-dot sftp-list__kind-dot--${entry.kind}`} />
-                          {renderNameCell(entry)}
-                        </div>
-                        <span className="sftp-list__meta sftp-list__meta--compact-size">
-                          {entry.compactSizeLabel}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        {renderNameCell(entry)}
-                        <span className="sftp-list__mtime">{entry.modifiedAtLabel}</span>
-                        <span className={`sftp-list__mode sftp-list__mode--${entry.kind}`}>{entry.permissions}</span>
-                        <span className="sftp-list__links">{entry.linksLabel}</span>
-                        <span className="sftp-list__owner">{entry.owner}</span>
-                        <span className="sftp-list__group">{entry.group}</span>
-                        <span className="sftp-list__meta">{entry.sizeLabel}</span>
-                      </>
-                    )}
-                  </li>
+                    kind={entry.kind}
+                    linksLabel={entry.linksLabel}
+                    modifiedAtLabel={entry.modifiedAtLabel}
+                    name={entry.name}
+                    onRowClick={handleEntryClick}
+                    onRowContextMenu={handleEntryContextMenu}
+                    onRowDoubleClick={handleEntryDoubleClick}
+                    onRowOpenDirectory={handleEntryOpenDirectory}
+                    owner={entry.owner}
+                    path={entry.path}
+                    permissions={entry.permissions}
+                    sizeLabel={entry.sizeLabel}
+                    viewMode={viewMode}
+                  />
                 ))}
               </ul>
             </div>
