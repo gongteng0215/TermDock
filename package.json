@@ -26,6 +26,7 @@
     "build:main": "tsc -p tsconfig.node.json",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "capture:screenshots": "node scripts/capture-product-screenshots.mjs",
+    "generate:social-preview": "node scripts/generate-social-preview.mjs",
     "soak:transfer": "node scripts/soak-transfer.mjs",
     "bench:transfer:local": "node scripts/benchmark-local-transfer.mjs",
     "pack": "pnpm run build && cross-env ELECTRON_BUILDER_BINARIES_MIRROR=https://github.com/electron-userland/electron-builder-binaries/releases/download/ electron-builder --dir --config.win.signAndEditExecutable=false",
