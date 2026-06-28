@@ -2,31 +2,39 @@
 
 [中文](release-page-copy.zh-CN.md)
 
-Use this copy for the GitHub Releases page. Keep the release page simple: users are there to decide whether to download.
+Use this copy for the GitHub Releases page. Keep the release page simple: users are there to decide whether this app is for them and which file to download.
 
 ## Template
 
 ```md
-## TermDock v0.1.32
+## TermDock vX.Y.Z
 
-Local-first SSH + SFTP server workspace for solo developers and small teams.
+TermDock is a local-first SSH + SFTP desktop workspace for developers who live on servers.
 
-TermDock brings SSH terminal tabs, SFTP transfer recovery, server health, port forwarding, dangerous-command guardrails, and diagnostics into one local-first desktop app.
+It keeps terminal tabs, remote files, transfer recovery, server health, port forwarding, dangerous-command guardrails, and diagnostics in one desktop window. No cloud account required; your sessions and credentials stay local.
 
-### Why download this build
+### Recommended Download
 
-- Dangerous-command guardrails before risky terminal writes
-- Retry Center for failed upload/download recovery
-- Server health in the same workspace as SSH and SFTP
-- Local-first workflow with no cloud account required
-- English and Simplified Chinese interface
-
-### Downloads
-
-- Windows installer: download `TermDock.Setup.*.exe`
+- Windows installer: download `TermDock.Setup.X.Y.Z.exe`
 - Windows portable: download the Windows `.zip`
 - macOS Apple Silicon: download the `arm64` `.dmg` or `.zip`
 - macOS Intel: download the `x64` `.dmg` or `.zip`
+
+If you are not sure which Mac you have, open Apple menu -> About This Mac.
+
+### What's New In This Release
+
+- <User-facing change 1>
+- <User-facing change 2>
+- <Important fix or compatibility note>
+
+### Why Use TermDock
+
+- SSH + SFTP in one workspace: terminal tabs, remote files, command history, and transfer queues stay visible together.
+- Transfer recovery: Retry Center helps recover failed uploads and downloads without starting over.
+- Server health where you work: check CPU, memory, disk, network, processes, and failed services after login.
+- Dangerous-command guardrails: pause risky commands before they reach production-like hosts.
+- Local-first workflow: no cloud account required; English and Simplified Chinese interfaces are available.
 
 ### First Run Notes
 
@@ -41,7 +49,6 @@ TermDock brings SSH terminal tabs, SFTP transfer recovery, server health, port f
 
 - In-app auto-update is supported, but public-trust signing/notarization is still in progress.
 - Persistence is still JSON-based; SQLite migration is planned.
-- Public-trust signing/notarization evidence is still in progress.
 - macOS or Windows may show trust warnings depending on the asset and platform policy.
 
 See `README.md`, `README.zh-CN.md`, and `SECURITY.md` for screenshots, feature details, and security notes.
@@ -50,12 +57,12 @@ See `README.md`, `README.zh-CN.md`, and `SECURITY.md` for screenshots, feature d
 ## Short Release Summary
 
 ```text
-TermDock v0.1.32 tightens the update experience with a manual update check, a visible in-app update status card, and cleaner icon alignment across high-frequency controls.
+TermDock vX.Y.Z updates <short user-facing theme>. It is a local-first SSH + SFTP desktop workspace with terminal tabs, remote files, server health, transfer recovery, and dangerous-command guardrails in one window.
 ```
 
 ## Asset Naming Checklist
 
-- `TermDock.Setup.0.1.32.exe`
+- `TermDock.Setup.X.Y.Z.exe`
 - Windows portable `.zip`
 - macOS `arm64` `.dmg` / `.zip`
 - macOS `x64` `.dmg` / `.zip`

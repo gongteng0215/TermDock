@@ -1,8 +1,8 @@
 # TermDock
 
-**Local-first SSH + SFTP server workspace for solo developers and small teams.**
+**A local-first SSH + SFTP desktop workspace for developers who live on servers.**
 
-TermDock helps you connect to servers, transfer files, check server health, recover failed transfers, manage port forwarding, and catch risky commands before they hit production.
+TermDock keeps your SSH terminal, SFTP browser, transfer recovery, server health, port forwarding, and dangerous-command checks in one desktop window. No cloud account required; your sessions and credentials stay local.
 
 [中文 README](README.zh-CN.md) · [Download](https://github.com/gongteng0215/TermDock/releases) · [SSH Config Import](docs/SSH_CONFIG_IMPORT.md) · [SSH Troubleshooting](docs/SSH_CONNECTION_TROUBLESHOOTING.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Release Notes](RELEASE_NOTES.md)
 
@@ -10,21 +10,16 @@ TermDock helps you connect to servers, transfer files, check server health, reco
 
 ## Why TermDock?
 
-TermDock is not trying to be another giant terminal app. It is built as a practical server workspace for people who need SSH, SFTP, transfer recovery, and server checks in the same place.
+TermDock is built for the daily loop of connecting to a server, checking what is happening, moving files, and recovering when something fails. It is not a cloud control plane or a giant terminal suite; it is a practical local workbench for people who operate their own machines.
 
-## What makes TermDock different?
+## What You Get
 
-1. Dangerous command guardrails
-Catch risky commands before they hit your server.
+- **SSH + SFTP in one workspace**: keep terminal tabs, remote files, command history, and transfers visible together.
+- **Transfer recovery**: retry failed uploads/downloads from Retry Center instead of rebuilding the queue by hand.
+- **Server health where you work**: check CPU, memory, disk, network, processes, and failed services after login.
+- **Dangerous-command guardrails**: pause risky commands before they reach production-like hosts.
 
-2. SFTP transfer recovery
-Retry failed uploads and downloads from Retry Center instead of starting over.
-
-3. Server health in the same workspace
-Check CPU, memory, disk, network, processes, and failed services after SSH login.
-
-4. Local-first workflow
-No cloud account required, and SSH credentials stay local.
+TermDock currently focuses on solo developers and small teams who want a local-first SSH/SFTP workflow on Windows and macOS.
 
 ## Download
 
