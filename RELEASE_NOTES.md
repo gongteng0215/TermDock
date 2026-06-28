@@ -14,6 +14,24 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.33 (2026-06-28)
+
+Release type: Stable
+
+### Highlights
+
+- Workspace panel polish:
+  - SFTP Details view now formats modified times with the selected app language.
+  - SFTP Details view gives filenames a usable minimum width and supports horizontal scrolling for narrow sidebars.
+  - the Transfers dock now stays compact when there is no active transfer activity.
+  - first-run onboarding now gives a clearer setup path for importing hosts, testing a connection, and opening terminal + SFTP.
+  - Server Health refreshes now keep existing data visible and show a subtle refreshing status instead of shifting the panel.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+
 ## v0.1.32 (2026-06-04)
 
 Release type: Stable
