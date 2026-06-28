@@ -237,6 +237,8 @@ interface TerminalInstance {
   renderDisposable: IDisposable;
   removeWheelListener: () => void;
   appliedEditorStyleSignature: string | null;
+  lastSentCols: number | null;
+  lastSentRows: number | null;
 }
 
 const WHEEL_PIXELS_PER_LINE = 40;
@@ -901,6 +903,14 @@ export function TerminalWorkspace({
     instance.fitAddon.fit();
     const rows = Math.max(instance.terminal.rows, 2);
     const cols = Math.max(instance.terminal.cols, 2);
+    // Only push a resize when dimensions actually change. Redundant resizes send
+    // a SIGWINCH that forces full-screen apps (e.g. nano) to repaint, which shows
+    // up as continuous flicker when fit runs from ResizeObserver/deferred timers.
+    if (instance.lastSentCols === cols && instance.lastSentRows === rows) {
+      return;
+    }
+    instance.lastSentCols = cols;
+    instance.lastSentRows = rows;
     if (terminalApi) {
       void terminalApi.resize(tabId, cols, rows);
     }
@@ -1031,6 +1041,10 @@ export function TerminalWorkspace({
         .connect(tab.id, tab.sessionId)
         .then(() => {
           clearReconnectState(tab.id);
+          // A (re)connect creates a fresh PTY, so force the next fit to push
+          // dimensions even if they match the previously sent size.
+          instance.lastSentCols = null;
+          instance.lastSentRows = null;
           fitTerminal(tab.id);
           scheduleDeferredFit(tab.id);
         })
@@ -2234,6 +2248,8 @@ export function TerminalWorkspace({
         dataDisposable,
         renderDisposable,
         appliedEditorStyleSignature: null,
+        lastSentCols: null,
+        lastSentRows: null,
         removeWheelListener: () => {
           for (const target of wheelTargets) {
             target.removeEventListener("wheel", onWheel, WHEEL_CAPTURE);

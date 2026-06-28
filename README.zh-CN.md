@@ -155,6 +155,15 @@ pnpm build
 pnpm run smoke:ui
 ```
 
+从真实会话刷新 README 产品截图（默认使用 `test` 分组下的 `wsl` 会话）：
+
+```bash
+pnpm run build
+pnpm run capture:screenshots
+```
+
+运行前请先关闭已打开的 TermDock 窗口。可通过 `TERMDOCK_CAPTURE_GROUP` 和 `TERMDOCK_CAPTURE_SESSION` 覆盖来源会话。
+
 默认 smoke 会启动本地内置 SSH/SFTP fixture，不需要外部服务器即可验证核心认证、终端、SFTP、端口转发、设置、诊断、命令历史、重试中心和操作中心流程。
 
 ## 项目结构

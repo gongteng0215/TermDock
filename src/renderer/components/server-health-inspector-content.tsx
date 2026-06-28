@@ -45,7 +45,7 @@ export function ServerHealthInspectorContent({
           {alertStatus.diskHigh ? " Disk" : ""}
         </p>
       ) : null}
-      {loading ? (
+      {loading && !serverHealth ? (
         <p className="hint" role="status" aria-live="polite">
           Collecting server metrics...
         </p>

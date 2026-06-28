@@ -337,7 +337,7 @@ export function ServerHealthDetailModal({
               {detailTab === "processes" ? (
                 <>
                   {processError ? <p className="hint sftp-error">{processError}</p> : null}
-                  {processLoading ? (
+                  {processLoading && !processSnapshot ? (
                     <p className="hint" role="status" aria-live="polite">
                       Collecting process details...
                     </p>

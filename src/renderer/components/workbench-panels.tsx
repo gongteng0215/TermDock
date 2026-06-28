@@ -203,7 +203,9 @@ export function SessionsInspectorSection({
           </span>
         </div>
       </div>
-      {loading ? <p className="hint workbench-section__status">Loading sessions...</p> : null}
+      {loading && groups.length === 0 && sessions.length === 0 ? (
+        <p className="hint workbench-section__status">Loading sessions...</p>
+      ) : null}
       <div className="session-explorer">
         {showWelcome ? (
           <div className="first-run-card">
@@ -505,7 +507,7 @@ export function SftpExplorerSection({
               </ul>
             </div>
           </div>
-          {loading ? (
+          {loading && entries.length === 0 ? (
             <p className="hint sftp-loading-indicator" role="status" aria-live="polite">
               Loading remote directory...
             </p>

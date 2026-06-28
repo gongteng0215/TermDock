@@ -155,6 +155,15 @@ Run the workspace smoke test:
 pnpm run smoke:ui
 ```
 
+Refresh README product screenshots from a real session (default: group `test`, session `wsl`):
+
+```bash
+pnpm run build
+pnpm run capture:screenshots
+```
+
+Close any running TermDock window first. Override the source session with `TERMDOCK_CAPTURE_GROUP` and `TERMDOCK_CAPTURE_SESSION` if needed.
+
 The default smoke run boots an embedded local SSH/SFTP fixture, so core auth, terminal, SFTP, port-forwarding, settings, diagnostics, command history, retry, and operation-center flows can be verified without an external host.
 
 ## Project Structure

@@ -12,3 +12,4 @@ pnpm-debug.log*
 Microsoft/Windows/PowerShell/ModuleAnalysisCache
 .superpowers/
 .worktrees/
+docs/assets/screenshots/capture-manifest.json
