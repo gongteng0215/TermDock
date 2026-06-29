@@ -8,6 +8,7 @@ const { autoUpdater } = electronUpdater;
 const AUTO_UPDATE_CHECK_DELAY_MS = 8_000;
 const DISABLE_AUTO_UPDATE_ENV = "TERMDOCK_DISABLE_AUTO_UPDATE";
 const SMOKE_USER_DATA_ENV = "TERMDOCK_SMOKE_USER_DATA_DIR";
+const UPDATE_FEED_URL = "https://github.com/gongteng0215/TermDock/releases/latest/download";
 
 let hasInitializedAutoUpdate = false;
 let autoUpdateStatus: AutoUpdateStatusSnapshot = {
@@ -77,6 +78,10 @@ export function initializeAutoUpdate(): void {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = app.getVersion().includes("-");
+  autoUpdater.setFeedURL({
+    provider: "generic",
+    url: UPDATE_FEED_URL
+  });
   autoUpdater.logger = {
     info: (message?: unknown) => {
       appLogger.log("info", "main:auto-update", String(message ?? ""));

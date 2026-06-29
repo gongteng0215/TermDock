@@ -14,6 +14,21 @@
 
 - 下一个候选版本发布时再补充验证结果。
 
+## v0.1.36 (2026-06-29)
+
+发布类型：稳定版
+
+### 主要变化
+
+- 更新检查可靠性：
+  - 打包应用现在直接从 GitHub Releases 的 `latest/download/latest.yml` 读取更新元数据，避免 GitHub API rate limit 和旧 API 响应导致的误判。
+  - 手动点击 `Check for Updates` 现在应该能更可靠地识别最新发布的安装包。
+
+### 验证
+
+- `pnpm run typecheck` 已通过。
+- `pnpm run build` 已通过。
+
 ## v0.1.35 (2026-06-29)
 
 发布类型：稳定版

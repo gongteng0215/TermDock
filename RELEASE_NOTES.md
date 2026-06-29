@@ -14,6 +14,21 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.36 (2026-06-29)
+
+Release type: Stable
+
+### Highlights
+
+- Update checking reliability:
+  - The packaged app now reads update metadata directly from GitHub Releases `latest/download/latest.yml`, avoiding GitHub API rate limits and stale API responses.
+  - Manual `Check for Updates` should now detect the newest published installer more reliably.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+
 ## v0.1.35 (2026-06-29)
 
 Release type: Stable
