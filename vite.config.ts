@@ -7,7 +7,7 @@ function resolveManualChunk(id: string): string | undefined {
   if (normalized.includes("/node_modules/react/") || normalized.includes("/node_modules/react-dom/")) {
     return "vendor-react";
   }
-  if (normalized.includes("/node_modules/xterm/") || normalized.includes("/node_modules/@xterm/addon-fit/")) {
+  if (normalized.includes("/node_modules/@xterm/")) {
     return "vendor-xterm";
   }
   if (normalized.includes("/node_modules/lucide-react/")) {

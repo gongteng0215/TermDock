@@ -2,7 +2,7 @@
 
 [中文](news.zh-CN.md)
 
-Last updated: 2026-06-28
+Last updated: 2026-06-29
 
 ## Confirmed Direction
 
@@ -14,12 +14,13 @@ Last updated: 2026-06-28
 
 ## Release Baseline
 
-- Current stable release: `v0.1.34` (2026-06-28)
+- Current stable release: `v0.1.35` (2026-06-29)
 - Active branch: `master`
-- Active branch focus: post-`v0.1.34` renderer performance follow-up (startup, large-list rendering, transfer-time re-renders)
+- Active branch focus: post-`v0.1.35` terminal full-screen editor stability and xterm rendering follow-up
 
 ## Shipped in Recent Cycles
 
+- v0.1.35: fixed full-screen terminal editor flicker by stabilizing alternate-screen editor-focus layout detection, preserving the theme/full-screen effect, and moving terminal rendering to scoped xterm packages with WebGL when available
 - v0.1.34: renderer performance pass — lazy-loaded heavy modals and renderer bundle splitting for faster startup, virtualized Retry Center and Command History lists, memoized SFTP and session rows, and animation-frame-batched SFTP transfer progress updates
 - v0.1.33: polished workspace panels with language-aware SFTP Details timestamps, horizontally scrollable SFTP Details rows, a compact idle Transfers dock, clearer first-run onboarding steps, and flicker-free Server Health refreshes
 - v0.1.32: added a visible update-status card in `Settings > Diagnostics`, kept manual update checks in-app, hardened the update-status bridge, and polished icon alignment across high-frequency controls

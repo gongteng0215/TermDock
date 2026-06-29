@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { X } from "lucide-react";
 
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "xterm";
-import type { IDisposable, ITheme } from "xterm";
+import { WebglAddon } from "@xterm/addon-webgl";
+import { Terminal } from "@xterm/xterm";
+import type { IDisposable, ITheme } from "@xterm/xterm";
 
 import type { TerminalConnectionStatus } from "../../shared/terminal";
 import { formatSshConnectionError } from "../../shared/ssh-error-diagnostics";
@@ -234,16 +235,28 @@ interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
   dataDisposable: IDisposable;
-  renderDisposable: IDisposable;
   removeWheelListener: () => void;
   appliedEditorStyleSignature: string | null;
   lastSentCols: number | null;
   lastSentRows: number | null;
 }
 
+interface AlternateEditorModeProbe {
+  observed: boolean;
+  committed: boolean;
+  pendingTimer: number | null;
+  pendingTarget: boolean | null;
+}
+
 const WHEEL_PIXELS_PER_LINE = 40;
 const MAX_WHEEL_NAV_LINES = 12;
 const WHEEL_CAPTURE = true;
+// Alternate-screen detection must be hysteretic: a single transient "normal"
+// read during nano/vim redraw or PTY resize would toggle editor auto-layout off,
+// restore sidebars, shrink the terminal, resize the PTY again, and re-enter
+// alternate — the layout stretch/shrink loop users see as whole-window flicker.
+const ALTERNATE_EDITOR_ENTER_MS = 200;
+const ALTERNATE_EDITOR_EXIT_MS = 500;
 const DEFAULT_TERMINAL_FONT_SIZE = 13;
 const DEFAULT_TERMINAL_LINE_HEIGHT = 1.25;
 const DEFAULT_TERMINAL_FONT_FAMILY =
@@ -692,6 +705,8 @@ export function TerminalWorkspace({
   const [tabStatuses, setTabStatuses] = useState<Record<string, TabUiStatus>>({});
   const tabEditorModesRef = useRef<Record<string, boolean>>({});
   const [tabEditorModes, setTabEditorModes] = useState<Record<string, boolean>>({});
+  const alternateEditorModeProbesRef = useRef(new Map<string, AlternateEditorModeProbe>());
+  const resizeFitFrameRef = useRef<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<ContextMenuState | null>(null);
   const [isSearchDialogOpen, setIsSearchDialogOpen] = useState(false);
@@ -775,6 +790,11 @@ export function TerminalWorkspace({
   }, []);
 
   const clearTabEditorMode = useCallback((tabId: string) => {
+    const probe = alternateEditorModeProbesRef.current.get(tabId);
+    if (probe?.pendingTimer !== null && probe?.pendingTimer !== undefined) {
+      window.clearTimeout(probe.pendingTimer);
+    }
+    alternateEditorModeProbesRef.current.delete(tabId);
     if (!(tabId in tabEditorModesRef.current)) {
       return;
     }
@@ -790,6 +810,80 @@ export function TerminalWorkspace({
       return next;
     });
   }, []);
+
+  const proposeTabEditorMode = useCallback(
+    (tabId: string, isAlternate: boolean) => {
+      if (!editorFocusModeEnabled) {
+        if (tabEditorModesRef.current[tabId]) {
+          setTabEditorMode(tabId, false);
+        }
+        return;
+      }
+
+      let probe = alternateEditorModeProbesRef.current.get(tabId);
+      if (!probe) {
+        probe = { observed: isAlternate, committed: false, pendingTimer: null, pendingTarget: null };
+        alternateEditorModeProbesRef.current.set(tabId, probe);
+      }
+
+      probe.observed = isAlternate;
+      if (probe.committed === isAlternate) {
+        // Already in the desired state; cancel any timer aiming the other way.
+        if (probe.pendingTimer !== null) {
+          window.clearTimeout(probe.pendingTimer);
+          probe.pendingTimer = null;
+          probe.pendingTarget = null;
+        }
+        return;
+      }
+
+      // A commit toward `isAlternate` is already scheduled. Let it run instead of
+      // resetting it on every poll — the 200ms poll interval would otherwise keep
+      // pushing the deadline forward and the mode would never commit.
+      if (probe.pendingTimer !== null && probe.pendingTarget === isAlternate) {
+        return;
+      }
+
+      if (probe.pendingTimer !== null) {
+        window.clearTimeout(probe.pendingTimer);
+        probe.pendingTimer = null;
+        probe.pendingTarget = null;
+      }
+
+      const delayMs = isAlternate ? ALTERNATE_EDITOR_ENTER_MS : ALTERNATE_EDITOR_EXIT_MS;
+      probe.pendingTarget = isAlternate;
+      probe.pendingTimer = window.setTimeout(() => {
+        const current = alternateEditorModeProbesRef.current.get(tabId);
+        if (!current || current.observed !== isAlternate) {
+          if (current) {
+            current.pendingTimer = null;
+            current.pendingTarget = null;
+          }
+          return;
+        }
+        current.pendingTimer = null;
+        current.pendingTarget = null;
+        current.committed = isAlternate;
+        setTabEditorMode(tabId, isAlternate);
+      }, delayMs);
+    },
+    [editorFocusModeEnabled, setTabEditorMode]
+  );
+
+  useEffect(() => {
+    if (editorFocusModeEnabled) {
+      return;
+    }
+    for (const probe of alternateEditorModeProbesRef.current.values()) {
+      if (probe.pendingTimer !== null) {
+        window.clearTimeout(probe.pendingTimer);
+      }
+    }
+    alternateEditorModeProbesRef.current.clear();
+    for (const tabId of Object.keys(tabEditorModesRef.current)) {
+      setTabEditorMode(tabId, false);
+    }
+  }, [editorFocusModeEnabled, setTabEditorMode]);
 
   const isActiveEditorMode =
     editorFocusModeEnabled && activeTabId ? (tabEditorModes[activeTabId] ?? false) : false;
@@ -2125,7 +2219,6 @@ export function TerminalWorkspace({
       clearPendingCommandCapture(tabId);
       instance.removeWheelListener();
       instance.dataDisposable.dispose();
-      instance.renderDisposable.dispose();
       instance.terminal.dispose();
       terminalRefs.current.delete(tabId);
       containerRefs.current.delete(tabId);
@@ -2171,18 +2264,28 @@ export function TerminalWorkspace({
       terminal.open(container);
       fitAddon.fit();
 
+      // Render with the GPU (WebGL) renderer instead of the DOM renderer. The
+      // DOM renderer mutates per-cell DOM nodes on every frame, which makes
+      // full-screen TUI apps (nano, vim, htop, crontab -e) repaint as visible
+      // flicker. WebGL paints to a single canvas and stays flicker-free. If the
+      // GPU context is unavailable or lost, dispose the addon so xterm falls
+      // back to the DOM renderer rather than crashing.
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose();
+        });
+        terminal.loadAddon(webglAddon);
+      } catch {
+        // WebGL2 unavailable (e.g. headless/software GPU); keep DOM renderer.
+      }
+
       const dataDisposable = terminal.onData((data) => {
         enqueueTerminalWriteTask(tab.id, async () => {
           await sendTerminalInput(tab.id, data);
         });
       });
-      const syncTerminalEditorMode = () => {
-        setTabEditorMode(tab.id, isTerminalInAlternateScreen(terminal));
-      };
-      const renderDisposable = terminal.onRender(() => {
-        syncTerminalEditorMode();
-      });
-      syncTerminalEditorMode();
+      proposeTabEditorMode(tab.id, isTerminalInAlternateScreen(terminal));
       let wheelLineRemainder = 0;
       const onWheel = (event: WheelEvent) => {
         if (event.ctrlKey || event.altKey || event.metaKey) {
@@ -2246,7 +2349,6 @@ export function TerminalWorkspace({
         terminal,
         fitAddon,
         dataDisposable,
-        renderDisposable,
         appliedEditorStyleSignature: null,
         lastSentCols: null,
         lastSentRows: null,
@@ -2276,7 +2378,7 @@ export function TerminalWorkspace({
     enqueueTerminalWriteTask,
     scheduleDeferredFit,
     sendTerminalInput,
-    setTabEditorMode,
+    proposeTabEditorMode,
     setTabStatus,
     tabs,
     terminalApi
@@ -2304,12 +2406,22 @@ export function TerminalWorkspace({
     }
 
     const observer = new ResizeObserver(() => {
-      fitTerminal(activeTabId);
+      if (resizeFitFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFitFrameRef.current);
+      }
+      resizeFitFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFitFrameRef.current = null;
+        fitTerminal(activeTabId);
+      });
     });
     observer.observe(stageRef.current);
 
     return () => {
       observer.disconnect();
+      if (resizeFitFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFitFrameRef.current);
+        resizeFitFrameRef.current = null;
+      }
     };
   }, [activeTabId, fitTerminal]);
 
@@ -2319,13 +2431,13 @@ export function TerminalWorkspace({
     }
     const interval = window.setInterval(() => {
       for (const [tabId, instance] of terminalRefs.current.entries()) {
-        setTabEditorMode(tabId, isTerminalInAlternateScreen(instance.terminal));
+        proposeTabEditorMode(tabId, isTerminalInAlternateScreen(instance.terminal));
       }
-    }, 120);
+    }, 200);
     return () => {
       window.clearInterval(interval);
     };
-  }, [setTabEditorMode, tabs.length]);
+  }, [proposeTabEditorMode, tabs.length]);
 
   useEffect(() => {
     return () => {
@@ -2335,7 +2447,6 @@ export function TerminalWorkspace({
         clearPendingCommandCapture(tabId);
         instance.removeWheelListener();
         instance.dataDisposable.dispose();
-        instance.renderDisposable.dispose();
         instance.terminal.dispose();
         searchStateRef.current.delete(tabId);
         clearTabEditorMode(tabId);

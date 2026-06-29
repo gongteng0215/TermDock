@@ -14,6 +14,24 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.35 (2026-06-29)
+
+Release type: Stable
+
+### Highlights
+
+- Terminal full-screen editor fix:
+  - `nano`, `crontab -e`, and other alternate-screen tools no longer trigger the editor-focus layout stretch/shrink loop.
+  - Editor-focus theme, typography, cursor, and full-screen layout still apply after the flicker fix.
+  - Terminal rendering now uses the scoped xterm packages with WebGL rendering when available, with a safe DOM fallback if the GPU context is unavailable or lost.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run smoke:ui` passed (50/50).
+- Manual WSL `nano` / `crontab -e` validation passed.
+
 ## v0.1.34 (2026-06-28)
 
 Release type: Stable
