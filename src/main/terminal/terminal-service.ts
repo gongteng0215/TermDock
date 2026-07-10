@@ -28,13 +28,29 @@ import type {
 import type { SessionRecord } from "../../shared/session.js";
 import { formatSshConnectionError } from "../../shared/ssh-error-diagnostics.js";
 import type {
+  PrivilegedUploadSaveResult,
+  RemotePathWriteAccess,
   SftpDirectoryListResult,
   SftpEntry,
   SftpEntryKind,
   SftpTransferDirection,
+  SftpTransferEvent,
   SftpTransferRunOptions,
-  SftpTransferEvent
+  StagePrivilegedUploadResult
 } from "../../shared/sftp.js";
+import {
+  buildPrivilegedInstallCommand,
+  buildPrivilegedStagingRelativePath,
+  isPrivilegedSystemRemotePath,
+  REMOTE_PRIVILEGED_STAGING_DIRECTORY
+} from "../../shared/sftp.js";
+import {
+  canWriteWithIdentity,
+  computeEffectiveWritable,
+  formatModeOctal,
+  isDirectoryMode,
+  type RemoteIdentity
+} from "../../shared/remote-write-access.js";
 import type {
   CreatePortForwardInput,
   PortForwardEventRecord,
@@ -180,6 +196,8 @@ export class TerminalService {
   private readonly pendingUploadCancelIds = new Set<string>();
   private readonly pendingDownloadCancelKeys = new Set<string>();
   private readonly pendingDownloadCancelIds = new Set<string>();
+  private readonly remoteIdentityByTab = new Map<string, RemoteIdentity>();
+  private readonly remoteHomeByTab = new Map<string, string>();
 
   constructor(
     private readonly sessionStore: SessionStore,
@@ -469,6 +487,8 @@ export class TerminalService {
     }
 
     this.connections.delete(tabId);
+    this.remoteIdentityByTab.delete(tabId);
+    this.remoteHomeByTab.delete(tabId);
     this.closeAllPortForwardsSync(tabId, connection.mode === "ssh2" ? connection : undefined);
     for (const key of this.pendingUploadCancelKeys) {
       if (key.startsWith(`${tabId}:`)) {
@@ -585,8 +605,19 @@ export class TerminalService {
   async listDirectory(tabId: string, targetPath?: string): Promise<SftpDirectoryListResult> {
     const connection = this.getConnectedSsh2Connection(tabId);
     const sftp = await this.ensureSftp(connection);
-    const lookupPath = normalizeRemotePath(targetPath);
-    const cwd = await this.realPath(sftp, lookupPath);
+    const lookupPath = await this.resolveRemoteLookupPath(connection, targetPath);
+    let cwd: string;
+    try {
+      cwd = await this.realPath(sftp, lookupPath);
+    } catch (error) {
+      const message = error instanceof Error ? error.message.trim() : String(error ?? "");
+      if (/no such file/i.test(message)) {
+        throw new Error(
+          `Remote path not found: ${lookupPath}. Use an absolute path (for example /home/user) or ~ for home.`
+        );
+      }
+      throw error;
+    }
     const rows = await this.readDirectory(sftp, cwd);
     const entries = rows
       .filter((row) => row.filename !== "." && row.filename !== "..")
@@ -1036,6 +1067,323 @@ export class TerminalService {
         };
       }
       throw error;
+    }
+  }
+
+  async getRemotePathWriteAccess(tabId: string, remotePath: string): Promise<RemotePathWriteAccess> {
+    const connection = this.getConnectedSsh2Connection(tabId);
+    const sftp = await this.ensureSftp(connection);
+    const normalizedRemotePath = normalizeRemotePath(remotePath);
+    const identity = await this.getRemoteIdentity(connection);
+    const privileged = isPrivilegedSystemRemotePath(normalizedRemotePath);
+
+    let exists = false;
+    let isDirectory = false;
+    let pathWritable: boolean | null = null;
+    let modeOctal: string | null = null;
+    let uid: number | null = null;
+    let gid: number | null = null;
+    let parentPath: string | null = dirnamePosix(normalizedRemotePath);
+
+    try {
+      const stats = await this.statRemote(sftp, normalizedRemotePath);
+      exists = true;
+      isDirectory = isDirectoryMode(stats.mode ?? 0);
+      modeOctal = formatModeOctal(stats.mode);
+      uid = typeof stats.uid === "number" ? stats.uid : null;
+      gid = typeof stats.gid === "number" ? stats.gid : null;
+      pathWritable =
+        typeof stats.uid === "number" && typeof stats.gid === "number" && typeof stats.mode === "number"
+          ? canWriteWithIdentity(
+              { mode: stats.mode, uid: stats.uid, gid: stats.gid },
+              identity
+            )
+          : null;
+      if (!isDirectory) {
+        parentPath = dirnamePosix(normalizedRemotePath);
+      }
+    } catch (error) {
+      if (!isSftpNotFoundError(error)) {
+        throw error;
+      }
+      parentPath = dirnamePosix(normalizedRemotePath);
+    }
+
+    let parentWritable: boolean | null = null;
+    if (!isDirectory || !exists) {
+      try {
+        const parentStats = await this.statRemote(sftp, parentPath || ".");
+        parentWritable =
+          typeof parentStats.uid === "number" &&
+          typeof parentStats.gid === "number" &&
+          typeof parentStats.mode === "number"
+            ? canWriteWithIdentity(
+                { mode: parentStats.mode, uid: parentStats.uid, gid: parentStats.gid },
+                identity
+              ) && (parentStats.mode & 0o100) !== 0
+            : null;
+      } catch {
+        parentWritable = null;
+      }
+    } else if (isDirectory && exists) {
+      // Directory upload target: execute bit also required to create entries.
+      parentWritable = null;
+      if (pathWritable === true && typeof modeOctal === "string") {
+        const modeValue = Number.parseInt(modeOctal, 8);
+        if (Number.isFinite(modeValue) && (modeValue & 0o100) === 0) {
+          pathWritable = false;
+        }
+      }
+    }
+
+    const effectiveWritable = computeEffectiveWritable({
+      exists,
+      isDirectory: exists ? isDirectory : false,
+      pathWritable,
+      parentWritable
+    });
+
+    return {
+      path: normalizedRemotePath,
+      exists,
+      isDirectory: exists ? isDirectory : false,
+      isPrivilegedSystemPath: privileged,
+      fileWritable: pathWritable,
+      parentWritable,
+      effectiveWritable,
+      modeOctal,
+      uid,
+      gid
+    };
+  }
+
+  async stagePrivilegedUpload(
+    tabId: string,
+    localPath: string,
+    intendedRemotePath: string,
+    relativeStagingPath?: string
+  ): Promise<StagePrivilegedUploadResult> {
+    const connection = this.getConnectedSsh2Connection(tabId);
+    const normalizedLocalPath = normalizeLocalPath(localPath, "Local upload file path");
+    const normalizedIntendedPath = normalizeRemotePath(intendedRemotePath);
+    assertPathIsNotRoot(normalizedIntendedPath);
+
+    const home = await this.getRemoteHomeDirectory(connection);
+    const relativePath = buildPrivilegedStagingRelativePath(
+      normalizedIntendedPath,
+      relativeStagingPath
+    );
+    const stagedRemotePath = posixPath.join(home, REMOTE_PRIVILEGED_STAGING_DIRECTORY, relativePath);
+    const stagedParent = posixPath.dirname(stagedRemotePath);
+    await this.ensureRemoteDirectoryTree(connection, stagedParent);
+
+    let modeOctal = "644";
+    try {
+      const access = await this.getRemotePathWriteAccess(tabId, normalizedIntendedPath);
+      if (access.modeOctal && access.exists && !access.isDirectory) {
+        modeOctal = access.modeOctal.slice(-3);
+      }
+    } catch {
+      // Keep default mode when intended path cannot be probed.
+    }
+
+    const transferId = `stage-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    await this.uploadFileToPath(tabId, transferId, normalizedLocalPath, stagedRemotePath);
+
+    return {
+      stagedRemotePath,
+      intendedRemotePath: normalizedIntendedPath,
+      suggestedTerminalCommand: buildPrivilegedInstallCommand(
+        stagedRemotePath,
+        normalizedIntendedPath,
+        modeOctal
+      ),
+      modeOctal
+    };
+  }
+
+  async tryPrivilegedUploadSave(
+    tabId: string,
+    localPath: string,
+    intendedRemotePath: string,
+    relativeStagingPath?: string
+  ): Promise<PrivilegedUploadSaveResult> {
+    const staged = await this.stagePrivilegedUpload(
+      tabId,
+      localPath,
+      intendedRemotePath,
+      relativeStagingPath
+    );
+    const connection = this.getConnectedSsh2Connection(tabId);
+    const command = `sudo -n install -m ${staged.modeOctal} ${shellSingleQuote(staged.stagedRemotePath)} ${shellSingleQuote(staged.intendedRemotePath)}`;
+    try {
+      await this.executeRemoteCommand(connection.client, command, 15_000);
+      await this.cleanupPrivilegedStagingFile(tabId, staged.stagedRemotePath);
+      return {
+        success: true,
+        stagedRemotePath: staged.stagedRemotePath,
+        intendedRemotePath: staged.intendedRemotePath,
+        suggestedTerminalCommand: staged.suggestedTerminalCommand
+      };
+    } catch (error) {
+      return {
+        success: false,
+        stagedRemotePath: staged.stagedRemotePath,
+        intendedRemotePath: staged.intendedRemotePath,
+        suggestedTerminalCommand: staged.suggestedTerminalCommand,
+        message:
+          (error as Error).message?.trim() ||
+          "Passwordless sudo is unavailable. Run the suggested install command in the terminal."
+      };
+    }
+  }
+
+  async cleanupPrivilegedStagingFile(tabId: string, stagedRemotePath: string): Promise<void> {
+    const connection = this.getConnectedSsh2Connection(tabId);
+    const normalized = normalizeRemotePath(stagedRemotePath);
+    if (!normalized || normalized === "/" || normalized === ".") {
+      return;
+    }
+    const home = await this.getRemoteHomeDirectory(connection);
+    const stagingRoot = posixPath.join(home, REMOTE_PRIVILEGED_STAGING_DIRECTORY);
+    const isUnderStaging =
+      normalized === stagingRoot ||
+      normalized.startsWith(`${stagingRoot}/`) ||
+      normalized.includes(`/${REMOTE_PRIVILEGED_STAGING_DIRECTORY}/`);
+    if (!isUnderStaging) {
+      throw new Error("Refusing to delete a path outside the TermDock staging directory.");
+    }
+    const sftp = await this.ensureSftp(connection);
+    await this.unlinkIgnoreMissing(sftp, normalized);
+    // Best-effort: remove empty parent directories under staging (never remove staging root).
+    let parent = posixPath.dirname(normalized);
+    while (parent.startsWith(`${stagingRoot}/`) && parent !== stagingRoot) {
+      try {
+        const rows = await this.readDirectory(sftp, parent);
+        const remaining = rows.filter((row) => row.filename !== "." && row.filename !== "..");
+        if (remaining.length > 0) {
+          break;
+        }
+        await new Promise<void>((resolve, reject) => {
+          sftp.rmdir(parent, (error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
+      } catch {
+        break;
+      }
+      parent = posixPath.dirname(parent);
+    }
+  }
+
+  async resolveRemoteStagingRoot(tabId: string): Promise<string> {
+    const connection = this.getConnectedSsh2Connection(tabId);
+    const home = await this.getRemoteHomeDirectory(connection);
+    return posixPath.join(home, REMOTE_PRIVILEGED_STAGING_DIRECTORY);
+  }
+
+  private async resolveRemoteLookupPath(
+    connection: Ssh2TerminalConnection,
+    targetPath?: string
+  ): Promise<string> {
+    const normalized = normalizeRemotePath(targetPath);
+    if (normalized === "~") {
+      return this.getRemoteHomeDirectory(connection);
+    }
+    if (normalized.startsWith("~/")) {
+      const home = await this.getRemoteHomeDirectory(connection);
+      const suffix = normalized.slice(2).replace(/^\/+/, "");
+      return suffix ? posixPath.join(home, suffix) : home;
+    }
+    return normalized;
+  }
+
+  private async getRemoteIdentity(connection: Ssh2TerminalConnection): Promise<RemoteIdentity> {
+    const cached = this.remoteIdentityByTab.get(connection.tabId);
+    if (cached) {
+      return cached;
+    }
+    const raw = await this.executeRemoteCommand(connection.client, "id -u; id -G", 8_000);
+    const lines = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    const uid = Number.parseInt(lines[0] ?? "", 10);
+    const gids = (lines[1] ?? "")
+      .split(/\s+/)
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isFinite(value));
+    if (!Number.isFinite(uid)) {
+      throw new Error("Unable to resolve remote user identity for write-access checks.");
+    }
+    const identity: RemoteIdentity = {
+      uid,
+      gids: gids.length > 0 ? gids : [uid]
+    };
+    this.remoteIdentityByTab.set(connection.tabId, identity);
+    return identity;
+  }
+
+  private async getRemoteHomeDirectory(connection: Ssh2TerminalConnection): Promise<string> {
+    const cached = this.remoteHomeByTab.get(connection.tabId);
+    if (cached) {
+      return cached;
+    }
+    const sftp = await this.ensureSftp(connection);
+    let home = "";
+    try {
+      const printed = (
+        await this.executeRemoteCommand(connection.client, 'printf %s "$HOME"', 8_000)
+      ).trim();
+      if (printed.startsWith("/")) {
+        home = printed;
+      }
+    } catch {
+      // Fall through.
+    }
+    if (!home) {
+      try {
+        home = await this.realPath(sftp, ".");
+      } catch {
+        home = "";
+      }
+    }
+    if (!home || home === "/") {
+      try {
+        const whoami = (await this.executeRemoteCommand(connection.client, "whoami", 5_000)).trim();
+        if (whoami) {
+          home = `/home/${whoami}`;
+        }
+      } catch {
+        home = "";
+      }
+    }
+    if (!home) {
+      throw new Error("Unable to resolve remote home directory.");
+    }
+    this.remoteHomeByTab.set(connection.tabId, home);
+    return home;
+  }
+
+  private async ensureRemoteDirectoryTree(
+    connection: Ssh2TerminalConnection,
+    remoteDirectory: string
+  ): Promise<void> {
+    const normalized = normalizeRemotePath(remoteDirectory);
+    if (!normalized || normalized === "." || normalized === "/") {
+      return;
+    }
+    const sftp = await this.ensureSftp(connection);
+    const isAbsolute = normalized.startsWith("/");
+    const segments = normalized.split("/").filter(Boolean);
+    let currentPath = isAbsolute ? "/" : ".";
+    for (const segment of segments) {
+      currentPath = posixPath.join(currentPath, segment);
+      await this.mkdir(sftp, currentPath);
     }
   }
 
@@ -3455,6 +3803,10 @@ function dirnamePosix(pathValue: string): string | null {
     return pathValue === "/" ? null : "/";
   }
   return next;
+}
+
+function shellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
 }
 
 function detectSftpEntryKind(attrs: Attributes): SftpEntryKind {

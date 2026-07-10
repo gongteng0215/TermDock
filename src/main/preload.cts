@@ -14,10 +14,13 @@ import type {
   SessionMigrationImportResult
 } from "../shared/session-migration.js";
 import type {
+  PrivilegedUploadSaveResult,
+  RemotePathWriteAccess,
   SftpDirectoryListResult,
   SftpEntryKind,
   SftpTransferRunOptions,
-  SftpTransferEvent
+  SftpTransferEvent,
+  StagePrivilegedUploadResult
 } from "../shared/sftp.js";
 import type {
   CreatePortForwardInput,
@@ -29,6 +32,7 @@ import type {
 } from "../shared/terminal.js";
 import type {
   RemoteOpenFileAutoSyncEvent,
+  RemoteOpenFileAutoSyncOptions,
   RemoteOpenFilePrepareOptions,
   RemoteOpenFilePrepareResult
 } from "../shared/system.js";
@@ -166,12 +170,18 @@ const api = {
         defaultName,
         options
       ) as Promise<RemoteOpenFilePrepareResult>,
-    enableRemoteFileAutoSync: (tabId: string, remotePath: string, localPath: string) =>
+    enableRemoteFileAutoSync: (
+      tabId: string,
+      remotePath: string,
+      localPath: string,
+      options?: RemoteOpenFileAutoSyncOptions
+    ) =>
       ipcRenderer.invoke(
         "system:enableRemoteFileAutoSync",
         tabId,
         remotePath,
-        localPath
+        localPath,
+        options
       ) as Promise<void>,
     onRemoteOpenFileEvent: (listener: (event: RemoteOpenFileAutoSyncEvent) => void) => {
       const wrapped = (
@@ -257,6 +267,42 @@ const api = {
       ipcRenderer.invoke("sftp:renamePath", tabId, sourcePath, nextName) as Promise<void>,
     deletePath: (tabId: string, targetPath: string, kind: SftpEntryKind) =>
       ipcRenderer.invoke("sftp:deletePath", tabId, targetPath, kind) as Promise<void>,
+    getRemotePathWriteAccess: (tabId: string, remotePath: string) =>
+      ipcRenderer.invoke("sftp:getRemotePathWriteAccess", tabId, remotePath) as Promise<RemotePathWriteAccess>,
+    resolveRemoteStagingRoot: (tabId: string) =>
+      ipcRenderer.invoke("sftp:resolveRemoteStagingRoot", tabId) as Promise<string>,
+    stagePrivilegedUpload: (
+      tabId: string,
+      localPath: string,
+      intendedRemotePath: string,
+      relativeStagingPath?: string
+    ) =>
+      ipcRenderer.invoke(
+        "sftp:stagePrivilegedUpload",
+        tabId,
+        localPath,
+        intendedRemotePath,
+        relativeStagingPath
+      ) as Promise<StagePrivilegedUploadResult>,
+    tryPrivilegedUploadSave: (
+      tabId: string,
+      localPath: string,
+      intendedRemotePath: string,
+      relativeStagingPath?: string
+    ) =>
+      ipcRenderer.invoke(
+        "sftp:tryPrivilegedUploadSave",
+        tabId,
+        localPath,
+        intendedRemotePath,
+        relativeStagingPath
+      ) as Promise<PrivilegedUploadSaveResult>,
+    cleanupPrivilegedStagingFile: (tabId: string, stagedRemotePath: string) =>
+      ipcRenderer.invoke(
+        "sftp:cleanupPrivilegedStagingFile",
+        tabId,
+        stagedRemotePath
+      ) as Promise<void>,
     uploadFile: (
       tabId: string,
       transferId: string,

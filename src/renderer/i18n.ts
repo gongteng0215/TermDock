@@ -715,6 +715,25 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Download Folder": "下载文件夹",
   "Open File": "打开文件",
   "Download File": "下载文件",
+  "Open Read-Only (Recommended)": "只读打开（推荐）",
+  "Still Try Auto-Sync": "仍尝试自动同步",
+  "Privileged or Read-Only Path": "系统/只读路径",
+  "Stage Upload (Recommended)": "改传到 staging（推荐）",
+  "Still Upload to Original Path": "仍上传到原目录",
+  "Upload Permission Issue": "上传权限不足",
+  "Stage to Server": "暂存到服务器",
+  "Try sudo -n Save": "尝试 sudo -n 写回",
+  "Copy sudo Command": "复制 sudo 命令",
+  "Paste into Terminal": "粘贴到终端",
+  "Reveal Local Draft": "打开本地草稿",
+  "Current SSH user cannot write this remote path. Fix ownership/permissions on the server, or upload to a writable directory and move the file with sudo.":
+    "当前 SSH 用户无法写入此远程路径。请在服务器上修正属主/权限，或先传到可写目录再用 sudo 移动。",
+  "Current directory is not writable for this SSH user. Uploads will fail with Permission denied.":
+    "当前目录对当前 SSH 用户不可写，上传会失败（Permission denied）。",
+  "This directory may require sudo to upload. Stage to ~/termdock-staging, then run sudo install in the terminal.":
+    "当前目录可能需要 sudo 才能上传。可改传到 ~/termdock-staging，再在终端用 sudo install 写入。",
+  "Current SSH user cannot write this path. Stage to ~/termdock-staging, then run sudo install in the terminal (or open the file read-only).":
+    "当前 SSH 用户无法写入此路径。可先暂存到 ~/termdock-staging，再在终端用 sudo install 写入（或下次只读打开）。",
   "Rename": "重命名",
   "Copy Path": "复制路径",
   "Copy Current Path": "复制当前路径",

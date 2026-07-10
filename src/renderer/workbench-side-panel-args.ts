@@ -119,10 +119,12 @@ interface BuildSftpExplorerArgsInput {
   sftpDirectory: SftpDirectoryListResult | null;
   sftpDropActive: boolean;
   sftpError: string | null;
+  sftpErrorRecovery?: import("react").ReactNode;
   sftpExplorerViewMode: SftpExplorerViewMode;
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpExplorerValueArgs["sftpSummary"];
+  sftpWriteAccessHint?: string | null;
   toggleSftpToolbarMenu: SftpExplorerActionArgs["toggleSftpToolbarMenu"];
 }
 
@@ -268,10 +270,12 @@ export function buildSftpExplorerArgs({
   sftpDirectory,
   sftpDropActive,
   sftpError,
+  sftpErrorRecovery = null,
   sftpExplorerViewMode,
   sftpLoading,
   sftpPath,
   sftpSummary,
+  sftpWriteAccessHint = null,
   toggleSftpToolbarMenu
 }: BuildSftpExplorerArgsInput) {
   return buildSftpExplorerCompositeArgs({
@@ -300,10 +304,12 @@ export function buildSftpExplorerArgs({
       sftpDirectory,
       sftpDropActive,
       sftpError,
+      sftpErrorRecovery,
       sftpExplorerViewMode,
       sftpLoading,
       sftpPath,
-      sftpSummary
+      sftpSummary,
+      sftpWriteAccessHint
     }
   });
 }

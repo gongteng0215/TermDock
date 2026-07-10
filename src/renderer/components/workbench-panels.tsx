@@ -135,6 +135,7 @@ interface SftpExplorerSectionProps {
   entries: SftpExplorerEntryView[];
   entrySummaryLabel: string;
   errorMessage: string | null;
+  errorRecovery?: ReactNode;
   loading: boolean;
   onActionsMenu: MouseEventHandler<HTMLButtonElement>;
   onBodyContextMenu: MouseEventHandler<HTMLDivElement>;
@@ -150,6 +151,7 @@ interface SftpExplorerSectionProps {
   refreshDisabled: boolean;
   onViewModeChange: (mode: "compact" | "details") => void;
   viewMode: "compact" | "details";
+  writeAccessHint?: string | null;
 }
 
 const SessionGroupRow = memo(function SessionGroupRow({
@@ -530,6 +532,7 @@ export function SftpExplorerSection({
   entries,
   entrySummaryLabel,
   errorMessage,
+  errorRecovery = null,
   loading,
   onActionsMenu,
   onBodyContextMenu,
@@ -544,7 +547,8 @@ export function SftpExplorerSection({
   pathUpDisabled,
   refreshDisabled,
   onViewModeChange,
-  viewMode
+  viewMode,
+  writeAccessHint = null
 }: SftpExplorerSectionProps) {
   const entryMapRef = useRef(new Map<string, SftpExplorerEntryView>());
   entryMapRef.current = new Map(entries.map((entry) => [entry.id, entry]));
@@ -640,7 +644,9 @@ export function SftpExplorerSection({
             </button>
           </div>
           <p className="hint sftp-current-path">Current: {currentPathLabel}</p>
+          {writeAccessHint ? <p className="hint sftp-write-access-hint">{writeAccessHint}</p> : null}
           {errorMessage ? <p className="hint sftp-error">{errorMessage}</p> : null}
+          {errorRecovery}
           {deleteProgressLabel ? (
             <div className="sftp-delete-progress" role="status" aria-live="polite">
               <p className="hint sftp-delete-progress__label">{deleteProgressLabel}</p>

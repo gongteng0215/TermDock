@@ -2,7 +2,7 @@
 
 [English](news.md)
 
-Last updated: 2026-06-29
+Last updated: 2026-07-10
 
 ## 已确认方向
 
@@ -14,12 +14,13 @@ Last updated: 2026-06-29
 
 ## 当前发布基线
 
-- 当前公开稳定版本：`v0.1.36`（2026-06-29）
+- 当前公开稳定版本：`v0.1.37`（2026-07-10）
 - 当前主分支：`master`
-- 当前重点：`v0.1.36` 发布后的打包应用更新检查可靠性收口。
+- 当前重点：`v0.1.37` 发布后的特权远程文件写回与 SFTP 路径体验收口。
 
 ## 最近周期已交付
 
+- v0.1.37：不可写远程路径支持只读打开或「暂存 + sudo install」写回（含 staging 清理）、SFTP `~` 家目录跳转，以及上传到不可写目录时更明确的 Permission denied。
 - v0.1.36：打包应用现在直接从 GitHub Releases 的 `latest/download/latest.yml` 读取更新元数据，避免 GitHub API rate limit 和旧 API 响应导致的误判。
 - v0.1.35：修复全屏终端编辑器闪烁——稳定 alternate-screen 的编辑器聚焦布局检测，保留主题 / 全屏效果，并迁移到 scoped xterm 包，在可用时使用 WebGL 渲染。
 - v0.1.34：渲染层性能优化——较重弹窗按需加载并对渲染产物分包以加快启动、Retry Center 与命令历史列表虚拟化、SFTP 与会话行 memo 化、SFTP 传输进度按动画帧合并刷新。

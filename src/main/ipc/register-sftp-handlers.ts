@@ -25,6 +25,52 @@ export function registerSftpHandlers(terminalService: TerminalService): void {
       terminalService.deletePath(tabId, targetPath, kind)
   );
   ipcMain.handle(
+    "sftp:getRemotePathWriteAccess",
+    async (_event, tabId: string, remotePath: string) =>
+      terminalService.getRemotePathWriteAccess(tabId, remotePath)
+  );
+  ipcMain.handle(
+    "sftp:resolveRemoteStagingRoot",
+    async (_event, tabId: string) => terminalService.resolveRemoteStagingRoot(tabId)
+  );
+  ipcMain.handle(
+    "sftp:stagePrivilegedUpload",
+    async (
+      _event,
+      tabId: string,
+      localPath: string,
+      intendedRemotePath: string,
+      relativeStagingPath?: string
+    ) =>
+      terminalService.stagePrivilegedUpload(
+        tabId,
+        localPath,
+        intendedRemotePath,
+        relativeStagingPath
+      )
+  );
+  ipcMain.handle(
+    "sftp:tryPrivilegedUploadSave",
+    async (
+      _event,
+      tabId: string,
+      localPath: string,
+      intendedRemotePath: string,
+      relativeStagingPath?: string
+    ) =>
+      terminalService.tryPrivilegedUploadSave(
+        tabId,
+        localPath,
+        intendedRemotePath,
+        relativeStagingPath
+      )
+  );
+  ipcMain.handle(
+    "sftp:cleanupPrivilegedStagingFile",
+    async (_event, tabId: string, stagedRemotePath: string) =>
+      terminalService.cleanupPrivilegedStagingFile(tabId, stagedRemotePath)
+  );
+  ipcMain.handle(
     "sftp:uploadFile",
     async (
       _event,

@@ -14,10 +14,15 @@ import { checkForUpdatesManually, getAutoUpdateStatus } from "../auto-update.js"
 import { appLogger } from "../logging/app-logger.js";
 import type {
   RemoteOpenFileAutoSyncEvent,
+  RemoteOpenFileAutoSyncOptions,
   RemoteOpenFileLocalDraftState,
   RemoteOpenFilePrepareOptions,
   RemoteOpenFilePrepareResult
 } from "../../shared/system.js";
+import {
+  buildPrivilegedInstallCommand,
+  buildPrivilegedStagingRelativePath
+} from "../../shared/sftp.js";
 import { TerminalService } from "../terminal/terminal-service.js";
 import type { RemotePathMetadata } from "../terminal/terminal-service.js";
 
@@ -43,6 +48,8 @@ interface RemoteOpenFileSession {
   uploadInFlight: boolean;
   pendingUpload: boolean;
   localHasPendingChanges: boolean;
+  autoSyncEnabled: boolean;
+  privilegedSaveMode: boolean;
   baseRemoteMetadata: RemotePathMetadata | null;
   lastUiNotificationKey: string | null;
   disposed: boolean;
@@ -494,14 +501,24 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
 
   ipcMain.handle(
     "system:enableRemoteFileAutoSync",
-    async (event, tabId: string, remotePath: string, localPath: string) => {
+    async (
+      event,
+      tabId: string,
+      remotePath: string,
+      localPath: string,
+      options?: RemoteOpenFileAutoSyncOptions
+    ) => {
       const normalizedTabId = normalizeRequiredPath(tabId, "Tab id");
       const normalizedRemotePath = normalizeRemoteOpenFilePath(remotePath);
       const normalizedLocalPath = normalizeRequiredPath(localPath, "Local file path");
+      const autoSyncEnabled = options?.autoSyncEnabled !== false;
+      const privilegedSaveMode = options?.privilegedSaveMode === true;
       const key = toRemoteOpenFileKey(normalizedTabId, normalizedRemotePath);
       const existingSession = remoteOpenFileSessions.get(key);
       if (existingSession && !existingSession.disposed) {
         existingSession.sender = event.sender;
+        existingSession.autoSyncEnabled = autoSyncEnabled;
+        existingSession.privilegedSaveMode = privilegedSaveMode;
         if (existingSession.localPath !== normalizedLocalPath) {
           unwatchFile(existingSession.localPath);
           scheduleRemoteOpenFileLocalPathCleanup(existingSession.localPath);
@@ -532,6 +549,8 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
         uploadInFlight: false,
         pendingUpload: false,
         localHasPendingChanges: false,
+        autoSyncEnabled,
+        privilegedSaveMode,
         baseRemoteMetadata,
         lastUiNotificationKey: null,
         disposed: false
@@ -905,6 +924,9 @@ function watchRemoteOpenFileSession(
       return;
     }
     session.localHasPendingChanges = true;
+    if (!session.autoSyncEnabled) {
+      return;
+    }
     scheduleRemoteOpenFileUpload(session, terminalService);
   });
 }
@@ -998,6 +1020,10 @@ async function flushRemoteOpenFileUpload(
   if (session.disposed) {
     return;
   }
+  if (!session.autoSyncEnabled) {
+    session.pendingUpload = false;
+    return;
+  }
   if (session.uploadInFlight) {
     session.pendingUpload = true;
     return;
@@ -1037,6 +1063,55 @@ async function flushRemoteOpenFileUpload(
       );
       return;
     }
+
+    if (session.privilegedSaveMode) {
+      const privilegedResult = await terminalService.tryPrivilegedUploadSave(
+        session.tabId,
+        session.localPath,
+        session.remotePath,
+        buildPrivilegedStagingRelativePath(session.remotePath)
+      );
+      if (privilegedResult.success) {
+        session.localHasPendingChanges = false;
+        session.baseRemoteMetadata = await readRemotePathMetadataSafely(
+          terminalService,
+          session.tabId,
+          session.remotePath
+        );
+        session.lastUiNotificationKey = null;
+        appLogger.log(
+          "info",
+          "main:remote-open-file",
+          "Privileged save-back succeeded via sudo -n install.",
+          {
+            tabId: session.tabId,
+            remotePath: session.remotePath,
+            stagedRemotePath: privilegedResult.stagedRemotePath
+          }
+        );
+        return;
+      }
+      notifyRemoteOpenFileAutoSyncEvent(
+        session,
+        {
+          type: "upload-failed",
+          tabId: session.tabId,
+          remotePath: session.remotePath,
+          localPath: session.localPath,
+          message: `Staged to ${privilegedResult.stagedRemotePath}. Run in terminal: ${privilegedResult.suggestedTerminalCommand}`,
+          failureReason: "permission-denied",
+          privilegedSaveMode: true,
+          recovery: {
+            stagedRemotePath: privilegedResult.stagedRemotePath,
+            suggestedTerminalCommand: privilegedResult.suggestedTerminalCommand
+          }
+        },
+        `privileged-staged:${session.remotePath}:${privilegedResult.stagedRemotePath}`
+      );
+      session.localHasPendingChanges = false;
+      return;
+    }
+
     await terminalService.uploadFileToPath(
       session.tabId,
       createRemoteOpenFileTransferId(),
@@ -1056,6 +1131,8 @@ async function flushRemoteOpenFileUpload(
       localPath: session.localPath
     });
   } catch (error) {
+    const errorMessage = (error as Error).message ?? "";
+    const isPermissionDenied = /permission denied|access denied/i.test(errorMessage);
     appLogger.log(
       "warn",
       "main:remote-open-file",
@@ -1064,8 +1141,56 @@ async function flushRemoteOpenFileUpload(
         tabId: session.tabId,
         remotePath: session.remotePath,
         localPath: session.localPath,
-        message: (error as Error).message
+        message: errorMessage
       }
+    );
+
+    if (isPermissionDenied) {
+      try {
+        const staged = await terminalService.stagePrivilegedUpload(
+          session.tabId,
+          session.localPath,
+          session.remotePath,
+          buildPrivilegedStagingRelativePath(session.remotePath)
+        );
+        session.privilegedSaveMode = true;
+        session.localHasPendingChanges = false;
+        notifyRemoteOpenFileAutoSyncEvent(
+          session,
+          {
+            type: "upload-failed",
+            tabId: session.tabId,
+            remotePath: session.remotePath,
+            localPath: session.localPath,
+            message: `Permission denied for direct SFTP write. Staged to ${staged.stagedRemotePath}. Run in terminal: ${staged.suggestedTerminalCommand}`,
+            failureReason: "permission-denied",
+            privilegedSaveMode: true,
+            recovery: {
+              stagedRemotePath: staged.stagedRemotePath,
+              suggestedTerminalCommand: staged.suggestedTerminalCommand
+            }
+          },
+          `auto-staged:${session.remotePath}:${staged.stagedRemotePath}`
+        );
+        return;
+      } catch (stageError) {
+        appLogger.log(
+          "warn",
+          "main:remote-open-file",
+          "Auto-stage after permission denied also failed.",
+          {
+            tabId: session.tabId,
+            remotePath: session.remotePath,
+            message: (stageError as Error).message
+          }
+        );
+      }
+    }
+
+    const relativeStagingPath = buildPrivilegedStagingRelativePath(session.remotePath);
+    const suggestedTerminalCommand = buildPrivilegedInstallCommand(
+      `~/termdock-staging/${relativeStagingPath}`,
+      session.remotePath
     );
     notifyRemoteOpenFileAutoSyncEvent(
       session,
@@ -1074,9 +1199,17 @@ async function flushRemoteOpenFileUpload(
         tabId: session.tabId,
         remotePath: session.remotePath,
         localPath: session.localPath,
-        message: `Failed to sync local edit back to remote file: ${session.remotePath}. ${(error as Error).message}`
+        message: isPermissionDenied
+          ? `Permission denied syncing local edit to ${session.remotePath}. Stage to ~/termdock-staging and run sudo install.`
+          : `Failed to sync local edit back to remote file: ${session.remotePath}. ${errorMessage}`,
+        failureReason: isPermissionDenied ? "permission-denied" : "other",
+        recovery: isPermissionDenied
+          ? {
+              suggestedTerminalCommand
+            }
+          : undefined
       },
-      `upload-failed:${session.remotePath}:${(error as Error).message}`
+      `upload-failed:${session.remotePath}:${errorMessage}`
     );
   } finally {
     session.uploadInFlight = false;

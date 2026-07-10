@@ -9,8 +9,16 @@ export type RemoteOpenFilePrepareReuseState =
 
 export type RemoteOpenFileLocalDraftState = "modified" | "syncing";
 
+export type RemoteOpenFileFailureReason = "permission-denied" | "other";
+
 export interface RemoteOpenFilePrepareOptions {
   discardLocalChanges?: boolean;
+}
+
+export interface RemoteOpenFileAutoSyncOptions {
+  autoSyncEnabled?: boolean;
+  /** When true, save-back uses staging + sudo install instead of direct SFTP overwrite. */
+  privilegedSaveMode?: boolean;
 }
 
 export interface RemoteOpenFilePrepareResult {
@@ -20,10 +28,19 @@ export interface RemoteOpenFilePrepareResult {
   localDraftState?: RemoteOpenFileLocalDraftState;
 }
 
+export interface RemoteOpenFileRecoveryHint {
+  stagedRemotePath?: string;
+  suggestedTerminalCommand?: string;
+}
+
 export interface RemoteOpenFileAutoSyncEvent {
   type: RemoteOpenFileAutoSyncEventType;
   tabId: string;
   remotePath: string;
   localPath: string;
   message: string;
+  failureReason?: RemoteOpenFileFailureReason;
+  recovery?: RemoteOpenFileRecoveryHint;
+  autoSyncEnabled?: boolean;
+  privilegedSaveMode?: boolean;
 }

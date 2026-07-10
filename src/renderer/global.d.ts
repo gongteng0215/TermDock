@@ -11,10 +11,13 @@ import type {
   SessionMigrationImportResult
 } from "../shared/session-migration";
 import type {
+  PrivilegedUploadSaveResult,
+  RemotePathWriteAccess,
   SftpDirectoryListResult,
   SftpEntryKind,
   SftpTransferRunOptions,
-  SftpTransferEvent
+  SftpTransferEvent,
+  StagePrivilegedUploadResult
 } from "../shared/sftp";
 import type {
   CreatePortForwardInput,
@@ -26,6 +29,7 @@ import type {
 } from "../shared/terminal";
 import type {
   RemoteOpenFileAutoSyncEvent,
+  RemoteOpenFileAutoSyncOptions,
   RemoteOpenFilePrepareOptions,
   RemoteOpenFilePrepareResult
 } from "../shared/system";
@@ -127,7 +131,8 @@ interface TermDockApi {
     enableRemoteFileAutoSync: (
       tabId: string,
       remotePath: string,
-      localPath: string
+      localPath: string,
+      options?: RemoteOpenFileAutoSyncOptions
     ) => Promise<void>;
     onRemoteOpenFileEvent: (
       listener: (event: RemoteOpenFileAutoSyncEvent) => void
@@ -170,6 +175,21 @@ interface TermDockApi {
     createDirectory: (tabId: string, parentPath: string, name: string) => Promise<void>;
     renamePath: (tabId: string, sourcePath: string, nextName: string) => Promise<void>;
     deletePath: (tabId: string, targetPath: string, kind: SftpEntryKind) => Promise<void>;
+    getRemotePathWriteAccess: (tabId: string, remotePath: string) => Promise<RemotePathWriteAccess>;
+    resolveRemoteStagingRoot: (tabId: string) => Promise<string>;
+    stagePrivilegedUpload: (
+      tabId: string,
+      localPath: string,
+      intendedRemotePath: string,
+      relativeStagingPath?: string
+    ) => Promise<StagePrivilegedUploadResult>;
+    tryPrivilegedUploadSave: (
+      tabId: string,
+      localPath: string,
+      intendedRemotePath: string,
+      relativeStagingPath?: string
+    ) => Promise<PrivilegedUploadSaveResult>;
+    cleanupPrivilegedStagingFile: (tabId: string, stagedRemotePath: string) => Promise<void>;
     uploadFile: (
       tabId: string,
       transferId: string,

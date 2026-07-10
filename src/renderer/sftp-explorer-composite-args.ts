@@ -42,10 +42,12 @@ type SftpExplorerValueArgs = {
   sftpDirectory: SftpDirectoryListResult | null;
   sftpDropActive: boolean;
   sftpError: string | null;
+  sftpErrorRecovery?: import("react").ReactNode;
   sftpExplorerViewMode: SftpExplorerViewMode;
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpSummaryLike;
+  sftpWriteAccessHint?: string | null;
 };
 
 interface BuildSftpExplorerCompositeArgsInput {

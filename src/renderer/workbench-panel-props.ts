@@ -4,6 +4,7 @@ import type {
   Dispatch,
   KeyboardEvent,
   MouseEvent,
+  ReactNode,
   SetStateAction
 } from "react";
 
@@ -283,10 +284,12 @@ export interface BuildSftpExplorerSectionPropsArgs {
   sftpDirectory: SftpDirectoryListResult | null;
   sftpDropActive: boolean;
   sftpError: string | null;
+  sftpErrorRecovery?: ReactNode;
   sftpExplorerViewMode: SftpExplorerViewMode;
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpSummaryLike;
+  sftpWriteAccessHint?: string | null;
   toggleSftpToolbarMenu: ComponentProps<typeof SftpExplorerSection>["onActionsMenu"];
 }
 
@@ -312,10 +315,12 @@ export function buildSftpExplorerSectionProps({
   sftpDirectory,
   sftpDropActive,
   sftpError,
+  sftpErrorRecovery = null,
   sftpExplorerViewMode,
   sftpLoading,
   sftpPath,
   sftpSummary,
+  sftpWriteAccessHint = null,
   toggleSftpToolbarMenu
 }: BuildSftpExplorerSectionPropsArgs): ComponentProps<typeof SftpExplorerSection> {
   return {
@@ -358,6 +363,8 @@ export function buildSftpExplorerSectionProps({
     })),
     entrySummaryLabel: `Entries: ${sftpSummary.entryCount} (Files: ${sftpSummary.fileCount}, Dirs: ${sftpSummary.directoryCount})`,
     errorMessage: sftpError,
+    errorRecovery: sftpErrorRecovery,
+    writeAccessHint: sftpWriteAccessHint,
     loading: sftpLoading,
     onActionsMenu: toggleSftpToolbarMenu,
     onBodyContextMenu: (event) => openSftpContextMenu(event),

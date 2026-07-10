@@ -14,6 +14,26 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.37 (2026-07-10)
+
+Release type: Stable
+
+### Highlights
+
+- Privileged remote-file save-back:
+  - Opening a non-writable remote file (for example under `/etc`) now offers read-only open or stage + `sudo install` save-back.
+  - Suggested install commands clean up the staging copy with `rm -f` after a successful install; passwordless `sudo -n` success also deletes the staged file.
+- SFTP path navigation:
+  - Entering `~` or `~/...` in the SFTP path bar now resolves to the remote home directory instead of failing with `No such file`.
+- Clearer upload permission failures:
+  - Dragging or uploading into a non-writable directory fails with an explicit `Permission denied` instead of silently redirecting through staging.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- Local Windows portable packaging verified.
+
 ## v0.1.36 (2026-06-29)
 
 Release type: Stable

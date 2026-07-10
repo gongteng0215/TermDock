@@ -27,6 +27,9 @@ import type {
   SftpEntry,
   SftpTransferEvent
 } from "../shared/sftp";
+import {
+  buildPrivilegedStagingRelativePath
+} from "../shared/sftp";
 import type {
   CreatePortForwardInput,
   PortForwardEventRecord,
@@ -35,6 +38,13 @@ import type {
 } from "../shared/terminal";
 import { formatSshConnectionError } from "../shared/ssh-error-diagnostics";
 import type { RemoteOpenFileAutoSyncEvent } from "../shared/system";
+import { PrivilegedUploadRecoveryActions } from "./components/privileged-upload-recovery-actions";
+import {
+  formatStagedRecoveryHint,
+  getRemoteOpenFileRecoveryCommand,
+  isPermissionDeniedMessage,
+  shouldOfferPrivilegedRecovery
+} from "./privileged-upload-recovery";
 import {
   LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
   MAX_TERMINAL_COMMAND_HISTORY,
@@ -1615,6 +1625,15 @@ function isTabNotConnectedError(message: string): boolean {
   return /not connected/i.test(message);
 }
 
+function unwrapIpcErrorMessage(message: string): string {
+  const trimmed = message.trim();
+  const match = trimmed.match(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?(.*)$/i);
+  if (match?.[1]?.trim()) {
+    return match[1].trim();
+  }
+  return trimmed;
+}
+
 function isRemotePathMissingError(message?: string): boolean {
   if (!message) {
     return false;
@@ -2483,7 +2502,7 @@ function getTransferFailureSuggestion(reason: string): string | null {
     return "Open Diagnostics and inspect the latest transfer logs before retrying.";
   }
   if (reason === "Permission denied") {
-    return "Verify remote path permissions/owner and confirm current SSH user has write access.";
+    return "Current SSH user cannot write this remote path. Fix ownership/permissions on the server, or upload to a writable directory and move the file with sudo.";
   }
   if (reason === "Missing file or directory") {
     return "Refresh remote directory and ensure target path exists. Recreate missing folders before retry.";
@@ -5178,6 +5197,14 @@ export function App() {
   const [remoteOpenFileIssuesByTab, setRemoteOpenFileIssuesByTab] = useState<
     Record<string, RemoteOpenFileAutoSyncEvent>
   >({});
+  const [sftpWriteAccessHintByTab, setSftpWriteAccessHintByTab] = useState<Record<string, string>>({});
+  const [privilegedRecoveryBusy, setPrivilegedRecoveryBusy] = useState<{
+    stage: boolean;
+    sudo: boolean;
+  }>({ stage: false, sudo: false });
+  const [lastPrivilegedRecoveryCommandByTab, setLastPrivilegedRecoveryCommandByTab] = useState<
+    Record<string, string>
+  >({});
   const [logInfo, setLogInfo] = useState<{
     logDirectoryPath: string;
     logFilePath: string;
@@ -5313,6 +5340,17 @@ export function App() {
   const sftpError = activeTabId
     ? activeRemoteOpenFileIssue?.message ?? sftpErrorsByTab[activeTabId] ?? null
     : globalSftpError;
+  const sftpWriteAccessHint = activeTabId ? sftpWriteAccessHintByTab[activeTabId] ?? null : null;
+  const activePrivilegedRecoveryCommand =
+    (activeTabId ? lastPrivilegedRecoveryCommandByTab[activeTabId] : null) ??
+    getRemoteOpenFileRecoveryCommand(activeRemoteOpenFileIssue);
+  const showPrivilegedRecoveryActions =
+    Boolean(activePrivilegedRecoveryCommand) ||
+    shouldOfferPrivilegedRecovery({
+      message: activeRemoteOpenFileIssue?.message ?? sftpError,
+      remotePath: activeRemoteOpenFileIssue?.remotePath ?? null,
+      failureReason: activeRemoteOpenFileIssue?.failureReason ?? null
+    });
 
   const setSftpPathForActiveTab = useCallback<Dispatch<SetStateAction<string>>>((value) => {
     setSftpPath((previousPath) => {
@@ -5417,6 +5455,214 @@ export function App() {
     },
     []
   );
+
+  const stageActivePrivilegedRecovery = useCallback(async () => {
+    if (!sftpApi || !activeTabId || !activeRemoteOpenFileIssue) {
+      return;
+    }
+    setPrivilegedRecoveryBusy((previous) => ({ ...previous, stage: true }));
+    try {
+      const result = await sftpApi.stagePrivilegedUpload(
+        activeTabId,
+        activeRemoteOpenFileIssue.localPath,
+        activeRemoteOpenFileIssue.remotePath,
+        buildPrivilegedStagingRelativePath(activeRemoteOpenFileIssue.remotePath)
+      );
+      setLastPrivilegedRecoveryCommandByTab((previous) => ({
+        ...previous,
+        [activeTabId]: result.suggestedTerminalCommand
+      }));
+      setRemoteOpenFileIssuesByTab((previous) => ({
+        ...previous,
+        [activeTabId]: {
+          ...activeRemoteOpenFileIssue,
+          message: formatStagedRecoveryHint(result),
+          failureReason: "permission-denied",
+          recovery: {
+            stagedRemotePath: result.stagedRemotePath,
+            suggestedTerminalCommand: result.suggestedTerminalCommand
+          }
+        }
+      }));
+      pushAppHintMessage(formatStagedRecoveryHint(result), {
+        level: "info",
+        durationMs: 7000
+      });
+    } catch (caughtError) {
+      setSftpError((caughtError as Error).message);
+    } finally {
+      setPrivilegedRecoveryBusy((previous) => ({ ...previous, stage: false }));
+    }
+  }, [
+    activeRemoteOpenFileIssue,
+    activeTabId,
+    pushAppHintMessage,
+    sftpApi,
+    setSftpError
+  ]);
+
+  const tryActivePrivilegedSudoSave = useCallback(async () => {
+    if (!sftpApi || !activeTabId || !activeRemoteOpenFileIssue) {
+      return;
+    }
+    setPrivilegedRecoveryBusy((previous) => ({ ...previous, sudo: true }));
+    try {
+      const result = await sftpApi.tryPrivilegedUploadSave(
+        activeTabId,
+        activeRemoteOpenFileIssue.localPath,
+        activeRemoteOpenFileIssue.remotePath,
+        buildPrivilegedStagingRelativePath(activeRemoteOpenFileIssue.remotePath)
+      );
+      setLastPrivilegedRecoveryCommandByTab((previous) => ({
+        ...previous,
+        [activeTabId]: result.suggestedTerminalCommand
+      }));
+      if (result.success) {
+        clearRemoteOpenFileIssue(activeTabId);
+        setSftpError(null, activeTabId);
+        pushAppHintMessage(
+          appLanguage === "zh-CN"
+            ? `已通过 sudo -n 写回 ${result.intendedRemotePath}`
+            : `Saved with sudo -n to ${result.intendedRemotePath}`,
+          { level: "info", durationMs: 5200 }
+        );
+        return;
+      }
+      setRemoteOpenFileIssuesByTab((previous) => ({
+        ...previous,
+        [activeTabId]: {
+          ...activeRemoteOpenFileIssue,
+          message:
+            result.message ||
+            formatStagedRecoveryHint({
+              stagedRemotePath: result.stagedRemotePath,
+              intendedRemotePath: result.intendedRemotePath,
+              suggestedTerminalCommand: result.suggestedTerminalCommand,
+              modeOctal: "644"
+            }),
+          failureReason: "permission-denied",
+          recovery: {
+            stagedRemotePath: result.stagedRemotePath,
+            suggestedTerminalCommand: result.suggestedTerminalCommand
+          }
+        }
+      }));
+      pushAppHintMessage(
+        result.message ||
+          (appLanguage === "zh-CN"
+            ? "sudo -n 不可用，请复制命令到终端手动执行。"
+            : "Passwordless sudo unavailable. Copy the command into the terminal."),
+        { level: "warn", durationMs: 7000 }
+      );
+    } catch (caughtError) {
+      setSftpError((caughtError as Error).message);
+    } finally {
+      setPrivilegedRecoveryBusy((previous) => ({ ...previous, sudo: false }));
+    }
+  }, [
+    activeRemoteOpenFileIssue,
+    activeTabId,
+    appLanguage,
+    clearRemoteOpenFileIssue,
+    pushAppHintMessage,
+    sftpApi,
+    setSftpError
+  ]);
+
+  const copyActivePrivilegedRecoveryCommand = useCallback(async () => {
+    const command = activePrivilegedRecoveryCommand?.trim();
+    if (!command) {
+      return;
+    }
+    await copyTextToClipboard(command);
+    pushAppHintMessage(
+      appLanguage === "zh-CN" ? "已复制 sudo 命令。" : "Copied sudo command.",
+      { level: "info", durationMs: 3200 }
+    );
+  }, [activePrivilegedRecoveryCommand, appLanguage, copyTextToClipboard, pushAppHintMessage]);
+
+  const pasteActivePrivilegedRecoveryCommand = useCallback(async () => {
+    const command = activePrivilegedRecoveryCommand?.trim();
+    if (!command || !terminalApi || !activeTabId) {
+      return;
+    }
+    await terminalApi.write(activeTabId, `${command} `);
+    pushAppHintMessage(
+      appLanguage === "zh-CN"
+        ? "已粘贴到终端（未自动执行，请确认后回车）。"
+        : "Pasted into terminal (not executed — review, then press Enter).",
+      { level: "info", durationMs: 4200 }
+    );
+  }, [
+    activePrivilegedRecoveryCommand,
+    activeTabId,
+    appLanguage,
+    pushAppHintMessage,
+    terminalApi
+  ]);
+
+  const revealActiveRemoteOpenLocalDraft = useCallback(async () => {
+    const localPath = activeRemoteOpenFileIssue?.localPath?.trim();
+    if (!localPath || !systemApi) {
+      return;
+    }
+    await systemApi.openLocalPath(localPath);
+  }, [activeRemoteOpenFileIssue, systemApi]);
+
+  const sftpErrorRecoveryNode = useMemo(() => {
+    if (!showPrivilegedRecoveryActions) {
+      return null;
+    }
+    return (
+      <PrivilegedUploadRecoveryActions
+        hasCommand={Boolean(activePrivilegedRecoveryCommand)}
+        hasLocalPath={Boolean(activeRemoteOpenFileIssue?.localPath)}
+        language={appLanguage === "zh-CN" ? "zh-CN" : "en"}
+        onCopyCommand={() => {
+          void copyActivePrivilegedRecoveryCommand();
+        }}
+        onPasteCommand={() => {
+          void pasteActivePrivilegedRecoveryCommand();
+        }}
+        onRevealLocal={
+          activeRemoteOpenFileIssue?.localPath
+            ? () => {
+                void revealActiveRemoteOpenLocalDraft();
+              }
+            : undefined
+        }
+        onStage={
+          activeRemoteOpenFileIssue
+            ? () => {
+                void stageActivePrivilegedRecovery();
+              }
+            : undefined
+        }
+        onTrySudoSave={
+          activeRemoteOpenFileIssue
+            ? () => {
+                void tryActivePrivilegedSudoSave();
+              }
+            : undefined
+        }
+        stageBusy={privilegedRecoveryBusy.stage}
+        sudoBusy={privilegedRecoveryBusy.sudo}
+      />
+    );
+  }, [
+    activePrivilegedRecoveryCommand,
+    activeRemoteOpenFileIssue,
+    appLanguage,
+    copyActivePrivilegedRecoveryCommand,
+    pasteActivePrivilegedRecoveryCommand,
+    privilegedRecoveryBusy.stage,
+    privilegedRecoveryBusy.sudo,
+    revealActiveRemoteOpenLocalDraft,
+    showPrivilegedRecoveryActions,
+    stageActivePrivilegedRecovery,
+    tryActivePrivilegedSudoSave
+  ]);
+
   const {
     appDialog,
     appDialogInput,
@@ -8597,8 +8843,40 @@ export function App() {
               : null;
           });
         }
+        try {
+          const writeAccess = await sftpApi.getRemotePathWriteAccess(targetTabId, result.cwd);
+          const hint =
+            !writeAccess.effectiveWritable
+              ? appLanguageRef.current === "zh-CN"
+                ? "当前目录对当前 SSH 用户不可写，上传会失败（Permission denied）。"
+                : "Current directory is not writable for this SSH user. Uploads will fail with Permission denied."
+              : "";
+          setSftpWriteAccessHintByTab((previous) => {
+            if (!hint) {
+              if (!(targetTabId in previous)) {
+                return previous;
+              }
+              const next = { ...previous };
+              delete next[targetTabId];
+              return next;
+            }
+            return {
+              ...previous,
+              [targetTabId]: hint
+            };
+          });
+        } catch {
+          setSftpWriteAccessHintByTab((previous) => {
+            if (!(targetTabId in previous)) {
+              return previous;
+            }
+            const next = { ...previous };
+            delete next[targetTabId];
+            return next;
+          });
+        }
       } catch (caughtError) {
-        const message = (caughtError as Error).message;
+        const message = unwrapIpcErrorMessage((caughtError as Error).message ?? "");
         if (options?.suppressDisconnectedError && isTabNotConnectedError(message)) {
           return;
         }
@@ -9219,6 +9497,15 @@ export function App() {
         ...prev,
         [event.tabId]: event
       }));
+      const recoveryCommand =
+        event.recovery?.suggestedTerminalCommand?.trim() ||
+        getRemoteOpenFileRecoveryCommand(event);
+      if (recoveryCommand) {
+        setLastPrivilegedRecoveryCommandByTab((previous) => ({
+          ...previous,
+          [event.tabId]: recoveryCommand
+        }));
+      }
       const tabTitle =
         terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.title?.trim() ?? "";
       const hintMessage =
@@ -9227,7 +9514,7 @@ export function App() {
           : `${tabTitle}: ${event.message}`;
       pushAppHintMessage(hintMessage, {
         level: "warn",
-        durationMs: 5200
+        durationMs: 7000
       });
       writeAppLog(
         "warn",
@@ -9235,11 +9522,71 @@ export function App() {
         "Remote open file auto-sync needs user attention.",
         event
       );
+
+      if (
+        event.type === "upload-failed" &&
+        (event.failureReason === "permission-denied" || Boolean(recoveryCommand))
+      ) {
+        const language = appLanguageRef.current;
+        void (async () => {
+          const choice = await showAppChoice(
+            language === "zh-CN"
+              ? "SFTP 无法直接写入系统路径。文件已（或可）暂存到 ~/termdock-staging。请复制 sudo 命令到终端执行完成写入。"
+              : "SFTP cannot write this system path directly. The file is staged (or can be staged) under ~/termdock-staging. Copy the sudo command into the terminal to finish.",
+            [
+              {
+                value: "copy",
+                label: language === "zh-CN" ? "复制 sudo 命令" : "Copy sudo Command"
+              },
+              {
+                value: "paste",
+                label: language === "zh-CN" ? "粘贴到终端" : "Paste into Terminal"
+              }
+            ],
+            {
+              title: language === "zh-CN" ? "需要 sudo 完成写回" : "sudo Required to Finish Save",
+              cancelLabel: language === "zh-CN" ? "稍后处理" : "Later",
+              detailText: [
+                `Remote: ${event.remotePath}`,
+                event.recovery?.stagedRemotePath
+                  ? `Staged: ${event.recovery.stagedRemotePath}`
+                  : null,
+                recoveryCommand ? `Command: ${recoveryCommand}` : null
+              ]
+                .filter(Boolean)
+                .join("\n")
+            }
+          );
+          if (!choice || !recoveryCommand) {
+            return;
+          }
+          if (choice === "copy") {
+            await copyTextToClipboard(recoveryCommand);
+            pushAppHintMessage(
+              language === "zh-CN" ? "已复制 sudo 命令。" : "Copied sudo command.",
+              { level: "info", durationMs: 3200 }
+            );
+            return;
+          }
+          if (choice === "paste") {
+            const tabId = event.tabId;
+            if (terminalApi) {
+              await terminalApi.write(tabId, `${recoveryCommand} `);
+              pushAppHintMessage(
+                language === "zh-CN"
+                  ? "已粘贴到终端（未自动执行，确认后回车）。"
+                  : "Pasted into terminal (not executed — review, then press Enter).",
+                { level: "info", durationMs: 4200 }
+              );
+            }
+          }
+        })();
+      }
     });
     return () => {
       stopListening();
     };
-  }, [pushAppHintMessage, systemApi, writeAppLog]);
+  }, [pushAppHintMessage, showAppChoice, systemApi, terminalApi, writeAppLog]);
 
   useEffect(() => {
     writeAppLog("info", "renderer:lifecycle", "Renderer initialized.");
@@ -9679,7 +10026,15 @@ export function App() {
         event.message &&
         !isTransferCanceledMessage(event.message)
       ) {
-        setSftpError(event.message, event.tabId);
+        const message = unwrapIpcErrorMessage(event.message);
+        setSftpError(
+          isPermissionDeniedMessage(message)
+            ? appLanguageRef.current === "zh-CN"
+              ? `Permission denied：当前 SSH 用户无法写入 ${event.remotePath}`
+              : `Permission denied: current SSH user cannot write ${event.remotePath}`
+            : message,
+          event.tabId
+        );
       }
       if (event.status === "failed" && !isTransferCanceledMessage(event.message)) {
         writeAppLog("warn", "renderer:sftp-transfer", "SFTP transfer failed.", {
@@ -14645,6 +15000,65 @@ export function App() {
           });
         }
       }
+      let autoSyncEnabled = true;
+      let privilegedSaveMode = false;
+      try {
+        const writeAccess = await sftpApi.getRemotePathWriteAccess(activeTabId, targetEntry.path);
+        if (!writeAccess.effectiveWritable) {
+          const openChoice = await showAppChoice(
+            appLanguage === "zh-CN"
+              ? "当前 SSH 用户无法直接 SFTP 写回此文件（例如 /etc 下的配置）。推荐：保存时先暂存到 ~/termdock-staging，再在终端用 sudo install 写入。"
+              : "The current SSH user cannot write this file over SFTP (for example under /etc). Recommended: stage to ~/termdock-staging on save, then run sudo install in the terminal.",
+            [
+              {
+                value: "privileged",
+                label:
+                  appLanguage === "zh-CN"
+                    ? "暂存 + sudo 保存（推荐）"
+                    : "Stage + sudo Save (Recommended)"
+              },
+              {
+                value: "readonly",
+                label: appLanguage === "zh-CN" ? "只读打开" : "Open Read-Only"
+              },
+              {
+                value: "continue",
+                label: appLanguage === "zh-CN" ? "仍尝试直接 SFTP 写回" : "Still Try Direct SFTP"
+              }
+            ],
+            {
+              title: appLanguage === "zh-CN" ? "系统路径需要提权写入" : "Privileged Path Write Required",
+              cancelLabel: appLanguage === "zh-CN" ? "取消" : "Cancel",
+              detailText: [
+                `Remote: ${targetEntry.path}`,
+                writeAccess.isPrivilegedSystemPath
+                  ? appLanguage === "zh-CN"
+                    ? "检测到 /etc 等系统路径。"
+                    : "Privileged system path detected."
+                  : appLanguage === "zh-CN"
+                    ? "目标文件或父目录对当前用户不可写。"
+                    : "Target file or parent directory is not writable for the current user."
+              ].join("\n")
+            }
+          );
+          if (!openChoice) {
+            return;
+          }
+          if (openChoice === "readonly") {
+            autoSyncEnabled = false;
+            privilegedSaveMode = false;
+          } else if (openChoice === "privileged") {
+            autoSyncEnabled = true;
+            privilegedSaveMode = true;
+          } else {
+            autoSyncEnabled = true;
+            privilegedSaveMode = false;
+          }
+        }
+      } catch {
+        // If write-access probe fails, keep default auto-sync behavior.
+      }
+
       if (!prepared.alreadyOpen) {
         await sftpApi.downloadFile(
           activeTabId,
@@ -14652,12 +15066,24 @@ export function App() {
           targetEntry.path,
           prepared.localPath
         );
-        await systemApi.enableRemoteFileAutoSync(
-          activeTabId,
-          targetEntry.path,
-          prepared.localPath
+      }
+      await systemApi.enableRemoteFileAutoSync(activeTabId, targetEntry.path, prepared.localPath, {
+        autoSyncEnabled,
+        privilegedSaveMode
+      });
+      clearRemoteOpenFileIssue(activeTabId);
+      if (!autoSyncEnabled) {
+        setSftpError(
+          appLanguage === "zh-CN"
+            ? `只读打开：${targetEntry.path}。本地修改不会自动回传。`
+            : `Opened read-only: ${targetEntry.path}. Local edits will not auto-sync.`
         );
-        clearRemoteOpenFileIssue(activeTabId);
+      } else if (privilegedSaveMode) {
+        setSftpError(
+          appLanguage === "zh-CN"
+            ? `已启用暂存+sudo 保存：${targetEntry.path}。保存后会先传到 ~/termdock-staging，再提示 sudo install 命令。`
+            : `Privileged save enabled for ${targetEntry.path}. Edits stage to ~/termdock-staging, then prompt for sudo install.`
+        );
       }
       const preferredProgramPath = fileOpenPreferences.preferredProgramPath.trim();
       await systemApi.openLocalPath(
@@ -15737,6 +16163,7 @@ export function App() {
         });
         return;
       }
+
       const totalQueuedFiles = enqueueUploadPathEntries(
         activeTabId,
         sftpDirectory.cwd,
@@ -17026,10 +17453,12 @@ export function App() {
       sftpDirectory,
       sftpDropActive,
       sftpError,
+      sftpErrorRecovery: sftpErrorRecoveryNode,
       sftpExplorerViewMode,
       sftpLoading,
       sftpPath,
       sftpSummary,
+      sftpWriteAccessHint,
       toggleSftpToolbarMenu
     }),
     terminalWorkspace: buildTerminalWorkspaceArgs({

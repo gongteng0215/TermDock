@@ -2,7 +2,7 @@
 
 [中文](news.zh-CN.md)
 
-Last updated: 2026-06-29
+Last updated: 2026-07-10
 
 ## Confirmed Direction
 
@@ -14,12 +14,13 @@ Last updated: 2026-06-29
 
 ## Release Baseline
 
-- Current stable release: `v0.1.36` (2026-06-29)
+- Current stable release: `v0.1.37` (2026-07-10)
 - Active branch: `master`
-- Active branch focus: post-`v0.1.36` packaged updater reliability follow-up
+- Active branch focus: post-`v0.1.37` privileged remote-file save-back and SFTP path UX follow-up
 
 ## Shipped in Recent Cycles
 
+- v0.1.37: privileged remote-file save-back for non-writable paths (read-only or stage + sudo install with staging cleanup), SFTP `~` home-path navigation, and clearer Permission denied failures for uploads into unwritable directories
 - v0.1.36: made packaged update checks read GitHub Releases update metadata directly from `latest/download/latest.yml`, avoiding GitHub API rate limits and stale API responses
 - v0.1.35: fixed full-screen terminal editor flicker by stabilizing alternate-screen editor-focus layout detection, preserving the theme/full-screen effect, and moving terminal rendering to scoped xterm packages with WebGL when available
 - v0.1.34: renderer performance pass — lazy-loaded heavy modals and renderer bundle splitting for faster startup, virtualized Retry Center and Command History lists, memoized SFTP and session rows, and animation-frame-batched SFTP transfer progress updates
