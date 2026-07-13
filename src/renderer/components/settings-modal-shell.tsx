@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 
-import { UiIcon } from "./ui-icon";
+import { ModalShell } from "./modal-shell";
+import { UiIcon, type UiIconName } from "./ui-icon";
 
 export interface SettingsSectionNavItem {
   id: string;
   label: string;
+  icon: UiIconName;
 }
 
 export interface SettingsModalShellProps {
@@ -34,57 +36,48 @@ export function SettingsModalShell({
   onClose,
   children
 }: SettingsModalShellProps) {
-  if (!open) {
-    return null;
-  }
-
   return (
-    <div className="modal-backdrop modal-backdrop--settings" role="presentation">
-      <div
-        aria-label={titleLabel}
-        aria-modal="true"
-        className="modal modal--settings"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <div className="modal__header">
-          <h3>{titleLabel}</h3>
-          <button className="icon-button" onClick={onClose} type="button">
-            <UiIcon name="close" />
-          </button>
-        </div>
-        <div className="settings-layout">
-          <div aria-label={sectionsAriaLabel} className="settings-nav" role="tablist">
-            {sections.map((section) => (
-              <button
-                className={
-                  activeSectionId === section.id
-                    ? "settings-nav__button is-active"
-                    : "settings-nav__button"
-                }
-                key={section.id}
-                onClick={() => onSelectSection(section.id)}
-                role="tab"
-                type="button"
-              >
-                {section.label}
-              </button>
-            ))}
-          </div>
-          <div className="session-form settings-panel">
-            <div className="settings-panel__header">
-              <h4 className="settings-group__title">{sectionTitle}</h4>
-              <p className="hint settings-panel__version">{versionLabel}</p>
-            </div>
-            {children}
-          </div>
-        </div>
+    <ModalShell
+      backdropClassName="modal-backdrop--settings"
+      footer={
         <div className="modal__actions settings-panel__footer">
           <button className="primary-button" onClick={onClose} type="button">
             {doneLabel}
           </button>
         </div>
+      }
+      modalClassName="modal--settings"
+      onClose={onClose}
+      open={open}
+      title={titleLabel}
+    >
+      <div className="settings-layout">
+        <div aria-label={sectionsAriaLabel} className="settings-nav" role="tablist">
+          {sections.map((section) => (
+            <button
+              className={
+                activeSectionId === section.id
+                  ? "settings-nav__button is-active"
+                  : "settings-nav__button"
+              }
+              key={section.id}
+              onClick={() => onSelectSection(section.id)}
+              role="tab"
+              type="button"
+            >
+              <UiIcon name={section.icon} />
+              <span>{section.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="session-form settings-panel">
+          <div className="settings-panel__header">
+            <h4 className="settings-group__title">{sectionTitle}</h4>
+            <p className="hint settings-panel__version">{versionLabel}</p>
+          </div>
+          {children}
+        </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }

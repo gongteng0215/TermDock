@@ -81,7 +81,7 @@
   background: transparent;
   color: var(--text-soft);
   padding: 0 10px;
-  font-size: 9px;
+  font-size: var(--font-2xs);
   cursor: pointer;
   transition: border-color 140ms ease, background 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
@@ -169,13 +169,13 @@
 .terminal-tabs.is-editor-focus[data-editor-typography="compact"] .tab {
   min-height: 26px;
   padding: 0 8px;
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .terminal-tabs.is-editor-focus[data-editor-typography="reading"] .tab {
   min-height: 32px;
   padding: 0 12px;
-  font-size: 9px;
+  font-size: var(--font-2xs);
 }
 
 .terminal-tabs.is-editor-focus[data-editor-typography="compact"] .tab.is-editor-collapsed {
@@ -215,14 +215,41 @@
   position: relative;
   min-height: 0;
   background:
-    radial-gradient(circle at top center, rgba(54, 87, 123, 0.12) 0%, transparent 38%),
-    linear-gradient(180deg, #0f141a 0%, #0b1015 100%);
+    radial-gradient(circle at top center, color-mix(in srgb, var(--accent) 14%, transparent) 0%, transparent 38%),
+    linear-gradient(180deg, var(--bg-terminal) 0%, color-mix(in srgb, var(--bg-terminal) 82%, black) 100%);
   overflow: hidden;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .terminal-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 10px;
+  text-align: center;
+}
+
+.terminal-empty .ui-icon {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--accent) 55%, var(--text-faint));
+  opacity: 0.8;
+}
+
+.terminal-empty__title {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+  color: var(--ui-title-muted);
+}
+
+.terminal-empty__hint {
+  margin: 0;
 }
 
 .terminal-pane {
@@ -336,7 +363,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 9px;
+  font-size: var(--font-2xs);
   color: var(--text-soft);
   background: rgba(16, 20, 26, 0.92);
   border: 1px solid var(--border-main);
@@ -367,10 +394,10 @@
 
 .terminal-pane__status-action {
   border: 1px solid var(--border-main);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--bg-panel-2);
   color: var(--text-main);
-  font-size: 9px;
+  font-size: var(--font-2xs);
   line-height: 1;
   padding: 2px 6px;
   cursor: pointer;
@@ -397,7 +424,7 @@
 .terminal-context-menu__item {
   height: 24px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-main);
   text-align: left;
@@ -439,8 +466,8 @@
 .terminal-history-dialog__filters select,
 .terminal-history-dialog__filters input {
   height: 24px;
-  border: 1px solid #2f4a64;
-  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   background: var(--bg-field);
   color: var(--text-main);
   padding: 0 7px;
@@ -451,13 +478,13 @@
 
 .terminal-history-dialog__filters select:focus,
 .terminal-history-dialog__filters input:focus {
-  border-color: #5c9fdd;
-  box-shadow: 0 0 0 3px rgba(81, 166, 255, 0.18);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--ui-focus-ring-soft);
 }
 
 .terminal-history-dialog__list-shell {
   border: 1px solid rgba(79, 128, 172, 0.34);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: rgba(12, 22, 34, 0.72);
   height: 216px;
   min-height: 216px;
@@ -524,7 +551,7 @@
 
 .terminal-history-dialog__item {
   border: 1px solid var(--ui-card-border);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--ui-card-bg);
   padding: 5px 6px;
   display: grid;

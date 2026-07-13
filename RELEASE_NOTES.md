@@ -14,6 +14,23 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.38 (2026-07-13)
+
+Release type: Stable
+
+### Highlights
+
+- Workbench accent themes:
+  - Settings > Workspace now offers Ocean, Lavender, Mint, Amber, and Rose accents that tint the whole workbench (surfaces, borders, selections, and primary actions), not just buttons.
+- UI clarity pass:
+  - Stronger panel contrast, clearer selected/active states, clearer button hierarchy, section-header icons, and improved empty terminal / empty list states.
+  - Fixed session-panel settings gear alignment and made scrollbars visible again across lists and settings panels.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+
 ## v0.1.37 (2026-07-10)
 
 Release type: Stable

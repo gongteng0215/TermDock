@@ -46,12 +46,15 @@ export interface BuildConnectionSettingsSectionPropsArgs
 
 type WorkspaceSectionValueProps = Pick<
   WorkspaceSectionProps,
+  | "accentOptions"
   | "cursorOptions"
   | "editorFocusAutoLayoutEnabled"
   | "fontOptions"
   | "labels"
   | "languageOptions"
   | "rhythmOptions"
+  | "selectedAccentId"
+  | "selectedAccentLabel"
   | "selectedCursorId"
   | "selectedCursorLabel"
   | "selectedFontId"
@@ -73,6 +76,7 @@ type WorkspaceSectionValueProps = Pick<
 >;
 
 export interface BuildWorkspaceSettingsSectionPropsArgs extends WorkspaceSectionValueProps {
+  onAccentSelect: WorkspaceSectionProps["onAccentSelect"];
   onCursorSelectAction: (value: TerminalEditorFocusCursorId) => void;
   onEditorFocusAutoLayoutEnabledChange:
     WorkspaceSectionProps["onEditorFocusAutoLayoutEnabledChange"];
@@ -404,11 +408,13 @@ export function buildWorkspaceSettingsSectionProps(
   args: BuildWorkspaceSettingsSectionPropsArgs
 ): WorkspaceSectionProps {
   return {
+    accentOptions: args.accentOptions,
     cursorOptions: args.cursorOptions,
     editorFocusAutoLayoutEnabled: args.editorFocusAutoLayoutEnabled,
     fontOptions: args.fontOptions,
     labels: args.labels,
     languageOptions: args.languageOptions,
+    onAccentSelect: args.onAccentSelect,
     onCursorSelect: (cursorId) => {
       args.onCursorSelectAction(cursorId as TerminalEditorFocusCursorId);
     },
@@ -437,6 +443,8 @@ export function buildWorkspaceSettingsSectionProps(
       );
     },
     rhythmOptions: args.rhythmOptions,
+    selectedAccentId: args.selectedAccentId,
+    selectedAccentLabel: args.selectedAccentLabel,
     selectedCursorId: args.selectedCursorId,
     selectedCursorLabel: args.selectedCursorLabel,
     selectedFontId: args.selectedFontId,

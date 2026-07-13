@@ -372,7 +372,10 @@ export function SessionsInspectorSection({
       <div className="panel__heading panel__heading--inspector">
         <div className="panel__heading-main">
           <div className="panel__title-group">
-            <h2>Sessions</h2>
+            <h2>
+              <UiIcon name="sessions" />
+              Sessions
+            </h2>
             <span className="panel__badge">{sessionBadgeText}</span>
             {workspaceProfile ? (
               <span className={`panel__badge workspace-profile-badge workspace-profile-badge--${workspaceProfile.id}`}>
@@ -573,7 +576,10 @@ export function SftpExplorerSection({
     <section className="panel__section panel__section--sftp workbench-section workbench-section--sftp">
       <div className="panel__heading panel__heading--inspector">
         <div className="panel__heading-main">
-          <h2>SFTP</h2>
+          <h2>
+            <UiIcon name="sftp" />
+            SFTP
+          </h2>
           <div className="panel__heading-actions sftp-view-mode-toggle" role="group" aria-label="SFTP view mode">
             <button
               className={
@@ -727,7 +733,10 @@ export function ServerHealthInspectorSection({
     <section className="panel__section panel__section--server-health workbench-section workbench-section--server-health">
       <div className="panel__heading panel__heading--inspector">
         <div className="panel__heading-main">
-          <h2>Server Health</h2>
+          <h2>
+            <UiIcon name="health" />
+            Server Health
+          </h2>
           <div className="server-health__actions">
             <button
               aria-label="Open server health details"
@@ -813,7 +822,10 @@ export function CommandHistoryInspectorSection({
       <div className="panel__heading panel__heading--inspector">
         <div className="panel__heading-main">
           <div className="panel__title-group">
-            <h2>Command History</h2>
+            <h2>
+              <UiIcon name="history" />
+              Command History
+            </h2>
             <span className="panel__badge">{visibleCountLabel}</span>
           </div>
           <div className="command-history-panel__heading-actions">

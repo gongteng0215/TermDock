@@ -2572,9 +2572,11 @@ export function TerminalWorkspace({
         ref={stageRef}
       >
         {tabs.length === 0 ? (
-          <p className="hint terminal-empty">
-            Terminal workspace ready. Open a session tab to start.
-          </p>
+          <div className="terminal-empty">
+            <UiIcon name="terminal" />
+            <p className="terminal-empty__title">Terminal workspace ready</p>
+            <p className="hint terminal-empty__hint">Open a session tab from the left to start.</p>
+          </div>
         ) : null}
         {tabs.map((tab) => {
           const state = tabStatuses[tab.id];

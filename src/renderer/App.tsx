@@ -57,7 +57,7 @@ import {
   TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
   TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
 } from "./components/terminal-workspace";
-import { UiIcon } from "./components/ui-icon";
+import { UiIcon, type UiIconName } from "./components/ui-icon";
 import type {
   ConnectionPreferences,
   HotkeyBindingPreference,
@@ -143,16 +143,25 @@ import {
 } from "./workbench-side-panel-args";
 import { useTransferCenterUiActions } from "./use-transfer-center-ui-actions";
 import {
+  applyUiAccentToDocument,
+  getUiAccentOption,
+  getUiAccentOptions,
+  isUiAccentId,
+  type UiAccentId
+} from "./ui-accent";
+import {
   readCommandHistoryInspectorCollapsed,
   readFirstRunOnboardingDismissed,
   readInspectorSidebarTabId,
   readSftpExplorerViewMode,
+  readUiAccentId,
   type InspectorSidebarTabId,
   type SftpExplorerViewMode,
   writeCommandHistoryInspectorCollapsed,
   writeFirstRunOnboardingDismissed,
   writeInspectorSidebarTabId,
-  writeSftpExplorerViewMode
+  writeSftpExplorerViewMode,
+  writeUiAccentId
 } from "./workbench-ui-preferences";
 import {
   APP_LANGUAGE_OPTIONS,
@@ -4855,16 +4864,20 @@ export function App() {
   const settingsSections = useMemo(
     () =>
       [
-        { id: "connection", label: i18n.settings.sections.connection.nav },
-        { id: "workspace", label: i18n.settings.sections.workspace.nav },
-        { id: "safety", label: i18n.settings.sections.safety.nav },
-        { id: "hotkeys", label: i18n.settings.sections.hotkeys.nav },
-        { id: "serverHealth", label: i18n.settings.sections.serverHealth.nav },
-        { id: "fileOpening", label: i18n.settings.sections.fileOpening.nav },
-        { id: "sftp", label: i18n.settings.sections.sftp.nav },
-        { id: "portForwarding", label: i18n.settings.sections.portForwarding.nav },
-        { id: "diagnostics", label: i18n.settings.sections.diagnostics.nav }
-      ] as Array<{ id: SettingsSectionId; label: string }>,
+        { id: "connection", label: i18n.settings.sections.connection.nav, icon: "connection" },
+        { id: "workspace", label: i18n.settings.sections.workspace.nav, icon: "workspace" },
+        { id: "safety", label: i18n.settings.sections.safety.nav, icon: "safety" },
+        { id: "hotkeys", label: i18n.settings.sections.hotkeys.nav, icon: "hotkeys" },
+        { id: "serverHealth", label: i18n.settings.sections.serverHealth.nav, icon: "health" },
+        { id: "fileOpening", label: i18n.settings.sections.fileOpening.nav, icon: "fileOpening" },
+        { id: "sftp", label: i18n.settings.sections.sftp.nav, icon: "sftp" },
+        {
+          id: "portForwarding",
+          label: i18n.settings.sections.portForwarding.nav,
+          icon: "portForwarding"
+        },
+        { id: "diagnostics", label: i18n.settings.sections.diagnostics.nav, icon: "diagnostics" }
+      ] as Array<{ id: SettingsSectionId; label: string; icon: UiIconName }>,
     [i18n]
   );
 
@@ -4996,6 +5009,7 @@ export function App() {
   );
   const [terminalEditorFocusPreferences, setTerminalEditorFocusPreferences] =
     useState<TerminalEditorFocusPreferences>(() => readTerminalEditorFocusPreferences());
+  const [uiAccentId, setUiAccentIdState] = useState<UiAccentId>(() => readUiAccentId());
   const [workspaceProfilePreferences, setWorkspaceProfilePreferences] =
     useState<WorkspaceProfilePreferences>(() => readWorkspaceProfilePreferences());
   const [dangerousCommandGuardPreferences, setDangerousCommandGuardPreferences] =
@@ -5864,6 +5878,15 @@ export function App() {
         isActive: index === hotkeyConflictCursorIndex
       })),
     [hotkeyConflicts, hotkeyConflictCursorIndex, isMacPlatform]
+  );
+  const uiAccentLanguage = appLanguage === "zh-CN" ? "zh" : "en";
+  const uiAccentOptions = useMemo(
+    () => [...getUiAccentOptions(uiAccentLanguage)],
+    [uiAccentLanguage]
+  );
+  const selectedUiAccent = useMemo(
+    () => getUiAccentOption(uiAccentId, uiAccentLanguage),
+    [uiAccentId, uiAccentLanguage]
   );
   const selectedTerminalEditorFocusTheme = useMemo(
     () =>
@@ -9136,6 +9159,11 @@ export function App() {
   useEffect(() => {
     writeInspectorSidebarTabId(activeInspectorSidebarTab);
   }, [activeInspectorSidebarTab]);
+
+  useEffect(() => {
+    writeUiAccentId(uiAccentId);
+    applyUiAccentToDocument(uiAccentId);
+  }, [uiAccentId]);
 
   useEffect(() => {
     try {
@@ -12802,6 +12830,26 @@ export function App() {
       {
         level: "info",
         durationMs: 3600
+      }
+    );
+  };
+
+  const setUiAccentId = (value: string) => {
+    if (!isUiAccentId(value) || value === uiAccentId) {
+      return;
+    }
+    const nextAccent = getUiAccentOption(
+      value,
+      appLanguageRef.current === "zh-CN" ? "zh" : "en"
+    );
+    setUiAccentIdState(nextAccent.id);
+    pushAppHintMessage(
+      appLanguageRef.current === "zh-CN"
+        ? `强调色已切换为${nextAccent.label}。`
+        : `Accent color set to ${nextAccent.label}.`,
+      {
+        level: "info",
+        durationMs: 3200
       }
     );
   };
@@ -17242,12 +17290,14 @@ export function App() {
         versionLabel: i18n.settings.version(APP_VERSION)
       }),
       workspace: buildWorkspaceSettingsArgs({
+        accentOptions: uiAccentOptions,
         cursorOptions: TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
         editorFocusAutoLayoutEnabled:
           terminalEditorFocusPreferences.autoLayoutEnabled,
         fontOptions: TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
         labels: i18n.settings.workspace,
         languageOptions: APP_LANGUAGE_OPTIONS,
+        onAccentSelect: setUiAccentId,
         onLanguageSelect: setAppLanguage,
         onCursorSelectAction: setTerminalEditorFocusCursorId,
         onEditorFocusAutoLayoutEnabledChange:
@@ -17260,6 +17310,8 @@ export function App() {
         onTypographySelectAction: setTerminalEditorFocusTypographyId,
         onWorkspaceProfileSelectAction: setWorkspaceProfileId,
         rhythmOptions: TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
+        selectedAccentId: uiAccentId,
+        selectedAccentLabel: selectedUiAccent.label,
         selectedCursorId: terminalEditorFocusPreferences.cursorId,
         selectedCursorLabel: selectedTerminalEditorFocusCursor.label,
         selectedFontId: terminalEditorFocusPreferences.fontId,

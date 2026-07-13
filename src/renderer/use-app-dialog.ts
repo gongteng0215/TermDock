@@ -232,11 +232,7 @@ export function useAppDialog({ pushAppHintMessage, tr, trMultiline }: UseAppDial
     if (!appDialog) {
       return;
     }
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeAppDialog();
-      }
+    const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Enter") {
         if (appDialog.mode === "choice") {
           return;
@@ -248,11 +244,11 @@ export function useAppDialog({ pushAppHintMessage, tr, trMultiline }: UseAppDial
         submitAppDialog();
       }
     };
-    window.addEventListener("keydown", onEscape);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("keydown", onKeyDown);
     };
-  }, [appDialog, closeAppDialog, submitAppDialog]);
+  }, [appDialog, submitAppDialog]);
 
   useEffect(() => {
     if (!appDialog || appDialog.mode !== "prompt") {

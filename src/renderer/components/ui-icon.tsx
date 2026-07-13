@@ -1,14 +1,26 @@
 import {
+  Activity,
   ArrowUp,
+  ArrowUpDown,
   BarChart3,
   ChevronLeft,
   Download,
+  FileText,
+  FolderOpen,
   History,
+  Keyboard,
   Menu,
   Minus,
+  Palette,
+  Plug,
   Plus,
   RefreshCw,
+  Server,
   Settings,
+  Share2,
+  ShieldCheck,
+  Stethoscope,
+  TerminalSquare,
   Upload,
   X
 } from "lucide-react";
@@ -26,7 +38,19 @@ export type UiIconName =
   | "menu"
   | "close"
   | "plus"
-  | "minus";
+  | "minus"
+  | "sessions"
+  | "health"
+  | "sftp"
+  | "transfers"
+  | "terminal"
+  | "connection"
+  | "workspace"
+  | "safety"
+  | "hotkeys"
+  | "fileOpening"
+  | "portForwarding"
+  | "diagnostics";
 
 const UI_ICONS: Record<UiIconName, LucideIcon> = {
   settings: Settings,
@@ -40,7 +64,19 @@ const UI_ICONS: Record<UiIconName, LucideIcon> = {
   menu: Menu,
   close: X,
   plus: Plus,
-  minus: Minus
+  minus: Minus,
+  sessions: Server,
+  health: Activity,
+  sftp: FolderOpen,
+  transfers: ArrowUpDown,
+  terminal: TerminalSquare,
+  connection: Plug,
+  workspace: Palette,
+  safety: ShieldCheck,
+  hotkeys: Keyboard,
+  fileOpening: FileText,
+  portForwarding: Share2,
+  diagnostics: Stethoscope
 };
 
 export function UiIcon({ name }: { name: UiIconName }) {

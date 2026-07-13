@@ -12,6 +12,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type { SessionRecord } from "../shared/session";
 import type { SessionContextMenuTarget } from "./session-context-actions";
+import { useDismissableLayer } from "./use-dismissable-layer";
 
 export interface SessionContextMenuState {
   x: number;
@@ -129,40 +130,14 @@ export function useSessionContextMenu({
     [persistedGroupNames, sessions]
   );
 
-  useEffect(() => {
-    if (!sessionContextMenu) {
-      return;
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (sessionContextMenuRef.current?.contains(target)) {
-        return;
-      }
-      closeSessionContextMenu();
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeSessionContextMenu();
-      }
-    };
-
-    const onWindowLayoutChange = () => {
-      closeSessionContextMenu();
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
-    window.addEventListener("resize", onWindowLayoutChange);
-    window.addEventListener("scroll", onWindowLayoutChange, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
-      window.removeEventListener("resize", onWindowLayoutChange);
-      window.removeEventListener("scroll", onWindowLayoutChange, true);
-    };
-  }, [closeSessionContextMenu, sessionContextMenu]);
+  useDismissableLayer({
+    open: Boolean(sessionContextMenu),
+    onDismiss: closeSessionContextMenu,
+    rootRef: sessionContextMenuRef,
+    closeOnOutsidePointer: true,
+    closeOnEscape: true,
+    closeOnWindowLayoutChange: true
+  });
 
   useEffect(() => {
     if (!sessionContextMenu) {

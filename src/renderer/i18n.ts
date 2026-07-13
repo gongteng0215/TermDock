@@ -23,6 +23,9 @@ export interface WorkspaceSettingsLabels {
   languageDescription: string;
   languageLabel: string;
   currentLanguage: (languageLabel: string) => string;
+  accentTitle: string;
+  accentDescription: string;
+  currentAccent: (accentLabel: string) => string;
   workspaceProfileTitle: string;
   workspaceProfileDescription: string;
   syncSafetyLabel: string;
@@ -2071,6 +2074,10 @@ const ENGLISH_I18N: AppI18n = {
       languageDescription: "Choose the display language for the TermDock interface.",
       languageLabel: "Language",
       currentLanguage: (languageLabel) => `Current language: ${languageLabel}`,
+      accentTitle: "Accent Color",
+      accentDescription:
+        "Shift the whole workbench tone—surfaces, borders, selections, and primary actions.",
+      currentAccent: (accentLabel) => `Current accent: ${accentLabel}`,
       workspaceProfileTitle: "Workspace Profile",
       workspaceProfileDescription:
         "Set an environment-wide risk cue for this app instance. This profile is shown in the UI and can also drive the global Safety pack/template defaults.",
@@ -2424,6 +2431,9 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
       languageDescription: "选择 TermDock 界面的显示语言。当前先覆盖常用工作台和设置入口。",
       languageLabel: "语言",
       currentLanguage: (languageLabel) => `当前语言：${languageLabel}`,
+      accentTitle: "强调色",
+      accentDescription: "切换整套工作台色调：面板、边框、选中态和主操作都会一起变。",
+      currentAccent: (accentLabel) => `当前强调色：${accentLabel}`,
       workspaceProfileTitle: "工作区配置",
       workspaceProfileDescription:
         "为当前应用实例设置全局风险提示。该配置会显示在界面中，也可以驱动全局安全策略包和模板默认值。",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 
 import {
   MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH,
@@ -6,6 +6,7 @@ import {
   type TerminalCommandHistoryEntry,
   type TerminalCommandHistorySource
 } from "./components/terminal-workspace";
+import { useDismissableLayer } from "./use-dismissable-layer";
 
 interface ImportedCommandHistoryCandidate {
   command: string;
@@ -368,22 +369,16 @@ export function useCommandHistoryManager({
     });
   }, [entries]);
 
-  useEffect(() => {
-    if (!isCommandHistoryManagerOpen) {
-      return;
-    }
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      closeCommandHistoryManager();
-    };
-    window.addEventListener("keydown", onEscape);
-    return () => {
-      window.removeEventListener("keydown", onEscape);
-    };
-  }, [closeCommandHistoryManager, isCommandHistoryManagerOpen]);
+  const commandHistoryManagerLayerRef = useRef<HTMLElement | null>(null);
+
+  useDismissableLayer({
+    open: isCommandHistoryManagerOpen,
+    onDismiss: closeCommandHistoryManager,
+    rootRef: commandHistoryManagerLayerRef,
+    closeOnOutsidePointer: false,
+    closeOnEscape: true,
+    closeOnWindowLayoutChange: false
+  });
 
   useEffect(() => {
     if (!isCommandHistoryManagerOpen) {

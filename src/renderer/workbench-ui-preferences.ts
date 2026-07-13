@@ -1,3 +1,9 @@
+import {
+  DEFAULT_UI_ACCENT_ID,
+  isUiAccentId,
+  type UiAccentId
+} from "./ui-accent";
+
 export type SftpExplorerViewMode = "compact" | "details";
 export type InspectorSidebarTabId = "sessions" | "health" | "history";
 
@@ -6,6 +12,7 @@ const COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY =
   "termdock.command-history-inspector-collapsed.v1";
 const INSPECTOR_SIDEBAR_TAB_STORAGE_KEY = "termdock.inspector-sidebar-tab.v1";
 const FIRST_RUN_ONBOARDING_DISMISSED_STORAGE_KEY = "termdock.first-run-onboarding-dismissed.v1";
+const UI_ACCENT_STORAGE_KEY = "termdock.ui-accent.v1";
 
 function readStorageItem(key: string): string | null {
   if (typeof window === "undefined") {
@@ -63,4 +70,13 @@ export function readSftpExplorerViewMode(): SftpExplorerViewMode {
 
 export function writeSftpExplorerViewMode(value: SftpExplorerViewMode): void {
   writeStorageItem(SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY, value);
+}
+
+export function readUiAccentId(): UiAccentId {
+  const rawValue = readStorageItem(UI_ACCENT_STORAGE_KEY);
+  return isUiAccentId(rawValue) ? rawValue : DEFAULT_UI_ACCENT_ID;
+}
+
+export function writeUiAccentId(value: UiAccentId): void {
+  writeStorageItem(UI_ACCENT_STORAGE_KEY, value);
 }

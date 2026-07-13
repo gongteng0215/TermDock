@@ -30,6 +30,10 @@ interface WorkspaceSettingsSectionProps {
   selectedLanguage: AppLanguage;
   selectedLanguageLabel: string;
   onLanguageSelect: (language: AppLanguage) => void;
+  accentOptions: Array<{ id: string; label: string; description: string }>;
+  selectedAccentId: string;
+  selectedAccentLabel: string;
+  onAccentSelect: (accentId: string) => void;
   workspaceProfileCards: WorkspaceProfileCardView[];
   selectedWorkspaceProfileId: string;
   onWorkspaceProfileSelect: (profileId: string) => void;
@@ -518,6 +522,10 @@ export function WorkspaceSettingsSection({
   selectedLanguage,
   selectedLanguageLabel,
   onLanguageSelect,
+  accentOptions,
+  selectedAccentId,
+  selectedAccentLabel,
+  onAccentSelect,
   workspaceProfileCards,
   selectedWorkspaceProfileId,
   onWorkspaceProfileSelect,
@@ -568,6 +576,31 @@ export function WorkspaceSettingsSection({
           </select>
         </label>
         <p className="hint">{labels.currentLanguage(selectedLanguageLabel)}</p>
+      </div>
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">{labels.accentTitle}</h4>
+          <p className="hint">{labels.accentDescription}</p>
+        </div>
+        <div className="settings-accent-grid">
+          {accentOptions.map((option) => (
+            <button
+              className={
+                option.id === selectedAccentId
+                  ? "settings-accent-preset is-active"
+                  : "settings-accent-preset"
+              }
+              key={option.id}
+              onClick={() => onAccentSelect(option.id)}
+              type="button"
+            >
+              <span className="settings-accent-preset__swatch" data-accent={option.id} />
+              <span className="settings-accent-preset__title">{option.label}</span>
+              <span className="hint settings-safety-preset__meta">{option.description}</span>
+            </button>
+          ))}
+        </div>
+        <p className="hint">{labels.currentAccent(selectedAccentLabel)}</p>
       </div>
       <div className="settings-safety-preset-section">
         <div className="settings-safety-preset-header">

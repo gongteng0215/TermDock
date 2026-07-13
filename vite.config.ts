@@ -23,6 +23,12 @@ function resolveManualChunk(id: string): string | undefined {
   if (normalized.endsWith("/src/renderer/components/ui-icon.tsx")) {
     return "renderer-shared";
   }
+  if (normalized.endsWith("/src/renderer/components/modal-shell.tsx")) {
+    return "renderer-shared";
+  }
+  if (normalized.endsWith("/src/renderer/use-dismissable-layer.ts")) {
+    return "renderer-shared";
+  }
   if (normalized.endsWith("/src/renderer/dangerous-command-guard.ts")) {
     return "renderer-guard";
   }

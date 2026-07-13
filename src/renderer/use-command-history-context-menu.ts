@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { MouseEvent as ReactMouseEvent } from "react";
 
+import { useDismissableLayer } from "./use-dismissable-layer";
+
 export interface CommandHistoryContextMenuState {
   x: number;
   y: number;
@@ -53,40 +55,14 @@ export function useCommandHistoryContextMenu({
     []
   );
 
-  useEffect(() => {
-    if (!commandHistoryContextMenu) {
-      return;
-    }
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (commandHistoryContextMenuRef.current?.contains(target)) {
-        return;
-      }
-      closeCommandHistoryContextMenu();
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeCommandHistoryContextMenu();
-      }
-    };
-
-    const onWindowLayoutChange = () => {
-      closeCommandHistoryContextMenu();
-    };
-
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
-    window.addEventListener("resize", onWindowLayoutChange);
-    window.addEventListener("scroll", onWindowLayoutChange, true);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
-      window.removeEventListener("resize", onWindowLayoutChange);
-      window.removeEventListener("scroll", onWindowLayoutChange, true);
-    };
-  }, [closeCommandHistoryContextMenu, commandHistoryContextMenu]);
+  useDismissableLayer({
+    open: Boolean(commandHistoryContextMenu),
+    onDismiss: closeCommandHistoryContextMenu,
+    rootRef: commandHistoryContextMenuRef,
+    closeOnOutsidePointer: true,
+    closeOnEscape: true,
+    closeOnWindowLayoutChange: true
+  });
 
   useEffect(() => {
     if (!commandHistoryContextMenu?.entryId) {

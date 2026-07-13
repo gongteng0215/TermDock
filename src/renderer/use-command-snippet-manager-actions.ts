@@ -1,6 +1,7 @@
-import { useCallback, useEffect, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 
 import type { CommandSnippetGroup } from "./command-snippets";
+import { useDismissableLayer } from "./use-dismissable-layer";
 
 interface UseCommandSnippetManagerActionsArgs {
   appVersion: string;
@@ -62,22 +63,16 @@ export function useCommandSnippetManagerActions({
     setIsCommandSnippetManagerOpen(false);
   }, [setIsCommandSnippetManagerOpen]);
 
-  useEffect(() => {
-    if (!isCommandSnippetManagerOpen) {
-      return;
-    }
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      closeCommandSnippetManager();
-    };
-    window.addEventListener("keydown", onEscape);
-    return () => {
-      window.removeEventListener("keydown", onEscape);
-    };
-  }, [closeCommandSnippetManager, isCommandSnippetManagerOpen]);
+  const commandSnippetManagerLayerRef = useRef<HTMLElement | null>(null);
+
+  useDismissableLayer({
+    open: isCommandSnippetManagerOpen,
+    onDismiss: closeCommandSnippetManager,
+    rootRef: commandSnippetManagerLayerRef,
+    closeOnOutsidePointer: false,
+    closeOnEscape: true,
+    closeOnWindowLayoutChange: false
+  });
 
   useEffect(() => {
     if (!isCommandSnippetManagerOpen) {
