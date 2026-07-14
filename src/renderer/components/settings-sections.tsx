@@ -34,6 +34,10 @@ interface WorkspaceSettingsSectionProps {
   selectedAccentId: string;
   selectedAccentLabel: string;
   onAccentSelect: (accentId: string) => void;
+  densityOptions: Array<{ id: string; label: string; description: string }>;
+  selectedDensityId: string;
+  selectedDensityLabel: string;
+  onDensitySelect: (densityId: string) => void;
   workspaceProfileCards: WorkspaceProfileCardView[];
   selectedWorkspaceProfileId: string;
   onWorkspaceProfileSelect: (profileId: string) => void;
@@ -526,6 +530,10 @@ export function WorkspaceSettingsSection({
   selectedAccentId,
   selectedAccentLabel,
   onAccentSelect,
+  densityOptions,
+  selectedDensityId,
+  selectedDensityLabel,
+  onDensitySelect,
   workspaceProfileCards,
   selectedWorkspaceProfileId,
   onWorkspaceProfileSelect,
@@ -601,6 +609,30 @@ export function WorkspaceSettingsSection({
           ))}
         </div>
         <p className="hint">{labels.currentAccent(selectedAccentLabel)}</p>
+      </div>
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">{labels.densityTitle}</h4>
+          <p className="hint">{labels.densityDescription}</p>
+        </div>
+        <div className="settings-safety-preset-grid">
+          {densityOptions.map((option) => (
+            <button
+              className={
+                option.id === selectedDensityId
+                  ? "settings-safety-preset is-active"
+                  : "settings-safety-preset"
+              }
+              key={option.id}
+              onClick={() => onDensitySelect(option.id)}
+              type="button"
+            >
+              <span className="settings-safety-preset__title">{option.label}</span>
+              <span className="hint settings-safety-preset__meta">{option.description}</span>
+            </button>
+          ))}
+        </div>
+        <p className="hint">{labels.currentDensity(selectedDensityLabel)}</p>
       </div>
       <div className="settings-safety-preset-section">
         <div className="settings-safety-preset-header">

@@ -26,6 +26,9 @@ export interface WorkspaceSettingsLabels {
   accentTitle: string;
   accentDescription: string;
   currentAccent: (accentLabel: string) => string;
+  densityTitle: string;
+  densityDescription: string;
+  currentDensity: (densityLabel: string) => string;
   workspaceProfileTitle: string;
   workspaceProfileDescription: string;
   syncSafetyLabel: string;
@@ -2078,6 +2081,10 @@ const ENGLISH_I18N: AppI18n = {
       accentDescription:
         "Shift the whole workbench tone—surfaces, borders, selections, and primary actions.",
       currentAccent: (accentLabel) => `Current accent: ${accentLabel}`,
+      densityTitle: "Layout Density",
+      densityDescription:
+        "Compact packs side panels and lists tighter; Comfortable keeps roomier spacing.",
+      currentDensity: (densityLabel) => `Current density: ${densityLabel}`,
       workspaceProfileTitle: "Workspace Profile",
       workspaceProfileDescription:
         "Set an environment-wide risk cue for this app instance. This profile is shown in the UI and can also drive the global Safety pack/template defaults.",
@@ -2434,6 +2441,9 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
       accentTitle: "强调色",
       accentDescription: "切换整套工作台色调：面板、边框、选中态和主操作都会一起变。",
       currentAccent: (accentLabel) => `当前强调色：${accentLabel}`,
+      densityTitle: "界面密度",
+      densityDescription: "紧凑会尽可能压紧侧栏和列表；宽松则保留更大间距。",
+      currentDensity: (densityLabel) => `当前密度：${densityLabel}`,
       workspaceProfileTitle: "工作区配置",
       workspaceProfileDescription:
         "为当前应用实例设置全局风险提示。该配置会显示在界面中，也可以驱动全局安全策略包和模板默认值。",

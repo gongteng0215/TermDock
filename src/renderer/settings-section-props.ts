@@ -48,6 +48,7 @@ type WorkspaceSectionValueProps = Pick<
   WorkspaceSectionProps,
   | "accentOptions"
   | "cursorOptions"
+  | "densityOptions"
   | "editorFocusAutoLayoutEnabled"
   | "fontOptions"
   | "labels"
@@ -57,6 +58,8 @@ type WorkspaceSectionValueProps = Pick<
   | "selectedAccentLabel"
   | "selectedCursorId"
   | "selectedCursorLabel"
+  | "selectedDensityId"
+  | "selectedDensityLabel"
   | "selectedFontId"
   | "selectedFontLabel"
   | "selectedLanguage"
@@ -78,6 +81,7 @@ type WorkspaceSectionValueProps = Pick<
 export interface BuildWorkspaceSettingsSectionPropsArgs extends WorkspaceSectionValueProps {
   onAccentSelect: WorkspaceSectionProps["onAccentSelect"];
   onCursorSelectAction: (value: TerminalEditorFocusCursorId) => void;
+  onDensitySelect: WorkspaceSectionProps["onDensitySelect"];
   onEditorFocusAutoLayoutEnabledChange:
     WorkspaceSectionProps["onEditorFocusAutoLayoutEnabledChange"];
   onFontSelectAction: (value: TerminalEditorFocusFontId) => void;
@@ -410,6 +414,7 @@ export function buildWorkspaceSettingsSectionProps(
   return {
     accentOptions: args.accentOptions,
     cursorOptions: args.cursorOptions,
+    densityOptions: args.densityOptions,
     editorFocusAutoLayoutEnabled: args.editorFocusAutoLayoutEnabled,
     fontOptions: args.fontOptions,
     labels: args.labels,
@@ -418,6 +423,7 @@ export function buildWorkspaceSettingsSectionProps(
     onCursorSelect: (cursorId) => {
       args.onCursorSelectAction(cursorId as TerminalEditorFocusCursorId);
     },
+    onDensitySelect: args.onDensitySelect,
     onEditorFocusAutoLayoutEnabledChange:
       args.onEditorFocusAutoLayoutEnabledChange,
     onFontSelect: (fontId) => {
@@ -447,6 +453,8 @@ export function buildWorkspaceSettingsSectionProps(
     selectedAccentLabel: args.selectedAccentLabel,
     selectedCursorId: args.selectedCursorId,
     selectedCursorLabel: args.selectedCursorLabel,
+    selectedDensityId: args.selectedDensityId,
+    selectedDensityLabel: args.selectedDensityLabel,
     selectedFontId: args.selectedFontId,
     selectedFontLabel: args.selectedFontLabel,
     selectedLanguage: args.selectedLanguage,

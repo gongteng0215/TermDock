@@ -455,7 +455,7 @@
 }
 
 .panel--right .panel__section {
-  padding: 5px 6px;
+  padding: var(--density-panel-padding);
   min-height: 0;
   overflow: hidden;
   display: flex;
@@ -467,9 +467,9 @@
 
 .panel--right .panel__heading {
   display: grid;
-  gap: 3px;
+  gap: var(--density-panel-heading-gap);
   align-items: start;
-  margin-bottom: 3px;
+  margin-bottom: var(--density-panel-heading-margin);
 }
 
 .panel--right .panel__heading-main {

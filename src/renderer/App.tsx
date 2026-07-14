@@ -150,18 +150,27 @@ import {
   type UiAccentId
 } from "./ui-accent";
 import {
+  applyUiDensityToDocument,
+  getUiDensityOption,
+  getUiDensityOptions,
+  isUiDensityId,
+  type UiDensityId
+} from "./ui-density";
+import {
   readCommandHistoryInspectorCollapsed,
   readFirstRunOnboardingDismissed,
   readInspectorSidebarTabId,
   readSftpExplorerViewMode,
   readUiAccentId,
+  readUiDensityId,
   type InspectorSidebarTabId,
   type SftpExplorerViewMode,
   writeCommandHistoryInspectorCollapsed,
   writeFirstRunOnboardingDismissed,
   writeInspectorSidebarTabId,
   writeSftpExplorerViewMode,
-  writeUiAccentId
+  writeUiAccentId,
+  writeUiDensityId
 } from "./workbench-ui-preferences";
 import {
   APP_LANGUAGE_OPTIONS,
@@ -5010,6 +5019,7 @@ export function App() {
   const [terminalEditorFocusPreferences, setTerminalEditorFocusPreferences] =
     useState<TerminalEditorFocusPreferences>(() => readTerminalEditorFocusPreferences());
   const [uiAccentId, setUiAccentIdState] = useState<UiAccentId>(() => readUiAccentId());
+  const [uiDensityId, setUiDensityIdState] = useState<UiDensityId>(() => readUiDensityId());
   const [workspaceProfilePreferences, setWorkspaceProfilePreferences] =
     useState<WorkspaceProfilePreferences>(() => readWorkspaceProfilePreferences());
   const [dangerousCommandGuardPreferences, setDangerousCommandGuardPreferences] =
@@ -5887,6 +5897,14 @@ export function App() {
   const selectedUiAccent = useMemo(
     () => getUiAccentOption(uiAccentId, uiAccentLanguage),
     [uiAccentId, uiAccentLanguage]
+  );
+  const uiDensityOptions = useMemo(
+    () => [...getUiDensityOptions(uiAccentLanguage)],
+    [uiAccentLanguage]
+  );
+  const selectedUiDensity = useMemo(
+    () => getUiDensityOption(uiDensityId, uiAccentLanguage),
+    [uiDensityId, uiAccentLanguage]
   );
   const selectedTerminalEditorFocusTheme = useMemo(
     () =>
@@ -9164,6 +9182,11 @@ export function App() {
     writeUiAccentId(uiAccentId);
     applyUiAccentToDocument(uiAccentId);
   }, [uiAccentId]);
+
+  useEffect(() => {
+    writeUiDensityId(uiDensityId);
+    applyUiDensityToDocument(uiDensityId);
+  }, [uiDensityId]);
 
   useEffect(() => {
     try {
@@ -12847,6 +12870,26 @@ export function App() {
       appLanguageRef.current === "zh-CN"
         ? `强调色已切换为${nextAccent.label}。`
         : `Accent color set to ${nextAccent.label}.`,
+      {
+        level: "info",
+        durationMs: 3200
+      }
+    );
+  };
+
+  const setUiDensityId = (value: string) => {
+    if (!isUiDensityId(value) || value === uiDensityId) {
+      return;
+    }
+    const nextDensity = getUiDensityOption(
+      value,
+      appLanguageRef.current === "zh-CN" ? "zh" : "en"
+    );
+    setUiDensityIdState(nextDensity.id);
+    pushAppHintMessage(
+      appLanguageRef.current === "zh-CN"
+        ? `界面密度已切换为${nextDensity.label}。`
+        : `Layout density set to ${nextDensity.label}.`,
       {
         level: "info",
         durationMs: 3200
@@ -17292,12 +17335,14 @@ export function App() {
       workspace: buildWorkspaceSettingsArgs({
         accentOptions: uiAccentOptions,
         cursorOptions: TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
+        densityOptions: uiDensityOptions,
         editorFocusAutoLayoutEnabled:
           terminalEditorFocusPreferences.autoLayoutEnabled,
         fontOptions: TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
         labels: i18n.settings.workspace,
         languageOptions: APP_LANGUAGE_OPTIONS,
         onAccentSelect: setUiAccentId,
+        onDensitySelect: setUiDensityId,
         onLanguageSelect: setAppLanguage,
         onCursorSelectAction: setTerminalEditorFocusCursorId,
         onEditorFocusAutoLayoutEnabledChange:
@@ -17312,6 +17357,8 @@ export function App() {
         rhythmOptions: TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
         selectedAccentId: uiAccentId,
         selectedAccentLabel: selectedUiAccent.label,
+        selectedDensityId: uiDensityId,
+        selectedDensityLabel: selectedUiDensity.label,
         selectedCursorId: terminalEditorFocusPreferences.cursorId,
         selectedCursorLabel: selectedTerminalEditorFocusCursor.label,
         selectedFontId: terminalEditorFocusPreferences.fontId,

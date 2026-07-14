@@ -2,7 +2,7 @@
 
 [中文](news.zh-CN.md)
 
-Last updated: 2026-07-13
+Last updated: 2026-07-14
 
 ## Confirmed Direction
 
@@ -14,12 +14,13 @@ Last updated: 2026-07-13
 
 ## Release Baseline
 
-- Current stable release: `v0.1.38` (2026-07-13)
+- Current stable release: `v0.1.39` (2026-07-14)
 - Active branch: `master`
-- Active branch focus: post-`v0.1.38` workbench accent and UI clarity follow-up
+- Active branch focus: post-`v0.1.39` layout density and workbench polish follow-up
 
 ## Shipped in Recent Cycles
 
+- v0.1.39: Settings > Workspace layout density (Compact default / Comfortable), denser compact side-panel spacing, Retry Center action grouping with danger delete actions, and clearer transfer dock text under Comfortable
 - v0.1.38: workbench-wide accent themes (Ocean / Lavender / Mint / Amber / Rose), stronger panel contrast and selected states, clearer button hierarchy and section icons, fixed settings-gear alignment, and restored visible scrollbars
 - v0.1.37: privileged remote-file save-back for non-writable paths (read-only or stage + sudo install with staging cleanup), SFTP `~` home-path navigation, and clearer Permission denied failures for uploads into unwritable directories
 - v0.1.36: made packaged update checks read GitHub Releases update metadata directly from `latest/download/latest.yml`, avoiding GitHub API rate limits and stale API responses

@@ -14,6 +14,24 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.39 (2026-07-14)
+
+Release type: Stable
+
+### Highlights
+
+- Layout density preference:
+  - Settings > Workspace now offers Compact / Comfortable density.
+  - Compact (default) keeps side panels, session lists, command history, and transfer text maximally tight; Comfortable restores roomier spacing.
+- Retry Center and Transfers polish:
+  - Retry Center footer actions are grouped (select / export / retry / delete), with delete actions marked as danger.
+  - Transfer dock title and progress text are clearer under Comfortable density.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+
 ## v0.1.38 (2026-07-13)
 
 Release type: Stable

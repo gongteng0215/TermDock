@@ -4,12 +4,14 @@ import "@xterm/xterm/css/xterm.css";
 
 import { App } from "./App";
 import { applyUiAccentToDocument } from "./ui-accent";
-import { readUiAccentId } from "./workbench-ui-preferences";
+import { applyUiDensityToDocument } from "./ui-density";
+import { readUiAccentId, readUiDensityId } from "./workbench-ui-preferences";
 import "./styles.css";
 import "./styles/workbench-shell.css";
 import "./styles/terminal.css";
 
 applyUiAccentToDocument(readUiAccentId());
+applyUiDensityToDocument(readUiDensityId());
 
 const root = document.getElementById("root");
 if (!root) {

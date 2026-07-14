@@ -42,6 +42,18 @@
   --space-4: 16px;
   --space-5: 20px;
   --space-6: 24px;
+  --density-panel-padding: 3px 4px;
+  --density-list-gap: 1px;
+  --density-list-item-padding-y: 2px;
+  --density-session-gap: 2px;
+  --density-session-main-padding: 2px 4px;
+  --density-session-main-gap: 1px;
+  --density-panel-heading-gap: 2px;
+  --density-panel-heading-margin: 2px;
+  --density-list-shell-padding: 2px;
+  --density-transfer-title-size: 10px;
+  --density-transfer-progress-size: 10px;
+  --density-transfer-progress-line-height: 1.2;
   --font-2xs: 11px;
   --font-xs: 12px;
   --font-sm: 13px;
@@ -242,6 +254,21 @@
   --ui-status-info: #ffb4c0;
 }
 
+:root[data-ui-density="comfortable"] {
+  --density-panel-padding: 7px 8px;
+  --density-list-gap: 3px;
+  --density-list-item-padding-y: 5px;
+  --density-session-gap: 5px;
+  --density-session-main-padding: 4px 8px;
+  --density-session-main-gap: 4px;
+  --density-panel-heading-gap: 3px;
+  --density-panel-heading-margin: 3px;
+  --density-list-shell-padding: 3px;
+  --density-transfer-title-size: 12px;
+  --density-transfer-progress-size: 12px;
+  --density-transfer-progress-line-height: 1.35;
+}
+
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
@@ -270,7 +297,7 @@ body::before {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--density-session-gap);
   align-content: start;
   grid-auto-rows: min-content;
 }
@@ -612,7 +639,8 @@ body::before {
 }
 
 .panel--right .session-list__main {
-  padding: var(--space-1) var(--space-2);
+  padding: var(--density-session-main-padding);
+  gap: var(--density-session-main-gap);
 }
 
 .session-list__name {
@@ -2150,6 +2178,17 @@ body::before {
   font-size: var(--font-2xs);
 }
 
+.secondary-button--danger {
+  border-color: rgba(176, 84, 110, 0.32);
+  color: var(--ui-status-danger);
+}
+
+.secondary-button--danger:hover:not(:disabled) {
+  border-color: rgba(176, 84, 110, 0.72);
+  background: rgba(84, 26, 42, 0.3);
+  color: var(--ui-status-danger);
+}
+
 .primary-button:focus-visible,
 .secondary-button:focus-visible,
 .icon-button:focus-visible,
@@ -2410,10 +2449,10 @@ body::before {
 .sftp-transfer-panel__title {
   margin-bottom: var(--space-1);
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-size: var(--font-2xs);
-  font-weight: var(--weight-medium);
-  color: #c0d8ef;
-  letter-spacing: 0.03em;
+  font-size: var(--density-transfer-title-size);
+  font-weight: var(--weight-semibold);
+  color: var(--ui-title);
+  letter-spacing: 0.04em;
 }
 
 .sftp-transfer-panel__header {
@@ -2451,11 +2490,12 @@ body::before {
 
 .sftp-transfer-panel__batch-progress {
   margin-bottom: var(--space-1);
-  min-height: 14px;
-  color: #9eb8d3;
+  min-height: 12px;
+  color: var(--ui-title-muted);
   font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  font-size: var(--font-2xs);
-  line-height: 1.25;
+  font-size: var(--density-transfer-progress-size);
+  letter-spacing: 0.01em;
+  line-height: var(--density-transfer-progress-line-height);
 }
 
 .sftp-transfer-list {
@@ -3415,7 +3455,7 @@ body::before {
 }
 
 .command-history-panel__list-shell {
-  padding: 3px;
+  padding: var(--density-list-shell-padding);
   min-height: 0;
   flex: 1;
   max-height: 118px;
@@ -3428,14 +3468,14 @@ body::before {
   padding: 0;
   display: grid;
   align-content: start;
-  gap: 2px;
+  gap: var(--density-list-gap);
 }
 
 .command-history-panel__item {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--density-list-item-padding-y) var(--space-2);
   cursor: context-menu;
   transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
   position: relative;
@@ -3457,8 +3497,8 @@ body::before {
   content: "";
   position: absolute;
   left: 0;
-  top: var(--space-1);
-  bottom: var(--space-1);
+  top: var(--density-list-item-padding-y);
+  bottom: var(--density-list-item-padding-y);
   width: 2px;
   border-radius: var(--radius-full);
   background: transparent;
@@ -4869,6 +4909,27 @@ body::before {
 .retry-center__actions {
   flex-wrap: wrap;
   justify-content: flex-start;
+  row-gap: var(--space-2);
+}
+
+.retry-center__actions > .primary-button {
+  margin-left: auto;
+}
+
+.retry-center__action-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-3);
+  margin-right: var(--space-1);
+  border-right: 1px solid var(--ui-card-border);
+}
+
+.retry-center__action-cluster:last-of-type {
+  border-right: none;
+  padding-right: 0;
+  margin-right: 0;
 }
 
 .app-dialog {
