@@ -10,8 +10,11 @@ interface UseGlobalErrorBarActionsArgs {
   activeSessionId: string | null;
   activeTabId: string | null;
   isActiveTabConnected: boolean;
+  openCommandHistoryManager: () => void;
+  openCommandSnippetManager: () => void;
   openOperationCenter: () => void;
   openRetryCenter: () => void;
+  openSessionTemplateManager: () => void;
   openSettingsPanel: (section: SettingsSectionId) => void;
   setError: (message: string | null) => void;
   terminalApi: TerminalBridgeLike | null;
@@ -30,6 +33,9 @@ export function useGlobalErrorBarActions({
   isActiveTabConnected,
   openOperationCenter,
   openRetryCenter,
+  openCommandHistoryManager,
+  openCommandSnippetManager,
+  openSessionTemplateManager,
   openSettingsPanel,
   setError,
   terminalApi,
@@ -118,6 +124,9 @@ export function useGlobalErrorBarActions({
     openOperationCenterFromError: openOperationCenter,
     openPortForwardingSettingsFromError,
     openRetryCenterFromError: openRetryCenter,
+    openCommandHistoryManagerFromError: openCommandHistoryManager,
+    openSnippetManagerFromError: openCommandSnippetManager,
+    openSessionTemplateManagerFromError: openSessionTemplateManager,
     openSafetySettingsFromError,
     openServerHealthSettingsFromError,
     openSftpSettingsFromError,

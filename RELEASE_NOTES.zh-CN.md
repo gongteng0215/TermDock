@@ -14,6 +14,28 @@
 
 - 下一个候选版本发布时再补充验证结果。
 
+## v0.1.40 (2026-07-15)
+
+发布类型：稳定版
+
+### 主要变化
+
+- 可恢复全局错误路由：
+  - 会话创建、片段管理器、会话模板、命令历史和会话分组现在会给出情境指引，并一键跳到对应管理器。
+- Operation Center 跟进：
+  - 可一键拆除当前标签的全部端口转发，按标签或跨标签重试失败传输，并直接打开 Retry Center。
+- 正式性能基准：
+  - 新增 `bench:startup` 和 `bench:transfer:memory` 脚本，在 `artifacts/benchmark/` 记录可复现的启动负载与传输内存证据。
+- 持久化路线图：
+  - 新增英文 / 简体中文 SQLite 迁移规划，覆盖当前 JSON/keytar 持久化、目标 schema、分阶段落地与回滚策略（仅规划，尚未切库）。
+
+### 验证
+
+- `pnpm run typecheck` 已通过。
+- `pnpm run build` 已通过。
+- `pnpm run bench:startup` 已通过。
+- `pnpm run bench:transfer:memory` 已通过。
+
 ## v0.1.39 (2026-07-14)
 
 发布类型：稳定版

@@ -2,15 +2,15 @@
 
 [English](TASKS.md)
 
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## 当前发布状态
 
-- 当前稳定版：`v0.1.39`
+- 当前稳定版：`v0.1.40`
 - 当前分支：`master`
-- 当前方向：`v0.1.39` 之后继续跟进密度/主题/工作台清晰度反馈，并推进性能与可靠性硬化。
-- 当前发布说明：`v0.1.32`-`v0.1.39` 已覆盖自动更新体验、面板打磨、渲染性能、终端全屏编辑器修复、更新检查可靠性、特权文件保存回写、强调色主题与布局密度偏好。
-- 最新验证（2026-07-14）：`pnpm run typecheck` 和 `pnpm run build` 已通过。
+- 当前方向：`v0.1.40` 之后推进 Operation Center abort IPC、SQLite 规划 Phase 1-2 执行，以及基于正式基准的性能优化，并可选继续密度/主题反馈打磨。
+- 当前发布说明：`v0.1.40` 已覆盖更广的可恢复全局错误路由、Operation Center 按标签 / 跨标签重试与端口转发拆除、正式启动 / 传输内存基准，以及 SQLite 迁移规划；`v0.1.32`-`v0.1.39` 已覆盖自动更新体验、面板打磨、渲染性能、终端全屏编辑器修复、更新检查可靠性、特权文件保存回写、强调色主题与布局密度偏好。
+- 最新验证（2026-07-15）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup` 和 `pnpm run bench:transfer:memory` 已通过。
 
 ## P0 状态摘要
 
@@ -26,8 +26,8 @@ Last updated: 2026-07-14
 | 跨平台 smoke | PARTIAL | 自动化 smoke 已覆盖核心流程，仍需持续补充真实环境证据。 |
 | 签名 / notarization | PARTIAL | 预检和验证脚本已可用，公开可信签名证据仍在推进。 |
 | 自动更新 | PARTIAL | 打包应用会检查 GitHub Releases，新版本后台下载完成后提示重启安装；`v0.1.32`/`v0.1.36` 已补入手动检查、状态面板和 `latest.yml` 直读。 |
-| 启动性能 | PARTIAL | `v0.1.34` 已做按需加载重型弹窗、分包去重和列表虚拟化；正式基准与大传输内存优化仍待跟进。 |
-| SQLite 迁移 | TODO | 当前仍使用 JSON 持久化。 |
+| 启动性能 | PARTIAL | `v0.1.34` 已做按需加载重型弹窗、分包去重和列表虚拟化；`bench:startup` / `bench:transfer:memory` 正式基准已落地，剩余是按基准继续优化。 |
+| SQLite 迁移 | PARTIAL | 2026-07-15 迁移规划文档已落地；当前仍使用 JSON 持久化，尚未切库。 |
 
 ## 当前进行中
 
@@ -79,15 +79,20 @@ Last updated: 2026-07-14
    - 特权远程文件保存回写：非可写文件支持 stage + `sudo install`，SFTP `~` 路径解析，上传权限失败提示更明确。
    - 强调色主题与布局密度：`Ocean` / `Lavender` / `Mint` / `Amber` / `Rose`，以及 Compact / Comfortable。
    - Retry Center 删除动作分组并标记为危险操作；Comfortable 密度下 Transfers 可读性更好。
+10. `v0.1.40` 可靠性 / 性能硬化：
+   - `P0-E3`：全局错误恢复已覆盖会话创建校验、片段、会话模板、命令历史、会话分组和导入/导出失败，并提供对应管理器快捷入口。
+   - `F8`：Operation Center 已支持当前标签端口转发一键拆除、按标签 / 跨标签失败传输重试，以及打开 Retry Center 快捷入口；远程删除取消和已跟踪 app job 取消仍需 abort IPC，暂缓。
+   - `P0-E1`/`P0-E2`：新增 `bench:startup` 与 `bench:transfer:memory`，证据保存在 `artifacts/benchmark/`。
+   - `P0-A3`/`F9`：SQLite 迁移规划文档已写入 `docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`（含中文版），尚未改依赖或切库。
 
 ## 下一批建议任务
 
 1. 观察 `v0.1.38`/`v0.1.39` 之后密度、强调色主题和工作台清晰度的真实使用反馈。
 2. 将反复出现的启动 / 信任提示 / 首次连接反馈整理成 GitHub issues 和 Release FAQ。
-3. 继续 `P0-E3` 全局错误恢复边角场景和引导文案。
-4. 继续 `F8` Operation Center 更广的取消 / 重试覆盖。
-5. 规划 `P0-A3`/`F9` 持久化硬化（SQLite 迁移 + 凭据安全备份恢复）。
-6. 继续 `P0-E1`/`P0-E2`：正式启动性能基准和大传输内存优化。
+3. 继续 `P0-E3` 剩余错误引导文案打磨。
+4. 为 Operation Center 增加 abort IPC，以支持远程删除取消和已跟踪 app job 取消（`F8`）。
+5. 按 2026-07-15 规划执行 SQLite 会话双写 / 切流，并推进凭据安全备份恢复（`P0-A3`/`F9`）。
+6. 基于正式基准继续启动负载削减和大传输内存优化（`P0-E1`/`P0-E2`）。
 
 ## 详细任务历史
 

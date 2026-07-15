@@ -28,9 +28,12 @@ interface UseGlobalErrorRecoveryArgs<TTransfer extends TransferHistoryEntryLike>
 export interface GlobalErrorRecovery {
   canCopyLatestDisconnectReport: boolean;
   canExportBugReport: boolean;
+  canOpenCommandHistoryManager: boolean;
   canOpenLogs: boolean;
   canOpenOperationCenter: boolean;
   canOpenRetryCenter: boolean;
+  canOpenSessionTemplateManager: boolean;
+  canOpenSnippetManager: boolean;
   canReconnect: boolean;
   hint: string;
   settingsAction: SettingsSectionId | null;
@@ -112,6 +115,65 @@ function isDiagnosticsRecoverableError(message?: string): boolean {
   );
 }
 
+function isSessionCreateValidationError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(name, host and username are required|private key path is required|host is required|username is required|session bridge unavailable)/i.test(
+    message
+  );
+}
+
+function isSnippetValidationError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(snippet groups are limited|prompt sets per group are limited|snippet parameters are limited|snippet parameter keys|prompt-set parameter|parameter key .* already exists|failed to import snippet|failed to export snippet)/i.test(
+    message
+  );
+}
+
+function isTerminalTabRequiredError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(open and focus a terminal tab|open and select a terminal tab)/i.test(message);
+}
+
+function isSessionGroupValidationError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /group name is required/i.test(message);
+}
+
+function isSessionImportExportError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(ssh config import|session json import|session.*export|encrypted migration|import sessions|export sessions|parse ssh config|migration passphrase|sessions json|export all sessions|export all groups)/i.test(
+    message
+  );
+}
+
+function isCommandHistoryImportExportError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(command history import|command history export|import command history|export command history|failed to import command history|failed to export command history)/i.test(
+    message
+  );
+}
+
+function isSessionTemplateValidationError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+  return /(template name is required|template env var|duplicate env var|template .* already exists)/i.test(
+    message
+  );
+}
+
 function isRemotePathMissingError(message?: string): boolean {
   if (!message) {
     return false;
@@ -180,6 +242,9 @@ export function useGlobalErrorRecovery<TTransfer extends TransferHistoryEntryLik
         canCopyLatestDisconnectReport: false,
         canOpenRetryCenter: false,
         canOpenOperationCenter: false,
+        canOpenSnippetManager: false,
+        canOpenCommandHistoryManager: false,
+        canOpenSessionTemplateManager: false,
         canExportBugReport: false,
         settingsAction: null,
         hint: ""
@@ -196,6 +261,13 @@ export function useGlobalErrorRecovery<TTransfer extends TransferHistoryEntryLik
     const workspaceLike = isWorkspaceRecoverableError(message);
     const serverHealthLike = isServerHealthRecoverableError(message);
     const diagnosticsLike = isDiagnosticsRecoverableError(message);
+    const sessionCreateLike = isSessionCreateValidationError(message);
+    const snippetLike = isSnippetValidationError(message);
+    const terminalTabRequiredLike = isTerminalTabRequiredError(message);
+    const sessionGroupLike = isSessionGroupValidationError(message);
+    const sessionImportExportLike = isSessionImportExportError(message);
+    const commandHistoryLike = isCommandHistoryImportExportError(message);
+    const sessionTemplateLike = isSessionTemplateValidationError(message);
     const transferReason = resolveTransferRecoveryReasonForError(
       message,
       classifyTransferFailureReason
@@ -217,8 +289,13 @@ export function useGlobalErrorRecovery<TTransfer extends TransferHistoryEntryLik
       transferReason ||
       portForwardLike ||
       diagnosticsLike ||
-      serverHealthLike
+      serverHealthLike ||
+      sessionImportExportLike ||
+      commandHistoryLike
     );
+    const canOpenSnippetManager = snippetLike;
+    const canOpenCommandHistoryManager = commandHistoryLike;
+    const canOpenSessionTemplateManager = sessionTemplateLike;
 
     let settingsAction: SettingsSectionId | null = null;
     if (openerLike) {
@@ -235,7 +312,7 @@ export function useGlobalErrorRecovery<TTransfer extends TransferHistoryEntryLik
       settingsAction = "serverHealth";
     } else if (transferReason) {
       settingsAction = "sftp";
-    } else if (reconnectLike && !canReconnect) {
+    } else if (sessionCreateLike || (reconnectLike && !canReconnect)) {
       settingsAction = "connection";
     } else if (diagnosticsLike) {
       settingsAction = "diagnostics";
@@ -281,6 +358,28 @@ export function useGlobalErrorRecovery<TTransfer extends TransferHistoryEntryLik
     } else if (clipboardLike) {
       hint =
         "Clipboard is unavailable in the current environment. Use the manual-copy fallback from the active workflow.";
+    } else if (sessionCreateLike) {
+      hint =
+        "Session form validation failed. Open Connection settings or fix the required host, username, and credential fields before retrying.";
+    } else if (sessionTemplateLike) {
+      hint =
+        "Session template validation failed. Open Session Templates to fix the template name, env vars, or duplicate fields.";
+    } else if (snippetLike) {
+      hint =
+        "Snippet validation or import/export issue detected. Open Snippet Manager to review group limits, parameter keys, or the source file.";
+    } else if (terminalTabRequiredLike) {
+      hint =
+        "This action needs a focused terminal tab. Open a session from the Sessions panel, then retry the snippet or command-history action.";
+    } else if (sessionGroupLike) {
+      hint =
+        "A session group name is required. Enter a group name in the Sessions panel before saving or moving sessions.";
+    } else if (sessionImportExportLike) {
+      hint = canOpenOperationCenter
+        ? "Session import or export failed. Review the source file and duplicate strategy, then check Operation Center for tracked import/export jobs."
+        : "Session import or export failed. Review the source file, duplicate strategy, and target group before retrying.";
+    } else if (commandHistoryLike) {
+      hint =
+        "Command history import or export failed. Open Command History Manager to review the JSON format and retry the file action.";
     }
 
     return {
@@ -289,6 +388,9 @@ export function useGlobalErrorRecovery<TTransfer extends TransferHistoryEntryLik
       canCopyLatestDisconnectReport: disconnectReportCount > 0,
       canOpenRetryCenter,
       canOpenOperationCenter,
+      canOpenSnippetManager,
+      canOpenCommandHistoryManager,
+      canOpenSessionTemplateManager,
       canExportBugReport,
       settingsAction,
       hint

@@ -83,6 +83,11 @@ export function useTransferCenterUiActions<TTransfer extends SftpTransferLike>({
     openCommandSnippetManager();
   }, [closeOperationCenter, openCommandSnippetManager]);
 
+  const openRetryCenterFromOperationCenter = useCallback(() => {
+    closeOperationCenter();
+    openRetryCenter();
+  }, [closeOperationCenter, openRetryCenter]);
+
   const openPortForwardingFromOperationCenter = useCallback(() => {
     closeOperationCenter();
     openSettingsPanel("portForwarding");
@@ -136,6 +141,7 @@ export function useTransferCenterUiActions<TTransfer extends SftpTransferLike>({
     openOperationCenter,
     openPortForwardingFromOperationCenter,
     openRetryCenter,
+    openRetryCenterFromOperationCenter,
     selectAllVisibleRetryCenterEntries,
     toggleRetryCenterAutoUseLastRetryScope,
     toggleRetryCenterEntrySelection

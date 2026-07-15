@@ -2,15 +2,19 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.39`
+- Stable release shipped: `v0.1.40`
 - Active branch: `master`
-- Active focus: post-`v0.1.39` UI polish follow-up (density/themes/workbench clarity) plus continued perf/reliability hardening
+- Active focus: post-`v0.1.40` Operation Center abort IPC, SQLite plan Phase 1-2 execution, and benchmark-driven optimization, plus optional UI polish follow-up
 - Public docs now align with the shipped auto-update baseline, local-first trust model, and recommended download assets
-- Latest validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed
+- Latest validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed
+- `v0.1.40` expands recoverable global error routing for session-create, snippets, templates, command history, groups, and import/export failures
+- `v0.1.40` expands Operation Center with active-tab port-forward teardown, per-tab/cross-tab failed-transfer retry, and a Retry Center shortcut
+- Formal startup and transfer-memory benchmark scripts landed (`bench:startup`, `bench:transfer:memory`) with evidence under `artifacts/benchmark/`
+- SQLite migration planning doc landed (`docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`); JSON remains the live store
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -47,15 +51,16 @@ Last updated: 2026-07-14
 - Smoke automation now force-closes its spawned Electron process if graceful shutdown does not finish in time
 - Editor workbench shell is now the master baseline: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Renderer maintainability split is now on master: focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
-- Latest master validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed with the `v0.1.39` release prep
+- Latest master validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed with the `v0.1.40` release prep
+- Prior master validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed with the `v0.1.39` release prep
 - Prior master validation on 2026-06-02: `pnpm run test:main-auto-update`, `pnpm run test:main-single-instance`, `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-06-02T08-48-20-888Z/summary.json` (`PASS 50 / FAIL 0 / SKIP 0`).
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
 - P0 totals:
   - `DONE`: 13
-  - `PARTIAL`: 15
-  - `TODO`: 5
+  - `PARTIAL`: 16
+  - `TODO`: 4
 
 ## Release Readiness
 
@@ -66,6 +71,23 @@ Last updated: 2026-07-14
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
 - Those broad-rollout gates are not the active priority for the current self-use track
+
+## Completed in v0.1.40
+
+- Recoverable global error routing follow-up (`P0-E3`):
+  - session-create validation, snippets, session templates, command history, session groups, and import/export failures now get contextual hints and manager shortcuts
+- Operation Center follow-up (`F8`):
+  - active-tab port-forward teardown
+  - per-tab and cross-tab failed-transfer retry
+  - Retry Center open shortcut
+  - remote delete cancel and tracked app-job cancel remain deferred pending abort IPC
+- Formal performance baselines (`P0-E1` / `P0-E2`):
+  - `pnpm run bench:startup` measures renderer startup vs deferred assets
+  - `pnpm run bench:transfer:memory` samples RSS/heap for 64 MiB stream/`fastPut`/`fastGet` transfers
+  - evidence captured under `artifacts/benchmark/`
+- SQLite migration planning (`P0-A3` / `F9`):
+  - English + Chinese plan docs under `docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`
+  - no dependency or cutover code yet
 
 ## Completed in v0.1.39
 
@@ -586,23 +608,25 @@ Last updated: 2026-07-14
 - Some SFTP recursive/safety operations still need hardening
 - Port-forward diagnostics are now richer, but there is still no cross-device/shared diagnostics sync workflow
 - Server health currently relies on Linux `/proc` and single-root disk sampling
-- Startup payload and transfer jank improved in `v0.1.34`, but formal startup benchmarks and large-transfer memory optimization are still open
+- Startup payload and transfer jank improved in `v0.1.34`; formal `bench:startup` / `bench:transfer:memory` baselines now exist, so remaining work is residual optimization against those numbers
+- SQLite cutover is still open, but the 2026-07-15 migration plan freezes inventory, phases, and credential boundaries
 
 ## Next Focus
 
 1. Review real-usage feedback on density, accent themes, and workbench clarity after `v0.1.38`/`v0.1.39`
-2. Resume recoverable global error actions and guidance coverage (`P0-E3`)
-3. Expand Operation Center from the current grouped controls into broader cancel/retry coverage (`F8`)
-4. Continue persistence hardening (`P0-A3`/`F9`) and remaining startup/large-transfer performance follow-up (`P0-E1`/`P0-E2`)
+2. Polish remaining global error guidance copy (`P0-E3`)
+3. Add abort IPC so Operation Center can cancel remote deletes and tracked app jobs (`F8`)
+4. Execute SQLite sessions dual-write/cutover from the 2026-07-15 plan (`P0-A3`/`F9`) and credential-safe backup/restore
+5. Drive residual startup/large-transfer optimization from the new formal benchmarks (`P0-E1`/`P0-E2`)
 
 ## Remaining Work Snapshot
 
 1. Optional workbench polish after live usage of density/themes/clarity changes
 2. Remaining macOS/external-host packaged evidence for broader release confidence
-3. Expand global error recovery actions beyond current baseline (`P0-E3`)
-4. Expand Operation Center from the current grouped controls into broader cancel/retry coverage (`F8`)
-5. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
-6. Continue formal startup benchmark tracking and large-transfer memory optimization (`P0-E1`/`P0-E2`); `v0.1.34` reduced payload/jank but did not close these
+3. Remaining global error guidance polish (`P0-E3`)
+4. Operation Center remote delete cancel + tracked app-job cancel (`F8`)
+5. Complete persistence hardening (SQLite sessions dual-write/cutover + credential-safe backup/restore, `P0-A3`/`F9`)
+6. Residual startup/large-transfer optimization against formal baselines (`P0-E1`/`P0-E2`)
 7. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
 8. Session templates v2 (import/export, runtime prompt overrides, layered presets)
 9. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`), low priority for self-use

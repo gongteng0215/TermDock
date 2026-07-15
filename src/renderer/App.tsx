@@ -7850,6 +7850,68 @@ export function App() {
     },
     [portForwards, removePortForward]
   );
+  const stopAllPortForwardsOnActiveTab = useCallback(async () => {
+    if (!terminalApi?.removePortForward) {
+      setError("Terminal bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!activeTabId) {
+      return;
+    }
+    const forwards = portForwardRecordsByTab[activeTabId] ?? [];
+    if (forwards.length === 0) {
+      showTransferDockNotice(activeTabId, "info", "No port forwards on the active tab.");
+      return;
+    }
+    const confirmed = await showAppConfirm(
+      `Remove all ${forwards.length} port forward(s) on the active tab?`,
+      {
+        title: "Port Forwarding",
+        confirmLabel: "Remove All",
+        cancelLabel: "Cancel",
+        danger: true
+      }
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setPortForwardBusy(true);
+      for (const forward of forwards) {
+        await terminalApi.removePortForward(activeTabId, forward.id);
+      }
+      setPortForwardRecordsByTab((prev) => ({
+        ...prev,
+        [activeTabId]: []
+      }));
+      setPortForwardStatusMessageForTab(
+        activeTabId,
+        `Removed ${forwards.length} port forward(s) from the active tab.`
+      );
+    } catch (caughtError) {
+      const message = toPortForwardErrorMessage(caughtError);
+      setError(message);
+      setPortForwardStatusMessageForTab(activeTabId, message);
+      writeAppLog(
+        "error",
+        "renderer:port-forwarding",
+        "Failed to remove all port forwards from the active tab.",
+        caughtError
+      );
+    } finally {
+      setPortForwardBusy(false);
+    }
+  }, [
+    activeTabId,
+    portForwardRecordsByTab,
+    setError,
+    setPortForwardStatusMessageForTab,
+    showAppConfirm,
+    showTransferDockNotice,
+    terminalApi,
+    toPortForwardErrorMessage,
+    writeAppLog
+  ]);
   const {
     clearFinishedOperationCenterAppJobs,
     copyOperationCenterAppJobOutputPath,
@@ -12244,6 +12306,7 @@ export function App() {
           onDismiss: dismissGlobalError,
           onExportBugReport: exportBugReportFromError,
           onOpenConnectionSettings: openConnectionSettingsFromError,
+          onOpenCommandHistoryManager: openCommandHistoryManagerFromError,
           onOpenDiagnostics: openDiagnosticsFromError,
           onOpenFileOpeningSettings: openFileOpeningSettingsFromError,
           onOpenHotkeysSettings: openHotkeysSettingsFromError,
@@ -12252,7 +12315,9 @@ export function App() {
           onOpenRetryCenter: openRetryCenterFromError,
           onOpenSafetySettings: openSafetySettingsFromError,
           onOpenServerHealthSettings: openServerHealthSettingsFromError,
+          onOpenSessionTemplateManager: openSessionTemplateManagerFromError,
           onOpenSftpSettings: openSftpSettingsFromError,
+          onOpenSnippetManager: openSnippetManagerFromError,
           onOpenWorkspaceSettings: openWorkspaceSettingsFromError,
           openLogDirectory,
           reconnectActiveTabFromError
@@ -12261,9 +12326,12 @@ export function App() {
           canCopyLatestDisconnectReport:
             globalErrorRecovery.canCopyLatestDisconnectReport,
           canExportBugReport: globalErrorRecovery.canExportBugReport,
+          canOpenCommandHistoryManager: globalErrorRecovery.canOpenCommandHistoryManager,
           canOpenLogs: globalErrorRecovery.canOpenLogs,
           canOpenOperationCenter: globalErrorRecovery.canOpenOperationCenter,
           canOpenRetryCenter: globalErrorRecovery.canOpenRetryCenter,
+          canOpenSessionTemplateManager: globalErrorRecovery.canOpenSessionTemplateManager,
+          canOpenSnippetManager: globalErrorRecovery.canOpenSnippetManager,
           canReconnect: globalErrorRecovery.canReconnect,
           error,
           hint: globalErrorRecovery.hint,
@@ -12294,21 +12362,30 @@ export function App() {
           onOpenDiagnostics: openDiagnosticsFromOperationCenter,
           onOpenDiagnosticsJobs: openDiagnosticsFromOperationCenter,
           onOpenPortForward: openPortForwardingFromOperationCenter,
+          onOpenRetryCenter: openRetryCenterFromOperationCenter,
           onOpenSnippets: openCommandSnippetManagerFromOperationCenter,
+          onStopActiveTabPortForwards: stopAllPortForwardsOnActiveTab,
           reconnectDisconnectedOperationTabs,
           reconnectOperationTabById,
+          retryAllFailedTransfersAcrossTabsWithScopeChoice,
           retryAllFailedTransfersWithScopeChoice,
           retryFailedDownloads,
+          retryFailedTransfersForTab,
           retryFailedUploads
         },
         values: {
+          allTabsFailedRetryCandidateTotal,
           canRetryAllFailedTransfers,
+          canRetryAllFailedTransfersAcrossTabs: allTabsFailedRetryCandidateTotal > 0,
           canRetryFailedDownloads,
           canRetryFailedUploads,
+          canStopActiveTabPortForwards:
+            Boolean(activeTabId) && (portForwardRecordsByTab[activeTabId ?? ""]?.length ?? 0) > 0,
           deleteProgressLabel: operationCenterDeleteProgressLabel,
           downloadSummary: operationCenterDownloadSummary,
           failedRetryCandidateTotal,
           finishedAppJobCount: operationCenterFinishedAppJobCount,
+          getTabFailedRetryCandidateCount,
           hasActiveTab: Boolean(activeTabId),
           hasActivity: hasOperationCenterActivity,
           hasDiagnosticsJobs: hasOperationCenterDiagnosticsJobs,
@@ -16675,6 +16752,7 @@ export function App() {
     openOperationCenter,
     openPortForwardingFromOperationCenter,
     openRetryCenter,
+    openRetryCenterFromOperationCenter,
     selectAllVisibleRetryCenterEntries,
     toggleRetryCenterAutoUseLastRetryScope,
     toggleRetryCenterEntrySelection
@@ -16693,6 +16771,7 @@ export function App() {
   });
   const {
     openConnectionSettingsFromError,
+    openCommandHistoryManagerFromError,
     openDiagnosticsFromError,
     openFileOpeningSettingsFromError,
     openHotkeysSettingsFromError,
@@ -16701,15 +16780,20 @@ export function App() {
     openRetryCenterFromError,
     openSafetySettingsFromError,
     openServerHealthSettingsFromError,
+    openSessionTemplateManagerFromError,
     openSftpSettingsFromError,
+    openSnippetManagerFromError,
     openWorkspaceSettingsFromError,
     reconnectActiveTabFromError
   } = useGlobalErrorBarActions({
     activeSessionId,
     activeTabId,
     isActiveTabConnected,
+    openCommandHistoryManager,
+    openCommandSnippetManager,
     openOperationCenter,
     openRetryCenter,
+    openSessionTemplateManager,
     openSettingsPanel,
     setError,
     terminalApi,
@@ -16758,11 +16842,15 @@ export function App() {
     clearVisibleRetryCenterEntries,
     clearVisibleRetryCenterEntriesByFailureReason,
     retryAllFailedTransfersWithScopeChoice,
+    retryAllFailedTransfersAcrossTabsWithScopeChoice,
     retryFailedDownloads,
+    retryFailedTransfersForTab,
     retryFailedUploads,
     retryRetryCenterGroupFailedEntries,
     retrySelectedRetryCenterEntriesWithScopeChoice,
-    retryVisibleRetryCenterEntriesWithScopeChoice
+    retryVisibleRetryCenterEntriesWithScopeChoice,
+    allTabsFailedRetryCandidateTotal,
+    getFailedEntriesForTab
   } = useRetryCenterActions({
     activeSessionId,
     activeTabId,
@@ -16788,9 +16876,25 @@ export function App() {
     showAppAlert,
     showAppChoice,
     showAppConfirm,
+    terminalTabs: terminalTabs.map((tab) => ({ id: tab.id, sessionId: tab.sessionId })),
     totalHistoryCount: transferHistory.length,
     visibleRetryCenterFailedEntries
   });
+  const getTabFailedRetryCandidateCount = useCallback(
+    (tabId: string) => {
+      const tab = terminalTabs.find((entry) => entry.id === tabId);
+      if (!tab) {
+        return 0;
+      }
+      const failedEntries = getFailedEntriesForTab(tabId);
+      const dedup = new Set<string>();
+      for (const entry of failedEntries) {
+        dedup.add(createTransferRetryKey(entry.direction, entry.localPath, entry.remotePath));
+      }
+      return dedup.size;
+    },
+    [createTransferRetryKey, getFailedEntriesForTab, terminalTabs]
+  );
   const {
     appDialogModalProps,
     appInlineHintPanelProps,

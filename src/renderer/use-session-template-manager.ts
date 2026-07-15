@@ -304,7 +304,9 @@ export function useSessionTemplateManager({
         setSessionTemplateDraft(toSessionTemplateDraftFromRecord(nextRecord));
         setSessionTemplateError(null);
       } catch (caughtError) {
-        setSessionTemplateError((caughtError as Error).message);
+        const message = (caughtError as Error).message;
+        setSessionTemplateError(message);
+        setError(message);
       }
     },
     [

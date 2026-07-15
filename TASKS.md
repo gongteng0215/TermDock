@@ -2,16 +2,16 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## Current Release State
 
-- Stable release: `v0.1.39`
+- Stable release: `v0.1.40`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: post-`v0.1.39` UI polish follow-up (density/themes/workbench clarity) plus continued perf/reliability hardening
-- Current release note: layout density preference, workbench accent themes, privileged remote-file save-back, and renderer performance/auto-update reliability improvements have shipped through `v0.1.32`-`v0.1.39`
-- Latest validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed
+- Priority direction: post-`v0.1.40` Operation Center abort IPC, SQLite plan Phase 1-2 execution, and benchmark-driven optimization, plus optional UI polish follow-up
+- Current release note: recoverable global error routing, Operation Center per-tab/cross-tab retry and port-forward teardown, formal startup/transfer-memory benchmarks, and an SQLite migration plan have shipped in `v0.1.40`; prior `v0.1.32`-`v0.1.39` covered density/themes, privileged save-back, renderer performance, and auto-update reliability
+- Latest validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed
 
 ## P0 Matrix
 
@@ -19,7 +19,7 @@ Last updated: 2026-07-14
 | --- | --- | --- |
 | P0-A1 | DONE | Electron + React + TypeScript baseline is stable |
 | P0-A2 | DONE | Core multi-pane shell workflow is stable |
-| P0-A3 | PARTIAL | JSON persistence works; SQLite migration pending |
+| P0-A3 | PARTIAL | JSON persistence works; SQLite migration plan documented (`docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`); implementation still pending |
 | P0-A4 | DONE | Secure credential storage via keytar/fallback |
 | P0-A5 | PARTIAL | Structured logging module baseline landed (main+renderer, file logs, diagnostics panel) |
 | P0-B1 | PARTIAL | Session list/search/favorite done; deeper group model pending |
@@ -41,9 +41,9 @@ Last updated: 2026-07-14
 | P0-D4 | PARTIAL | Queue/progress/cancel done; monitor contention plus upload directory-race/channel-backpressure hardening landed, long-run stress tuning still pending |
 | P0-D5 | PARTIAL | Create/rename/delete done; recursive safety flows still evolving |
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
-| P0-E1 | PARTIAL | Startup payload reduced via on-demand heavy modals and de-duplicated renderer chunks (`v0.1.34`); formal benchmark/regression tracking still pending |
-| P0-E2 | TODO | Large transfer memory optimization |
-| P0-E3 | PARTIAL | Recoverable global error routing now covers disconnect copy, `Workspace` / `Safety` / `Hotkeys` / `Monitor` / `Port Fwd` / `Retry Center` / `Diagnostics` routing, and bug-report/export guidance; deeper edge-case coverage is still pending |
+| P0-E1 | PARTIAL | Startup payload reduced via on-demand heavy modals and de-duplicated renderer chunks (`v0.1.34`); formal `bench:startup` tracker landed with `v0.1.39` evidence (~1.38 MiB / ~0.36 MiB gzip startup assets) |
+| P0-E2 | PARTIAL | Streaming transfer path already uses 64 KiB pipes / `fastPut`/`fastGet`; formal `bench:transfer:memory` baseline landed (64 MiB scenarios); further memory optimization still pending |
+| P0-E3 | PARTIAL | Recoverable global error routing now also covers session-create validation, snippets, session templates, command history, session groups, and import/export failures with contextual manager shortcuts; remaining guidance polish still pending |
 | P0-E4 | TODO | Persistence crash-recovery verification |
 | P0-F1 | TODO | Unit tests; low priority for current self-use track |
 | P0-F2 | TODO | Integration tests; low priority for current self-use track |
@@ -53,6 +53,13 @@ Last updated: 2026-07-14
 
 ## In Progress Track (v0.1.3+)
 
+0. `v0.1.40` reliability/perf hardening (2026-07-15):
+   - `P0-E3`: global error recovery now routes session-create validation, snippets, session templates, command history, session groups, and import/export failures to contextual managers / hints
+   - `F8`: Operation Center gained active-tab port-forward teardown, per-tab and cross-tab failed-transfer retry, and a Retry Center shortcut
+   - `P0-E1`/`P0-E2`: added `bench:startup` and `bench:transfer:memory`; captured `v0.1.40` evidence under `artifacts/benchmark/`
+   - `P0-A3`/`F9`: SQLite migration planning doc landed (`docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md` + zh-CN); no dependency cutover yet
+   - deferred with explicit abort-IPC follow-up: remote delete cancel and tracked app-job cancel
+   - latest `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed
 0. Post-`v0.1.31` through `v0.1.39` master releases:
    - `v0.1.32`: manual `Check for Updates` plus diagnostics auto-update status panel; icon-button centering polish
    - `v0.1.33`: SFTP Details localized timestamps and min-width scrolling, compact idle Transfers dock, clearer first-run onboarding, steadier Server Health refresh
@@ -229,6 +236,7 @@ Last updated: 2026-07-14
    - contextual recovery hints for connection/bridge related errors
    - high-frequency error types now route directly to `Connection Settings`, `Workspace`, `Safety`, `File Opening`, `Hotkeys`, `Monitor`, `SFTP Settings`, `Port Fwd`, `Retry Center`, `Operation Center`, `Diagnostics`, or `Export Bug Report` when that recovery path is more specific than generic diagnostics
    - Safety sync failures now retain contextual error-bar text and have smoke coverage for routing back to `Settings > Safety`
+   - post-`v0.1.39` follow-up also routes session-create validation, snippets, session templates, command history, session groups, and import/export failures to matching managers
 15. Operation center baseline (`F8`):
    - added `Operation Center` modal with active long-running operation summary
    - includes upload/download queue status, remote delete status, and port-forward busy status
@@ -239,6 +247,8 @@ Last updated: 2026-07-14
    - includes per-tab and cross-tab one-click transfer cancellation actions
    - includes per-tab and bulk reconnect actions for disconnected transfer tabs
    - now also tracks session import/export, snippet import/export, and bug-report export jobs
+   - post-`v0.1.39` follow-up adds active-tab port-forward teardown, per-tab/cross-tab failed-transfer retry, and Retry Center open shortcut
+   - still deferred: remote delete cancel and tracked app-job cancel (need abort IPC)
 16. Disconnect auto-diagnostic baseline (`F22`):
    - unexpected terminal `closed/error` events now auto-capture runtime context snapshots
    - `Settings > Diagnostics` now exposes disconnect report list with JSON/CSV export, copy-latest, and clear actions
@@ -286,19 +296,19 @@ Last updated: 2026-07-14
 
 1. Watch real-usage feedback on density, accent themes, and workbench clarity after `v0.1.38`/`v0.1.39`.
 2. Convert repeated launch/trust/first-connect feedback into GitHub issues and Release FAQ updates.
-3. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy.
-4. `F8`: Operation Center follow-up (broader cancel/retry coverage).
-5. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore).
-6. `P0-E1`/`P0-E2`: continue startup benchmark follow-up and large-transfer memory optimization.
+3. `P0-E3`: polish remaining global error guidance copy and any leftover edge-case routing.
+4. `F8`: add abort-IPC so Operation Center can cancel remote deletes and tracked app jobs.
+5. `P0-A3`/`F9`: execute Phase 1–2 of the SQLite migration plan (schema + sessions dual-write), then credential-safe backup/restore.
+6. `P0-E1`/`P0-E2`: use formal benchmarks to drive residual startup payload cuts and large-transfer memory optimization.
 
 ## Not Done Yet (Top Blocking Items)
 
 1. `UI-WB-FEEDBACK`: optional polish after real usage of density/themes/workbench clarity
 2. Remaining macOS/external-host packaged smoke evidence for broader release confidence
-3. `P0-E3`: remaining recoverable global error edge-case coverage and guidance polish
-4. `F8`: broader cancel/retry coverage for Operation Center
-5. `P0-A3`: JSON-to-SQLite migration planning and execution
-6. `P0-E1`/`P0-E2`: formal startup benchmark tracking plus large-transfer memory optimization (`v0.1.34` reduced payload/jank but did not close these)
+3. `P0-E3`: remaining recoverable global error guidance polish
+4. `F8`: remote delete cancel + tracked app-job cancel (abort IPC)
+5. `P0-A3`: SQLite sessions dual-write/cutover plus credential-safe backup/restore (plan documented 2026-07-15)
+6. `P0-E1`/`P0-E2`: residual startup/large-transfer optimization against the new formal baselines
 7. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
 8. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
 9. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
@@ -352,8 +362,8 @@ Last updated: 2026-07-14
 | F5 | P1 | DONE | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
 | F6 | P2 | DONE | Session templates + env variables | Local template manager, env-var substitution, and create/apply flows now cover repeated host patterns |
 | F7 | P2 | PARTIAL | Remote overwrite pre-check (mtime/size/checksum) | Metadata guard baseline shipped; conflict resolution UI/diff follow-up pending |
-| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline, tracked session/snippet/diagnostics jobs, unified activity timeline, and grouped controls landed; broader cancel/retry coverage is still pending |
-| F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; credential-safe backup/restore still pending |
+| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline, tracked session/snippet/diagnostics jobs, unified activity timeline, grouped controls, per-tab/cross-tab retry, active-tab port-forward teardown, and Retry Center shortcut landed; remote delete cancel and tracked app-job cancel still need abort IPC |
+| F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; SQLite migration plan documented 2026-07-15; credential-safe backup/restore still pending |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
 | F11 | P2 | PARTIAL | Transfer bandwidth limiter + schedule window | Per-direction rate limits, queued-transfer weekday/time windows, one-click schedule presets, exact next-boundary wake-up with next-resume hints, transfer policy pack save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push, and upload reliability auto-recovery from transient missing-path plus SSH channel-pressure faults landed; richer schedule automation and auto-distribution are still pending |
 | F12 | P2 | PARTIAL | Command snippets/playbooks with parameter prompts | Prompted variables, scoped remembered values, reusable prompt sets, regex validation, and preview-before-run landed; richer playbook workflows and validation packs are still pending |

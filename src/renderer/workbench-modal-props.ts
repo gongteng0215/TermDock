@@ -17,6 +17,9 @@ interface BuildOperationCenterModalPropsArgs
     | "onRetryActiveDownloads"
     | "onRetryActiveUploads"
     | "onRetryAllFailedTransfers"
+    | "onRetryAllFailedTransfersAcrossTabs"
+    | "onRetryTabTasks"
+    | "onStopActiveTabPortForwards"
   > {
   cancelAllActiveDownloads: () => Promise<void>;
   cancelAllActiveUploads: () => Promise<void>;
@@ -26,9 +29,12 @@ interface BuildOperationCenterModalPropsArgs
   copyOperationCenterAppJobOutputPath: (jobId: string) => Promise<void>;
   reconnectDisconnectedOperationTabs: () => Promise<void>;
   reconnectOperationTabById: (tabId: string) => Promise<unknown>;
+  retryAllFailedTransfersAcrossTabsWithScopeChoice: () => Promise<void>;
   retryAllFailedTransfersWithScopeChoice: () => Promise<void>;
   retryFailedDownloads: () => Promise<void>;
+  retryFailedTransfersForTab: (tabId: string) => Promise<void>;
   retryFailedUploads: () => Promise<void>;
+  onStopActiveTabPortForwards: () => Promise<void>;
 }
 
 export function buildOperationCenterModalProps({
@@ -40,9 +46,12 @@ export function buildOperationCenterModalProps({
   copyOperationCenterAppJobOutputPath,
   reconnectDisconnectedOperationTabs,
   reconnectOperationTabById,
+  retryAllFailedTransfersAcrossTabsWithScopeChoice,
   retryAllFailedTransfersWithScopeChoice,
   retryFailedDownloads,
+  retryFailedTransfersForTab,
   retryFailedUploads,
+  onStopActiveTabPortForwards,
   ...modalProps
 }: BuildOperationCenterModalPropsArgs): OperationCenterModalProps {
   return {
@@ -77,6 +86,15 @@ export function buildOperationCenterModalProps({
     },
     onRetryAllFailedTransfers: () => {
       void retryAllFailedTransfersWithScopeChoice();
+    },
+    onRetryAllFailedTransfersAcrossTabs: () => {
+      void retryAllFailedTransfersAcrossTabsWithScopeChoice();
+    },
+    onRetryTabTasks: (tabId) => {
+      void retryFailedTransfersForTab(tabId);
+    },
+    onStopActiveTabPortForwards: () => {
+      void onStopActiveTabPortForwards();
     }
   };
 }

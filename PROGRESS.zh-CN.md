@@ -2,18 +2,19 @@
 
 [English](PROGRESS.md)
 
-Last updated: 2026-07-14
+Last updated: 2026-07-15
 
 ## 当前快照
 
 - 当前主分支：`master`
 - 远端：`origin/master`
-- 当前稳定版：`v0.1.39`
-- 当前方向：`v0.1.39` 之后继续跟进密度 / 主题 / 工作台清晰度反馈，并推进性能与可靠性硬化。
+- 当前稳定版：`v0.1.40`
+- 当前方向：`v0.1.40` 之后推进 Operation Center abort IPC、SQLite 规划 Phase 1-2 执行，以及基于正式基准的性能优化，并可选继续密度 / 主题反馈打磨。
 - 公开文档已经对齐到现有自动更新能力、本地优先信任模型和推荐下载包说明。
-- 最新验证（2026-07-14）：`pnpm run typecheck` 和 `pnpm run build` 已通过。
+- 最新验证（2026-07-15）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup` 和 `pnpm run bench:transfer:memory` 已通过。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
+- `v0.1.40` 已落地：更广的可恢复全局错误路由、Operation Center 按标签 / 跨标签重试与端口转发拆除、正式启动 / 传输内存基准，以及 SQLite 迁移规划文档。
 
 ## 已完成的重点能力
 
@@ -44,7 +45,8 @@ Last updated: 2026-07-14
   - SFTP Explorer rail、terminal stage、Inspector rail 和底部 transfer panel。
   - 简体中文界面基线和中文 README。
   - 首次启动会话引导：空工作区显示导入 SSH 配置、新建会话和安全说明入口，关闭状态本地保存。
-- `v0.1.32`-`v0.1.39` 新增：
+- `v0.1.32`-`v0.1.40` 新增：
+  - `v0.1.40`：更广的可恢复全局错误路由、Operation Center 按标签 / 跨标签重试与端口转发拆除、正式启动 / 传输内存基准、SQLite 迁移规划。
   - 强调色主题（`Ocean` / `Lavender` / `Mint` / `Amber` / `Rose`）与 Compact / Comfortable 布局密度。
   - 渲染性能优化：按需加载重型弹窗、分包去重、列表虚拟化、传输进度按帧批处理。
   - 终端 WebGL 渲染与 alternate-screen 全屏编辑器闪烁修复。
@@ -61,8 +63,8 @@ Last updated: 2026-07-14
 - 尚未完全 GA：
   - 公开可信签名 / notarization 证据仍在完善。
   - 已接入应用内自动更新：打包应用检查 GitHub Releases，后台下载新版本，并在更新就绪后提示重启安装；已修复 electron-updater 在打包 ESM 环境下的 CommonJS 导入兼容问题，并补上手动检查与 `latest.yml` 直读。
-  - 数据持久化仍基于 JSON，SQLite 迁移待做。
-  - 启动负载和传输卡顿在 `v0.1.34` 已有改善，但正式基准和大传输内存优化仍待跟进。
+  - 数据持久化仍基于 JSON；2026-07-15 已完成 SQLite 迁移规划，切库执行待做。
+  - 启动负载和传输卡顿在 `v0.1.34` 已有改善；正式 `bench:startup` / `bench:transfer:memory` 基准已落地，剩余是按基准继续优化。
 - 近期推广重点：
   - 降低下载和首次启动困惑。
   - 收集 Windows/macOS 安装反馈。
@@ -71,9 +73,10 @@ Last updated: 2026-07-14
 ## 下一步优先级
 
 1. 观察密度、强调色主题和工作台清晰度相关的真实使用反馈。
-2. 继续 `P0-E3` 可恢复全局错误动作与引导覆盖。
-3. 扩展 Operation Center 的取消 / 重试覆盖（`F8`）。
-4. 继续持久化硬化（`P0-A3`/`F9`）和剩余启动 / 大传输性能跟进（`P0-E1`/`P0-E2`）。
+2. 继续打磨 `P0-E3` 可恢复全局错误引导文案。
+3. 为 Operation Center 补 abort IPC，以支持远程删除取消和已跟踪 app job 取消（`F8`）。
+4. 按规划执行 SQLite 会话双写 / 切流与凭据安全备份恢复（`P0-A3`/`F9`）。
+5. 基于正式基准继续启动 / 大传输优化（`P0-E1`/`P0-E2`）。
 
 ## 详细历史
 

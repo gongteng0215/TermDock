@@ -130,6 +130,7 @@ export interface OperationCenterLabels {
   activeTabMeta: (uploadFailedCount: number, downloadFailedCount: number) => string;
   toolsMeta: (portForwardCount: number, appJobCount: number) => string;
   retryAllFailed: string;
+  retryAllFailedAcrossTabsWithCount: (count: number) => string;
   retryAllFailedWithCount: (count: number) => string;
   retryAllFailedTitle: string;
   canceling: string;
@@ -160,6 +161,8 @@ export interface OperationCenterLabels {
   noRecentStatus: string;
   openPortFwd: string;
   openDiagnostics: string;
+  openRetryCenter: string;
+  stopActiveTabPortForwards: string;
   activityTimeline: string;
   itemCount: (count: number) => string;
   noActivityTimeline: string;
@@ -184,6 +187,7 @@ export interface OperationCenterLabels {
   focusTab: string;
   reconnectTab: string;
   cancelTabTasks: string;
+  retryTabTasks: string;
   noTransferActivity: string;
   noHighLatencyActivity: string;
   noTrackedAppJobs: string;
@@ -998,6 +1002,22 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Open and focus a terminal tab before pasting command history entries.": "请先打开并聚焦终端标签页，再粘贴命令历史记录。",
   "System bridge unavailable. Restart `pnpm dev`.": "系统桥接不可用。请重启 `pnpm dev`。",
   "Session bridge unavailable. Restart `pnpm dev`.": "会话桥接不可用。请重启 `pnpm dev`。",
+  "Session form validation failed. Open Connection settings or fix the required host, username, and credential fields before retrying.":
+    "会话表单校验失败。请打开连接设置，或修正必填的主机、用户名和凭据字段后再重试。",
+  "Session template validation failed. Open Session Templates to fix the template name, env vars, or duplicate fields.":
+    "会话模板校验失败。请打开会话模板，修正模板名称、环境变量或重复字段。",
+  "Snippet validation or import/export issue detected. Open Snippet Manager to review group limits, parameter keys, or the source file.":
+    "检测到快捷片段校验或导入/导出问题。请打开快捷片段管理器，检查分组上限、参数键名或源文件。",
+  "This action needs a focused terminal tab. Open a session from the Sessions panel, then retry the snippet or command-history action.":
+    "此操作需要先聚焦一个终端标签页。请从会话面板打开会话，然后重试片段或命令历史操作。",
+  "A session group name is required. Enter a group name in the Sessions panel before saving or moving sessions.":
+    "会话分组名称不能为空。请在会话面板中输入分组名称后再保存或移动会话。",
+  "Session import or export failed. Review the source file and duplicate strategy, then check Operation Center for tracked import/export jobs.":
+    "会话导入或导出失败。请检查源文件和重复项策略，并在操作中心查看已跟踪的导入/导出任务。",
+  "Session import or export failed. Review the source file, duplicate strategy, and target group before retrying.":
+    "会话导入或导出失败。请检查源文件、重复项策略和目标分组后再重试。",
+  "Command history import or export failed. Open Command History Manager to review the JSON format and retry the file action.":
+    "命令历史导入或导出失败。请打开命令历史管理器，检查 JSON 格式后重试文件操作。",
   "Log bridge unavailable. Restart `pnpm dev`.": "日志桥接不可用。请重启 `pnpm dev`。",
   "SFTP bridge unavailable. Restart `pnpm dev`.": "SFTP 桥接不可用。请重启 `pnpm dev`。",
   "Desktop bridge is not ready. Please restart `pnpm dev`.": "桌面桥接尚未就绪。请重启 `pnpm dev`。",
@@ -2205,6 +2225,7 @@ const ENGLISH_I18N: AppI18n = {
     toolsMeta: (portForwardCount, appJobCount) =>
       `port forwards ${portForwardCount} | app jobs ${appJobCount}`,
     retryAllFailed: "Retry All Failed",
+    retryAllFailedAcrossTabsWithCount: (count) => `Retry All Failed (All Tabs ${count})`,
     retryAllFailedWithCount: (count) => `Retry All Failed (${count})`,
     retryAllFailedTitle:
       "Retry all failed upload/download candidates with retry-scope strategy",
@@ -2240,6 +2261,8 @@ const ENGLISH_I18N: AppI18n = {
     noRecentStatus: "No recent status message.",
     openPortFwd: "Open Port Fwd",
     openDiagnostics: "Open Diagnostics",
+    openRetryCenter: "Open Retry Center",
+    stopActiveTabPortForwards: "Stop Active Tab Forwards",
     activityTimeline: "Activity Timeline",
     itemCount: (count) => `${count} item(s)`,
     noActivityTimeline:
@@ -2262,6 +2285,7 @@ const ENGLISH_I18N: AppI18n = {
     focusTab: "Focus Tab",
     reconnectTab: "Reconnect Tab",
     cancelTabTasks: "Cancel Tab Tasks",
+    retryTabTasks: "Retry Tab Tasks",
     noTransferActivity: "No queued/running transfer activity across tabs.",
     noHighLatencyActivity:
       "No high-latency operation is active right now. Queues and long jobs are idle.",
@@ -2557,6 +2581,7 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
     toolsMeta: (portForwardCount, appJobCount) =>
       `端口转发 ${portForwardCount} | 应用任务 ${appJobCount}`,
     retryAllFailed: "重试所有失败项",
+    retryAllFailedAcrossTabsWithCount: (count) => `重试所有失败项（全部标签页 ${count}）`,
     retryAllFailedWithCount: (count) => `重试所有失败项（${count}）`,
     retryAllFailedTitle: "按重试范围策略重试所有失败的上传/下载候选项",
     canceling: "正在取消...",
@@ -2590,6 +2615,8 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
     noRecentStatus: "没有最近的状态消息。",
     openPortFwd: "打开端口转发",
     openDiagnostics: "打开诊断",
+    openRetryCenter: "打开重试中心",
+    stopActiveTabPortForwards: "停止当前标签页转发",
     activityTimeline: "活动时间线",
     itemCount: (count) => `${count} 项`,
     noActivityTimeline: "还没有传输、端口转发、删除或已跟踪应用任务活动。",
@@ -2611,6 +2638,7 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
     focusTab: "聚焦标签页",
     reconnectTab: "重连标签页",
     cancelTabTasks: "取消标签页任务",
+    retryTabTasks: "重试标签页任务",
     noTransferActivity: "没有跨标签页排队或运行中的传输活动。",
     noHighLatencyActivity: "当前没有活动的长耗时操作。队列和长任务处于空闲状态。",
     noTrackedAppJobs: "还没有已跟踪的会话/片段/诊断任务。",

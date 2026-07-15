@@ -103,8 +103,16 @@ export interface OperationCenterModalProps {
   onCancelAllTransfersAcrossTabs: () => void;
   hasActivity: boolean;
   canRetryAllFailedTransfers: boolean;
+  canRetryAllFailedTransfersAcrossTabs: boolean;
   failedRetryCandidateTotal: number;
+  allTabsFailedRetryCandidateTotal: number;
+  getTabFailedRetryCandidateCount: (tabId: string) => number;
   onRetryAllFailedTransfers: () => void;
+  onRetryAllFailedTransfersAcrossTabs: () => void;
+  onRetryTabTasks: (tabId: string) => void;
+  onOpenRetryCenter: () => void;
+  onStopActiveTabPortForwards: () => void;
+  canStopActiveTabPortForwards: boolean;
 }
 
 interface RetryCenterFailureReasonOptionView {
@@ -332,8 +340,16 @@ export function OperationCenterModal({
   onCancelAllTransfersAcrossTabs,
   hasActivity,
   canRetryAllFailedTransfers,
+  canRetryAllFailedTransfersAcrossTabs,
   failedRetryCandidateTotal,
-  onRetryAllFailedTransfers
+  allTabsFailedRetryCandidateTotal,
+  getTabFailedRetryCandidateCount,
+  onRetryAllFailedTransfers,
+  onRetryAllFailedTransfersAcrossTabs,
+  onRetryTabTasks,
+  onOpenRetryCenter,
+  onStopActiveTabPortForwards,
+  canStopActiveTabPortForwards
 }: OperationCenterModalProps) {
   if (!open) {
     return null;
@@ -378,6 +394,14 @@ export function OperationCenterModal({
                   {labels.transfersMeta(transferTabSummaries.length, failedRetryCandidateTotal)}
                 </p>
                 <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!canRetryAllFailedTransfersAcrossTabs}
+                    onClick={onRetryAllFailedTransfersAcrossTabs}
+                    type="button"
+                  >
+                    {labels.retryAllFailedAcrossTabsWithCount(allTabsFailedRetryCandidateTotal)}
+                  </button>
                   <button
                     className="secondary-button secondary-button--small"
                     disabled={!canRetryAllFailedTransfers}
@@ -617,21 +641,36 @@ export function OperationCenterModal({
             <p className="operation-center__meta">
               {labels.activeTabStatus(portForwardSummary.activeTabStatus?.trim() || labels.noRecentStatus)}
             </p>
-            <div className="operation-center__actions">
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={onOpenPortForward}
-                type="button"
-              >
-                {labels.openPortFwd}
-              </button>
-              <button
-                className="secondary-button secondary-button--small"
-                onClick={onOpenDiagnostics}
-                type="button"
-              >
-                {labels.openDiagnostics}
-              </button>
+                <div className="operation-center__actions">
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={onOpenPortForward}
+                    type="button"
+                  >
+                    {labels.openPortFwd}
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    disabled={!canStopActiveTabPortForwards || portForwardBusy}
+                    onClick={onStopActiveTabPortForwards}
+                    type="button"
+                  >
+                    {labels.stopActiveTabPortForwards}
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={onOpenRetryCenter}
+                    type="button"
+                  >
+                    {labels.openRetryCenter}
+                  </button>
+                  <button
+                    className="secondary-button secondary-button--small"
+                    onClick={onOpenDiagnostics}
+                    type="button"
+                  >
+                    {labels.openDiagnostics}
+                  </button>
             </div>
           </article>
 
@@ -808,6 +847,14 @@ export function OperationCenterModal({
                         type="button"
                       >
                         {labels.cancelTabTasks}
+                      </button>
+                      <button
+                        className="secondary-button secondary-button--small"
+                        disabled={getTabFailedRetryCandidateCount(summary.tabId) <= 0}
+                        onClick={() => onRetryTabTasks(summary.tabId)}
+                        type="button"
+                      >
+                        {labels.retryTabTasks}
                       </button>
                     </div>
                   </li>

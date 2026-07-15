@@ -14,9 +14,12 @@ type ErrorSettingsAction =
 export interface GlobalErrorBarProps {
   canCopyLatestDisconnectReport: boolean;
   canExportBugReport: boolean;
+  canOpenCommandHistoryManager: boolean;
   canOpenLogs: boolean;
   canOpenOperationCenter: boolean;
   canOpenRetryCenter: boolean;
+  canOpenSessionTemplateManager: boolean;
+  canOpenSnippetManager: boolean;
   canReconnect: boolean;
   error: string | null;
   hint: string;
@@ -25,6 +28,7 @@ export interface GlobalErrorBarProps {
   onDismiss: () => void;
   onExportBugReport: () => void;
   onOpenConnectionSettings: () => void;
+  onOpenCommandHistoryManager: () => void;
   onOpenDiagnostics: () => void;
   onOpenFileOpeningSettings: () => void;
   onOpenHotkeysSettings: () => void;
@@ -34,7 +38,9 @@ export interface GlobalErrorBarProps {
   onOpenRetryCenter: () => void;
   onOpenSafetySettings: () => void;
   onOpenServerHealthSettings: () => void;
+  onOpenSessionTemplateManager: () => void;
   onOpenSftpSettings: () => void;
+  onOpenSnippetManager: () => void;
   onOpenWorkspaceSettings: () => void;
   onReconnect: () => void;
   settingsAction: ErrorSettingsAction | null;
@@ -43,9 +49,12 @@ export interface GlobalErrorBarProps {
 export function GlobalErrorBar({
   canCopyLatestDisconnectReport,
   canExportBugReport,
+  canOpenCommandHistoryManager,
   canOpenLogs,
   canOpenOperationCenter,
   canOpenRetryCenter,
+  canOpenSessionTemplateManager,
+  canOpenSnippetManager,
   canReconnect,
   error,
   hint,
@@ -54,6 +63,7 @@ export function GlobalErrorBar({
   onDismiss,
   onExportBugReport,
   onOpenConnectionSettings,
+  onOpenCommandHistoryManager,
   onOpenDiagnostics,
   onOpenFileOpeningSettings,
   onOpenHotkeysSettings,
@@ -63,7 +73,9 @@ export function GlobalErrorBar({
   onOpenRetryCenter,
   onOpenSafetySettings,
   onOpenServerHealthSettings,
+  onOpenSessionTemplateManager,
   onOpenSftpSettings,
+  onOpenSnippetManager,
   onOpenWorkspaceSettings,
   onReconnect,
   settingsAction
@@ -150,6 +162,29 @@ export function GlobalErrorBar({
         {canOpenRetryCenter ? (
           <button className="secondary-button secondary-button--small" onClick={onOpenRetryCenter} type="button">
             Retry Center
+          </button>
+        ) : null}
+        {canOpenSnippetManager ? (
+          <button className="secondary-button secondary-button--small" onClick={onOpenSnippetManager} type="button">
+            Snippet Manager
+          </button>
+        ) : null}
+        {canOpenSessionTemplateManager ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onOpenSessionTemplateManager}
+            type="button"
+          >
+            Session Templates
+          </button>
+        ) : null}
+        {canOpenCommandHistoryManager ? (
+          <button
+            className="secondary-button secondary-button--small"
+            onClick={onOpenCommandHistoryManager}
+            type="button"
+          >
+            Command History
           </button>
         ) : null}
         {canOpenOperationCenter ? (

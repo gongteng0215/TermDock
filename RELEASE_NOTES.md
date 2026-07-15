@@ -14,6 +14,28 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.40 (2026-07-15)
+
+Release type: Stable
+
+### Highlights
+
+- Recoverable global error routing:
+  - Session creation, snippet manager, session templates, command history, and session groups now get contextual guidance and jump straight to the right manager.
+- Operation Center follow-up:
+  - Stop all port forwards on the active tab, retry failed transfers per-tab or across all tabs, and jump directly into Retry Center.
+- Formal performance benchmarking baseline:
+  - New `bench:startup` and `bench:transfer:memory` scripts capture reproducible startup-payload and transfer-memory evidence under `artifacts/benchmark/`.
+- Persistence roadmap:
+  - Added an English + Simplified Chinese SQLite migration plan covering current JSON/keytar persistence, target schema, phased rollout, and rollback strategy (planning only).
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run bench:startup` passed.
+- `pnpm run bench:transfer:memory` passed.
+
 ## v0.1.39 (2026-07-14)
 
 Release type: Stable

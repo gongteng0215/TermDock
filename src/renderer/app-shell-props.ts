@@ -66,10 +66,16 @@ export function buildAppDialogModalProps(
 interface BuildGlobalErrorBarPropsArgs
   extends Omit<
     GlobalErrorBarProps,
-    "onCopyError" | "onCopyLatestDisconnect" | "onOpenLogDirectory" | "onReconnect"
+    | "onCopyError"
+    | "onCopyLatestDisconnect"
+    | "onOpenLogDirectory"
+    | "onReconnect"
   > {
   copyGlobalErrorMessage: () => Promise<void>;
   copyLatestDisconnectReport: () => Promise<void>;
+  onOpenCommandHistoryManager: () => void;
+  onOpenSessionTemplateManager: () => void;
+  onOpenSnippetManager: () => void;
   openLogDirectory: () => Promise<void>;
   reconnectActiveTabFromError: () => Promise<void>;
 }
@@ -77,12 +83,18 @@ interface BuildGlobalErrorBarPropsArgs
 export function buildGlobalErrorBarProps({
   copyGlobalErrorMessage,
   copyLatestDisconnectReport,
+  onOpenCommandHistoryManager,
+  onOpenSessionTemplateManager,
+  onOpenSnippetManager,
   openLogDirectory,
   reconnectActiveTabFromError,
   ...modalProps
 }: BuildGlobalErrorBarPropsArgs): GlobalErrorBarProps {
   return {
     ...modalProps,
+    onOpenCommandHistoryManager,
+    onOpenSessionTemplateManager,
+    onOpenSnippetManager,
     onCopyError: () => {
       void copyGlobalErrorMessage();
     },

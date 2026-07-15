@@ -1,4 +1,4 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 
 import type { SftpTransferEvent } from "../shared/sftp";
 
@@ -95,6 +95,7 @@ interface UseRetryCenterActionsArgs<TEntry extends RetryCenterEntryLike = RetryC
       danger?: boolean;
     }
   ) => Promise<boolean>;
+  terminalTabs: Array<{ id: string; sessionId: string }>;
   totalHistoryCount: number;
   visibleRetryCenterFailedEntries: TEntry[];
   markTransferHistoryRetryQueued: (
@@ -150,6 +151,7 @@ export function useRetryCenterActions<TEntry extends RetryCenterEntryLike>({
   showAppAlert,
   showAppChoice,
   showAppConfirm,
+  terminalTabs,
   totalHistoryCount,
   visibleRetryCenterFailedEntries
 }: UseRetryCenterActionsArgs<TEntry>) {
@@ -943,6 +945,140 @@ export function useRetryCenterActions<TEntry extends RetryCenterEntryLike>({
     retryAllFailedTransfers
   ]);
 
+  const getFailedEntriesForTab = useCallback(
+    (tabId: string) => {
+      const tab = terminalTabs.find((entry) => entry.id === tabId);
+      if (!tab) {
+        return [] as TEntry[];
+      }
+      return retryCenterEntries.filter(
+        (entry) => entry.status === "failed" && entry.sessionId === tab.sessionId
+      );
+    },
+    [retryCenterEntries, terminalTabs]
+  );
+
+  const countRetryTargetsForEntries = useCallback(
+    (entries: TEntry[]) => {
+      const { uploadTargets, downloadTargets } = buildRetryTargetMaps(entries, createTransferRetryKey);
+      return {
+        downloadTargets,
+        total: uploadTargets.length + downloadTargets.length,
+        uploadTargets
+      };
+    },
+    [createTransferRetryKey]
+  );
+
+  const allTabsFailedRetryCandidateTotal = useMemo(() => {
+    const openSessionIds = new Set(terminalTabs.map((tab) => tab.sessionId));
+    const failedEntries = retryCenterEntries.filter(
+      (entry) => entry.status === "failed" && openSessionIds.has(entry.sessionId)
+    );
+    return countRetryTargetsForEntries(failedEntries).total;
+  }, [countRetryTargetsForEntries, retryCenterEntries, terminalTabs]);
+
+  const retryFailedTransfersForTab = useCallback(
+    async (tabId: string) => {
+      const tab = terminalTabs.find((entry) => entry.id === tabId);
+      if (!tab) {
+        return;
+      }
+      const failedEntries = getFailedEntriesForTab(tabId);
+      const { downloadTargets, total, uploadTargets } = countRetryTargetsForEntries(failedEntries);
+      if (total <= 0) {
+        return;
+      }
+      const confirmed = await confirmRetryBatchIfNeeded(total, `failed transfer candidates for tab ${tabId}`);
+      if (!confirmed) {
+        return;
+      }
+      const uploadQueued =
+        uploadTargets.length > 0 ? queueFailedUploadRetryCandidates(tabId, uploadTargets) : 0;
+      const downloadQueued =
+        downloadTargets.length > 0
+          ? await queueFailedDownloadRetryCandidates(tabId, downloadTargets, tab.sessionId)
+          : 0;
+      const queuedTotal = uploadQueued + downloadQueued;
+      if (queuedTotal > 0) {
+        await showAppAlert(`Requeued ${queuedTotal} failed transfer task(s) for the selected tab.`, {
+          title: "Retry Tab Tasks"
+        });
+      }
+    },
+    [
+      confirmRetryBatchIfNeeded,
+      countRetryTargetsForEntries,
+      getFailedEntriesForTab,
+      queueFailedDownloadRetryCandidates,
+      queueFailedUploadRetryCandidates,
+      showAppAlert,
+      terminalTabs
+    ]
+  );
+
+  const retryAllFailedTransfersAcrossTabsWithScopeChoice = useCallback(async () => {
+    const openSessionIds = new Set(terminalTabs.map((tab) => tab.sessionId));
+    const failedEntries = retryCenterEntries.filter(
+      (entry) => entry.status === "failed" && openSessionIds.has(entry.sessionId)
+    );
+    const { downloadTargets: allDownloadTargets, uploadTargets: allUploadTargets } =
+      countRetryTargetsForEntries(failedEntries);
+    const allCount = allUploadTargets.length + allDownloadTargets.length;
+    if (allCount <= 0) {
+      return;
+    }
+    const retryScope = await chooseRetryCenterRetryScopeByCounts(
+      {
+        all: allCount,
+        upload: allUploadTargets.length,
+        download: allDownloadTargets.length
+      },
+      "Choose retry scope for failed transfer candidates across all open tabs."
+    );
+    if (!retryScope) {
+      return;
+    }
+    const confirmed = await confirmRetryBatchIfNeeded(allCount, "failed transfer candidates across tabs");
+    if (!confirmed) {
+      return;
+    }
+    let queuedTotal = 0;
+    for (const tab of terminalTabs) {
+      const tabFailed = failedEntries.filter((entry) => entry.sessionId === tab.sessionId);
+      if (tabFailed.length === 0) {
+        continue;
+      }
+      const scopedEntries =
+        retryScope === "upload"
+          ? tabFailed.filter((entry) => entry.direction === "upload")
+          : retryScope === "download"
+            ? tabFailed.filter((entry) => entry.direction === "download")
+            : tabFailed;
+      const { downloadTargets, uploadTargets } = countRetryTargetsForEntries(scopedEntries);
+      if (uploadTargets.length > 0) {
+        queuedTotal += queueFailedUploadRetryCandidates(tab.id, uploadTargets);
+      }
+      if (downloadTargets.length > 0) {
+        queuedTotal += await queueFailedDownloadRetryCandidates(tab.id, downloadTargets, tab.sessionId);
+      }
+    }
+    if (queuedTotal > 0) {
+      await showAppAlert(`Requeued ${queuedTotal} failed transfer task(s) across open tabs.`, {
+        title: "Retry Transfers"
+      });
+    }
+  }, [
+    chooseRetryCenterRetryScopeByCounts,
+    confirmRetryBatchIfNeeded,
+    countRetryTargetsForEntries,
+    queueFailedDownloadRetryCandidates,
+    queueFailedUploadRetryCandidates,
+    retryCenterEntries,
+    showAppAlert,
+    terminalTabs
+  ]);
+
   const clearAllRetryCenterEntries = useCallback(async () => {
     const totalCount = totalHistoryCount;
     if (totalCount === 0) {
@@ -965,13 +1101,17 @@ export function useRetryCenterActions<TEntry extends RetryCenterEntryLike>({
   }, [setRetryCenterSelection, setTransferHistory, showAppConfirm, totalHistoryCount]);
 
   return {
+    allTabsFailedRetryCandidateTotal,
     clearAllRetryCenterEntries,
     clearRetryCenterGroupEntries,
     clearSelectedRetryCenterEntries,
     clearVisibleRetryCenterEntries,
     clearVisibleRetryCenterEntriesByFailureReason,
+    getFailedEntriesForTab,
+    retryAllFailedTransfersAcrossTabsWithScopeChoice,
     retryAllFailedTransfersWithScopeChoice,
     retryFailedDownloads,
+    retryFailedTransfersForTab,
     retryFailedUploads,
     retryRetryCenterGroupFailedEntries,
     retrySelectedRetryCenterEntriesWithScopeChoice,
