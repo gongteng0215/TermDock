@@ -2,15 +2,15 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-06-04
+Last updated: 2026-07-14
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.31`
+- Stable release shipped: `v0.1.39`
 - Active branch: `master`
-- Active focus: post-`v0.1.31` release follow-up, download clarity, and trust-message feedback
+- Active focus: post-`v0.1.39` UI polish follow-up (density/themes/workbench clarity) plus continued perf/reliability hardening
 - Public docs now align with the shipped auto-update baseline, local-first trust model, and recommended download assets
-- Latest validation on 2026-06-04: `pnpm run typecheck` and `pnpm run build` passed
+- Latest validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -39,21 +39,23 @@ Last updated: 2026-06-04
 - Master branch now includes encrypted `.tdmigration` session migration with passphrase-protected passwords, private-key passphrases, optional embedded private-key files, and paired English/Simplified Chinese migration docs
 - Master branch now enforces a single running app instance and restores/focuses the existing window when TermDock is launched again
 - Master branch now includes packaged-app auto-update checks against GitHub Releases, background update downloads, a restart prompt after the update is ready, and a packaged ESM/CommonJS import compatibility fix for electron-updater
+- Master branch now also includes manual `Check for Updates`, diagnostics auto-update status, and direct `latest.yml` update checks that avoid GitHub API rate limits
+- Master branch now also includes renderer performance work: on-demand heavy modals, de-duplicated chunks, virtualized Retry Center/Command History lists, memoized SFTP/session rows, and animation-frame-batched transfer progress
+- Master branch now also includes scoped xterm packages with WebGL rendering plus DOM fallback, and the alternate-screen editor focus flicker fix
+- Master branch now also includes privileged remote-file save-back via stage + `sudo install`, SFTP `~` path resolution, and clearer upload permission failures
+- Master branch now also includes workbench accent themes (`Ocean` / `Lavender` / `Mint` / `Amber` / `Rose`), Compact / Comfortable layout density, and a UI clarity pass for contrast, active states, empty states, and scrollbars
 - Smoke automation now force-closes its spawned Electron process if graceful shutdown does not finish in time
-- Editor workbench branch now reshapes the renderer into a flatter code-editor-style workbench: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
-- Editor workbench branch now splits the large renderer surface into focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
-- Editor workbench branch now extends recoverable global error routing for Safety bundle/guardrail, Workspace profile, Monitor/server-health, and Diagnostics-specific failures, with smoke coverage for Safety sync recovery
-- Editor workbench branch now adds an Operation Center activity timeline plus grouped controls for transfer, active-tab, and tool workflows
-- Editor workbench branch now extends the persisted English/Simplified Chinese interface language selector with a broad Simplified Chinese coverage layer for settings, workbench chrome, dialogs, context menus, terminal errors, port forwarding, diagnostics, hotkeys, snippets, Operation Center, Retry Center, and Command History Manager
-- Latest master validation on 2026-06-02: `pnpm run test:main-auto-update`, `pnpm run test:main-single-instance`, `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-06-02T08-48-20-888Z/summary.json` (`PASS 50 / FAIL 0 / SKIP 0`).
-- Latest post-refactor validation on 2026-05-09: `pnpm run typecheck`, `pnpm run build`, `pnpm run smoke:ui`, and `pnpm run smoke:ui:packaged` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-05-09T13-35-51-500Z/summary.json`; latest packaged smoke artifact is `artifacts/smoke/2026-05-09T13-44-46-628Z/summary.json`.
+- Editor workbench shell is now the master baseline: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
+- Renderer maintainability split is now on master: focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
+- Latest master validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed with the `v0.1.39` release prep
+- Prior master validation on 2026-06-02: `pnpm run test:main-auto-update`, `pnpm run test:main-single-instance`, `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-06-02T08-48-20-888Z/summary.json` (`PASS 50 / FAIL 0 / SKIP 0`).
 - Milestone status:
   - `M0` (technical validation): complete
   - `M1` (MVP hardening): in progress
 - P0 totals:
   - `DONE`: 13
-  - `PARTIAL`: 14
-  - `TODO`: 6
+  - `PARTIAL`: 15
+  - `TODO`: 5
 
 ## Release Readiness
 
@@ -64,6 +66,75 @@ Last updated: 2026-06-04
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
 - Those broad-rollout gates are not the active priority for the current self-use track
+
+## Completed in v0.1.39
+
+- Layout density preference:
+  - `Settings > Workspace` now offers `Compact` / `Comfortable` density
+  - Compact (default) keeps side panels, session lists, command history, and transfer text maximally tight; Comfortable restores roomier spacing
+- Retry Center and Transfers polish:
+  - Retry Center footer actions are grouped (select / export / retry / delete), with delete actions marked as danger
+  - Transfer dock title and progress text are clearer under Comfortable density
+
+## Completed in v0.1.38
+
+- Workbench accent themes:
+  - `Settings > Workspace` now offers `Ocean`, `Lavender`, `Mint`, `Amber`, and `Rose` accents that tint the whole workbench
+- UI clarity pass:
+  - stronger panel contrast, clearer selected/active states, clearer button hierarchy, section-header icons, and improved empty terminal / empty list states
+  - fixed session-panel settings gear alignment and made scrollbars visible again across lists and settings panels
+
+## Completed in v0.1.37
+
+- Privileged remote-file save-back:
+  - opening a non-writable remote file now offers read-only open or stage + `sudo install` save-back
+  - suggested install commands clean up the staging copy after a successful install
+- SFTP path navigation:
+  - entering `~` or `~/...` in the SFTP path bar resolves to the remote home directory
+- Clearer upload permission failures:
+  - uploading into a non-writable directory fails with an explicit `Permission denied` instead of silently redirecting through staging
+
+## Completed in v0.1.36
+
+- Update checking reliability:
+  - packaged app now reads update metadata directly from GitHub Releases `latest/download/latest.yml`
+  - avoids GitHub API rate limits and stale API responses for manual `Check for Updates`
+
+## Completed in v0.1.35
+
+- Terminal full-screen editor fix:
+  - `nano`, `crontab -e`, and other alternate-screen tools no longer trigger the editor-focus layout stretch/shrink loop
+  - editor-focus theme, typography, cursor, and full-screen layout still apply after the flicker fix
+- Terminal rendering:
+  - scoped xterm packages with WebGL rendering when available, plus a safe DOM fallback if the GPU context is unavailable or lost
+
+## Completed in v0.1.34
+
+- Renderer performance pass:
+  - heavy modals (Settings, Server Health detail, session create, and session template manager) now load on demand
+  - renderer bundle is split to remove a circular chunk so the initial payload is smaller
+  - Retry Center and Command History manager now virtualize their rows
+  - SFTP and session list rows are memoized to avoid redundant re-renders
+  - high-frequency SFTP transfer progress updates are batched per animation frame
+
+## Completed in v0.1.33
+
+- Workspace panel polish:
+  - SFTP Details view formats modified times with the selected app language
+  - SFTP Details view gives filenames a usable minimum width and supports horizontal scrolling for narrow sidebars
+  - Transfers dock stays compact when there is no active transfer activity
+  - first-run onboarding gives a clearer setup path for importing hosts, testing a connection, and opening terminal + SFTP
+  - Server Health refreshes keep existing data visible and show a subtle refreshing status instead of shifting the panel
+
+## Completed in v0.1.32
+
+- Auto-update UX follow-up:
+  - manual `Check for Updates` action in `Settings > Diagnostics`
+  - packaged builds expose current auto-update status including current/latest version, download progress, and last checked time
+  - renderer refreshes update status after a manual check instead of only showing a one-off alert
+- UI polish:
+  - normalized icon-button centering for toolbar and inspector icons
+  - aligned terminal history action and first-run dismiss button with the shared icon system
 
 ## Completed in v0.1.17
 
@@ -302,15 +373,6 @@ Last updated: 2026-06-04
   - queued transfer workers can now be constrained to selected weekdays plus a start/end time window
   - queues pause outside the configured window and automatically resume when the next allowed window opens
 
-## Current branch additions
-
-- `feature/editor-workbench-ui` now has three local commits ahead of `origin/feature/editor-workbench-ui`:
-  - `feat: complete editor workbench ui refresh`
-  - `docs: update editor workbench progress tracker`
-  - `refactor: split editor workbench renderer modules`
-- The branch is currently suitable for source-level continuation, with type safety verified after the refactor.
-- Before merge/release handoff, refresh build and smoke evidence after the module split.
-
 ## Completed in v0.1.11
 - Port forwarding presets with optional auto-restore
 - Runtime status/failure visibility (`Active` / `Degraded`, counters, last error/activity)
@@ -524,24 +586,23 @@ Last updated: 2026-06-04
 - Some SFTP recursive/safety operations still need hardening
 - Port-forward diagnostics are now richer, but there is still no cross-device/shared diagnostics sync workflow
 - Server health currently relies on Linux `/proc` and single-root disk sampling
+- Startup payload and transfer jank improved in `v0.1.34`, but formal startup benchmarks and large-transfer memory optimization are still open
 
 ## Next Focus
 
-1. Push or PR the editor-workbench branch with current workspace and packaged smoke evidence
-2. Review feedback from real usage of the refreshed workbench shell
-3. Resume recoverable global error actions and guidance coverage (`P0-E3`)
-4. Resume recoverable global error actions and guidance coverage (`P0-E3`)
-5. Expand Operation Center from the current grouped controls into broader cancel/retry coverage (`F8`)
-6. Continue persistence hardening and startup/large-transfer performance follow-up
+1. Review real-usage feedback on density, accent themes, and workbench clarity after `v0.1.38`/`v0.1.39`
+2. Resume recoverable global error actions and guidance coverage (`P0-E3`)
+3. Expand Operation Center from the current grouped controls into broader cancel/retry coverage (`F8`)
+4. Continue persistence hardening (`P0-A3`/`F9`) and remaining startup/large-transfer performance follow-up (`P0-E1`/`P0-E2`)
 
 ## Remaining Work Snapshot
 
-1. Optional editor-workbench polish after live usage feedback
+1. Optional workbench polish after live usage of density/themes/clarity changes
 2. Remaining macOS/external-host packaged evidence for broader release confidence
 3. Expand global error recovery actions beyond current baseline (`P0-E3`)
 4. Expand Operation Center from the current grouped controls into broader cancel/retry coverage (`F8`)
 5. Complete persistence hardening (SQLite migration + credential-safe backup/restore, `P0-A3`/`F9`)
-6. Continue startup and large-transfer performance follow-up (`P0-E1`/`P0-E2`)
+6. Continue formal startup benchmark tracking and large-transfer memory optimization (`P0-E1`/`P0-E2`); `v0.1.34` reduced payload/jank but did not close these
 7. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
 8. Session templates v2 (import/export, runtime prompt overrides, layered presets)
 9. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`), low priority for self-use

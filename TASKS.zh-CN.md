@@ -2,17 +2,15 @@
 
 [English](TASKS.md)
 
-Last updated: 2026-06-04
+Last updated: 2026-07-14
 
 ## 当前发布状态
 
-- 当前稳定版：`v0.1.31`
+- 当前稳定版：`v0.1.39`
 - 当前分支：`master`
-- 当前方向：`v0.1.31` 文档/发版整理后的反馈跟进和下载路径验证。
-- 当前发布说明：README 和 release 页面文案已经对齐到现有自动更新能力与本地优先定位。
-- 最新验证（2026-06-04）：`pnpm run typecheck` 和 `pnpm run build` 已通过。
-- 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 已通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`，结果为 `PASS 48 / FAIL 0 / SKIP 0`。
+- 当前方向：`v0.1.39` 之后继续跟进密度/主题/工作台清晰度反馈，并推进性能与可靠性硬化。
+- 当前发布说明：`v0.1.32`-`v0.1.39` 已覆盖自动更新体验、面板打磨、渲染性能、终端全屏编辑器修复、更新检查可靠性、特权文件保存回写、强调色主题与布局密度偏好。
+- 最新验证（2026-07-14）：`pnpm run typecheck` 和 `pnpm run build` 已通过。
 
 ## P0 状态摘要
 
@@ -27,7 +25,8 @@ Last updated: 2026-06-04
 | 服务器健康 | DONE | CPU、内存、磁盘、网络、进程、失败服务等信息已可见。 |
 | 跨平台 smoke | PARTIAL | 自动化 smoke 已覆盖核心流程，仍需持续补充真实环境证据。 |
 | 签名 / notarization | PARTIAL | 预检和验证脚本已可用，公开可信签名证据仍在推进。 |
-| 自动更新 | PARTIAL | 打包应用会检查 GitHub Releases，新版本后台下载完成后提示重启安装；后续需要真实跨版本安装验证。 |
+| 自动更新 | PARTIAL | 打包应用会检查 GitHub Releases，新版本后台下载完成后提示重启安装；`v0.1.32`/`v0.1.36` 已补入手动检查、状态面板和 `latest.yml` 直读。 |
+| 启动性能 | PARTIAL | `v0.1.34` 已做按需加载重型弹窗、分包去重和列表虚拟化；正式基准与大传输内存优化仍待跟进。 |
 | SQLite 迁移 | TODO | 当前仍使用 JSON 持久化。 |
 
 ## 当前进行中
@@ -72,13 +71,23 @@ Last updated: 2026-06-04
    - targeted `pnpm run test:session-migration` 已覆盖加密导出、错误 passphrase 失败、预览不恢复私钥、确认后恢复私钥、renderer-safe payload stripping 和 paths-only migration。
    - `pnpm run smoke:ui` 现在会断言加密迁移导入 / 导出菜单入口可见。
    - `pnpm run typecheck`、`pnpm run build` 和 `pnpm run smoke:ui` 已通过，结果为 `PASS 48 / FAIL 0 / SKIP 0`，artifact 为 `artifacts/smoke/2026-05-14T09-05-21-391Z/summary.json`。
+9. `v0.1.32`-`v0.1.39` 主线发布：
+   - 自动更新体验：手动检查更新、Diagnostics 状态面板、直接读取 `latest.yml`。
+   - 工作台面板打磨：SFTP Details 本地化时间与滚动、空闲 Transfers 收紧、首启引导与 Server Health 刷新更稳。
+   - 渲染性能：按需加载重型弹窗、分包去重、Retry Center / Command History 虚拟化、传输进度按帧批处理。
+   - 终端全屏编辑器：修复 alternate-screen 布局闪烁，scoped xterm + WebGL / DOM fallback。
+   - 特权远程文件保存回写：非可写文件支持 stage + `sudo install`，SFTP `~` 路径解析，上传权限失败提示更明确。
+   - 强调色主题与布局密度：`Ocean` / `Lavender` / `Mint` / `Amber` / `Rose`，以及 Compact / Comfortable。
+   - Retry Center 删除动作分组并标记为危险操作；Comfortable 密度下 Transfers 可读性更好。
 
 ## 下一批建议任务
 
-1. 手动验证加密迁移包在同机和跨机器路径下的导出 / 导入体验。
-2. 给加密迁移包补更深的 UI smoke 覆盖导入预览和确认导入流程。
-3. 观察安装、信任提示和首次连接反馈。
-4. 根据首批评论补充 Release FAQ。
+1. 观察 `v0.1.38`/`v0.1.39` 之后密度、强调色主题和工作台清晰度的真实使用反馈。
+2. 将反复出现的启动 / 信任提示 / 首次连接反馈整理成 GitHub issues 和 Release FAQ。
+3. 继续 `P0-E3` 全局错误恢复边角场景和引导文案。
+4. 继续 `F8` Operation Center 更广的取消 / 重试覆盖。
+5. 规划 `P0-A3`/`F9` 持久化硬化（SQLite 迁移 + 凭据安全备份恢复）。
+6. 继续 `P0-E1`/`P0-E2`：正式启动性能基准和大传输内存优化。
 
 ## 详细任务历史
 

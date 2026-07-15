@@ -2,16 +2,16 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-06-04
+Last updated: 2026-07-14
 
 ## Current Release State
 
-- Stable release: `v0.1.31`
+- Stable release: `v0.1.39`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: post-`v0.1.31` docs/release cleanup follow-up and download-path feedback
-- Current release note: README/release-page messaging now matches the shipped auto-update baseline and local-first positioning
-- Latest validation on 2026-06-04: `pnpm run typecheck` and `pnpm run build` passed
+- Priority direction: post-`v0.1.39` UI polish follow-up (density/themes/workbench clarity) plus continued perf/reliability hardening
+- Current release note: layout density preference, workbench accent themes, privileged remote-file save-back, and renderer performance/auto-update reliability improvements have shipped through `v0.1.32`-`v0.1.39`
+- Latest validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed
 
 ## P0 Matrix
 
@@ -41,7 +41,7 @@ Last updated: 2026-06-04
 | P0-D4 | PARTIAL | Queue/progress/cancel done; monitor contention plus upload directory-race/channel-backpressure hardening landed, long-run stress tuning still pending |
 | P0-D5 | PARTIAL | Create/rename/delete done; recursive safety flows still evolving |
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
-| P0-E1 | TODO | Startup performance benchmark/optimization |
+| P0-E1 | PARTIAL | Startup payload reduced via on-demand heavy modals and de-duplicated renderer chunks (`v0.1.34`); formal benchmark/regression tracking still pending |
 | P0-E2 | TODO | Large transfer memory optimization |
 | P0-E3 | PARTIAL | Recoverable global error routing now covers disconnect copy, `Workspace` / `Safety` / `Hotkeys` / `Monitor` / `Port Fwd` / `Retry Center` / `Diagnostics` routing, and bug-report/export guidance; deeper edge-case coverage is still pending |
 | P0-E4 | TODO | Persistence crash-recovery verification |
@@ -53,6 +53,16 @@ Last updated: 2026-06-04
 
 ## In Progress Track (v0.1.3+)
 
+0. Post-`v0.1.31` through `v0.1.39` master releases:
+   - `v0.1.32`: manual `Check for Updates` plus diagnostics auto-update status panel; icon-button centering polish
+   - `v0.1.33`: SFTP Details localized timestamps and min-width scrolling, compact idle Transfers dock, clearer first-run onboarding, steadier Server Health refresh
+   - `v0.1.34`: on-demand Settings/Server Health/session/template modals, de-duplicated renderer chunk, virtualized Retry Center and Command History rows, memoized SFTP/session rows, animation-frame-batched transfer progress
+   - `v0.1.35`: fixed alternate-screen editor focus layout flicker; scoped xterm packages with WebGL rendering plus DOM fallback
+   - `v0.1.36`: update checks now read GitHub Releases `latest.yml` directly instead of the rate-limited API
+   - `v0.1.37`: privileged remote-file save-back via stage + `sudo install`, SFTP `~` path resolution, clearer upload `Permission denied` errors
+   - `v0.1.38`: workbench accent themes (`Ocean` / `Lavender` / `Mint` / `Amber` / `Rose`) plus UI clarity pass for contrast, active states, empty states, and scrollbars
+   - `v0.1.39`: Compact / Comfortable layout density preference; Retry Center delete actions grouped and danger-marked; Transfer dock readability under Comfortable density
+   - latest `pnpm run typecheck` and `pnpm run build` gates passed with the `v0.1.39` release prep
 0. Active editor-workbench UI branch:
    - shell, sidebars, terminal stage, transfer dock, and modal chrome have been refreshed into a flatter code-editor workbench language
    - SFTP explorer now has persisted `Compact` / `Details` view modes
@@ -274,21 +284,21 @@ Last updated: 2026-06-04
 
 ## Immediate Next Target
 
-1. Validate SSH config import with real local config samples.
-2. Watch installation, trust-prompt, and first-connect feedback.
-3. Convert repeated launch/import feedback into GitHub issues and Release FAQ updates.
-4. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy.
-5. `F8`: Operation Center follow-up (broader cancel/retry coverage).
-6. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore).
+1. Watch real-usage feedback on density, accent themes, and workbench clarity after `v0.1.38`/`v0.1.39`.
+2. Convert repeated launch/trust/first-connect feedback into GitHub issues and Release FAQ updates.
+3. `P0-E3`: continue global error recovery follow-up for remaining edge cases and guidance copy.
+4. `F8`: Operation Center follow-up (broader cancel/retry coverage).
+5. `P0-A3`/`F9`: persistence hardening (`SQLite` migration planning + credential-safe backup/restore).
+6. `P0-E1`/`P0-E2`: continue startup benchmark follow-up and large-transfer memory optimization.
 
 ## Not Done Yet (Top Blocking Items)
 
-1. `UI-WB-FEEDBACK`: optional polish after real usage feedback
+1. `UI-WB-FEEDBACK`: optional polish after real usage of density/themes/workbench clarity
 2. Remaining macOS/external-host packaged smoke evidence for broader release confidence
 3. `P0-E3`: remaining recoverable global error edge-case coverage and guidance polish
 4. `F8`: broader cancel/retry coverage for Operation Center
 5. `P0-A3`: JSON-to-SQLite migration planning and execution
-6. `P0-E1`/`P0-E2`: startup and large-transfer performance optimization
+6. `P0-E1`/`P0-E2`: formal startup benchmark tracking plus large-transfer memory optimization (`v0.1.34` reduced payload/jank but did not close these)
 7. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
 8. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
 9. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
