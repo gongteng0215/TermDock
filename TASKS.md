@@ -2,16 +2,16 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## Current Release State
 
-- Stable release: `v0.1.40`
+- Stable release: `v0.1.41`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: post-`v0.1.40` Operation Center abort IPC, SQLite plan Phase 1-2 execution, and benchmark-driven optimization, plus optional UI polish follow-up
-- Current release note: recoverable global error routing, Operation Center per-tab/cross-tab retry and port-forward teardown, formal startup/transfer-memory benchmarks, and an SQLite migration plan have shipped in `v0.1.40`; prior `v0.1.32`-`v0.1.39` covered density/themes, privileged save-back, renderer performance, and auto-update reliability
-- Latest validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed
+- Priority direction: `v0.1.41` release prep complete (self-use Windows ready); optional shared-buffer E2 / public macOS+signing remain lower priority
+- Current release note: SQLite-authoritative sessions, durable preference ports, credential-safe `.tdbackup`, lazy TerminalWorkspace startup (~0.76 MiB scripts), download SFTP channel reuse, and backup wizard/Settings entry
+- Latest validation on 2026-07-16: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup` (scripts ~0.76 MiB), `pnpm run bench:transfer:memory`, `pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`
 
 ## P0 Matrix
 
@@ -19,7 +19,7 @@ Last updated: 2026-07-15
 | --- | --- | --- |
 | P0-A1 | DONE | Electron + React + TypeScript baseline is stable |
 | P0-A2 | DONE | Core multi-pane shell workflow is stable |
-| P0-A3 | PARTIAL | JSON persistence works; SQLite migration plan documented (`docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`); implementation still pending |
+| P0-A3 | DONE | Sessions cut over (Phase 3); Phase 4 slices 1–5 dual-write (schema v6); Phase 5 `.tdbackup` + optional credential attachment; packaged native smoke `PASS 51` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json` |
 | P0-A4 | DONE | Secure credential storage via keytar/fallback |
 | P0-A5 | PARTIAL | Structured logging module baseline landed (main+renderer, file logs, diagnostics panel) |
 | P0-B1 | PARTIAL | Session list/search/favorite done; deeper group model pending |
@@ -41,10 +41,10 @@ Last updated: 2026-07-15
 | P0-D4 | PARTIAL | Queue/progress/cancel done; monitor contention plus upload directory-race/channel-backpressure hardening landed, long-run stress tuning still pending |
 | P0-D5 | PARTIAL | Create/rename/delete done; recursive safety flows still evolving |
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
-| P0-E1 | PARTIAL | Startup payload reduced via on-demand heavy modals and de-duplicated renderer chunks (`v0.1.34`); formal `bench:startup` tracker landed with `v0.1.39` evidence (~1.38 MiB / ~0.36 MiB gzip startup assets) |
-| P0-E2 | PARTIAL | Streaming transfer path already uses 64 KiB pipes / `fastPut`/`fastGet`; formal `bench:transfer:memory` baseline landed (64 MiB scenarios); further memory optimization still pending |
-| P0-E3 | PARTIAL | Recoverable global error routing now also covers session-create validation, snippets, session templates, command history, session groups, and import/export failures with contextual manager shortcuts; remaining guidance polish still pending |
-| P0-E4 | TODO | Persistence crash-recovery verification |
+| P0-E1 | PARTIAL | Lazy `TerminalWorkspace` host defers `vendor-xterm` + `renderer-terminal` from startup preload; leaf types/options/history storage extracted; `bench:startup` scripts ~0.76 MiB (was ~1.22 MiB) |
+| P0-E2 | PARTIAL | Default upload concurrency 4→2; per-tab in-flight SFTP channels capped; download `highWaterMark` 64 KiB; download SFTP channel reuse pool mirrors upload (`reusableDownloadSftpByTab`); deeper shared-buffer / multiplexed-channel work remains |
+| P0-E3 | PARTIAL | Recoverable global error routing now also covers remaining validation / migration / port-forward / snippet-limit / history / template-port phrases plus shared bridge-unavailable matching; guidance coverage is largely complete for current surfaces |
+| P0-E4 | DONE | Persistence crash-recovery verification: WAL mode, reopen durability, corrupt-SQLite fallback, corrupt-JSON mirror isolation, pre-cutover rollback (`test:session-sqlite-crash-recovery`) |
 | P0-F1 | TODO | Unit tests; low priority for current self-use track |
 | P0-F2 | TODO | Integration tests; low priority for current self-use track |
 | P0-F3 | PARTIAL | Automation/report baseline plus embedded live SSH/SFTP, remote-open-file save-back, unexpected-disconnect, and SFTP fault-recovery smoke landed; remaining macOS evidence and targeted external-host validation are low priority for current self-use track |
@@ -53,13 +53,65 @@ Last updated: 2026-07-15
 
 ## In Progress Track (v0.1.3+)
 
+0. `v0.1.41` release prep (2026-07-16):
+   - package version `0.1.41`; RELEASE_NOTES + news promoted; Windows self-use path ready after smoke/packaged evidence
+   - self-use Windows build signed + verified: `release/TermDock.Setup.0.1.41.exe`, `release/TermDock-0.1.41-win.zip` (`release:verify` install/uninstall smoke PASS)
+   - `release:verify` now filters artifacts by package version so stale installers in `release/` do not fail signature checks
+0. Post-`v0.1.40` P0-E2 download SFTP reuse (2026-07-16):
+   - `reusableDownloadSftpByTab` + in-flight slot cap mirrors upload pool; tab teardown clears idle download channels
+0. Post-`v0.1.40` P0-E1 lazy terminal host (2026-07-16):
+   - Extracted `terminal-workspace-types` / `terminal-editor-focus-options` / `terminal-command-history-storage`
+   - `TerminalWorkspaceHost` React.lazy + Vite `modulePreload` filter defer `vendor-xterm` / `renderer-terminal`
+   - `bench:startup` scripts ~0.76 MiB / ~0.22 MiB gzip (was ~1.22 MiB)
+0. Post-`v0.1.40` app backup Settings + smoke hook (2026-07-16):
+   - Settings > Diagnostics exposes Import/Export App Backup actions
+   - Smoke monkeypatch covers `storage.preview/import/exportAppBackup`; hook `__termdockSmokeImportAppBackup` drives preview flow
+0. Post-`v0.1.40` app backup UX polish (2026-07-16):
+   - Export/import credential steps use explicit 3-way choices so Escape cancels instead of silently continuing
+   - zh-CN coverage for backup wizard copy + localized preview (`formatAppBackupPreview(language)`)
+   - Import final confirm marked danger; success alerts use detail panels; global error recovery matches `app backup`
+0. Post-`v0.1.40` P0-E4 crash recovery (2026-07-16):
+   - SQLite opens with WAL + `synchronous=NORMAL` + busy timeout
+   - `test:session-sqlite-crash-recovery` covers reopen durability, corrupt DB open failure, corrupt JSON mirror isolation, and pre-cutover rollback
+   - `DualWriteSessionStore.flushJsonMirror()` for tests / graceful mirror settle
+0. Post-`v0.1.40` SQLite Phase 5 (2026-07-15):
+   - `.tdbackup` non-secret SQLite dump + optional `.tdmigration` credential attachment
+   - preview + skip/overwrite/rename session restore; `test:session-sqlite-app-backup` green
+0. Post-`v0.1.40` SQLite Phase 4 slice 5 (2026-07-15):
+   - schema v6 `app_preferences` + allowlisted durable preference dual-write
+   - `test:session-sqlite-app-preferences` green
+0. Post-`v0.1.40` SQLite Phase 4 slice 4 (2026-07-15):
+   - schema v5 workbench store (quick profiles, templates w/ `hasSecret`, snippet groups + scoped values)
+   - `test:session-sqlite-workbench-data` green
+0. Post-`v0.1.40` SQLite Phase 4 slice 3 (2026-07-15):
+   - schema v4: `port_forward_events` + IPC dual-write soak
+   - `test:session-sqlite-port-forward-events` green
+0. Post-`v0.1.40` SQLite Phase 4 slice 2 (2026-07-15):
+   - schema v3: `disconnect_reports` payload table + IPC dual-write soak
+   - `test:session-sqlite-disconnect-reports` green
+0. Post-`v0.1.40` SQLite Phase 4 slice 1 (2026-07-15):
+   - schema v2: `transfer_history` + `transfer_pending_restore`
+   - IPC dual-write soak from renderer localStorage keys
+   - `test:session-sqlite-transfer-persistence` green; idempotent migrations/`IF NOT EXISTS`
+0. Post-`v0.1.40` SQLite Phase 3 cutover (2026-07-15):
+   - SQLite is authoritative for session list/get/create/update/remove/markConnected
+   - one-shot `sessions.json.pre-sqlite-cutover` backup + live JSON mirror
+   - rollback via restore backup + `TERMDOCK_SESSION_STORE=json` (or native-load fallback)
+   - `asarUnpack` for `better-sqlite3`/`keytar`; `test:session-sqlite-cutover` green
+   - packaged smoke: `pnpm run smoke:ui:packaged` → `PASS 50 / FAIL 0 / SKIP 0` (`artifacts/smoke/2026-07-15T15-26-54-933Z/summary.json`)
+   - selection-prune effects now bail out when filter results are unchanged, fixing a Playwright CDP re-render storm after SQLite hydrate
+0. Post-`v0.1.40` hardening batch (2026-07-15):
+   - `P0-E3`: broadened remaining global error matchers / prefixes (session-create, migration file, port-forward, snippet limits, command history, template port, shared bridge-unavailable)
+   - `P0-E1`: deferred `renderer-settings` from startup preload; lazy-loaded xterm WebGL addon into a separate chunk
+   - `P0-E2`: default upload concurrency 2, hard cap on per-tab in-flight upload SFTP channels, download stream `highWaterMark` 64 KiB
+   - `F8`: Operation Center can cancel in-flight remote deletes (`sftp:cancelDeletePath`) and cooperatively cancel tracked app jobs (UI-cancel for single-shot main jobs is best-effort)
+   - `P0-A3`/`F9`: SQLite Phase 1 schema module + Phase 2 dual-write (`better-sqlite3`, JSON authoritative reads, import-on-empty SQLite, `test:session-sqlite-dual-write`); `pnpm-workspace.yaml` `allowBuilds` lists native deps
+   - latest `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, `pnpm run bench:transfer:memory`, and `pnpm run test:session-sqlite-dual-write` passed
 0. `v0.1.40` reliability/perf hardening (2026-07-15):
    - `P0-E3`: global error recovery now routes session-create validation, snippets, session templates, command history, session groups, and import/export failures to contextual managers / hints
    - `F8`: Operation Center gained active-tab port-forward teardown, per-tab and cross-tab failed-transfer retry, and a Retry Center shortcut
    - `P0-E1`/`P0-E2`: added `bench:startup` and `bench:transfer:memory`; captured `v0.1.40` evidence under `artifacts/benchmark/`
-   - `P0-A3`/`F9`: SQLite migration planning doc landed (`docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md` + zh-CN); no dependency cutover yet
-   - deferred with explicit abort-IPC follow-up: remote delete cancel and tracked app-job cancel
-   - latest `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed
+   - `P0-A3`/`F9`: SQLite migration planning doc landed (`docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md` + zh-CN); dual-write landed in the post-release hardening batch
 0. Post-`v0.1.31` through `v0.1.39` master releases:
    - `v0.1.32`: manual `Check for Updates` plus diagnostics auto-update status panel; icon-button centering polish
    - `v0.1.33`: SFTP Details localized timestamps and min-width scrolling, compact idle Transfers dock, clearer first-run onboarding, steadier Server Health refresh
@@ -296,22 +348,18 @@ Last updated: 2026-07-15
 
 1. Watch real-usage feedback on density, accent themes, and workbench clarity after `v0.1.38`/`v0.1.39`.
 2. Convert repeated launch/trust/first-connect feedback into GitHub issues and Release FAQ updates.
-3. `P0-E3`: polish remaining global error guidance copy and any leftover edge-case routing.
-4. `F8`: add abort-IPC so Operation Center can cancel remote deletes and tracked app jobs.
-5. `P0-A3`/`F9`: execute Phase 1–2 of the SQLite migration plan (schema + sessions dual-write), then credential-safe backup/restore.
-6. `P0-E1`/`P0-E2`: use formal benchmarks to drive residual startup payload cuts and large-transfer memory optimization.
+3. `P0-E2`: optional deeper transfer shared-buffer / multiplexed-channel work against formal baselines.
+4. Optional mid-flight main-process abort for single-shot migration/bug-report jobs (today UI cancel is best-effort).
 
 ## Not Done Yet (Top Blocking Items)
 
 1. `UI-WB-FEEDBACK`: optional polish after real usage of density/themes/workbench clarity
 2. Remaining macOS/external-host packaged smoke evidence for broader release confidence
-3. `P0-E3`: remaining recoverable global error guidance polish
-4. `F8`: remote delete cancel + tracked app-job cancel (abort IPC)
-5. `P0-A3`: SQLite sessions dual-write/cutover plus credential-safe backup/restore (plan documented 2026-07-15)
-6. `P0-E1`/`P0-E2`: residual startup/large-transfer optimization against the new formal baselines
-7. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
-8. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
-9. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
+3. `P0-E2`: optional deeper transfer shared-buffer / download channel reuse
+4. Optional mid-flight main-process abort for single-shot migration/bug-report jobs
+5. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
+6. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track
+7. `P0-F1`/`P0-F2`: unit and integration test baseline, low priority for current self-use track
 
 ## Backlog Candidates
 
@@ -362,8 +410,8 @@ Last updated: 2026-07-15
 | F5 | P1 | DONE | Port forwarding manager (L/R/Dynamic + presets + diagnostics timeline) | Cover common SSH tunnel workflows without external tools |
 | F6 | P2 | DONE | Session templates + env variables | Local template manager, env-var substitution, and create/apply flows now cover repeated host patterns |
 | F7 | P2 | PARTIAL | Remote overwrite pre-check (mtime/size/checksum) | Metadata guard baseline shipped; conflict resolution UI/diff follow-up pending |
-| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline, tracked session/snippet/diagnostics jobs, unified activity timeline, grouped controls, per-tab/cross-tab retry, active-tab port-forward teardown, and Retry Center shortcut landed; remote delete cancel and tracked app-job cancel still need abort IPC |
-| F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export shipped; SQLite migration plan documented 2026-07-15; credential-safe backup/restore still pending |
+| F8 | P2 | PARTIAL | Unified operation center for long jobs | Transfer/delete/port-forward baseline, tracked jobs, timeline, per-tab/cross-tab retry, port-forward teardown, Retry Center shortcut, remote-delete cancel IPC, and cooperative tracked app-job cancel landed; single-shot main jobs remain best-effort UI cancel only |
+| F9 | P3 | PARTIAL | Session/group export baseline (JSON) + encrypted import/export follow-up | Basic export + SQLite Phase 1–5 (`.tdbackup`) + packaged smoke + backup wizard/settings/smoke hook landed |
 | F10 | P2 | TODO | SSH jump-host chain builder | Simplify bastion/proxy workflows without manual `ProxyJump` typing |
 | F11 | P2 | PARTIAL | Transfer bandwidth limiter + schedule window | Per-direction rate limits, queued-transfer weekday/time windows, one-click schedule presets, exact next-boundary wake-up with next-resume hints, transfer policy pack save/apply/import/export plus linked sync-file pull/push and optional auto-pull/auto-push, and upload reliability auto-recovery from transient missing-path plus SSH channel-pressure faults landed; richer schedule automation and auto-distribution are still pending |
 | F12 | P2 | PARTIAL | Command snippets/playbooks with parameter prompts | Prompted variables, scoped remembered values, reusable prompt sets, regex validation, and preview-before-run landed; richer playbook workflows and validation packs are still pending |

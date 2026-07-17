@@ -25,6 +25,11 @@ export function registerSftpHandlers(terminalService: TerminalService): void {
       terminalService.deletePath(tabId, targetPath, kind)
   );
   ipcMain.handle(
+    "sftp:cancelDeletePath",
+    async (_event, tabId: string, targetPath: string) =>
+      terminalService.cancelDeletePath(tabId, targetPath)
+  );
+  ipcMain.handle(
     "sftp:getRemotePathWriteAccess",
     async (_event, tabId: string, remotePath: string) =>
       terminalService.getRemotePathWriteAccess(tabId, remotePath)

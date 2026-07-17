@@ -2,7 +2,7 @@
 
 [中文](SESSION_MIGRATION.zh-CN.md)
 
-TermDock has two session export paths with different security tradeoffs.
+TermDock has three export paths with different security tradeoffs.
 
 ## Plain Session JSON
 
@@ -26,6 +26,19 @@ The encrypted migration file can include:
 - session metadata and groups
 
 `Import Encrypted Migration...` asks for the same passphrase, decrypts the file, shows a preview, and then imports sessions with the same duplicate and group strategies used by JSON import.
+
+## App Backup (SQLite durable state)
+
+`Export App Backup...` creates a `.tdbackup` file with non-secret durable SQLite state:
+
+- session metadata (`hasSecret` flags only — no passwords)
+- transfer history / pending restore, disconnect reports, port-forward events
+- quick profiles, session templates (no plaintext secrets), snippet groups / scoped values
+- allowlisted durable app preferences
+
+You can optionally attach passphrase-protected session credentials using the same encrypted envelope as `.tdmigration`.
+
+`Import App Backup...` shows a preview, asks for session duplicate strategy (`skip` / `overwrite` / `rename`), optionally restores credentials, replaces durable SQLite tables, and refreshes renderer state.
 
 ## Private Key Handling
 

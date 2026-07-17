@@ -2,7 +2,11 @@ import { readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json");
+const appVersion = typeof packageJson.version === "string" ? packageJson.version : "";
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
 function parseArgs(argv) {
@@ -166,19 +170,41 @@ async function main() {
   );
 
   const releaseFiles = await readdir("release", { withFileTypes: true });
-  const installerEntry = releaseFiles
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".exe") && !entry.name.includes("__uninstaller"))
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .at(-1);
+  const installerCandidates = releaseFiles
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith(".exe") &&
+        !entry.name.includes("__uninstaller") &&
+        (!appVersion || entry.name.includes(appVersion))
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const installerEntry = installerCandidates.at(-1);
   if (!installerEntry) {
-    throw new Error("Unable to locate built Windows installer after self-use packaging.");
+    throw new Error(
+      `Unable to locate built Windows installer after self-use packaging${
+        appVersion ? ` for version ${appVersion}` : ""
+      }.`
+    );
   }
   const installerPath = path.join("release", installerEntry.name);
   await signFile(signtoolPath, certPath, password, installerPath);
 
-  await run(pnpmCommand, ["run", "release:verify", "--", "--platform=win", "--expect-signature", "--install-smoke"], {
-    env
-  });
+  await run(
+    pnpmCommand,
+    [
+      "run",
+      "release:verify",
+      "--",
+      "--platform=win",
+      "--expect-signature",
+      "--install-smoke",
+      ...(appVersion ? [`--version=${appVersion}`] : [])
+    ],
+    {
+      env
+    }
+  );
 }
 
 await main();

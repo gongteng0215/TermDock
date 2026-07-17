@@ -14,6 +14,43 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.41 (2026-07-16)
+
+Release type: Stable
+
+### Highlights
+
+- SQLite persistence hardening (post-`v0.1.40`):
+  - Sessions cut over to SQLite-authoritative storage with JSON mirror/rollback.
+  - Phase 4 durable preference ports (schema v6) and Phase 5 credential-safe `.tdbackup` export/import.
+  - WAL + crash-recovery verification (`test:session-sqlite-crash-recovery`).
+- App backup UX:
+  - `.tdbackup` wizard with Escape-safe 3-way choices, zh-CN coverage, danger confirm, and Settings > Diagnostics import/export entry.
+  - Smoke hook + preview flow for packaged validation.
+- Startup performance (`P0-E1`):
+  - Lazy `TerminalWorkspace` host defers `vendor-xterm` / `renderer-terminal` from startup preload.
+  - `bench:startup` scripts ~0.76 MiB / ~0.22 MiB gzip (was ~1.22 MiB).
+- Transfer runtime (`P0-E2`):
+  - Download SFTP channel reuse pool mirrors upload reuse with per-tab in-flight caps.
+- Renderer stability:
+  - Fixed selection-prune infinite re-render loop that could break smoke/UI flows.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run bench:startup` passed (scripts ~0.76 MiB).
+- `pnpm run bench:transfer:memory` passed.
+- `pnpm run test:session-sqlite-crash-recovery` passed.
+- `pnpm run test:session-sqlite-app-backup` passed.
+- `pnpm run smoke:ui` → `PASS 51 / FAIL 0` at `artifacts/smoke/2026-07-16T09-27-19-124Z/summary.json`.
+- `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`.
+
+### Upgrade notes
+
+- First launch after upgrade may import existing JSON session data into SQLite; a one-shot `sessions.json.pre-sqlite-cutover` backup is written for rollback.
+- `.tdbackup` restore replaces durable SQLite tables; review the preview and duplicate strategy before applying.
+
 ## v0.1.40 (2026-07-15)
 
 Release type: Stable

@@ -4,10 +4,12 @@ import {
   MAX_TERMINAL_COMMAND_HISTORY,
   MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH,
   TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
-  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
-  type TerminalCommandHistoryEntry,
-  type TerminalCommandHistorySource
-} from "./components/terminal-workspace";
+  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT
+} from "./terminal-command-history-storage";
+import type {
+  TerminalCommandHistoryEntry,
+  TerminalCommandHistorySource
+} from "./terminal-workspace-types";
 
 interface TerminalTabLike {
   id: string;

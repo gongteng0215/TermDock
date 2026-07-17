@@ -1,9 +1,9 @@
 import type { ComponentProps } from "react";
 
-import { TerminalWorkspace } from "./components/terminal-workspace";
+import type { TerminalWorkspaceHost } from "./components/terminal-workspace-host";
 
 export function buildTerminalWorkspaceProps(
-  props: ComponentProps<typeof TerminalWorkspace>
-): ComponentProps<typeof TerminalWorkspace> {
+  props: ComponentProps<typeof TerminalWorkspaceHost>
+): ComponentProps<typeof TerminalWorkspaceHost> {
   return props;
 }

@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } fr
 
 import {
   MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH,
-  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
-  type TerminalCommandHistoryEntry,
-  type TerminalCommandHistorySource
-} from "./components/terminal-workspace";
+  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT
+} from "./terminal-command-history-storage";
+import type {
+  TerminalCommandHistoryEntry,
+  TerminalCommandHistorySource
+} from "./terminal-workspace-types";
 import { useDismissableLayer } from "./use-dismissable-layer";
 
 interface ImportedCommandHistoryCandidate {
@@ -257,7 +259,7 @@ export function useCommandHistoryManager({
       });
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
-      setError(message);
+      setError(`Failed to export command history. ${message}`);
       writeAppLog(
         "error",
         "renderer:command-history",
@@ -340,7 +342,7 @@ export function useCommandHistoryManager({
       });
     } catch (caughtError) {
       const message = toLogMessage(caughtError);
-      setError(message);
+      setError(`Failed to import command history. ${message}`);
       writeAppLog(
         "error",
         "renderer:command-history",

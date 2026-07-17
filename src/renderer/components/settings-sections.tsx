@@ -4,7 +4,7 @@ import type {
   WorkspaceSettingsLabels
 } from "../i18n";
 
-interface ConnectionSettingsSectionProps {
+export interface ConnectionSettingsSectionProps {
   autoReconnect: boolean;
   reconnectDelaySeconds: number;
   onAutoReconnectChange: (value: boolean) => void;
@@ -24,7 +24,7 @@ interface EditorFocusOptionView {
   description: string;
 }
 
-interface WorkspaceSettingsSectionProps {
+export interface WorkspaceSettingsSectionProps {
   labels: WorkspaceSettingsLabels;
   languageOptions: AppLanguageOption[];
   selectedLanguage: AppLanguage;
@@ -68,7 +68,7 @@ interface WorkspaceSettingsSectionProps {
   selectedCursorLabel: string;
 }
 
-interface FileOpeningSettingsSectionProps {
+export interface FileOpeningSettingsSectionProps {
   preferredProgramPath: string;
   isMacPlatform: boolean;
   onPreferredProgramPathChange: (value: string) => void;
@@ -147,7 +147,7 @@ interface SafetyBuiltinRuleView {
   checked: boolean;
 }
 
-interface SafetySettingsSectionProps {
+export interface SafetySettingsSectionProps {
   enabled: boolean;
   selectedWorkspaceProfileLabel: string;
   syncDangerousCommandSafety: boolean;
@@ -235,7 +235,7 @@ interface HotkeyConflictView {
   isActive: boolean;
 }
 
-interface HotkeySettingsSectionProps {
+export interface HotkeySettingsSectionProps {
   hotkeyRows: HotkeySettingRowView[];
   hotkeyModifierOptions: HotkeyModifierOptionView[];
   hotkeyConflicts: HotkeyConflictView[];
@@ -254,7 +254,7 @@ interface HotkeySettingsSectionProps {
   onResetHotkeys: () => void;
 }
 
-interface ServerHealthSettingsSectionProps {
+export interface ServerHealthSettingsSectionProps {
   enabled: boolean;
   cpuWarnPercent: number;
   memoryWarnPercent: number;
@@ -288,7 +288,7 @@ interface SftpTransferPolicyPackView {
   description?: string;
 }
 
-interface SftpSettingsSectionProps {
+export interface SftpSettingsSectionProps {
   uploadConcurrency: number;
   downloadConcurrency: number;
   maxConcurrency: number;
@@ -384,7 +384,7 @@ interface PortForwardAnalyticsView {
   topCorrelationsLabel: string;
 }
 
-interface PortForwardingSettingsSectionProps {
+export interface PortForwardingSettingsSectionProps {
   activeTabSummary: string;
   portForwardBusy: boolean;
   hasActiveTab: boolean;
@@ -445,7 +445,7 @@ interface DiagnosticsReportView {
   canFocusTab: boolean;
 }
 
-interface DiagnosticsSettingsSectionProps {
+export interface DiagnosticsSettingsSectionProps {
   appVersion: string;
   autoUpdateAvailability: "disabled" | "idle" | "checking" | "available" | "not-available" | "downloaded" | "error";
   autoUpdateDownloadedVersion: string | null;
@@ -473,6 +473,8 @@ interface DiagnosticsSettingsSectionProps {
   onOpenLogDirectory: () => void;
   onCopyLogFilePath: () => void;
   onExportBugReport: () => void;
+  onImportAppBackup: () => void;
+  onExportAppBackup: () => void;
   onCheckForUpdates: () => void;
   onDisconnectCaptureEnabledChange: (value: boolean) => void;
   onDisconnectScopeChange: (value: string) => void;
@@ -2276,6 +2278,8 @@ export function DiagnosticsSettingsSection({
   onOpenLogDirectory,
   onCopyLogFilePath,
   onExportBugReport,
+  onImportAppBackup,
+  onExportAppBackup,
   onCheckForUpdates,
   onDisconnectCaptureEnabledChange,
   onDisconnectScopeChange,
@@ -2354,6 +2358,20 @@ export function DiagnosticsSettingsSection({
           type="button"
         >
           {isExportingBugReport ? "Exporting..." : "Export Bug Report"}
+        </button>
+      </div>
+
+      <p className="settings-port-forward-section__title">App Backup</p>
+      <p className="hint">
+        Export or restore a <code>.tdbackup</code> bundle with sessions and durable SQLite state.
+        Credentials stay in an optional encrypted attachment.
+      </p>
+      <div className="modal__actions">
+        <button className="secondary-button" onClick={onImportAppBackup} type="button">
+          Import App Backup...
+        </button>
+        <button className="secondary-button" onClick={onExportAppBackup} type="button">
+          Export App Backup...
         </button>
       </div>
 

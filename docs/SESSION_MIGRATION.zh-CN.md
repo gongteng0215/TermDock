@@ -2,7 +2,7 @@
 
 [English](SESSION_MIGRATION.md)
 
-TermDock 现在有两种会话导出路径，它们的安全边界不同。
+TermDock 现在有三种导出路径，它们的安全边界不同。
 
 ## 普通会话 JSON
 
@@ -26,6 +26,19 @@ TermDock 现在有两种会话导出路径，它们的安全边界不同。
 - 会话元数据和分组信息
 
 `Import Encrypted Migration...` / `导入加密迁移包...` 会要求输入同一个 passphrase，解密后显示预览，再按和 JSON 导入一致的分组策略、重复项策略导入会话。
+
+## 应用备份（SQLite 耐久状态）
+
+`Export App Backup...` / `导出应用备份...` 会创建 `.tdbackup` 文件，包含非机密耐久 SQLite 状态：
+
+- 会话元数据（仅 `hasSecret`，不含密码）
+- 传输历史 / 待恢复、断线报告、端口转发事件
+- 快捷配置、会话模板（无明文密码）、片段分组 / 作用域值
+- 允许名单耐久应用偏好
+
+可选附加口令保护的会话凭据，复用与 `.tdmigration` 相同的加密封装。
+
+`Import App Backup...` / `导入应用备份...` 会显示预览，询问会话重复策略（`skip` / `overwrite` / `rename`），可选恢复凭据，替换耐久 SQLite 表，并刷新渲染进程状态。
 
 ## 私钥处理
 

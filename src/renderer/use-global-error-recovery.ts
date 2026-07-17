@@ -46,7 +46,9 @@ function isReconnectRecoverableError(message: string): boolean {
 }
 
 function isBridgeUnavailableError(message: string): boolean {
-  return /(bridge unavailable|bridge is not ready|restart `pnpm dev`)/i.test(message);
+  return /(system bridge unavailable|bridge unavailable|bridge is not ready|restart `pnpm dev`)/i.test(
+    message
+  );
 }
 
 function isClipboardUnavailableError(message?: string): boolean {
@@ -76,7 +78,7 @@ function isPortForwardRecoverableError(message?: string): boolean {
   if (!message) {
     return false;
   }
-  return /(port forwarding|forwarded connection|listen port|target host|target port|forwarding policy|already exists on .*:\d+)/i.test(
+  return /(port forwarding|forwarded connection|listen host\/port|listen port|permission denied when opening the forward|preset name is required|open a connected session tab first|target host|target port|forwarding policy|already exists on .*:\d+)/i.test(
     message
   );
 }
@@ -119,7 +121,7 @@ function isSessionCreateValidationError(message?: string): boolean {
   if (!message) {
     return false;
   }
-  return /(name, host and username are required|private key path is required|host is required|username is required|session bridge unavailable)/i.test(
+  return /(name, host and username are required|password is required|host and username are required|private key path is required|host is required|username is required|session bridge unavailable)/i.test(
     message
   );
 }
@@ -128,7 +130,7 @@ function isSnippetValidationError(message?: string): boolean {
   if (!message) {
     return false;
   }
-  return /(snippet groups are limited|prompt sets per group are limited|snippet parameters are limited|snippet parameter keys|prompt-set parameter|parameter key .* already exists|failed to import snippet|failed to export snippet)/i.test(
+  return /(snippet groups are limited|snippets per group are limited|prompt sets per group are limited|snippet parameters are limited|snippet parameter keys|prompt-set parameter|parameter key .* already exists|failed to import snippet|failed to export snippet)/i.test(
     message
   );
 }
@@ -137,7 +139,9 @@ function isTerminalTabRequiredError(message?: string): boolean {
   if (!message) {
     return false;
   }
-  return /(open and focus a terminal tab|open and select a terminal tab)/i.test(message);
+  return /(open and focus a terminal tab|open and select a terminal tab|open a terminal tab before)/i.test(
+    message
+  );
 }
 
 function isSessionGroupValidationError(message?: string): boolean {
@@ -151,7 +155,7 @@ function isSessionImportExportError(message?: string): boolean {
   if (!message) {
     return false;
   }
-  return /(ssh config import|session json import|session.*export|encrypted migration|import sessions|export sessions|parse ssh config|migration passphrase|sessions json|export all sessions|export all groups)/i.test(
+  return /(ssh config import|session json import|session.*export|encrypted migration|app backup|import sessions|export sessions|parse ssh config|migration passphrase|migration file|decrypt(?:ed)? migration|sessions json|export all sessions|export all groups|failed to (?:import|export) (?:encrypted migration|app backup))/i.test(
     message
   );
 }
@@ -169,7 +173,7 @@ function isSessionTemplateValidationError(message?: string): boolean {
   if (!message) {
     return false;
   }
-  return /(template name is required|template env var|duplicate env var|template .* already exists)/i.test(
+  return /(template name is required|template env var|duplicate env var|template .* already exists|template port must resolve)/i.test(
     message
   );
 }

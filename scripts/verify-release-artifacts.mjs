@@ -1,14 +1,19 @@
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { accessSync, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 function parseArgs(argv) {
+  const packageJson = require("../package.json");
   const args = {
     platform: "",
     releaseDir: "release",
+    version: typeof packageJson.version === "string" ? packageJson.version : "",
     expectSigned: false,
     expectSignature: false,
     expectNotarized: false,
@@ -41,6 +46,10 @@ function parseArgs(argv) {
     }
     if (token.startsWith("--release-dir=")) {
       args.releaseDir = token.slice("--release-dir=".length);
+      continue;
+    }
+    if (token.startsWith("--version=")) {
+      args.version = token.slice("--version=".length).trim();
       continue;
     }
     throw new Error(`Unknown argument: ${token}`);
@@ -112,7 +121,10 @@ async function listReleaseArtifacts(releaseDir) {
 
   const dmgs = topLevelFiles.filter((filePath) => filePath.toLowerCase().endsWith(".dmg"));
   const zips = topLevelFiles.filter((filePath) => filePath.toLowerCase().endsWith(".zip"));
-  const exes = topLevelFiles.filter((filePath) => filePath.toLowerCase().endsWith(".exe"));
+  const exes = topLevelFiles.filter(
+    (filePath) =>
+      filePath.toLowerCase().endsWith(".exe") && !path.basename(filePath).includes("__uninstaller")
+  );
 
   const appBundles = [];
   for (const entry of topLevelEntries) {
@@ -129,6 +141,38 @@ async function listReleaseArtifacts(releaseDir) {
   }
 
   return { dmgs, zips, exes, appBundles };
+}
+
+function matchesReleaseVersion(filePath, version) {
+  if (!version) {
+    return true;
+  }
+  const baseName = path.basename(filePath);
+  return baseName.includes(version);
+}
+
+function filterArtifactsForVersion(artifacts, version) {
+  if (!version) {
+    return artifacts;
+  }
+  const dmgs = artifacts.dmgs.filter((filePath) => matchesReleaseVersion(filePath, version));
+  const zips = artifacts.zips.filter((filePath) => matchesReleaseVersion(filePath, version));
+  const exes = artifacts.exes.filter((filePath) => matchesReleaseVersion(filePath, version));
+  const appBundles = artifacts.appBundles.filter((filePath) =>
+    matchesReleaseVersion(filePath, version)
+  );
+  return { dmgs, zips, exes, appBundles };
+}
+
+function pickPreferredWindowsInstaller(exes) {
+  const setupExes = exes.filter((filePath) => {
+    const name = path.basename(filePath).toLowerCase();
+    return name.includes("setup") || name.includes("termdock setup");
+  });
+  const candidates = (setupExes.length > 0 ? setupExes : exes).slice().sort((left, right) =>
+    path.basename(left).localeCompare(path.basename(right))
+  );
+  return candidates.at(-1) ?? null;
 }
 
 async function getWindowsSignature(targetPath) {
@@ -286,7 +330,10 @@ async function verifyWindowsArtifacts(args, artifacts, report) {
   }
 
   if (args.installSmoke) {
-    const installerPath = artifacts.exes[0];
+    const installerPath = pickPreferredWindowsInstaller(artifacts.exes);
+    if (!installerPath) {
+      throw new Error("Unable to locate a Windows installer executable for install smoke");
+    }
     const installDir = path.join(os.tmpdir(), `termdock-install-smoke-${Date.now()}`);
     const installedExe = path.join(installDir, "TermDock.exe");
     await rm(installDir, { recursive: true, force: true });
@@ -324,6 +371,7 @@ async function main() {
   const report = {
     platform: args.platform,
     releaseDir: path.resolve(args.releaseDir),
+    version: args.version || null,
     expectSigned: args.expectSigned,
     expectSignature: args.expectSignature,
     expectNotarized: args.expectNotarized,
@@ -339,7 +387,11 @@ async function main() {
       throw new Error(`Release path is not a directory: ${args.releaseDir}`);
     }
 
-    const artifacts = await listReleaseArtifacts(args.releaseDir);
+    const allArtifacts = await listReleaseArtifacts(args.releaseDir);
+    const artifacts = filterArtifactsForVersion(allArtifacts, args.version);
+    if (args.version) {
+      console.log(`[info] filtering release artifacts for version ${args.version}`);
+    }
     if (args.platform === "mac") {
       await verifyMacArtifacts(args, artifacts, report);
     } else {

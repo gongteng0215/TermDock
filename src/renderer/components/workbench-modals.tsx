@@ -36,6 +36,7 @@ interface OperationCenterRecentAppJobView {
   outputPath?: string | null;
   stateClassName: string;
   stateLabel: string;
+  canCancel: boolean;
 }
 
 interface OperationCenterTransferTabSummaryView {
@@ -79,6 +80,8 @@ export interface OperationCenterModalProps {
   onRetryActiveDownloads: () => void;
   canRetryFailedDownloads: boolean;
   deleteProgressLabel: string | null;
+  onCancelActiveDelete: () => void;
+  canCancelActiveDelete: boolean;
   portForwardBusy: boolean;
   portForwardSummary: OperationCenterPortForwardSummaryView;
   onOpenPortForward: () => void;
@@ -86,6 +89,7 @@ export interface OperationCenterModalProps {
   runningAppJobCount: number;
   recentAppJobs: OperationCenterRecentAppJobView[];
   onCopyAppJobOutputPath: (jobId: string) => void;
+  onCancelAppJob: (jobId: string) => void;
   finishedAppJobCount: number;
   onClearFinishedAppJobs: () => void;
   hasSnippetJobs: boolean;
@@ -316,6 +320,8 @@ export function OperationCenterModal({
   onRetryActiveDownloads,
   canRetryFailedDownloads,
   deleteProgressLabel,
+  onCancelActiveDelete,
+  canCancelActiveDelete,
   portForwardBusy,
   portForwardSummary,
   onOpenPortForward,
@@ -323,6 +329,7 @@ export function OperationCenterModal({
   runningAppJobCount,
   recentAppJobs,
   onCopyAppJobOutputPath,
+  onCancelAppJob,
   finishedAppJobCount,
   onClearFinishedAppJobs,
   hasSnippetJobs,
@@ -613,9 +620,17 @@ export function OperationCenterModal({
             ) : (
               <p className="operation-center__meta">{labels.noActiveDelete}</p>
             )}
-            <p className="operation-center__meta operation-center__meta--muted">
-              {labels.deleteCancellationUnavailable}
-            </p>
+            {canCancelActiveDelete ? (
+              <div className="operation-center__actions">
+                <button
+                  className="secondary-button secondary-button--small"
+                  onClick={onCancelActiveDelete}
+                  type="button"
+                >
+                  {labels.cancelActiveDelete}
+                </button>
+              </div>
+            ) : null}
           </article>
 
           <article className="operation-center__card">
@@ -742,6 +757,15 @@ export function OperationCenterModal({
                     </div>
                     <div className="operation-center__tab-actions">
                       <span className={job.stateClassName}>{job.stateLabel}</span>
+                      {job.canCancel ? (
+                        <button
+                          className="secondary-button secondary-button--small"
+                          onClick={() => onCancelAppJob(job.id)}
+                          type="button"
+                        >
+                          {labels.cancelAppJob}
+                        </button>
+                      ) : null}
                       {job.outputPath ? (
                         <button
                           className="secondary-button secondary-button--small"

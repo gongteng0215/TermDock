@@ -1,0 +1,13 @@
+# Single-package project; this file also holds pnpm project settings
+# (pnpm no longer reads the `pnpm` field from package.json).
+packages:
+  - "."
+
+allowBuilds:
+  better-sqlite3: true
+  cpu-features: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  keytar: true
+  ssh2: true

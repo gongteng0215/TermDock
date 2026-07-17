@@ -2,13 +2,13 @@
 
 [中文](2026-07-15-sqlite-migration-plan.zh-CN.md)
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## Goal
 
 Move TermDock persistence from ad-hoc JSON files and renderer `localStorage` into a versioned SQLite database owned by the main process, without weakening credential isolation or breaking existing session/settings data.
 
-This document is planning only. It does not add SQLite dependencies or migration code.
+Phase 1–5 have landed (sessions cutover, durable preference ports, `.tdbackup` credential-safe backup). Packaged native smoke is green. P0-E4 crash-recovery verification landed (WAL mode + automated reopen / corrupt-file / rollback checks).
 
 ## Current Persistence Map
 
@@ -88,6 +88,22 @@ Defer large history tables until after session cutover unless they block crash-r
 3. Document rollback: restore JSON snapshot, disable SQLite feature flag if needed.
 4. Only then expand to selected preference / history tables.
 
+### Phase 3 Cutover (landed)
+
+Runtime behavior (2026-07-15):
+
+- `DualWriteSessionStore` reads/writes SQLite first; JSON is a best-effort live mirror.
+- On first cutover boot, copies `sessions.json` → `sessions.json.pre-sqlite-cutover` (one-shot).
+- Sets `app_meta.sessions_authority=sqlite` and `sessions_cutover_at`.
+- Empty SQLite still imports from `sessions.json` before marking cutover.
+- Rollback:
+  1. Quit TermDock.
+  2. Restore `sessions.json` from `sessions.json.pre-sqlite-cutover` (or the live JSON mirror if trusted).
+  3. Optionally delete/rename `termdock.sqlite`.
+  4. Launch with `TERMDOCK_SESSION_STORE=json` to force JSON-only, or let SQLite open fail and fall back.
+- Packaging: `better-sqlite3` / `keytar` are listed in `asarUnpack`; startup still falls back to JSON if the native module fails to load.
+- Test: `pnpm run test:session-sqlite-cutover`.
+
 ### Phase 4 — Preference and history ports
 
 Prioritize durable / recoverable data over pure UI chrome:
@@ -100,13 +116,87 @@ Prioritize durable / recoverable data over pure UI chrome:
 
 UI chrome (accent, density, collapsed inspector) can remain in `localStorage` longer without blocking persistence hardening.
 
-### Phase 5 — Credential-safe backup / restore
+### Phase 4 Slice 1 (landed) — transfer history + pending restore
 
-Build on current encrypted migration (`.tdmigration`):
+Runtime behavior (2026-07-15):
 
-- Non-secret SQLite dump / export
-- Optional passphrase-protected credential attachment via existing keytar export path
-- Explicit preview + duplicate strategies matching current session migration UX
+- Schema version bumped to **2** with `transfer_history` + `transfer_pending_restore` tables (idempotent `IF NOT EXISTS` migrations).
+- Main `SqliteTransferStore` + IPC: `storage:get/replaceTransferHistory`, `storage:get/replacePendingTransferRestore`.
+- Renderer dual-write soak: boot hydrates from SQLite when non-empty (else imports localStorage → SQLite); subsequent writes go to localStorage **and** SQLite.
+- Retry Center stays a pure view over `transferHistory` (no separate store).
+- Fixed repeated-open schema init (base DDL is now `CREATE TABLE IF NOT EXISTS`).
+- Test: `pnpm run test:session-sqlite-transfer-persistence`.
+
+Still deferred in Phase 4: disconnect reports, port-forward event history, templates/profiles/snippets, remaining preference keys.
+
+### Phase 4 Slice 2 (landed) — disconnect report history
+
+Runtime behavior (2026-07-15):
+
+- Schema version bumped to **3** with `disconnect_reports` (`id`, `created_at`, `session_id`, `payload_json`).
+- Main `SqliteDisconnectReportStore` + IPC: `storage:get/replaceDisconnectReports`.
+- Renderer dual-write soak (same hydrate-then-mirror pattern as transfer history); view/capture prefs stay in localStorage.
+- Test: `pnpm run test:session-sqlite-disconnect-reports`.
+
+Still deferred in Phase 4: port-forward event history, templates/profiles/snippets, remaining preference keys.
+
+### Phase 4 Slice 3 (landed) — port-forward event history
+
+Runtime behavior (2026-07-15):
+
+- Schema version bumped to **4** with `port_forward_events` (`entry_key`, `session_id`, `created_at`, `payload_json`).
+- Main `SqlitePortForwardEventStore` + IPC: `storage:get/replacePortForwardEventHistory`.
+- Renderer dual-write soak (hydrate-then-mirror); event view prefs stay in localStorage.
+- Live main-process event ring buffer + list IPC unchanged; durable cross-session history is what moves to SQLite.
+- Test: `pnpm run test:session-sqlite-port-forward-events`.
+
+Still deferred in Phase 4: remaining preference keys.
+
+### Phase 4 Slice 4 (landed) — session templates / quick profiles / snippet groups
+
+Runtime behavior (2026-07-15):
+
+- Schema version bumped to **5** with `session_quick_profiles`, `session_templates` (`has_secret` flag, no plaintext secrets in `payload_json`), `command_snippet_groups`, and `command_snippet_scoped_values`.
+- Main `SqliteWorkbenchStore` + IPC: `storage:get/replaceSessionQuickProfiles`, `storage:get/replaceSessionTemplates`, `storage:get/replaceCommandSnippetGroups`, `storage:get/replaceCommandSnippetScopedValues`.
+- Renderer dual-write soak (hydrate-then-mirror); template passwords stay in localStorage during soak (SQLite stores `hasSecret` only).
+- Test: `pnpm run test:session-sqlite-workbench-data`.
+
+Still deferred in Phase 4: remaining preference keys.
+
+### Phase 4 Slice 5 (landed) — durable app preference ports
+
+Runtime behavior (2026-07-15):
+
+- Schema version bumped to **6** with generic `app_preferences` (`pref_key`, `payload_json`, `updated_at`).
+- Main `SqlitePreferenceStore` + IPC: `storage:getAppPreferences`, `storage:setAppPreference`, `storage:replaceAppPreferences`.
+- Dual-write soak for 18 durable keys (connection, terminal focus, hotkeys, file-open, SFTP prefs/policy packs/conflict strategy, port-forward presets, session groups/sort, workspace profile, server-health alerts, dangerous-command guard/bundles/sync, disconnect-capture prefs, terminal command history).
+- Store rejects non-allowlisted keys (UI chrome such as accent/density/view filters stay in localStorage).
+- Test: `pnpm run test:session-sqlite-app-preferences`.
+
+Phase 4 durable ports complete; UI chrome may remain in localStorage.
+
+### Phase 5 (landed) — Credential-safe backup / restore
+
+Runtime behavior (2026-07-15):
+
+- New `.tdbackup` format (`termdock-app-backup` v1) dumps non-secret SQLite durable state: sessions (`hasSecret` only), transfer history/pending restore, disconnect reports, port-forward events, workbench data, allowlisted app preferences.
+- Optional passphrase-protected **credentials attachment** reuses the existing `.tdmigration` envelope (`exportEncryptedSessionMigration` / keytar).
+- Export/import UX mirrors session migration: preview counts, skip/overwrite/rename for sessions (`host:port:username`), optional credential restore.
+- IPC: `storage:exportAppBackup`, `storage:previewAppBackup`, `storage:importAppBackup`.
+- Plain dump refuses `"secret"` fields; template passwords stay out of SQLite payloads.
+- Test: `pnpm run test:session-sqlite-app-backup`.
+
+### P0-E4 (landed) — Crash-recovery verification
+
+Runtime behavior (2026-07-16):
+
+- New SQLite connections use `configureSqliteConnection()`: `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`, `foreign_keys=ON`.
+- Automated checks in `pnpm run test:session-sqlite-crash-recovery`:
+  - close/reopen durability for sessions + transfer history
+  - corrupt `.sqlite` file fails open (main falls back to JSON)
+  - corrupt JSON mirror does not block SQLite-authoritative reads
+  - restore `sessions.json.pre-sqlite-cutover` for JSON-only rollback
+- `DualWriteSessionStore.flushJsonMirror()` waits for the best-effort JSON mirror write.
 
 ## Risks and Mitigations
 
@@ -126,6 +216,7 @@ Build on current encrypted migration (`.tdmigration`):
 2. Schema versioning and migration scripts are documented and tested.
 3. Credential-safe backup/restore covers sessions + non-secret durable state without writing secrets to plain files.
 4. Remaining preference history migration has an explicit backlog order rather than an open rewrite.
+5. Crash-recovery paths (WAL, corrupt DB fallback, pre-cutover rollback) are covered by automated tests.
 
 ## Validation Plan (when implementation starts)
 
@@ -133,3 +224,39 @@ Build on current encrypted migration (`.tdmigration`):
 - Packaged Windows smoke after enabling SQLite by default.
 - Manual check that keytar credentials survive migration and are absent from the SQLite dump.
 - Startup / sessions-load benchmark note in `artifacts/benchmark/`.
+
+## Phase 1 Schema (landed)
+
+Source of truth: `src/main/storage/sqlite/schema.ts` (`SQLITE_SCHEMA_VERSION = 1`).
+
+Secrets remain in keytar; SQLite only stores `has_secret`. Group membership is denormalized on `sessions.group_id` (group name string), not a join table.
+
+```sql
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  auth_type TEXT NOT NULL,
+  private_key_path TEXT NULL,
+  group_id TEXT NULL,
+  remark TEXT NULL,
+  favorite INTEGER NOT NULL,
+  has_secret INTEGER NOT NULL,
+  last_connected_at TEXT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE session_groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE app_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+```

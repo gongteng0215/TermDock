@@ -1,6 +1,6 @@
 import type { ComponentProps, MouseEvent } from "react";
 
-import type { TerminalCommandHistoryEntry } from "./components/terminal-workspace";
+import type { TerminalCommandHistoryEntry } from "./terminal-workspace-types";
 import { CommandHistoryInspectorSection } from "./components/workbench-panels";
 
 type CommandHistoryInspectorSectionProps = ComponentProps<

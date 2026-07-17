@@ -7,11 +7,20 @@ import { fileURLToPath } from "node:url";
 import { initializeAutoUpdate } from "./auto-update.js";
 import { registerSftpHandlers } from "./ipc/register-sftp-handlers.js";
 import { registerSessionHandlers } from "./ipc/register-session-handlers.js";
+import { registerStorageHandlers } from "./ipc/register-storage-handlers.js";
+import { registerAppBackupHandlers } from "./ipc/register-app-backup-handlers.js";
 import { registerSystemHandlers } from "./ipc/register-system-handlers.js";
 import { registerTerminalHandlers } from "./ipc/register-terminal-handlers.js";
 import { appLogger } from "./logging/app-logger.js";
 import { createCredentialStore } from "./security/credential-store.js";
+import { DualWriteSessionStore } from "./storage/dual-write-session-store.js";
 import { SessionStore } from "./storage/session-store.js";
+import { SqliteDisconnectReportStore } from "./storage/sqlite/sqlite-disconnect-report-store.js";
+import { SqlitePortForwardEventStore } from "./storage/sqlite/sqlite-port-forward-event-store.js";
+import { SqliteWorkbenchStore } from "./storage/sqlite/sqlite-workbench-store.js";
+import { SqlitePreferenceStore } from "./storage/sqlite/sqlite-preference-store.js";
+import { SqliteSessionStore } from "./storage/sqlite/sqlite-session-store.js";
+import { SqliteTransferStore } from "./storage/sqlite/sqlite-transfer-store.js";
 import { TerminalService } from "./terminal/terminal-service.js";
 
 const isMac = process.platform === "darwin";
@@ -199,11 +208,54 @@ async function bootstrap(): Promise<void> {
   installGlobalErrorLogging();
 
   const dbPath = join(app.getPath("userData"), "db", "sessions.json");
-  const sessionStore = new SessionStore(dbPath);
+  const sqlitePath = join(app.getPath("userData"), "db", "termdock.sqlite");
+  const jsonSessionStore = new SessionStore(dbPath);
+  const forceJsonStore =
+    process.env.TERMDOCK_SESSION_STORE?.trim().toLowerCase() === "json";
+  let sessionStore: SessionStore | DualWriteSessionStore = jsonSessionStore;
+  let transferStore: SqliteTransferStore | null = null;
+  let disconnectReportStore: SqliteDisconnectReportStore | null = null;
+  let portForwardEventStore: SqlitePortForwardEventStore | null = null;
+  let workbenchStore: SqliteWorkbenchStore | null = null;
+  let preferenceStore: SqlitePreferenceStore | null = null;
+  try {
+    const sqliteSessionStore = new SqliteSessionStore(sqlitePath);
+    const sqliteDb = sqliteSessionStore.getDatabase();
+    transferStore = new SqliteTransferStore(sqliteDb);
+    disconnectReportStore = new SqliteDisconnectReportStore(sqliteDb);
+    portForwardEventStore = new SqlitePortForwardEventStore(sqliteDb);
+    workbenchStore = new SqliteWorkbenchStore(sqliteDb);
+    preferenceStore = new SqlitePreferenceStore(sqliteDb);
+    if (forceJsonStore) {
+      console.warn(
+        "[sqlite] TERMDOCK_SESSION_STORE=json — sessions use JSON; durable SQLite stores remain available."
+      );
+    } else {
+      sessionStore = new DualWriteSessionStore(jsonSessionStore, sqliteSessionStore);
+    }
+  } catch (error) {
+    console.warn("[sqlite] unavailable; falling back to sessions.json / localStorage:", error);
+  }
   const credentialStore = await createCredentialStore();
 
   const terminalService = new TerminalService(sessionStore, credentialStore);
   registerSessionHandlers(sessionStore, credentialStore);
+  registerStorageHandlers({
+    transferStore,
+    disconnectReportStore,
+    portForwardEventStore,
+    workbenchStore,
+    preferenceStore
+  });
+  registerAppBackupHandlers({
+    sessionStore,
+    credentialStore,
+    transferStore,
+    disconnectReportStore,
+    portForwardEventStore,
+    workbenchStore,
+    preferenceStore
+  });
   registerSystemHandlers(terminalService);
   registerTerminalHandlers(terminalService);
   registerSftpHandlers(terminalService);

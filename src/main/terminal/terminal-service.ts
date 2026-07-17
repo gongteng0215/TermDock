@@ -66,7 +66,8 @@ import type {
   TerminalEvent
 } from "../../shared/terminal.js";
 import type { CredentialStore } from "../security/credential-store.js";
-import { SessionStore } from "../storage/session-store.js";
+import type { DualWriteSessionStore } from "../storage/dual-write-session-store.js";
+import type { SessionStore } from "../storage/session-store.js";
 import {
   shouldReportTransferProgress,
   TRANSFER_PROGRESS_REPORT_BYTES,
@@ -120,7 +121,17 @@ interface ReusableUploadSftpEntry {
   sftp: SFTPWrapper;
 }
 
+interface ReusableDownloadSftpEntry {
+  tabId: string;
+  sftp: SFTPWrapper;
+}
+
 const MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB = 1;
+const MAX_IN_FLIGHT_UPLOAD_SFTP_PER_TAB = 2;
+const MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB = 1;
+const MAX_IN_FLIGHT_DOWNLOAD_SFTP_PER_TAB = 2;
+const UPLOAD_SFTP_SLOT_POLL_MS = 40;
+const DOWNLOAD_SFTP_SLOT_POLL_MS = 40;
 
 interface ActivePortForwardBase {
   id: string;
@@ -184,6 +195,20 @@ class TransferCanceledError extends Error {
   }
 }
 
+class DeleteCanceledError extends Error {
+  constructor() {
+    super("Delete canceled.");
+    this.name = "DeleteCanceledError";
+  }
+}
+
+interface ActiveDeleteOperation {
+  tabId: string;
+  targetPath: string;
+  canceled: boolean;
+  channelRef: ClientChannel | null;
+}
+
 export class TerminalService {
   private readonly connections = new Map<string, TerminalConnection>();
   private readonly activePortForwardsByTab = new Map<string, Map<string, ActivePortForward>>();
@@ -191,7 +216,12 @@ export class TerminalService {
   private readonly portForwardConnectionCounters = new Map<string, number>();
   private readonly activeUploadTransfers = new Map<string, ActiveUploadTransfer>();
   private readonly activeDownloadTransfers = new Map<string, ActiveDownloadTransfer>();
+  private readonly activeDeletes = new Map<string, ActiveDeleteOperation>();
+  private readonly pendingDeleteCancelKeys = new Set<string>();
   private readonly reusableUploadSftpByTab = new Map<string, ReusableUploadSftpEntry[]>();
+  private readonly reservedUploadSftpSlotsByTab = new Map<string, number>();
+  private readonly reusableDownloadSftpByTab = new Map<string, ReusableDownloadSftpEntry[]>();
+  private readonly reservedDownloadSftpSlotsByTab = new Map<string, number>();
   private readonly pendingUploadCancelKeys = new Set<string>();
   private readonly pendingUploadCancelIds = new Set<string>();
   private readonly pendingDownloadCancelKeys = new Set<string>();
@@ -200,7 +230,7 @@ export class TerminalService {
   private readonly remoteHomeByTab = new Map<string, string>();
 
   constructor(
-    private readonly sessionStore: SessionStore,
+    private readonly sessionStore: SessionStore | DualWriteSessionStore,
     private readonly credentialStore: CredentialStore
   ) {}
 
@@ -358,6 +388,7 @@ export class TerminalService {
     connection.shell?.end();
     connection.sftp?.end();
     this.clearReusableUploadSftp(connection.tabId);
+    this.clearReusableDownloadSftp(connection.tabId);
     connection.client.end();
 
     try {
@@ -504,6 +535,7 @@ export class TerminalService {
       connection.shell?.end();
       connection.sftp?.end();
       this.clearReusableUploadSftp(connection.tabId);
+      this.clearReusableDownloadSftp(connection.tabId);
       connection.client.end();
     } else {
       if (!connection.process.stdin.destroyed) {
@@ -661,16 +693,62 @@ export class TerminalService {
     const normalizedTargetPath = normalizeRemotePath(targetPath);
     assertPathIsNotRoot(normalizedTargetPath);
     assertPathIsSafeForDelete(normalizedTargetPath);
+    const deleteKey = toTransferKey(tabId, normalizedTargetPath);
+    const activeDelete: ActiveDeleteOperation = {
+      tabId,
+      targetPath: normalizedTargetPath,
+      canceled: false,
+      channelRef: null
+    };
+    this.activeDeletes.set(deleteKey, activeDelete);
+    if (this.pendingDeleteCancelKeys.has(deleteKey)) {
+      this.pendingDeleteCancelKeys.delete(deleteKey);
+      activeDelete.canceled = true;
+    }
+    const isCanceled = () => activeDelete.canceled;
     try {
+      if (activeDelete.canceled) {
+        throw new DeleteCanceledError();
+      }
       if (kind === "directory") {
-        await this.deleteDirectoryViaRemoteCommand(connection, normalizedTargetPath);
+        await this.deleteDirectoryViaRemoteCommand(
+          connection,
+          normalizedTargetPath,
+          activeDelete,
+          isCanceled
+        );
         return;
       }
       const sftp = await this.ensureSftp(connection);
+      if (activeDelete.canceled) {
+        throw new DeleteCanceledError();
+      }
       await this.unlink(sftp, normalizedTargetPath);
     } catch (error) {
+      if (error instanceof DeleteCanceledError || activeDelete.canceled) {
+        throw new DeleteCanceledError();
+      }
       throw new Error(toDeletePathErrorMessage(normalizedTargetPath, kind, error));
+    } finally {
+      this.activeDeletes.delete(deleteKey);
     }
+  }
+
+  async cancelDeletePath(tabId: string, targetPath: string): Promise<boolean> {
+    const normalizedTargetPath = normalizeRemotePath(targetPath);
+    const deleteKey = toTransferKey(tabId, normalizedTargetPath);
+    const activeDelete = this.activeDeletes.get(deleteKey);
+    if (!activeDelete) {
+      this.pendingDeleteCancelKeys.add(deleteKey);
+      return false;
+    }
+    activeDelete.canceled = true;
+    try {
+      activeDelete.channelRef?.close();
+    } catch {
+      // Best effort cancel.
+    }
+    return true;
   }
 
   async uploadFile(
@@ -814,16 +892,26 @@ export class TerminalService {
     let transferredBytes = 0;
     let totalBytes = 0;
     let downloadSftp: SFTPWrapper | undefined;
+    let reusableDownloadSftp = false;
     const rateLimitBytesPerSecond = normalizeSftpTransferRateLimitBytesPerSecond(
       options?.rateLimitBytesPerSecond
     );
     try {
-      const statSftp =
-        rateLimitBytesPerSecond || connection.closed ? await this.ensureSftp(connection) : await this.openSftpChannel(connection);
-      if (!rateLimitBytesPerSecond) {
-        downloadSftp = statSftp;
-        activeTransfer.sftp = statSftp;
+      const releaseDownloadSlot = await this.reserveDownloadSftpSlot(tabId);
+      try {
+        if (activeTransfer.canceled) {
+          throw new TransferCanceledError();
+        }
+        downloadSftp = this.acquireReusableDownloadSftp(connection);
+        reusableDownloadSftp = Boolean(downloadSftp);
+        if (!downloadSftp) {
+          downloadSftp = await this.openSftpChannel(connection);
+        }
+        activeTransfer.sftp = downloadSftp;
+      } finally {
+        releaseDownloadSlot();
       }
+      const statSftp = downloadSftp;
       const remoteStats = await this.statRemote(statSftp, normalizedRemotePath);
       if (((remoteStats.mode ?? 0) & 0o170000) === 0o040000) {
         throw new Error("Downloading directories is not supported yet.");
@@ -892,8 +980,10 @@ export class TerminalService {
 
       if (rateLimitBytesPerSecond) {
         const sftp = statSftp;
-        const readStream = sftp.createReadStream(normalizedRemotePath);
-        const writeStream = createWriteStream(normalizedLocalPath);
+        const readStream = sftp.createReadStream(normalizedRemotePath, {
+          highWaterMark: 64 * 1024
+        });
+        const writeStream = createWriteStream(normalizedLocalPath, { highWaterMark: 64 * 1024 });
         activeTransfer.readStream = readStream;
         activeTransfer.writeStream = writeStream;
         await this.pipeWithProgress({
@@ -984,6 +1074,11 @@ export class TerminalService {
           message: "completed"
         })
       );
+      if (rateLimitBytesPerSecond === undefined) {
+        this.releaseReusableDownloadSftp(connection, downloadSftp);
+        reusableDownloadSftp = false;
+        downloadSftp = undefined;
+      }
     } catch (error) {
       if (activeTransfer.canceled || error instanceof TransferCanceledError) {
         await this.unlinkLocalIgnoreMissing(normalizedLocalPath);
@@ -1008,11 +1103,13 @@ export class TerminalService {
         if (connection.sftp === downloadSftp) {
           connection.sftp = undefined;
         }
+        reusableDownloadSftp = false;
         try {
           downloadSftp?.end();
         } catch {
           // Ignore cleanup failure for an already-broken channel.
         }
+        downloadSftp = undefined;
       }
       this.emitTransfer(
         connection,
@@ -1034,7 +1131,9 @@ export class TerminalService {
       activeTransfer.readStream = undefined;
       activeTransfer.writeStream = undefined;
       activeTransfer.sftp = undefined;
-      safeEndSftp(downloadSftp);
+      if (!reusableDownloadSftp) {
+        safeEndSftp(downloadSftp);
+      }
       this.activeDownloadTransfers.delete(transferKey);
     }
   }
@@ -2057,12 +2156,20 @@ export class TerminalService {
       };
 
       reportProgress(true);
-      uploadSftp = this.acquireReusableUploadSftp(connection);
-      reusableUploadSftp = Boolean(uploadSftp);
-      if (!uploadSftp) {
-        uploadSftp = await this.openSftpChannel(connection);
+      const releaseUploadSlot = await this.reserveUploadSftpSlot(tabId);
+      try {
+        if (activeTransfer.canceled) {
+          throw new TransferCanceledError();
+        }
+        uploadSftp = this.acquireReusableUploadSftp(connection);
+        reusableUploadSftp = Boolean(uploadSftp);
+        if (!uploadSftp) {
+          uploadSftp = await this.openSftpChannel(connection);
+        }
+        activeTransfer.sftp = uploadSftp;
+      } finally {
+        releaseUploadSlot();
       }
-      activeTransfer.sftp = uploadSftp;
       const activeSftp = uploadSftp;
       if (activeTransfer.canceled) {
         throw new TransferCanceledError();
@@ -2288,6 +2395,41 @@ export class TerminalService {
     safeEndSftp(cachedSftp);
   }
 
+  private countInFlightUploadSftp(tabId: string): number {
+    let count = 0;
+    for (const transfer of this.activeUploadTransfers.values()) {
+      if (transfer.tabId === tabId && transfer.sftp) {
+        count += 1;
+      }
+    }
+    return count + (this.reservedUploadSftpSlotsByTab.get(tabId) ?? 0);
+  }
+
+  private async reserveUploadSftpSlot(tabId: string): Promise<() => void> {
+    while (this.countInFlightUploadSftp(tabId) >= MAX_IN_FLIGHT_UPLOAD_SFTP_PER_TAB) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, UPLOAD_SFTP_SLOT_POLL_MS);
+      });
+    }
+    this.reservedUploadSftpSlotsByTab.set(
+      tabId,
+      (this.reservedUploadSftpSlotsByTab.get(tabId) ?? 0) + 1
+    );
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      const next = (this.reservedUploadSftpSlotsByTab.get(tabId) ?? 1) - 1;
+      if (next <= 0) {
+        this.reservedUploadSftpSlotsByTab.delete(tabId);
+        return;
+      }
+      this.reservedUploadSftpSlotsByTab.set(tabId, next);
+    };
+  }
+
   private acquireReusableUploadSftp(connection: Ssh2TerminalConnection): SFTPWrapper | undefined {
     const pool = this.reusableUploadSftpByTab.get(connection.tabId);
     if (!pool || pool.length === 0) {
@@ -2346,10 +2488,107 @@ export class TerminalService {
     }
   }
 
+  private countInFlightDownloadSftp(tabId: string): number {
+    let count = 0;
+    for (const transfer of this.activeDownloadTransfers.values()) {
+      if (transfer.tabId === tabId && transfer.sftp) {
+        count += 1;
+      }
+    }
+    return count + (this.reservedDownloadSftpSlotsByTab.get(tabId) ?? 0);
+  }
+
+  private async reserveDownloadSftpSlot(tabId: string): Promise<() => void> {
+    while (this.countInFlightDownloadSftp(tabId) >= MAX_IN_FLIGHT_DOWNLOAD_SFTP_PER_TAB) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, DOWNLOAD_SFTP_SLOT_POLL_MS);
+      });
+    }
+    this.reservedDownloadSftpSlotsByTab.set(
+      tabId,
+      (this.reservedDownloadSftpSlotsByTab.get(tabId) ?? 0) + 1
+    );
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      const next = (this.reservedDownloadSftpSlotsByTab.get(tabId) ?? 1) - 1;
+      if (next <= 0) {
+        this.reservedDownloadSftpSlotsByTab.delete(tabId);
+        return;
+      }
+      this.reservedDownloadSftpSlotsByTab.set(tabId, next);
+    };
+  }
+
+  private acquireReusableDownloadSftp(connection: Ssh2TerminalConnection): SFTPWrapper | undefined {
+    const pool = this.reusableDownloadSftpByTab.get(connection.tabId);
+    if (!pool || pool.length === 0) {
+      return undefined;
+    }
+    while (pool.length > 0) {
+      const next = pool.pop();
+      if (!next) {
+        break;
+      }
+      if (connection.closed) {
+        safeEndSftp(next.sftp);
+        continue;
+      }
+      return next.sftp;
+    }
+    if (pool.length === 0) {
+      this.reusableDownloadSftpByTab.delete(connection.tabId);
+    }
+    return undefined;
+  }
+
+  private releaseReusableDownloadSftp(
+    connection: Ssh2TerminalConnection,
+    sftp: SFTPWrapper | undefined
+  ): void {
+    if (!sftp) {
+      return;
+    }
+    if (connection.closed || this.connections.get(connection.tabId) !== connection) {
+      safeEndSftp(sftp);
+      return;
+    }
+    const pool = this.reusableDownloadSftpByTab.get(connection.tabId) ?? [];
+    if (!this.reusableDownloadSftpByTab.has(connection.tabId)) {
+      this.reusableDownloadSftpByTab.set(connection.tabId, pool);
+    }
+    pool.push({
+      tabId: connection.tabId,
+      sftp
+    });
+    while (pool.length > MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB) {
+      const staleEntry = pool.shift();
+      safeEndSftp(staleEntry?.sftp);
+    }
+  }
+
+  private clearReusableDownloadSftp(tabId: string): void {
+    const pool = this.reusableDownloadSftpByTab.get(tabId);
+    if (!pool) {
+      return;
+    }
+    this.reusableDownloadSftpByTab.delete(tabId);
+    for (const entry of pool) {
+      safeEndSftp(entry.sftp);
+    }
+  }
+
   private async executeRemoteCommand(
     client: Client,
     command: string,
-    timeoutMs: number
+    timeoutMs: number,
+    options?: {
+      isCanceled?: () => boolean;
+      onChannel?: (channel: ClientChannel) => void;
+    }
   ): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       let stdout = "";
@@ -2365,6 +2604,9 @@ export class TerminalService {
         if (timer) {
           clearTimeout(timer);
         }
+        if (cancelPollTimer) {
+          clearInterval(cancelPollTimer);
+        }
         if (error) {
           reject(error);
           return;
@@ -2377,12 +2619,23 @@ export class TerminalService {
         finalize(new Error("Server monitor command timed out."));
       }, timeoutMs);
 
+      const cancelPollTimer = options?.isCanceled
+        ? setInterval(() => {
+            if (!options.isCanceled?.()) {
+              return;
+            }
+            channelRef?.close();
+            finalize(new DeleteCanceledError());
+          }, 80)
+        : null;
+
       client.exec(command, (error, channel) => {
         if (error) {
           finalize(error);
           return;
         }
         channelRef = channel;
+        options?.onChannel?.(channel);
 
         channel.on("data", (chunk: Buffer) => {
           stdout += chunk.toString("utf-8");
@@ -2394,6 +2647,10 @@ export class TerminalService {
           finalize(channelError);
         });
         channel.once("close", (code: number | null) => {
+          if (options?.isCanceled?.()) {
+            finalize(new DeleteCanceledError());
+            return;
+          }
           if (code && code !== 0) {
             const message = stderr.trim();
             finalize(new Error(message || `Remote command failed with code ${code}.`));
@@ -2568,10 +2825,17 @@ export class TerminalService {
 
   private async deleteDirectoryRecursively(
     sftp: SFTPWrapper,
-    directoryPath: string
+    directoryPath: string,
+    isCanceled?: () => boolean
   ): Promise<void> {
+    if (isCanceled?.()) {
+      throw new DeleteCanceledError();
+    }
     const rows = await this.readDirectory(sftp, directoryPath);
     for (const row of rows) {
+      if (isCanceled?.()) {
+        throw new DeleteCanceledError();
+      }
       const name = typeof row.filename === "string" ? row.filename.trim() : "";
       if (!name || name === "." || name === "..") {
         continue;
@@ -2579,33 +2843,49 @@ export class TerminalService {
       const childPath = posixPath.join(directoryPath, name);
       const kind = detectSftpEntryKind(row.attrs);
       if (kind === "directory") {
-        await this.deleteDirectoryRecursively(sftp, childPath);
+        await this.deleteDirectoryRecursively(sftp, childPath, isCanceled);
         continue;
       }
       await this.unlink(sftp, childPath);
+    }
+    if (isCanceled?.()) {
+      throw new DeleteCanceledError();
     }
     await this.rmdir(sftp, directoryPath);
   }
 
   private async deleteDirectoryViaRemoteCommand(
     connection: Ssh2TerminalConnection,
-    directoryPath: string
+    directoryPath: string,
+    activeDelete?: ActiveDeleteOperation,
+    isCanceled?: () => boolean
   ): Promise<void> {
     const command = buildDeleteDirectoryCommand(directoryPath);
     try {
       await this.executeRemoteCommand(
         connection.client,
         command,
-        REMOTE_DELETE_DIRECTORY_TIMEOUT_MS
+        REMOTE_DELETE_DIRECTORY_TIMEOUT_MS,
+        {
+          isCanceled,
+          onChannel: (channel) => {
+            if (activeDelete) {
+              activeDelete.channelRef = channel;
+            }
+          }
+        }
       );
       return;
     } catch (error) {
+      if (error instanceof DeleteCanceledError || isCanceled?.()) {
+        throw new DeleteCanceledError();
+      }
       if (!shouldFallbackToSftpDirectoryDelete(error)) {
         throw error;
       }
     }
     const sftp = await this.ensureSftp(connection);
-    await this.deleteDirectoryRecursively(sftp, directoryPath);
+    await this.deleteDirectoryRecursively(sftp, directoryPath, isCanceled);
   }
 
   private destroyStream(

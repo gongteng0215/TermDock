@@ -1,4 +1,4 @@
-import type { TerminalCommandHistoryEntry } from "./components/terminal-workspace";
+import type { TerminalCommandHistoryEntry } from "./terminal-workspace-types";
 import type { CommandHistoryManagerModalProps } from "./components/workbench-modals";
 
 interface BuildCommandHistoryManagerModalPropsArgs

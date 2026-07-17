@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { TerminalCommandHistoryEntry } from "./components/terminal-workspace";
+import type { TerminalCommandHistoryEntry } from "./terminal-workspace-types";
 
 type TerminalCommandHistoryScope = "activeTab" | "allTabs";
 

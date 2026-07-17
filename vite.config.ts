@@ -7,6 +7,9 @@ function resolveManualChunk(id: string): string | undefined {
   if (normalized.includes("/node_modules/react/") || normalized.includes("/node_modules/react-dom/")) {
     return "vendor-react";
   }
+  if (normalized.includes("/node_modules/@xterm/addon-webgl/")) {
+    return "vendor-xterm-webgl";
+  }
   if (normalized.includes("/node_modules/@xterm/")) {
     return "vendor-xterm";
   }
@@ -29,6 +32,15 @@ function resolveManualChunk(id: string): string | undefined {
   if (normalized.endsWith("/src/renderer/use-dismissable-layer.ts")) {
     return "renderer-shared";
   }
+  if (normalized.endsWith("/src/renderer/terminal-workspace-types.ts")) {
+    return "renderer-shared";
+  }
+  if (normalized.endsWith("/src/renderer/terminal-editor-focus-options.ts")) {
+    return "renderer-shared";
+  }
+  if (normalized.endsWith("/src/renderer/terminal-command-history-storage.ts")) {
+    return "renderer-shared";
+  }
   if (normalized.endsWith("/src/renderer/dangerous-command-guard.ts")) {
     return "renderer-guard";
   }
@@ -40,9 +52,7 @@ function resolveManualChunk(id: string): string | undefined {
   if (
     normalized.endsWith("/src/renderer/components/settings-modal-shell.tsx") ||
     normalized.endsWith("/src/renderer/components/settings-modal-content.tsx") ||
-    normalized.endsWith("/src/renderer/components/settings-sections.tsx") ||
-    normalized.endsWith("/src/renderer/settings-section-props.ts") ||
-    normalized.endsWith("/src/renderer/use-dangerous-command-settings-view-models.ts")
+    normalized.endsWith("/src/renderer/components/settings-sections.tsx")
   ) {
     return "renderer-settings";
   }
@@ -74,6 +84,17 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    modulePreload: {
+      resolveDependencies(_filename, deps) {
+        // Keep TerminalWorkspace + xterm off the eager preload list; they load
+        // via React.lazy when the center pane mounts.
+        return deps.filter(
+          (dep) =>
+            !dep.includes("renderer-terminal-") &&
+            !dep.includes("vendor-xterm-")
+        );
+      }
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {

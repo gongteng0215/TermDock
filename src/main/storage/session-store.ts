@@ -59,6 +59,10 @@ export class SessionStore {
     this.dbPath = dbPath;
   }
 
+  getStoragePath(): string {
+    return this.dbPath;
+  }
+
   async list(): Promise<SessionRecord[]> {
     const db = await this.readDb();
     return [...db.sessions].sort(compareSessionRecency);
@@ -209,5 +213,20 @@ export class SessionStore {
   private async writeDb(db: SessionDbSchema): Promise<void> {
     await mkdir(dirname(this.dbPath), { recursive: true });
     await writeFile(this.dbPath, JSON.stringify(db, null, 2), "utf-8");
+  }
+
+  async replaceAll(sessions: SessionRecord[]): Promise<void> {
+    await this.writeDb({ sessions: [...sessions] });
+  }
+
+  async upsert(session: SessionRecord): Promise<void> {
+    const db = await this.readDb();
+    const index = db.sessions.findIndex((entry) => entry.id === session.id);
+    if (index === -1) {
+      db.sessions.push(session);
+    } else {
+      db.sessions[index] = session;
+    }
+    await this.writeDb(db);
   }
 }

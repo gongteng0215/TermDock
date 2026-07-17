@@ -2,19 +2,22 @@
 
 [English](PROGRESS.md)
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## 当前快照
 
 - 当前主分支：`master`
 - 远端：`origin/master`
-- 当前稳定版：`v0.1.40`
-- 当前方向：`v0.1.40` 之后推进 Operation Center abort IPC、SQLite 规划 Phase 1-2 执行，以及基于正式基准的性能优化，并可选继续密度 / 主题反馈打磨。
+- 当前稳定版：`v0.1.41`
+- 当前方向：`v0.1.41` 发版准备完成（自用 Windows 可发）；下一步是可选 shared-buffer E2 或真实使用反馈打磨。
 - 公开文档已经对齐到现有自动更新能力、本地优先信任模型和推荐下载包说明。
-- 最新验证（2026-07-15）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup` 和 `pnpm run bench:transfer:memory` 已通过。
+- 最新验证（2026-07-16）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup`（脚本约 0.76 MiB）、`pnpm run bench:transfer:memory`、`pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0`（`artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`）。
+- `P0-E2` 下载侧现在也复用了每标签 SFTP 通道池，并保持与上传一致的 in-flight slot cap；`pnpm run bench:transfer:memory` 已通过。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
+- `v0.1.41` 已落地：SQLite 权威会话、耐久偏好端口、凭据安全 `.tdbackup`、懒加载终端启动、下载通道复用与备份向导。
 - `v0.1.40` 已落地：更广的可恢复全局错误路由、Operation Center 按标签 / 跨标签重试与端口转发拆除、正式启动 / 传输内存基准，以及 SQLite 迁移规划文档。
+- 发布后硬化已落地：剩余全局错误匹配、延迟 `renderer-settings` / 懒加载 WebGL、传输并发与通道上限、Operation Center 删除/app job 取消、会话双写、Phase 3 SQLite 权威切流。
 
 ## 已完成的重点能力
 
@@ -47,6 +50,7 @@ Last updated: 2026-07-15
   - 首次启动会话引导：空工作区显示导入 SSH 配置、新建会话和安全说明入口，关闭状态本地保存。
 - `v0.1.32`-`v0.1.40` 新增：
   - `v0.1.40`：更广的可恢复全局错误路由、Operation Center 按标签 / 跨标签重试与端口转发拆除、正式启动 / 传输内存基准、SQLite 迁移规划。
+  - 发布后硬化：剩余错误匹配、启动分包再削减（~1.22 MiB）、传输并发/通道上限、远程删除与 app job 取消、SQLite Phase 1–3（双写 + 切流/回滚）。
   - 强调色主题（`Ocean` / `Lavender` / `Mint` / `Amber` / `Rose`）与 Compact / Comfortable 布局密度。
   - 渲染性能优化：按需加载重型弹窗、分包去重、列表虚拟化、传输进度按帧批处理。
   - 终端 WebGL 渲染与 alternate-screen 全屏编辑器闪烁修复。
@@ -63,8 +67,8 @@ Last updated: 2026-07-15
 - 尚未完全 GA：
   - 公开可信签名 / notarization 证据仍在完善。
   - 已接入应用内自动更新：打包应用检查 GitHub Releases，后台下载新版本，并在更新就绪后提示重启安装；已修复 electron-updater 在打包 ESM 环境下的 CommonJS 导入兼容问题，并补上手动检查与 `latest.yml` 直读。
-  - 数据持久化仍基于 JSON；2026-07-15 已完成 SQLite 迁移规划，切库执行待做。
-  - 启动负载和传输卡顿在 `v0.1.34` 已有改善；正式 `bench:startup` / `bench:transfer:memory` 基准已落地，剩余是按基准继续优化。
+  - 数据持久化：会话已切到 SQLite 权威读写；Phase 4 耐久偏好双写与 Phase 5 `.tdbackup` 凭据安全备份已落地。
+  - 启动负载与传输：post-hardening 已再切一刀；正式基准仍可用于更深架构优化评估。
 - 近期推广重点：
   - 降低下载和首次启动困惑。
   - 收集 Windows/macOS 安装反馈。
@@ -73,10 +77,8 @@ Last updated: 2026-07-15
 ## 下一步优先级
 
 1. 观察密度、强调色主题和工作台清晰度相关的真实使用反馈。
-2. 继续打磨 `P0-E3` 可恢复全局错误引导文案。
-3. 为 Operation Center 补 abort IPC，以支持远程删除取消和已跟踪 app job 取消（`F8`）。
-4. 按规划执行 SQLite 会话双写 / 切流与凭据安全备份恢复（`P0-A3`/`F9`）。
-5. 基于正式基准继续启动 / 大传输优化（`P0-E1`/`P0-E2`）。
+2. 可选：更深的传输 shared-buffer / 通道复用（`P0-E2`）。
+3. 可选：单次主进程迁移 / bug-report 任务的真正中途中止。
 
 ## 详细历史
 

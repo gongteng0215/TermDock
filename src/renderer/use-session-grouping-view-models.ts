@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import type { SessionRecord } from "../shared/session";
-import type { TerminalTab } from "./components/terminal-workspace";
+import type { TerminalTab } from "./terminal-workspace-types";
 
 type SessionSortMode = "default" | "nameAsc" | "nameDesc" | "recent";
 
@@ -26,6 +26,8 @@ interface UseSessionGroupingViewModelsArgs {
   sessions: SessionRecord[];
   terminalTabs: TerminalTab[];
 }
+
+const EMPTY_GROUP_SESSIONS: SessionRecord[] = [];
 
 function normalizeSessionGroupName(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -188,7 +190,7 @@ export function useSessionGroupingViewModels({
         : `${filteredSessions.length}/${sessions.length}`;
     const activeSessionGroup =
       groupedSessions.find((group) => group.key === activeSessionGroupKey) ?? null;
-    const activeGroupSessions = activeSessionGroup?.sessions ?? [];
+    const activeGroupSessions = activeSessionGroup?.sessions ?? EMPTY_GROUP_SESSIONS;
     const selectedGroupKeySet = new Set(selectedGroupKeys);
     const selectedSessionIdSet = new Set(selectedSessionIds);
     const selectedGroups = groupedSessions.filter((group) =>

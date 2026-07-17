@@ -7,7 +7,10 @@ import {
   ServerHealthInspectorSection
 } from "./workbench-panels";
 import { ServerHealthInspectorContent } from "./server-health-inspector-content";
-import { TerminalWorkspace } from "./terminal-workspace";
+import {
+  TerminalWorkspaceHost,
+  type TerminalWorkspaceHostProps
+} from "./terminal-workspace-host";
 import { WorkbenchInspectorPanel } from "./workbench-inspector-panel";
 import {
   WorkbenchExplorerSidebar,
@@ -29,11 +32,11 @@ export function WorkbenchExplorerPane({
 export function WorkbenchCenterPane({
   terminalWorkspaceProps
 }: {
-  terminalWorkspaceProps: ComponentProps<typeof TerminalWorkspace>;
+  terminalWorkspaceProps: TerminalWorkspaceHostProps;
 }) {
   return (
     <section className="panel panel--center">
-      <TerminalWorkspace {...terminalWorkspaceProps} />
+      <TerminalWorkspaceHost {...terminalWorkspaceProps} />
     </section>
   );
 }

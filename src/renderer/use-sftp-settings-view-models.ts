@@ -136,7 +136,7 @@ export function useSftpSettingsViewModels({
     sftpTransferPolicyPackSyncState.lastPushedAtIso
   ]);
 
-  const sftpConcurrencyHint = `Controls max parallel upload/download tasks. Range: 1-${maxSftpTransferConcurrency}. New installs default uploads to 4 and downloads to 2.`;
+  const sftpConcurrencyHint = `Controls max parallel upload/download tasks. Range: 1-${maxSftpTransferConcurrency}. New installs default uploads to 2 and downloads to 2.`;
 
   const sftpRateLimitHint = `Per-direction rate limit uses KiB/s. Set 0 to disable throttling. Current upload limit: ${
     sftpTransferPreferences.uploadRateLimitKiBps > 0

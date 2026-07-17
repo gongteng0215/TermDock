@@ -129,6 +129,7 @@ type OperationCenterActionArgs = Pick<
   | "cancelTransferTasksForTab"
   | "clearFinishedOperationCenterAppJobs"
   | "copyOperationCenterAppJobOutputPath"
+  | "onCancelAppJob"
   | "onClose"
   | "onFocusTab"
   | "onOpenDiagnostics"

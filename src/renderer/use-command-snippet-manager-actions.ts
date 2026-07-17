@@ -10,9 +10,10 @@ interface UseCommandSnippetManagerActionsArgs {
   copyTextToClipboard: (text: string) => Promise<boolean>;
   finishOperationCenterAppJob: (
     jobId: string,
-    status: "succeeded" | "failed",
+    status: "succeeded" | "failed" | "canceled",
     options?: { detail?: string; outputPath?: string }
   ) => void;
+  isOperationCenterAppJobCanceled: (jobId: string) => boolean;
   isCommandSnippetManagerOpen: boolean;
   normalizeCommandSnippetGroups: (payload: unknown) => CommandSnippetGroup[];
   removeOperationCenterAppJob: (jobId: string) => void;
@@ -44,6 +45,7 @@ export function useCommandSnippetManagerActions({
   copyTextToClipboard,
   finishOperationCenterAppJob,
   isCommandSnippetManagerOpen,
+  isOperationCenterAppJobCanceled,
   normalizeCommandSnippetGroups,
   removeOperationCenterAppJob,
   setCommandSnippetGroups,
@@ -111,9 +113,21 @@ export function useCommandSnippetManagerActions({
         title: "Snippet Groups Import",
         description: `Importing ${imported.length} snippet group${imported.length === 1 ? "" : "s"}.`
       });
+      if (operationJobId && isOperationCenterAppJobCanceled(operationJobId)) {
+        finishOperationCenterAppJob(operationJobId, "canceled", {
+          detail: "Canceled before applying imported snippet groups."
+        });
+        return;
+      }
       setCommandSnippetGroups(imported);
       const importedSnippetCount = imported.reduce((total, group) => total + group.snippets.length, 0);
       if (operationJobId) {
+        if (isOperationCenterAppJobCanceled(operationJobId)) {
+          finishOperationCenterAppJob(operationJobId, "canceled", {
+            detail: "Cancellation requested. Import may still have applied locally."
+          });
+          return;
+        }
         finishOperationCenterAppJob(operationJobId, "succeeded", {
           detail: `Imported ${imported.length} group${imported.length === 1 ? "" : "s"} and ${importedSnippetCount} snippet${importedSnippetCount === 1 ? "" : "s"}.`
         });
@@ -131,10 +145,11 @@ export function useCommandSnippetManagerActions({
           detail: message
         });
       }
-      setError(message);
+      setError(`Failed to import snippet groups. ${message}`);
     }
   }, [
     finishOperationCenterAppJob,
+    isOperationCenterAppJobCanceled,
     normalizeCommandSnippetGroups,
     setCommandSnippetGroups,
     setError,
@@ -211,7 +226,7 @@ export function useCommandSnippetManagerActions({
           detail: message
         });
       }
-      setError(message);
+      setError(`Failed to export snippet groups. ${message}`);
     }
   }, [
     appVersion,
@@ -228,7 +243,7 @@ export function useCommandSnippetManagerActions({
 
   const importCommandSnippetGroupsWithUiError = useCallback(() => {
     void importCommandSnippetGroups().catch((caughtError) => {
-      setError(toLogMessage(caughtError));
+      setError(`Failed to import snippet groups. ${toLogMessage(caughtError)}`);
     });
   }, [importCommandSnippetGroups, setError, toLogMessage]);
 

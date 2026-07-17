@@ -1,11 +1,13 @@
 {
   "name": "termdock",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/rebuild-native-for-electron.mjs",
+    "rebuild:native": "node scripts/rebuild-native-for-electron.mjs",
     "dev": "concurrently -k \"pnpm run dev:renderer\" \"pnpm run dev:main\" \"pnpm run dev:electron\"",
     "dev:renderer": "vite",
     "dev:main": "tsc -p tsconfig.node.json --watch",
@@ -18,7 +20,16 @@
     "release:preflight": "node scripts/release-preflight.mjs",
     "release:set-secrets": "node scripts/set-release-secrets.mjs",
     "release:verify": "node scripts/verify-release-artifacts.mjs",
-    "test:session-migration": "pnpm run build:main && node scripts/test-session-migration.mjs",
+    "test:session-migration": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-migration.mjs",
+    "test:session-sqlite-dual-write": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-dual-write.mjs",
+    "test:session-sqlite-cutover": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-cutover.mjs",
+    "test:session-sqlite-crash-recovery": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-crash-recovery.mjs",
+    "test:session-sqlite-transfer-persistence": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-transfer-persistence.mjs",
+    "test:session-sqlite-disconnect-reports": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-disconnect-reports.mjs",
+    "test:session-sqlite-port-forward-events": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-port-forward-events.mjs",
+    "test:session-sqlite-workbench-data": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-workbench-data.mjs",
+    "test:session-sqlite-app-preferences": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-app-preferences.mjs",
+    "test:session-sqlite-app-backup": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-app-backup.mjs",
     "test:main-auto-update": "node scripts/test-main-auto-update.mjs",
     "test:main-single-instance": "node scripts/test-main-single-instance.mjs",
     "build": "pnpm run build:renderer && pnpm run build:main",
@@ -46,6 +57,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
+    "better-sqlite3": "^12.11.1",
     "electron-updater": "^6.8.3",
     "jszip": "^3.10.1",
     "keytar": "^7.9.0",
@@ -55,6 +67,8 @@
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "4.0.3",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
@@ -83,6 +97,10 @@
       "package.json"
     ],
     "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*",
+      "**/node_modules/keytar/**/*"
+    ],
     "mac": {
       "minimumSystemVersion": "12.0.0",
       "icon": "build/icon.icns",
@@ -111,16 +129,6 @@
         "repo": "TermDock",
         "releaseType": "draft"
       }
-    ]
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "cpu-features",
-      "electron",
-      "electron-winstaller",
-      "esbuild",
-      "ssh2",
-      "keytar"
     ]
   }
 }

@@ -1,8 +1,8 @@
 import type { ComponentProps } from "react";
 
-import { TerminalWorkspace } from "./components/terminal-workspace";
+import type { TerminalWorkspaceHost } from "./components/terminal-workspace-host";
 
-type TerminalWorkspaceProps = ComponentProps<typeof TerminalWorkspace>;
+type TerminalWorkspaceProps = ComponentProps<typeof TerminalWorkspaceHost>;
 
 type TerminalWorkspaceActionArgs = Pick<
   TerminalWorkspaceProps,
@@ -19,25 +19,9 @@ type TerminalWorkspaceActionArgs = Pick<
   | "requestDangerousCommandApproval"
 >;
 
-type TerminalWorkspaceValueArgs = Pick<
-  TerminalWorkspaceProps,
-  | "activeTabId"
-  | "connectionPreferences"
-  | "dangerousCommandGuardPreferences"
-  | "editorFocusCursorId"
-  | "editorFocusFontId"
-  | "editorFocusModeEnabled"
-  | "editorFocusRhythmId"
-  | "editorFocusThemeId"
-  | "editorFocusTypographyId"
-  | "hotkeyPreferences"
-  | "language"
-  | "systemApi"
-  | "tabs"
-  | "terminalApi"
->;
+type TerminalWorkspaceValueArgs = Omit<TerminalWorkspaceProps, keyof TerminalWorkspaceActionArgs>;
 
-interface BuildTerminalWorkspaceCompositeArgsInput {
+export interface BuildTerminalWorkspaceCompositeArgsInput {
   actions: TerminalWorkspaceActionArgs;
   values: TerminalWorkspaceValueArgs;
 }

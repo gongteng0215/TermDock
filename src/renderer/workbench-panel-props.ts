@@ -10,7 +10,7 @@ import type {
 
 import type { SessionRecord } from "../shared/session";
 import type { SftpDirectoryListResult, SftpEntry } from "../shared/sftp";
-import type { TerminalTab } from "./components/terminal-workspace";
+import type { TerminalTab } from "./terminal-workspace-types";
 import {
   SessionsInspectorSection,
   SftpExplorerSection

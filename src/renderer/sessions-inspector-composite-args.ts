@@ -1,5 +1,5 @@
 import type { SessionRecord } from "../shared/session";
-import type { TerminalTab } from "./components/terminal-workspace";
+import type { TerminalTab } from "./terminal-workspace-types";
 import type { BuildSessionsInspectorSectionPropsArgs } from "./workbench-panel-props";
 
 type SessionsInspectorActionArgs = Pick<

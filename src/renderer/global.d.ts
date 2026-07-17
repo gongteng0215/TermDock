@@ -11,6 +11,29 @@ import type {
   SessionMigrationImportResult
 } from "../shared/session-migration";
 import type {
+  AppBackupExportInput,
+  AppBackupExportResult,
+  AppBackupImportInput,
+  AppBackupImportResult,
+  AppBackupPreviewInput,
+  AppBackupPreviewResult
+} from "../shared/app-backup";
+import type { PersistedAppPreferences } from "../shared/app-preference-persistence";
+import type { PersistedDisconnectReportItem } from "../shared/disconnect-report-persistence";
+import type {
+  PersistedCommandSnippetGroup,
+  PersistedCommandSnippetScopedValueRecord
+} from "../shared/command-snippet-persistence";
+import type { PersistedPortForwardEventHistoryItem } from "../shared/port-forward-event-persistence";
+import type {
+  PersistedSessionQuickProfile,
+  PersistedSessionTemplateRecord
+} from "../shared/session-workbench-persistence";
+import type {
+  PersistedTransferHistoryItem,
+  PersistedTransferPendingRestoreItem
+} from "../shared/transfer-persistence";
+import type {
   PrivilegedUploadSaveResult,
   RemotePathWriteAccess,
   SftpDirectoryListResult,
@@ -175,6 +198,7 @@ interface TermDockApi {
     createDirectory: (tabId: string, parentPath: string, name: string) => Promise<void>;
     renamePath: (tabId: string, sourcePath: string, nextName: string) => Promise<void>;
     deletePath: (tabId: string, targetPath: string, kind: SftpEntryKind) => Promise<void>;
+    cancelDeletePath: (tabId: string, targetPath: string) => Promise<boolean>;
     getRemotePathWriteAccess: (tabId: string, remotePath: string) => Promise<RemotePathWriteAccess>;
     resolveRemoteStagingRoot: (tabId: string) => Promise<string>;
     stagePrivilegedUpload: (
@@ -214,6 +238,34 @@ interface TermDockApi {
       options?: SftpTransferRunOptions
     ) => Promise<void>;
     onTransferEvent: (listener: (event: SftpTransferEvent) => void) => () => void;
+  };
+  storage: {
+    getTransferHistory: () => Promise<PersistedTransferHistoryItem[]>;
+    replaceTransferHistory: (items: PersistedTransferHistoryItem[]) => Promise<void>;
+    getPendingTransferRestore: () => Promise<PersistedTransferPendingRestoreItem[]>;
+    replacePendingTransferRestore: (items: PersistedTransferPendingRestoreItem[]) => Promise<void>;
+    getDisconnectReports: () => Promise<PersistedDisconnectReportItem[]>;
+    replaceDisconnectReports: (items: PersistedDisconnectReportItem[]) => Promise<void>;
+    getPortForwardEventHistory: () => Promise<PersistedPortForwardEventHistoryItem[]>;
+    replacePortForwardEventHistory: (items: PersistedPortForwardEventHistoryItem[]) => Promise<void>;
+    getSessionQuickProfiles: () => Promise<PersistedSessionQuickProfile[]>;
+    replaceSessionQuickProfiles: (items: PersistedSessionQuickProfile[]) => Promise<void>;
+    getSessionTemplates: () => Promise<PersistedSessionTemplateRecord[]>;
+    replaceSessionTemplates: (items: PersistedSessionTemplateRecord[]) => Promise<void>;
+    getCommandSnippetGroups: () => Promise<PersistedCommandSnippetGroup[]>;
+    replaceCommandSnippetGroups: (items: PersistedCommandSnippetGroup[]) => Promise<void>;
+    getCommandSnippetScopedValues: () => Promise<
+      Record<string, PersistedCommandSnippetScopedValueRecord>
+    >;
+    replaceCommandSnippetScopedValues: (
+      values: Record<string, PersistedCommandSnippetScopedValueRecord>
+    ) => Promise<void>;
+    getAppPreferences: () => Promise<PersistedAppPreferences>;
+    setAppPreference: (key: string, value: unknown) => Promise<void>;
+    replaceAppPreferences: (entries: PersistedAppPreferences) => Promise<void>;
+    exportAppBackup: (input: AppBackupExportInput) => Promise<AppBackupExportResult>;
+    previewAppBackup: (input: AppBackupPreviewInput) => Promise<AppBackupPreviewResult>;
+    importAppBackup: (input: AppBackupImportInput) => Promise<AppBackupImportResult>;
   };
 }
 

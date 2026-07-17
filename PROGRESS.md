@@ -2,19 +2,21 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.40`
+- Stable release shipped: `v0.1.41`
 - Active branch: `master`
-- Active focus: post-`v0.1.40` Operation Center abort IPC, SQLite plan Phase 1-2 execution, and benchmark-driven optimization, plus optional UI polish follow-up
+- Active focus: `v0.1.41` release prep complete (self-use Windows ready); next is optional shared-buffer E2 or real-usage polish
 - Public docs now align with the shipped auto-update baseline, local-first trust model, and recommended download assets
-- Latest validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed
+- Latest validation on 2026-07-16: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup` (scripts ~0.76 MiB), `pnpm run bench:transfer:memory`, `pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`
+- `v0.1.41` ships SQLite-authoritative sessions, durable preference ports, credential-safe `.tdbackup`, lazy TerminalWorkspace startup (~0.76 MiB scripts), download SFTP channel reuse, and backup wizard/Settings entry
 - `v0.1.40` expands recoverable global error routing for session-create, snippets, templates, command history, groups, and import/export failures
 - `v0.1.40` expands Operation Center with active-tab port-forward teardown, per-tab/cross-tab failed-transfer retry, and a Retry Center shortcut
+- Post-`v0.1.40` hardening: remaining global error matchers, deferred `renderer-settings` + lazy WebGL (~1.22 MiB startup assets), transfer concurrency/channel caps, Operation Center delete/app-job cancel, sessions dual-write, and Phase 3 SQLite-authoritative cutover with JSON backup/rollback
 - Formal startup and transfer-memory benchmark scripts landed (`bench:startup`, `bench:transfer:memory`) with evidence under `artifacts/benchmark/`
-- SQLite migration planning doc landed (`docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`); JSON remains the live store
+- SQLite migration Phase 1–5 landed for sessions, durable preference ports, and credential-safe `.tdbackup`; P0-E4 WAL + crash-recovery tests landed; `.tdbackup` wizard Escape/i18n/danger polish landed
 - Packaged smoke automation/report baseline with embedded SSH/SFTP fixture landed on `master`
 - Master branch includes post-`v0.1.9` hardening plus transfer safety, diagnostics, and port forwarding baseline updates
 - Master branch now also includes dangerous-command guardrails baseline with `Settings > Safety` and a fixed bottom approval bar
@@ -51,7 +53,8 @@ Last updated: 2026-07-15
 - Smoke automation now force-closes its spawned Electron process if graceful shutdown does not finish in time
 - Editor workbench shell is now the master baseline: left Explorer rail, right Inspector rail, terminal-dominant center stage, bottom transfer panel, aligned modal chrome, SFTP `Compact` / `Details` persistence, collapsible command history, and narrow-width inspector tabs
 - Renderer maintainability split is now on master: focused modules for workbench modals, settings modal shell/sections, command snippet manager, persisted workbench UI preferences, and separate workbench/terminal CSS files
-- Latest master validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed with the `v0.1.40` release prep
+- Latest master validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, `pnpm run bench:transfer:memory`, and `pnpm run test:session-sqlite-dual-write` passed for the post-`v0.1.40` hardening batch
+- Prior master validation on 2026-07-15: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup`, and `pnpm run bench:transfer:memory` passed with the `v0.1.40` release prep
 - Prior master validation on 2026-07-14: `pnpm run typecheck` and `pnpm run build` passed with the `v0.1.39` release prep
 - Prior master validation on 2026-06-02: `pnpm run test:main-auto-update`, `pnpm run test:main-single-instance`, `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed. Latest workspace smoke artifact is `artifacts/smoke/2026-06-02T08-48-20-888Z/summary.json` (`PASS 50 / FAIL 0 / SKIP 0`).
 - Milestone status:
@@ -72,6 +75,107 @@ Last updated: 2026-07-15
   - `P0-E3`: recoverable global error UX follow-up
 - Those broad-rollout gates are not the active priority for the current self-use track
 
+## Completed in v0.1.41
+
+- SQLite Phase 1–5: sessions cutover, durable preference ports (schema v6), credential-safe `.tdbackup`, WAL crash-recovery tests
+- App backup wizard Escape/i18n/danger polish + Settings > Diagnostics entry + smoke preview hook
+- P0-E1: lazy `TerminalWorkspace` host; `bench:startup` scripts ~0.76 MiB (was ~1.22 MiB)
+- P0-E2: download SFTP channel reuse pool mirrors upload reuse/slot capping
+- Selection-prune infinite re-render fix
+- Validation: typecheck/build/benches + `smoke:ui` / `smoke:ui:packaged` `PASS 51`
+- Self-use Windows installer signed and install/uninstall smoke verified: `release/TermDock.Setup.0.1.41.exe`
+
+## Completed post-v0.1.40 P0-E2 download SFTP reuse (2026-07-16)
+
+- `reusableDownloadSftpByTab` + in-flight slot cap mirrors upload reuse; tab teardown clears idle download channels
+- `pnpm run bench:transfer:memory` passed; live SFTP download covered by `smoke:ui`
+
+## Completed post-v0.1.40 P0-E1 lazy terminal host (2026-07-16)
+
+- Extracted leaf modules: `terminal-workspace-types`, `terminal-editor-focus-options`, `terminal-command-history-storage` (into `renderer-shared`)
+- `TerminalWorkspaceHost` React.lazy loads `TerminalWorkspace`; Vite `modulePreload.resolveDependencies` excludes `vendor-xterm` / `renderer-terminal`
+- `bench:startup` scripts ~0.76 MiB / ~0.22 MiB gzip (was ~1.22 MiB); xterm CSS (~5 KiB) still linked from the async graph
+
+## Completed post-v0.1.40 app backup Settings + smoke hook (2026-07-16)
+
+- Settings > Diagnostics exposes Import/Export App Backup actions with zh-CN coverage
+- Smoke monkeypatch covers `storage.preview/import/exportAppBackup`; renderer sentinel `__TERMDOCK_SMOKE_APP_BACKUP__` + hook `__termdockSmokeImportAppBackup` drive preview + duplicate-strategy flow
+- `pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`
+
+## Completed post-v0.1.40 app backup UX polish (2026-07-16)
+
+- Export/import credential and key steps use explicit 3-way choices so Escape cancels instead of silently continuing
+- zh-CN coverage for backup wizard copy + localized preview via `formatAppBackupPreview(language)`
+- Import final confirm marked danger; success alerts use detail panels; global error recovery matches `app backup`
+- `pnpm run typecheck` and `pnpm run test:session-sqlite-app-backup` passed
+
+## Completed post-v0.1.40 SQLite Phase 5 (2026-07-15)
+
+- `.tdbackup` non-secret SQLite dump covering sessions + Phase 4 durable tables
+- Optional passphrase-protected credential attachment via existing `.tdmigration` crypto / keytar path
+- Preview + session duplicate strategies; renderer import syncs localStorage/UI after restore
+- `pnpm run test:session-sqlite-app-backup` passed
+
+## Completed post-v0.1.40 SQLite Phase 4 slice 5 (2026-07-15)
+
+- Schema v6 + `SqlitePreferenceStore` for allowlisted durable app preference blobs
+- Renderer hydrate-then-dual-write for 18 preference keys; UI chrome stays in localStorage
+- `pnpm run test:session-sqlite-app-preferences` passed
+
+## Completed post-v0.1.40 SQLite Phase 4 slice 4 (2026-07-15)
+
+- Schema v5 + `SqliteWorkbenchStore` for session quick profiles, templates (`hasSecret`, no plaintext secrets), command snippet groups, and scoped values
+- Renderer hydrate-then-dual-write; template passwords merge from localStorage during soak
+- `pnpm run test:session-sqlite-workbench-data` passed
+
+## Completed post-v0.1.40 SQLite Phase 4 slice 3 (2026-07-15)
+
+- Schema v4: `port_forward_events` with JSON payload rows
+- Renderer dual-write soak via `storage:get/replacePortForwardEventHistory`
+- `pnpm run test:session-sqlite-port-forward-events` passed
+
+## Completed post-v0.1.40 SQLite Phase 4 slice 2 (2026-07-15)
+
+- Schema v3: `disconnect_reports` with JSON payload rows
+- Renderer dual-write soak via `storage:get/replaceDisconnectReports`
+- `pnpm run test:session-sqlite-disconnect-reports` passed
+
+## Completed post-v0.1.40 SQLite Phase 4 slice 1 (2026-07-15)
+
+- Schema v2: `transfer_history` + `transfer_pending_restore` with forward migrations
+- Renderer dual-write soak via `storage:*` IPC (localStorage remains fallback during soak)
+- `pnpm run test:session-sqlite-transfer-persistence` passed
+
+## Completed post-v0.1.40 SQLite Phase 3 cutover (2026-07-15)
+
+- Sessions store is SQLite-authoritative via `DualWriteSessionStore`
+- One-shot `sessions.json.pre-sqlite-cutover` backup + live JSON mirror for rollback
+- `TERMDOCK_SESSION_STORE=json` forces JSON-only; native load failure still falls back
+- `asarUnpack` covers `better-sqlite3` / `keytar`
+- `pnpm run test:session-sqlite-cutover` parity + rollback-restore check
+- Packaged verification: `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0 / SKIP 0` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json` (lazy terminal + download SFTP reuse + backup smoke)
+
+## Completed post-v0.1.40 hardening (2026-07-15)
+
+- Recoverable global error guidance polish (`P0-E3`):
+  - broadened matchers for remaining session-create, migration file, port-forward, snippet-limit, command-history, template-port, and shared bridge-unavailable phrases
+  - prefixed raw import/export catch sites so recovery routing can hit
+- Startup payload quick wins (`P0-E1`):
+  - `settings-section-props` is type-only so `renderer-settings` is no longer eagerly preloaded
+  - `@xterm/addon-webgl` lazy-loads into `vendor-xterm-webgl`; post-hardening `bench:startup` ~1.22 MiB (was ~1.38 MiB)
+- Transfer memory quick wins (`P0-E2`):
+  - default `uploadConcurrency` 4→2
+  - hard cap on per-tab in-flight upload SFTP channels
+  - download stream `highWaterMark` aligned to 64 KiB
+  - download SFTP channel reuse pool now mirrors upload reuse/slot capping per tab
+- Operation Center abort IPC (`F8`):
+  - remote delete cancel via `activeDeletes` + `sftp:cancelDeletePath` + OC cancel button
+  - tracked app-job `"canceled"` status with cooperative import-loop abort; single-shot main jobs are best-effort UI cancel
+- SQLite Phase 1-2 (`P0-A3` / `F9`):
+  - schema module for `sessions` / `session_groups` / `app_meta`
+  - `better-sqlite3` + `SqliteSessionStore` + `DualWriteSessionStore` (JSON authoritative reads, import-on-empty SQLite)
+  - `pnpm run test:session-sqlite-dual-write` parity script; native build allowlist moved to `pnpm-workspace.yaml` `allowBuilds`
+
 ## Completed in v0.1.40
 
 - Recoverable global error routing follow-up (`P0-E3`):
@@ -80,14 +184,13 @@ Last updated: 2026-07-15
   - active-tab port-forward teardown
   - per-tab and cross-tab failed-transfer retry
   - Retry Center open shortcut
-  - remote delete cancel and tracked app-job cancel remain deferred pending abort IPC
 - Formal performance baselines (`P0-E1` / `P0-E2`):
   - `pnpm run bench:startup` measures renderer startup vs deferred assets
   - `pnpm run bench:transfer:memory` samples RSS/heap for 64 MiB stream/`fastPut`/`fastGet` transfers
   - evidence captured under `artifacts/benchmark/`
 - SQLite migration planning (`P0-A3` / `F9`):
   - English + Chinese plan docs under `docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`
-  - no dependency or cutover code yet
+  - Phase 1-2 implementation landed in the post-release hardening batch
 
 ## Completed in v0.1.39
 
@@ -608,30 +711,26 @@ Last updated: 2026-07-15
 - Some SFTP recursive/safety operations still need hardening
 - Port-forward diagnostics are now richer, but there is still no cross-device/shared diagnostics sync workflow
 - Server health currently relies on Linux `/proc` and single-root disk sampling
-- Startup payload and transfer jank improved in `v0.1.34`; formal `bench:startup` / `bench:transfer:memory` baselines now exist, so remaining work is residual optimization against those numbers
-- SQLite cutover is still open, but the 2026-07-15 migration plan freezes inventory, phases, and credential boundaries
+- Startup payload and transfer jank improved again post-`v0.1.40` (`renderer-settings` / WebGL deferral, concurrency/channel caps); formal baselines remain the driver for any deeper architecture work
+- SQLite sessions cutover is live with JSON mirror/backup rollback; Phase 4 preference ports and Phase 5 credential-safe backup/restore landed; packaged `better-sqlite3` ABI + UI smoke confirmed (`PASS 50`)
 
 ## Next Focus
 
 1. Review real-usage feedback on density, accent themes, and workbench clarity after `v0.1.38`/`v0.1.39`
-2. Polish remaining global error guidance copy (`P0-E3`)
-3. Add abort IPC so Operation Center can cancel remote deletes and tracked app jobs (`F8`)
-4. Execute SQLite sessions dual-write/cutover from the 2026-07-15 plan (`P0-A3`/`F9`) and credential-safe backup/restore
-5. Drive residual startup/large-transfer optimization from the new formal benchmarks (`P0-E1`/`P0-E2`)
+2. Optional deeper transfer shared-buffer / multiplexed-channel work (`P0-E2`)
+3. Optional mid-flight main-process abort for single-shot migration/bug-report jobs
 
 ## Remaining Work Snapshot
 
 1. Optional workbench polish after live usage of density/themes/clarity changes
 2. Remaining macOS/external-host packaged evidence for broader release confidence
-3. Remaining global error guidance polish (`P0-E3`)
-4. Operation Center remote delete cancel + tracked app-job cancel (`F8`)
-5. Complete persistence hardening (SQLite sessions dual-write/cutover + credential-safe backup/restore, `P0-A3`/`F9`)
-6. Residual startup/large-transfer optimization against formal baselines (`P0-E1`/`P0-E2`)
-7. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
-8. Session templates v2 (import/export, runtime prompt overrides, layered presets)
-9. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`), low priority for self-use
-10. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`), low priority for self-use
-11. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`), low priority for self-use
+3. Optional deeper startup / transfer architecture work (`P0-E1`/`P0-E2`)
+4. Optional deeper residual startup/large-transfer architecture work (`P0-E1`/`P0-E2`)
+5. Dangerous-command/workspace follow-up with richer workspace-scoped defaults (`F17`/`F20`)
+6. Session templates v2 (import/export, runtime prompt overrides, layered presets)
+7. Finish the remaining macOS/external-host packaged smoke evidence and reproducible issue report template (`P0-F3`), low priority for self-use
+8. Complete secret provisioning and first public-trust signed/notarized installer evidence capture (`P0-F4`), low priority for self-use
+9. Build regression safety net (unit + integration tests, `P0-F1`/`P0-F2`), low priority for self-use
 
 ## Feature Candidates After Hardening
 

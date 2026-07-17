@@ -12,7 +12,7 @@ import type { SftpDirectoryListResult, SftpEntry } from "../shared/sftp";
 import type {
   TerminalCommandHistoryEntry,
   TerminalTab
-} from "./components/terminal-workspace";
+} from "./terminal-workspace-types";
 import { buildCommandHistoryInspectorCompositeArgs } from "./command-history-inspector-composite-args";
 import { buildSessionsInspectorCompositeArgs } from "./sessions-inspector-composite-args";
 import { buildSftpExplorerCompositeArgs } from "./sftp-explorer-composite-args";

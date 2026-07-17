@@ -19,10 +19,11 @@ import {
 } from "../session/session-migration.js";
 import { parseSshConfigFile } from "../ssh/parse-ssh-config.js";
 import { testSshConnection } from "../ssh/test-connection.js";
-import { SessionStore } from "../storage/session-store.js";
+import type { DualWriteSessionStore } from "../storage/dual-write-session-store.js";
+import type { SessionStore } from "../storage/session-store.js";
 
 export function registerSessionHandlers(
-  store: SessionStore,
+  store: SessionStore | DualWriteSessionStore,
   credentialStore: CredentialStore
 ): void {
   ipcMain.handle("sessions:list", async () => store.list());

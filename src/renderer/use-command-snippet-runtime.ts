@@ -8,7 +8,7 @@ import type {
   CommandSnippetScopedValueRecord,
   CommandSnippetVariableScopeId
 } from "./command-snippets";
-import type { TerminalCommandHistorySource } from "./components/terminal-workspace";
+import type { TerminalCommandHistorySource } from "./terminal-workspace-types";
 
 interface TerminalTabLike {
   id: string;

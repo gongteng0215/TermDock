@@ -154,7 +154,7 @@ export interface OperationCenterLabels {
   retryActiveTab: string;
   remoteDelete: string;
   noActiveDelete: string;
-  deleteCancellationUnavailable: string;
+  cancelActiveDelete: string;
   portForwardingOps: string;
   portForwardMeta: (activeTabCount: number, total: number, degraded: number) => string;
   activeTabStatus: (status: string) => string;
@@ -171,6 +171,7 @@ export interface OperationCenterLabels {
   appJobMeta: (categoryLabel: string, startedAtLabel: string, durationLabel: string) => string;
   outputPath: (path: string) => string;
   copyPath: string;
+  cancelAppJob: string;
   clearFinished: string;
   openSnippets: string;
   allTabsTransferActivity: string;
@@ -633,13 +634,57 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Sessions JSON Preview": "会话 JSON 预览",
   "Sessions JSON Import": "会话 JSON 导入",
   "Import Encrypted Migration...": "导入加密迁移包...",
+  "Import App Backup...": "导入应用备份...",
   "Export All Sessions...": "导出所有会话...",
   "Export Encrypted Migration...": "导出加密迁移包...",
+  "Export App Backup...": "导出应用备份...",
   "SSH Config Import": "SSH 配置导入",
   "SSH Config Preview": "SSH 配置预览",
   "Encrypted Migration Export": "加密迁移导出",
   "Encrypted Migration Import": "加密迁移导入",
   "Encrypted Migration Preview": "加密迁移预览",
+  "Export App Backup": "导出应用备份",
+  "Import App Backup": "导入应用备份",
+  "App Backup Export": "应用备份导出",
+  "App Backup Import": "应用备份导入",
+  "App Backup": "应用备份",
+  "Loading terminal...": "正在加载终端...",
+  "Export or restore a `.tdbackup` bundle with sessions and durable SQLite state. Credentials stay in an optional encrypted attachment.":
+    "导出或恢复包含会话与耐久 SQLite 状态的 `.tdbackup` 包。凭据可选放在加密附件中。",
+  "Include Credentials": "包含凭据",
+  "Non-secret Only": "仅非机密",
+  "Restore Credentials": "恢复凭据",
+  "Skip Credentials": "跳过凭据",
+  "Restore Keys": "恢复私钥",
+  "Include passphrase-protected session credentials in this app backup?":
+    "要把口令保护的会话凭据一起放进这个应用备份吗？",
+  "Non-secret backup covers sessions metadata and durable SQLite state. Credentials use the same encrypted attachment format as session migration.":
+    "非机密备份包含会话元数据和耐久 SQLite 状态。凭据使用与会话迁移相同的加密附件格式。",
+  "Enter a backup passphrase. You will need it to restore credentials.":
+    "输入备份口令。恢复凭据时还需要再次输入。",
+  "Backup passphrase must be at least 8 characters.": "备份口令至少需要 8 个字符。",
+  "Confirm backup passphrase.": "确认备份口令。",
+  "Include private key file contents in the credential attachment?":
+    "要把私钥文件内容一起放进凭据附件吗？",
+  "Exporting durable SQLite state with encrypted credentials.": "正在导出带加密凭据的耐久 SQLite 状态。",
+  "Exporting durable SQLite state (non-secret).": "正在导出耐久 SQLite 状态（非机密）。",
+  "TermDock App Backup": "TermDock 应用备份",
+  "Restore this app backup?": "要恢复这个应用备份吗？",
+  "Choose session duplicate strategy (matched by host:port:username).":
+    "选择会话重复项策略（按 host:port:username 匹配）。",
+  "Restore passphrase-protected credentials from this backup?":
+    "要从这个备份恢复口令保护的凭据吗？",
+  "Enter the backup passphrase.": "输入备份口令。",
+  "Restore embedded private key files from the credential attachment?":
+    "要从凭据附件恢复嵌入的私钥文件吗？",
+  "Apply backup?": "应用备份？",
+  "Durable SQLite tables will be replaced.": "耐久 SQLite 表将被替换。",
+  "Restoring durable SQLite state and sessions.": "正在恢复耐久 SQLite 状态与会话。",
+  "App backup exported.": "应用备份已导出。",
+  "App backup restored.": "应用备份已恢复。",
+  "with credentials attachment": "含凭据附件",
+  "Credentials: restore": "凭据：恢复",
+  "Credentials: skip": "凭据：跳过",
   "Enter the migration passphrase.": "输入迁移口令。",
   "Enter a migration passphrase. You will need it to import this file.": "输入迁移口令。导入这个文件时还需要再次输入。",
   "Migration passphrase must be at least 8 characters.": "迁移口令至少需要 8 个字符。",
@@ -1856,6 +1901,25 @@ const SIMPLIFIED_CHINESE_REPLACEMENTS: TextReplacement[] = [
       `加密迁移包已导出。\n路径已复制到剪贴板：\n${path}${warnings ? `\n\n警告：\n${warnings}` : ""}`
   },
   {
+    pattern: /^App backup exported\.\nPath:\n(.+?)(?:\n\nWarnings:\n([\s\S]+))?$/u,
+    replace: (_match, path, warnings = "") =>
+      `应用备份已导出。\n路径：\n${path}${warnings ? `\n\n警告：\n${warnings}` : ""}`
+  },
+  {
+    pattern: /^App backup restored\.\nCreated (\d+), updated (\d+), skipped (\d+), secrets (\d+)\.(?:\n\nWarnings:\n([\s\S]+))?$/u,
+    replace: (_match, created, updated, skipped, secrets, warnings = "") =>
+      `应用备份已恢复。\n已创建 ${created}，已更新 ${updated}，已跳过 ${skipped}，凭据 ${secrets}。${
+        warnings ? `\n\n警告：\n${warnings}` : ""
+      }`
+  },
+  {
+    pattern: /^Apply backup\?\nSessions: (.+)\nCredentials: (restore|skip)\nDurable SQLite tables will be replaced\.$/u,
+    replace: (_match, sessions, credentials) =>
+      `应用备份？\n会话：${translateAppText("zh-CN", sessions)}\n凭据：${
+        credentials === "restore" ? "恢复" : "跳过"
+      }\n耐久 SQLite 表将被替换。`
+  },
+  {
     pattern: /^Decrypting (.+)\.$/u,
     replace: (_match, fileName) => `正在解密 ${fileName}。`
   },
@@ -2252,8 +2316,7 @@ const ENGLISH_I18N: AppI18n = {
     retryActiveTab: "Retry Active Tab",
     remoteDelete: "Remote Delete",
     noActiveDelete: "No active delete operation.",
-    deleteCancellationUnavailable:
-      "Delete cancellation is not available yet in current backend flow.",
+    cancelActiveDelete: "Cancel Delete",
     portForwardingOps: "Port Forwarding Ops",
     portForwardMeta: (activeTabCount, total, degraded) =>
       `tabs ${activeTabCount} | active forwards ${total} | degraded ${degraded}`,
@@ -2274,6 +2337,7 @@ const ENGLISH_I18N: AppI18n = {
       `${categoryLabel} | started ${startedAtLabel} | duration ${durationLabel}`,
     outputPath: (path) => `output: ${path}`,
     copyPath: "Copy Path",
+    cancelAppJob: "Cancel",
     clearFinished: "Clear Finished",
     openSnippets: "Open Snippets",
     allTabsTransferActivity: "All Tabs Transfer Activity",
@@ -2607,7 +2671,7 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
     retryActiveTab: "重试当前标签页",
     remoteDelete: "远程删除",
     noActiveDelete: "没有正在进行的删除操作。",
-    deleteCancellationUnavailable: "当前后端流程暂不支持取消删除。",
+    cancelActiveDelete: "取消删除",
     portForwardingOps: "端口转发操作",
     portForwardMeta: (activeTabCount, total, degraded) =>
       `标签页 ${activeTabCount} | 活动转发 ${total} | 异常 ${degraded}`,
@@ -2627,6 +2691,7 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
       `${categoryLabel} | 开始 ${startedAtLabel} | 耗时 ${durationLabel}`,
     outputPath: (path) => `输出：${path}`,
     copyPath: "复制路径",
+    cancelAppJob: "取消",
     clearFinished: "清除已完成",
     openSnippets: "打开片段",
     allTabsTransferActivity: "全部标签页传输活动",

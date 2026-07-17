@@ -267,6 +267,8 @@ const api = {
       ipcRenderer.invoke("sftp:renamePath", tabId, sourcePath, nextName) as Promise<void>,
     deletePath: (tabId: string, targetPath: string, kind: SftpEntryKind) =>
       ipcRenderer.invoke("sftp:deletePath", tabId, targetPath, kind) as Promise<void>,
+    cancelDeletePath: (tabId: string, targetPath: string) =>
+      ipcRenderer.invoke("sftp:cancelDeletePath", tabId, targetPath) as Promise<boolean>,
     getRemotePathWriteAccess: (tabId: string, remotePath: string) =>
       ipcRenderer.invoke("sftp:getRemotePathWriteAccess", tabId, remotePath) as Promise<RemotePathWriteAccess>,
     resolveRemoteStagingRoot: (tabId: string) =>
@@ -364,6 +366,99 @@ const api = {
         ipcRenderer.removeListener("sftp:transfer:event", wrapped);
       };
     }
+  },
+  storage: {
+    getTransferHistory: () =>
+      ipcRenderer.invoke("storage:getTransferHistory") as Promise<
+        import("../shared/transfer-persistence.js").PersistedTransferHistoryItem[]
+      >,
+    replaceTransferHistory: (
+      items: import("../shared/transfer-persistence.js").PersistedTransferHistoryItem[]
+    ) => ipcRenderer.invoke("storage:replaceTransferHistory", items) as Promise<void>,
+    getPendingTransferRestore: () =>
+      ipcRenderer.invoke("storage:getPendingTransferRestore") as Promise<
+        import("../shared/transfer-persistence.js").PersistedTransferPendingRestoreItem[]
+      >,
+    replacePendingTransferRestore: (
+      items: import("../shared/transfer-persistence.js").PersistedTransferPendingRestoreItem[]
+    ) =>
+      ipcRenderer.invoke("storage:replacePendingTransferRestore", items) as Promise<void>,
+    getDisconnectReports: () =>
+      ipcRenderer.invoke("storage:getDisconnectReports") as Promise<
+        import("../shared/disconnect-report-persistence.js").PersistedDisconnectReportItem[]
+      >,
+    replaceDisconnectReports: (
+      items: import("../shared/disconnect-report-persistence.js").PersistedDisconnectReportItem[]
+    ) => ipcRenderer.invoke("storage:replaceDisconnectReports", items) as Promise<void>,
+    getPortForwardEventHistory: () =>
+      ipcRenderer.invoke("storage:getPortForwardEventHistory") as Promise<
+        import("../shared/port-forward-event-persistence.js").PersistedPortForwardEventHistoryItem[]
+      >,
+    replacePortForwardEventHistory: (
+      items: import("../shared/port-forward-event-persistence.js").PersistedPortForwardEventHistoryItem[]
+    ) => ipcRenderer.invoke("storage:replacePortForwardEventHistory", items) as Promise<void>,
+    getSessionQuickProfiles: () =>
+      ipcRenderer.invoke("storage:getSessionQuickProfiles") as Promise<
+        import("../shared/session-workbench-persistence.js").PersistedSessionQuickProfile[]
+      >,
+    replaceSessionQuickProfiles: (
+      items: import("../shared/session-workbench-persistence.js").PersistedSessionQuickProfile[]
+    ) => ipcRenderer.invoke("storage:replaceSessionQuickProfiles", items) as Promise<void>,
+    getSessionTemplates: () =>
+      ipcRenderer.invoke("storage:getSessionTemplates") as Promise<
+        import("../shared/session-workbench-persistence.js").PersistedSessionTemplateRecord[]
+      >,
+    replaceSessionTemplates: (
+      items: import("../shared/session-workbench-persistence.js").PersistedSessionTemplateRecord[]
+    ) => ipcRenderer.invoke("storage:replaceSessionTemplates", items) as Promise<void>,
+    getCommandSnippetGroups: () =>
+      ipcRenderer.invoke("storage:getCommandSnippetGroups") as Promise<
+        import("../shared/command-snippet-persistence.js").PersistedCommandSnippetGroup[]
+      >,
+    replaceCommandSnippetGroups: (
+      items: import("../shared/command-snippet-persistence.js").PersistedCommandSnippetGroup[]
+    ) => ipcRenderer.invoke("storage:replaceCommandSnippetGroups", items) as Promise<void>,
+    getCommandSnippetScopedValues: () =>
+      ipcRenderer.invoke("storage:getCommandSnippetScopedValues") as Promise<
+        Record<
+          string,
+          import("../shared/command-snippet-persistence.js").PersistedCommandSnippetScopedValueRecord
+        >
+      >,
+    replaceCommandSnippetScopedValues: (
+      values: Record<
+        string,
+        import("../shared/command-snippet-persistence.js").PersistedCommandSnippetScopedValueRecord
+      >
+    ) =>
+      ipcRenderer.invoke("storage:replaceCommandSnippetScopedValues", values) as Promise<void>,
+    getAppPreferences: () =>
+      ipcRenderer.invoke("storage:getAppPreferences") as Promise<
+        import("../shared/app-preference-persistence.js").PersistedAppPreferences
+      >,
+    setAppPreference: (key: string, value: unknown) =>
+      ipcRenderer.invoke("storage:setAppPreference", key, value) as Promise<void>,
+    replaceAppPreferences: (
+      entries: import("../shared/app-preference-persistence.js").PersistedAppPreferences
+    ) => ipcRenderer.invoke("storage:replaceAppPreferences", entries) as Promise<void>,
+    exportAppBackup: (
+      input: import("../shared/app-backup.js").AppBackupExportInput
+    ) =>
+      ipcRenderer.invoke("storage:exportAppBackup", input) as Promise<
+        import("../shared/app-backup.js").AppBackupExportResult
+      >,
+    previewAppBackup: (
+      input: import("../shared/app-backup.js").AppBackupPreviewInput
+    ) =>
+      ipcRenderer.invoke("storage:previewAppBackup", input) as Promise<
+        import("../shared/app-backup.js").AppBackupPreviewResult
+      >,
+    importAppBackup: (
+      input: import("../shared/app-backup.js").AppBackupImportInput
+    ) =>
+      ipcRenderer.invoke("storage:importAppBackup", input) as Promise<
+        import("../shared/app-backup.js").AppBackupImportResult
+      >
   }
 };
 

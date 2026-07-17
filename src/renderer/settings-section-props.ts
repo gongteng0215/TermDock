@@ -1,5 +1,3 @@
-import type { ComponentProps } from "react";
-
 import type {
   DangerousCommandBuiltinRuleId,
   DangerousCommandEnvironmentTemplateId,
@@ -14,28 +12,28 @@ import type {
   TerminalEditorFocusRhythmId,
   TerminalEditorFocusThemeId,
   TerminalEditorFocusTypographyId
-} from "./components/terminal-workspace";
-import {
-  ConnectionSettingsSection,
-  DiagnosticsSettingsSection,
-  FileOpeningSettingsSection,
-  HotkeySettingsSection,
-  PortForwardingSettingsSection,
-  SafetySettingsSection,
-  ServerHealthSettingsSection,
-  SftpSettingsSection,
-  WorkspaceSettingsSection
+} from "./terminal-workspace-types";
+import type {
+  ConnectionSettingsSectionProps,
+  DiagnosticsSettingsSectionProps,
+  FileOpeningSettingsSectionProps,
+  HotkeySettingsSectionProps,
+  PortForwardingSettingsSectionProps,
+  SafetySettingsSectionProps,
+  ServerHealthSettingsSectionProps,
+  SftpSettingsSectionProps,
+  WorkspaceSettingsSectionProps
 } from "./components/settings-sections";
 
-type ConnectionSectionProps = ComponentProps<typeof ConnectionSettingsSection>;
-type WorkspaceSectionProps = ComponentProps<typeof WorkspaceSettingsSection>;
-type HotkeySectionProps = ComponentProps<typeof HotkeySettingsSection>;
-type ServerHealthSectionProps = ComponentProps<typeof ServerHealthSettingsSection>;
-type FileOpeningSectionProps = ComponentProps<typeof FileOpeningSettingsSection>;
-type SafetySectionProps = ComponentProps<typeof SafetySettingsSection>;
-type SftpSectionProps = ComponentProps<typeof SftpSettingsSection>;
-type PortForwardingSectionProps = ComponentProps<typeof PortForwardingSettingsSection>;
-type DiagnosticsSectionProps = ComponentProps<typeof DiagnosticsSettingsSection>;
+type ConnectionSectionProps = ConnectionSettingsSectionProps;
+type WorkspaceSectionProps = WorkspaceSettingsSectionProps;
+type HotkeySectionProps = HotkeySettingsSectionProps;
+type ServerHealthSectionProps = ServerHealthSettingsSectionProps;
+type FileOpeningSectionProps = FileOpeningSettingsSectionProps;
+type SafetySectionProps = SafetySettingsSectionProps;
+type SftpSectionProps = SftpSettingsSectionProps;
+type PortForwardingSectionProps = PortForwardingSettingsSectionProps;
+type DiagnosticsSectionProps = DiagnosticsSettingsSectionProps;
 type HotkeyActionId = keyof HotkeyPreferences;
 
 export interface BuildConnectionSettingsSectionPropsArgs
@@ -388,7 +386,9 @@ export interface BuildDiagnosticsSettingsSectionPropsArgs
   onDisconnectTriggerChange:
     DiagnosticsSectionProps["onDisconnectTriggerChange"];
   onCheckForUpdatesAction: () => Promise<unknown> | void;
+  onExportAppBackupAction: () => Promise<unknown> | void;
   onExportBugReportAction: () => Promise<unknown> | void;
+  onImportAppBackupAction: () => Promise<unknown> | void;
   onExportDisconnectCsvAction: () => Promise<unknown> | void;
   onExportDisconnectJsonAction: () => Promise<unknown> | void;
   onFocusDisconnectTab: DiagnosticsSectionProps["onFocusDisconnectTab"];
@@ -863,6 +863,12 @@ export function buildDiagnosticsSettingsSectionProps(
     onDisconnectTriggerChange: args.onDisconnectTriggerChange,
     onExportBugReport: () => {
       void args.onExportBugReportAction();
+    },
+    onExportAppBackup: () => {
+      void args.onExportAppBackupAction();
+    },
+    onImportAppBackup: () => {
+      void args.onImportAppBackupAction();
     },
     onCheckForUpdates: () => {
       void args.onCheckForUpdatesAction();

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { X } from "lucide-react";
 
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import type { IDisposable, ITheme } from "@xterm/xterm";
 
@@ -17,191 +16,72 @@ import {
   type DangerousCommandGuardPreferences
 } from "../dangerous-command-guard";
 import { UiIcon } from "./ui-icon";
+import {
+  TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS
+} from "../terminal-editor-focus-options";
+import {
+  LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
+  MAX_TERMINAL_COMMAND_HISTORY,
+  MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH,
+  TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
+  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
+  TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
+  normalizeTerminalCommandHistorySource,
+  readTerminalCommandHistory
+} from "../terminal-command-history-storage";
+import type {
+  ConnectionPreferences,
+  HotkeyBindingPreference,
+  HotkeyPreferences,
+  TerminalCommandHistoryEntry,
+  TerminalCommandHistorySource,
+  TerminalEditorFocusCursorId,
+  TerminalEditorFocusFontId,
+  TerminalEditorFocusRhythmId,
+  TerminalEditorFocusThemeId,
+  TerminalEditorFocusTypographyId,
+  TerminalTab
+} from "../terminal-workspace-types";
 
-export interface TerminalTab {
-  id: string;
-  sessionId: string;
-  title: string;
-  instance: number;
-}
+export type {
+  ConnectionPreferences,
+  HotkeyBindingPreference,
+  HotkeyModifier,
+  HotkeyPreferences,
+  TerminalCommandHistoryEntry,
+  TerminalCommandHistorySource,
+  TerminalEditorFocusCursorId,
+  TerminalEditorFocusCursorOption,
+  TerminalEditorFocusFontId,
+  TerminalEditorFocusFontOption,
+  TerminalEditorFocusRhythmId,
+  TerminalEditorFocusRhythmOption,
+  TerminalEditorFocusThemeId,
+  TerminalEditorFocusThemeOption,
+  TerminalEditorFocusTypographyId,
+  TerminalEditorFocusTypographyOption,
+  TerminalTab
+} from "../terminal-workspace-types";
 
-export interface ConnectionPreferences {
-  autoReconnect: boolean;
-  reconnectDelaySeconds: number;
-}
+export {
+  TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
+  TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS
+} from "../terminal-editor-focus-options";
 
-export type TerminalEditorFocusThemeId = "midnight" | "graphite" | "paper";
-
-export type TerminalEditorFocusTypographyId = "compact" | "balanced" | "reading";
-
-export type TerminalEditorFocusFontId = "system" | "coding" | "drafting";
-
-export type TerminalEditorFocusRhythmId = "crisp" | "steady" | "open";
-
-export type TerminalEditorFocusCursorId = "beam" | "underline" | "block";
-
-export interface TerminalEditorFocusThemeOption {
-  id: TerminalEditorFocusThemeId;
-  label: string;
-  description: string;
-}
-
-export interface TerminalEditorFocusTypographyOption {
-  id: TerminalEditorFocusTypographyId;
-  label: string;
-  description: string;
-}
-
-export interface TerminalEditorFocusFontOption {
-  id: TerminalEditorFocusFontId;
-  label: string;
-  description: string;
-  fontFamily: string;
-}
-
-export interface TerminalEditorFocusRhythmOption {
-  id: TerminalEditorFocusRhythmId;
-  label: string;
-  description: string;
-  letterSpacing: number;
-  fontWeight: number;
-  fontWeightBold: number;
-}
-
-export interface TerminalEditorFocusCursorOption {
-  id: TerminalEditorFocusCursorId;
-  label: string;
-  description: string;
-  cursorStyle: "bar" | "underline" | "block";
-  cursorWidth: number;
-}
-
-export const TERMINAL_EDITOR_FOCUS_THEME_OPTIONS: TerminalEditorFocusThemeOption[] = [
-  {
-    id: "midnight",
-    label: "Midnight",
-    description: "Deep blue canvas with cool contrast for long dark-session editing."
-  },
-  {
-    id: "graphite",
-    label: "Graphite",
-    description: "Neutral slate palette with softer contrast and mint cursor accents."
-  },
-  {
-    id: "paper",
-    label: "Paper",
-    description: "Warm light canvas for terminal editing that feels closer to a text buffer."
-  }
-];
-
-export const TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS: TerminalEditorFocusTypographyOption[] = [
-  {
-    id: "compact",
-    label: "Compact",
-    description: "Tighter rows and smaller type for maximum visible context."
-  },
-  {
-    id: "balanced",
-    label: "Balanced",
-    description: "Default terminal editor density with moderate breathing room."
-  },
-  {
-    id: "reading",
-    label: "Reading",
-    description: "Larger type and taller rows for longer focused editing sessions."
-  }
-];
-
-export const TERMINAL_EDITOR_FOCUS_FONT_OPTIONS: TerminalEditorFocusFontOption[] = [
-  {
-    id: "system",
-    label: "System Mono",
-    description: "Lean on the platform default mono stack for the most native terminal feel.",
-    fontFamily:
-      '"Cascadia Mono", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace'
-  },
-  {
-    id: "coding",
-    label: "Coding Mono",
-    description: "Bias toward developer fonts such as Cascadia Code, JetBrains Mono, and Fira Code.",
-    fontFamily:
-      '"Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", monospace'
-  },
-  {
-    id: "drafting",
-    label: "Drafting Mono",
-    description: "Use calmer editorial mono stacks for long config and prose editing sessions.",
-    fontFamily:
-      '"IBM Plex Mono", "Cascadia Mono", "SF Mono", Menlo, Monaco, Consolas, monospace'
-  }
-];
-
-export const TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS: TerminalEditorFocusRhythmOption[] = [
-  {
-    id: "crisp",
-    label: "Crisp",
-    description: "Tighter tracking with lighter stroke weight for dense config and code edits.",
-    letterSpacing: -0.2,
-    fontWeight: 400,
-    fontWeightBold: 600
-  },
-  {
-    id: "steady",
-    label: "Steady",
-    description: "Balanced text weight and spacing for everyday terminal editing.",
-    letterSpacing: 0,
-    fontWeight: 500,
-    fontWeightBold: 700
-  },
-  {
-    id: "open",
-    label: "Open",
-    description: "Adds more air between glyphs and a heavier stroke for long prose-like edits.",
-    letterSpacing: 0.8,
-    fontWeight: 600,
-    fontWeightBold: 700
-  }
-];
-
-export const TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS: TerminalEditorFocusCursorOption[] = [
-  {
-    id: "beam",
-    label: "Beam",
-    description: "Thin insertion beam for dense line-by-line editing.",
-    cursorStyle: "bar",
-    cursorWidth: 2
-  },
-  {
-    id: "underline",
-    label: "Underline",
-    description: "Underline cursor that stays out of the way in text-heavy buffers.",
-    cursorStyle: "underline",
-    cursorWidth: 1
-  },
-  {
-    id: "block",
-    label: "Block",
-    description: "Full block cursor for strong position tracking in modal editors.",
-    cursorStyle: "block",
-    cursorWidth: 1
-  }
-];
-
-export type HotkeyModifier = "primary" | "primaryShift" | "alt" | "altShift";
-
-export interface HotkeyBindingPreference {
-  enabled: boolean;
-  modifier: HotkeyModifier;
-  key: string;
-}
-
-export interface HotkeyPreferences {
-  openSessionTab: HotkeyBindingPreference;
-  closeActiveTab: HotkeyBindingPreference;
-  terminalCopy: HotkeyBindingPreference;
-  terminalPaste: HotkeyBindingPreference;
-  terminalSearch: HotkeyBindingPreference;
-}
+export {
+  LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS,
+  MAX_TERMINAL_COMMAND_HISTORY,
+  MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH,
+  TERMINAL_COMMAND_HISTORY_APPEND_EVENT,
+  TERMINAL_COMMAND_HISTORY_REMOVE_EVENT,
+  TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
+  readTerminalCommandHistory
+} from "../terminal-command-history-storage";
 
 interface TerminalWorkspaceProps {
   language: AppLanguage;
@@ -412,35 +292,9 @@ interface TerminalSearchState {
   column: number;
 }
 
-export interface TerminalCommandHistoryEntry {
-  id: string;
-  tabId: string;
-  command: string;
-  executedAt: number;
-  source: TerminalCommandHistorySource;
-}
-
 type CommandHistoryScope = "activeTab" | "allTabs";
-export type TerminalCommandHistorySource = "screen" | "buffer" | "manual" | "imported";
-
-export const MAX_TERMINAL_COMMAND_HISTORY = 500;
-export const MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH = 16000;
-export const TERMINAL_COMMAND_HISTORY_STORAGE_KEY = "termdock.terminal-command-history.v2";
-export const LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS = [
-  "termdock.terminal-command-history.v1"
-];
-export const TERMINAL_COMMAND_HISTORY_APPEND_EVENT = "termdock:terminal-command-history-append";
-export const TERMINAL_COMMAND_HISTORY_REMOVE_EVENT = "termdock:terminal-command-history-remove";
 const COMMAND_CAPTURE_LOOKBACK_ROWS = 80;
 const COMMAND_CAPTURE_PROMPT_MARKERS = ["$ ", "# ", "% ", "> "];
-
-function isTerminalCommandHistorySource(value: unknown): value is TerminalCommandHistorySource {
-  return value === "screen" || value === "buffer" || value === "manual" || value === "imported";
-}
-
-function normalizeTerminalCommandHistorySource(value: unknown): TerminalCommandHistorySource {
-  return isTerminalCommandHistorySource(value) ? value : "buffer";
-}
 
 function normalizeCapturedTerminalText(value: string): string {
   return value.replace(/\u00a0/g, " ").replace(/\s+$/g, "").trim();
@@ -564,102 +418,6 @@ function getTerminalCommandHistorySourceLabel(source: TerminalCommandHistorySour
     default:
       return "Buffer";
   }
-}
-
-function dedupeTerminalCommandHistoryEntries(
-  entries: TerminalCommandHistoryEntry[]
-): TerminalCommandHistoryEntry[] {
-  const seenCommands = new Set<string>();
-  const uniqueEntries: TerminalCommandHistoryEntry[] = [];
-  for (const entry of entries) {
-    const normalizedCommand = entry.command.trim();
-    if (!normalizedCommand || seenCommands.has(normalizedCommand)) {
-      continue;
-    }
-    seenCommands.add(normalizedCommand);
-    uniqueEntries.push({
-      ...entry,
-      command: normalizedCommand
-    });
-    if (uniqueEntries.length >= MAX_TERMINAL_COMMAND_HISTORY) {
-      break;
-    }
-  }
-  return uniqueEntries;
-}
-
-export function readTerminalCommandHistory(): TerminalCommandHistoryEntry[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-  try {
-    const rawValue = readTerminalCommandHistoryStorageValue();
-    if (!rawValue) {
-      return [];
-    }
-    const parsed = JSON.parse(rawValue);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    const entries: TerminalCommandHistoryEntry[] = [];
-    parsed.forEach((row, index) => {
-      if (!row || typeof row !== "object") {
-        return;
-      }
-      const candidate = row as Record<string, unknown>;
-      const command = typeof candidate.command === "string" ? candidate.command.trim() : "";
-      if (!command) {
-        return;
-      }
-      const rawExecutedAt = candidate.executedAt;
-      let executedAt = 0;
-      if (typeof rawExecutedAt === "number" && Number.isFinite(rawExecutedAt)) {
-        executedAt = Math.max(0, Math.trunc(rawExecutedAt));
-      } else if (typeof rawExecutedAt === "string" && rawExecutedAt.trim().length > 0) {
-        const numericValue = Number(rawExecutedAt);
-        if (Number.isFinite(numericValue) && numericValue > 0) {
-          executedAt = Math.trunc(numericValue);
-        } else {
-          const dateValue = Date.parse(rawExecutedAt);
-          if (Number.isFinite(dateValue) && dateValue > 0) {
-            executedAt = Math.trunc(dateValue);
-          }
-        }
-      }
-      if (!executedAt) {
-        return;
-      }
-      const rawId = typeof candidate.id === "string" ? candidate.id.trim() : "";
-      const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "__legacy__";
-      const id = rawId || `legacy-${executedAt}-${index}`;
-      const source = normalizeTerminalCommandHistorySource(candidate.source);
-      entries.push({
-        id,
-        tabId,
-        command: command.slice(0, MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH),
-        executedAt,
-        source
-      });
-    });
-    entries.sort((left, right) => right.executedAt - left.executedAt);
-    return dedupeTerminalCommandHistoryEntries(entries);
-  } catch {
-    return [];
-  }
-}
-
-function readTerminalCommandHistoryStorageValue(): string | null {
-  const directValue = window.localStorage.getItem(TERMINAL_COMMAND_HISTORY_STORAGE_KEY);
-  if (directValue) {
-    return directValue;
-  }
-  for (const legacyKey of LEGACY_TERMINAL_COMMAND_HISTORY_STORAGE_KEYS) {
-    const legacyValue = window.localStorage.getItem(legacyKey);
-    if (legacyValue) {
-      return legacyValue;
-    }
-  }
-  return null;
 }
 
 export function TerminalWorkspace({
@@ -2269,16 +2027,26 @@ export function TerminalWorkspace({
       // full-screen TUI apps (nano, vim, htop, crontab -e) repaint as visible
       // flicker. WebGL paints to a single canvas and stays flicker-free. If the
       // GPU context is unavailable or lost, dispose the addon so xterm falls
-      // back to the DOM renderer rather than crashing.
-      try {
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose();
+      // back to the DOM renderer rather than crashing. Load the addon on demand
+      // so the WebGL chunk stays off the initial startup payload.
+      void import("@xterm/addon-webgl")
+        .then(({ WebglAddon }) => {
+          if (!terminalRefs.current.has(tab.id)) {
+            return;
+          }
+          try {
+            const webglAddon = new WebglAddon();
+            webglAddon.onContextLoss(() => {
+              webglAddon.dispose();
+            });
+            terminal.loadAddon(webglAddon);
+          } catch {
+            // WebGL2 unavailable (e.g. headless/software GPU); keep DOM renderer.
+          }
+        })
+        .catch(() => {
+          // Addon load failed; keep DOM renderer.
         });
-        terminal.loadAddon(webglAddon);
-      } catch {
-        // WebGL2 unavailable (e.g. headless/software GPU); keep DOM renderer.
-      }
 
       const dataDisposable = terminal.onData((data) => {
         enqueueTerminalWriteTask(tab.id, async () => {

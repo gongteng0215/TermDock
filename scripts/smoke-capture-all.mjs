@@ -110,6 +110,7 @@ function createMarkdownReport({
   lines.push("- Sessions explorer context menus (blank/group/session)");
   lines.push("- SSH config import preview and post-import open-first-session action");
   lines.push("- Session export/import menu entries plus encrypted migration export/import preview");
+  lines.push("- App backup (`.tdbackup`) settings entry plus import preview smoke hook");
   lines.push("- Group open/back navigation");
   lines.push("- Same-session keyboard-open dedupe");
   lines.push("- Session list double-click fresh-tab behavior");
@@ -202,14 +203,26 @@ async function waitForAny(page, selectors, timeout = 5000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeout) {
     for (const selector of selectors) {
-      const count = await page.locator(selector).count();
-      if (count > 0) {
+      const found = await page.evaluate((target) => Boolean(document.querySelector(target)), selector);
+      if (found) {
         return selector;
       }
     }
     await page.waitForTimeout(80);
   }
   return null;
+}
+
+async function waitForAppMounted(page, timeout = 20_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeout) {
+    const mounted = await page.evaluate(() => Boolean(document.querySelector(".app")));
+    if (mounted) {
+      return;
+    }
+    await page.waitForTimeout(200);
+  }
+  throw new Error("Timed out waiting for .app to mount.");
 }
 
 async function waitForSmokeHook(page, hookName, timeout = 5000) {
@@ -621,9 +634,13 @@ async function main() {
   const outputDir = resolve("artifacts", "smoke", stamp);
   await mkdir(outputDir, { recursive: true });
   const smokeUserDataDir = readOptionalEnv("TERMDOCK_SMOKE_USER_DATA_DIR") ?? join(outputDir, "user-data");
+  await mkdir(smokeUserDataDir, { recursive: true });
+  await mkdir(join(smokeUserDataDir, "session-data"), { recursive: true });
 
   const launchEnv = { ...process.env };
   delete launchEnv.ELECTRON_RUN_AS_NODE;
+  delete launchEnv.VITE_DEV_SERVER_URL;
+  delete launchEnv.ELECTRON_ENABLE_LOGGING;
 
   const steps = [];
   const pushStep = (name, status, note = "") => {
@@ -697,7 +714,7 @@ async function main() {
     shotIndex += 1;
     const targetPath = join(outputDir, fileName);
     await page.waitForTimeout(220);
-    await page.screenshot({ path: targetPath, fullPage: true });
+    await page.screenshot({ path: targetPath, timeout: 15_000 });
     screenshotList.push(fileName);
     return fileName;
   };
@@ -733,8 +750,10 @@ async function main() {
     const page = await app.firstWindow();
     pageRef.current = page;
 
-    await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(1800);
+    // Avoid waitForLoadState / waitForSelector — CDP queries can stall on some
+    // Windows/Electron hosts even when React has already mounted.
+    await waitForAppMounted(page);
+    await page.waitForTimeout(800);
 
     await runStep("home screenshot (initial)", async () => {
       const fileName = await recordShot(page, "home-initial");
@@ -935,6 +954,74 @@ async function main() {
               warnings: []
             };
           };
+          if (bridge.storage) {
+            const smokeAppBackupPreview = {
+              exportedAtIso: new Date().toISOString(),
+              appVersion: "smoke",
+              schemaVersion: 6,
+              sessionCount: 2,
+              sessionsWithSecretFlag: 0,
+              transferHistoryCount: 1,
+              transferPendingRestoreCount: 0,
+              disconnectReportCount: 0,
+              portForwardEventCount: 0,
+              quickProfileCount: 0,
+              sessionTemplateCount: 0,
+              commandSnippetGroupCount: 1,
+              commandSnippetScopedValueCount: 0,
+              appPreferenceCount: 3,
+              hasCredentialsAttachment: false
+            };
+            bridge.storage.previewAppBackup = async () => ({
+              preview: smokeAppBackupPreview,
+              warnings: []
+            });
+            bridge.storage.importAppBackup = async () => ({
+              preview: smokeAppBackupPreview,
+              applied: {
+                sessionsCreated: 0,
+                sessionsUpdated: 0,
+                sessionsSkipped: 2,
+                secretsRestored: 0,
+                durableTablesReplaced: ["app_preferences"]
+              },
+              state: {
+                sessions: [],
+                transferHistory: [],
+                transferPendingRestore: [],
+                disconnectReports: [],
+                portForwardEvents: [],
+                quickProfiles: [],
+                sessionTemplates: [],
+                commandSnippetGroups: [],
+                commandSnippetScopedValues: {},
+                appPreferences: {}
+              },
+              warnings: []
+            });
+            bridge.storage.exportAppBackup = async () => ({
+              file: {
+                format: "termdock-app-backup",
+                version: 1,
+                exportedAtIso: new Date().toISOString(),
+                appVersion: "smoke",
+                schemaVersion: 6,
+                state: {
+                  sessions: [],
+                  transferHistory: [],
+                  transferPendingRestore: [],
+                  disconnectReports: [],
+                  portForwardEvents: [],
+                  quickProfiles: [],
+                  sessionTemplates: [],
+                  commandSnippetGroups: [],
+                  commandSnippetScopedValues: {},
+                  appPreferences: {}
+                }
+              },
+              warnings: []
+            });
+          }
           bridge.system.saveTextFile = async (options) => {
             const base =
               typeof options?.defaultFileName === "string" && options.defaultFileName.trim().length > 0
@@ -1023,12 +1110,20 @@ async function main() {
       const exportEncryptedMigration = page
         .locator(".sftp-context-menu__item:has-text('Export Encrypted Migration...')")
         .first();
+      const importAppBackup = page
+        .locator(".sftp-context-menu__item:has-text('Import App Backup...')")
+        .first();
+      const exportAppBackup = page
+        .locator(".sftp-context-menu__item:has-text('Export App Backup...')")
+        .first();
 
       if (
         !(await isVisible(exportSessions)) ||
         !(await isVisible(exportGroups)) ||
         !(await isVisible(importEncryptedMigration)) ||
-        !(await isVisible(exportEncryptedMigration))
+        !(await isVisible(exportEncryptedMigration)) ||
+        !(await isVisible(importAppBackup)) ||
+        !(await isVisible(exportAppBackup))
       ) {
         throw new Error("export actions not found in root context menu");
       }
@@ -1116,6 +1211,66 @@ async function main() {
         }
       }
       await groupDialog.locator(".secondary-button:has-text('Cancel')").first().click();
+      await page.waitForTimeout(220);
+      return previewShot;
+    });
+
+    await runStep("app backup import preview", async () => {
+      await page.evaluate(() => {
+        window.__termdockSmokePickedTextFile = {
+          filePath: "C:/tmp/termdock-smoke-import.tdbackup",
+          text: "__TERMDOCK_SMOKE_APP_BACKUP__"
+        };
+      });
+      const hookReady = await waitForSmokeHook(page, "__termdockSmokeImportAppBackup");
+      if (!hookReady) {
+        throw new Error("app backup import smoke hook is unavailable");
+      }
+      const hookStarted = await page.evaluate(() => {
+        if (typeof window.__termdockSmokeImportAppBackup !== "function") {
+          return false;
+        }
+        window.__termdockSmokeImportAppBackup();
+        return true;
+      });
+      if (!hookStarted) {
+        throw new Error("app backup import smoke hook did not start");
+      }
+
+      const previewDialog = page
+        .locator(".modal.app-dialog", { hasText: "Import App Backup" })
+        .first();
+      await previewDialog.waitFor({ state: "visible", timeout: 8_000 });
+      const previewText = await previewDialog.textContent();
+      for (const expected of [
+        "Restore this app backup?",
+        "Sessions: 2",
+        "Transfer history: 1",
+        "Credentials attachment: no"
+      ]) {
+        if (!previewText?.includes(expected)) {
+          throw new Error(`app backup preview missing "${expected}"`);
+        }
+      }
+      const previewShot = await recordShot(page, "app-backup-import-preview");
+      await previewDialog.locator(".primary-button:has-text('Continue')").first().click();
+
+      const strategyDialog = page
+        .locator(".modal.app-dialog", { hasText: "Duplicate Strategy" })
+        .first();
+      await strategyDialog.waitFor({ state: "visible", timeout: 5_000 });
+      const strategyText = await strategyDialog.textContent();
+      for (const expected of [
+        "Choose session duplicate strategy",
+        "Skip Duplicates",
+        "Overwrite Existing",
+        "Create Renamed Copies"
+      ]) {
+        if (!strategyText?.includes(expected)) {
+          throw new Error(`app backup duplicate strategy missing "${expected}"`);
+        }
+      }
+      await strategyDialog.locator(".secondary-button:has-text('Cancel')").first().click();
       await page.waitForTimeout(220);
       return previewShot;
     });
@@ -2406,6 +2561,26 @@ async function main() {
           if ((await autoPushToggle.locator("input").isChecked()) !== originalAutoPushEnabled) {
             await autoPushToggle.click();
             await page.waitForTimeout(120);
+          }
+        }
+        if (section.label === "Diagnostics") {
+          const importAppBackupButton = page
+            .locator(".modal--settings button:has-text('Import App Backup...')")
+            .first();
+          const exportAppBackupButton = page
+            .locator(".modal--settings button:has-text('Export App Backup...')")
+            .first();
+          const appBackupTitle = page
+            .locator(".modal--settings .settings-port-forward-section__title", {
+              hasText: "App Backup"
+            })
+            .first();
+          if (
+            !(await isVisible(importAppBackupButton)) ||
+            !(await isVisible(exportAppBackupButton)) ||
+            !(await isVisible(appBackupTitle))
+          ) {
+            throw new Error("app backup settings actions not visible");
           }
         }
         shots.push(await recordShot(page, section.slug));

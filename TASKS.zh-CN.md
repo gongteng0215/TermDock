@@ -2,15 +2,15 @@
 
 [English](TASKS.md)
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## 当前发布状态
 
-- 当前稳定版：`v0.1.40`
+- 当前稳定版：`v0.1.41`
 - 当前分支：`master`
-- 当前方向：`v0.1.40` 之后推进 Operation Center abort IPC、SQLite 规划 Phase 1-2 执行，以及基于正式基准的性能优化，并可选继续密度/主题反馈打磨。
-- 当前发布说明：`v0.1.40` 已覆盖更广的可恢复全局错误路由、Operation Center 按标签 / 跨标签重试与端口转发拆除、正式启动 / 传输内存基准，以及 SQLite 迁移规划；`v0.1.32`-`v0.1.39` 已覆盖自动更新体验、面板打磨、渲染性能、终端全屏编辑器修复、更新检查可靠性、特权文件保存回写、强调色主题与布局密度偏好。
-- 最新验证（2026-07-15）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup` 和 `pnpm run bench:transfer:memory` 已通过。
+- 当前方向：`v0.1.41` 发版准备完成（自用 Windows 可发）；下一步是可选 shared-buffer E2 或真实使用反馈打磨。
+- 当前发布说明：SQLite 权威会话、耐久偏好端口、凭据安全 `.tdbackup`、懒加载终端启动（脚本约 0.76 MiB）、下载 SFTP 通道复用，以及备份向导/Settings 入口。
+- 最新验证（2026-07-16）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup`（脚本约 0.76 MiB）、`pnpm run bench:transfer:memory`、`pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0`（`artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`）。
 
 ## P0 状态摘要
 
@@ -26,8 +26,8 @@ Last updated: 2026-07-15
 | 跨平台 smoke | PARTIAL | 自动化 smoke 已覆盖核心流程，仍需持续补充真实环境证据。 |
 | 签名 / notarization | PARTIAL | 预检和验证脚本已可用，公开可信签名证据仍在推进。 |
 | 自动更新 | PARTIAL | 打包应用会检查 GitHub Releases，新版本后台下载完成后提示重启安装；`v0.1.32`/`v0.1.36` 已补入手动检查、状态面板和 `latest.yml` 直读。 |
-| 启动性能 | PARTIAL | `v0.1.34` 已做按需加载重型弹窗、分包去重和列表虚拟化；`bench:startup` / `bench:transfer:memory` 正式基准已落地，剩余是按基准继续优化。 |
-| SQLite 迁移 | PARTIAL | 2026-07-15 迁移规划文档已落地；当前仍使用 JSON 持久化，尚未切库。 |
+| 启动性能 | PARTIAL | `v0.1.41`：懒加载 `TerminalWorkspace`；`bench:startup` 脚本约 0.76 MiB（原 ~1.22 MiB）。 |
+| SQLite 迁移 | DONE | 会话 Phase 1–3 已切流；Phase 4–5 已落地；打包 smoke `PASS 50`；P0-E4 WAL + 崩溃恢复测试已落地。 |
 
 ## 当前进行中
 
@@ -81,18 +81,56 @@ Last updated: 2026-07-15
    - Retry Center 删除动作分组并标记为危险操作；Comfortable 密度下 Transfers 可读性更好。
 10. `v0.1.40` 可靠性 / 性能硬化：
    - `P0-E3`：全局错误恢复已覆盖会话创建校验、片段、会话模板、命令历史、会话分组和导入/导出失败，并提供对应管理器快捷入口。
-   - `F8`：Operation Center 已支持当前标签端口转发一键拆除、按标签 / 跨标签失败传输重试，以及打开 Retry Center 快捷入口；远程删除取消和已跟踪 app job 取消仍需 abort IPC，暂缓。
+   - `F8`：Operation Center 已支持当前标签端口转发一键拆除、按标签 / 跨标签失败传输重试，以及打开 Retry Center 快捷入口。
    - `P0-E1`/`P0-E2`：新增 `bench:startup` 与 `bench:transfer:memory`，证据保存在 `artifacts/benchmark/`。
-   - `P0-A3`/`F9`：SQLite 迁移规划文档已写入 `docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`（含中文版），尚未改依赖或切库。
+   - `P0-A3`/`F9`：SQLite 迁移规划文档已写入 `docs/superpowers/specs/2026-07-15-sqlite-migration-plan.md`（含中文版）。
+11. `v0.1.40` 之后硬化批次：
+   - `P0-E3`：扩宽剩余全局错误匹配（会话创建、迁移文件、端口转发、片段限额、命令历史、模板端口、统一 bridge unavailable）。
+   - `P0-E1`/`P0-E2`：延迟 `renderer-settings`、懒加载 WebGL；默认上传并发 2、在飞 SFTP 通道硬上限、下载 `highWaterMark` 64 KiB。
+   - `F8`：远程删除取消 IPC（`sftp:cancelDeletePath`）+ 已跟踪 app job 协作式取消（单次主进程任务仅为 UI best-effort）。
+   - `P0-A3`/`F9`：SQLite Phase 1-2（schema + `better-sqlite3` 双写 + `test:session-sqlite-dual-write`）；原生依赖 allowlist 迁至 `pnpm-workspace.yaml` `allowBuilds`。
+   - 验证：`typecheck` / `build` / `bench:startup` / `bench:transfer:memory` / `test:session-sqlite-dual-write` 已通过。
+12. SQLite Phase 3 切流：
+   - SQLite 为会话读写权威；JSON 实况镜像 + `sessions.json.pre-sqlite-cutover` 一次性备份。
+   - 回滚：`TERMDOCK_SESSION_STORE=json` 或恢复备份；`asarUnpack` 覆盖 `better-sqlite3`/`keytar`。
+   - `pnpm run test:session-sqlite-cutover` 已通过。
+   - 打包 smoke：`pnpm run smoke:ui:packaged` → `PASS 50 / FAIL 0 / SKIP 0`（`artifacts/smoke/2026-07-15T15-26-54-933Z/summary.json`）。
+   - 选中项裁剪 effect 在结果未变时回退为 `prev`，修复 SQLite hydrate 后 Playwright CDP 重渲染风暴。
+13. SQLite Phase 4 切片 1：
+   - schema v2：`transfer_history` / `transfer_pending_restore`；IPC 双写浸泡。
+   - `pnpm run test:session-sqlite-transfer-persistence` 已通过。
+14. SQLite Phase 4 切片 2：
+   - schema v3：`disconnect_reports`；IPC 双写浸泡。
+   - `pnpm run test:session-sqlite-disconnect-reports` 已通过。
+15. SQLite Phase 4 切片 3：
+   - schema v4：`port_forward_events`；IPC 双写浸泡。
+   - `pnpm run test:session-sqlite-port-forward-events` 已通过。
+16. SQLite Phase 4 切片 4：
+   - schema v5：快捷配置 / 模板（`hasSecret`）/ 命令片段；IPC 双写浸泡。
+   - `pnpm run test:session-sqlite-workbench-data` 已通过。
+17. SQLite Phase 4 切片 5：
+   - schema v6：`app_preferences` 允许名单双写；UI chrome 仍留 localStorage。
+   - `pnpm run test:session-sqlite-app-preferences` 已通过。
+18. SQLite Phase 5：
+   - `.tdbackup` 非机密 dump + 可选凭据附件；预览与会话重复策略。
+   - `pnpm run test:session-sqlite-app-backup` 已通过。
+19. P0-E4 崩溃恢复：
+   - SQLite 默认 WAL；`pnpm run test:session-sqlite-crash-recovery` 覆盖 reopen / 损坏库 / 损坏 JSON 镜像 / 切流前备份回滚。
+20. `.tdbackup` 向导打磨：
+   - 凭据步骤改为三选一（Escape 取消）；中英文案与预览本地化；导入终确认标 danger；错误恢复识别 `app backup`。
+21. `.tdbackup` Settings + smoke hook：
+   - 设置 > 诊断 增加导入/导出应用备份；smoke 覆盖 preview/duplicate-strategy 流程。
+22. P0-E1 懒加载终端：
+   - 拆出 types/options/history leaf 模块；`TerminalWorkspaceHost` + modulePreload 过滤；`bench:startup` 脚本约 0.76 MiB。
+23. P0-E2 下载通道复用：
+   - 下载侧新增 `reusableDownloadSftpByTab` 与 in-flight slot cap，对齐上传复用；`pnpm run bench:transfer:memory` 已通过。
 
 ## 下一批建议任务
 
 1. 观察 `v0.1.38`/`v0.1.39` 之后密度、强调色主题和工作台清晰度的真实使用反馈。
 2. 将反复出现的启动 / 信任提示 / 首次连接反馈整理成 GitHub issues 和 Release FAQ。
-3. 继续 `P0-E3` 剩余错误引导文案打磨。
-4. 为 Operation Center 增加 abort IPC，以支持远程删除取消和已跟踪 app job 取消（`F8`）。
-5. 按 2026-07-15 规划执行 SQLite 会话双写 / 切流，并推进凭据安全备份恢复（`P0-A3`/`F9`）。
-6. 基于正式基准继续启动负载削减和大传输内存优化（`P0-E1`/`P0-E2`）。
+3. 可选：`P0-E2` 传输 shared-buffer / 多路复用优化。
+4. 可选：单次主进程迁移 / bug-report 任务的真正中途中止（当前 UI 取消为 best-effort）。
 
 ## 详细任务历史
 

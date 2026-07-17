@@ -22,6 +22,22 @@ import type {
   SessionMigrationImportCandidate,
   SessionMigrationPlainPayload
 } from "../shared/session-migration";
+import {
+  DURABLE_APP_PREFERENCE_KEYS,
+  type PersistedAppPreferences
+} from "../shared/app-preference-persistence";
+import {
+  formatAppBackupPreview,
+  type AppBackupPreviewResult,
+  type AppBackupSessionDuplicateStrategy,
+  type TermDockAppBackupState
+} from "../shared/app-backup";
+import {
+  normalizePersistedSessionQuickProfiles,
+  normalizePersistedSessionTemplates,
+  stripSessionTemplateSecretsForSqlite
+} from "../shared/session-workbench-persistence";
+import type { PersistedCommandSnippetGroup } from "../shared/command-snippet-persistence";
 import type {
   SftpDirectoryListResult,
   SftpEntry,
@@ -50,13 +66,15 @@ import {
   MAX_TERMINAL_COMMAND_HISTORY,
   MAX_TERMINAL_COMMAND_HISTORY_COMMAND_LENGTH,
   readTerminalCommandHistory,
+  TERMINAL_COMMAND_HISTORY_STORAGE_KEY
+} from "./terminal-command-history-storage";
+import {
   TERMINAL_EDITOR_FOCUS_CURSOR_OPTIONS,
   TERMINAL_EDITOR_FOCUS_FONT_OPTIONS,
   TERMINAL_EDITOR_FOCUS_RHYTHM_OPTIONS,
   TERMINAL_EDITOR_FOCUS_THEME_OPTIONS,
-  TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS,
-  TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
-} from "./components/terminal-workspace";
+  TERMINAL_EDITOR_FOCUS_TYPOGRAPHY_OPTIONS
+} from "./terminal-editor-focus-options";
 import { UiIcon, type UiIconName } from "./components/ui-icon";
 import type {
   ConnectionPreferences,
@@ -71,7 +89,7 @@ import type {
   TerminalEditorFocusThemeId,
   TerminalEditorFocusTypographyId,
   TerminalTab
-} from "./components/terminal-workspace";
+} from "./terminal-workspace-types";
 import {
   type MoveGroupDialogView
 } from "./components/app-dialogs";
@@ -447,7 +465,7 @@ type RetryCenterRetryScope = "all" | "upload" | "download";
 type TerminalCommandHistoryScope = "activeTab" | "allTabs";
 type WorkspaceProfileId = DangerousCommandEnvironmentTemplateId;
 type OperationCenterAppJobCategory = "sessions" | "snippets" | "diagnostics";
-type OperationCenterAppJobStatus = "running" | "succeeded" | "failed";
+type OperationCenterAppJobStatus = "running" | "succeeded" | "failed" | "canceled";
 
 type HotkeyActionId = keyof HotkeyPreferences;
 
@@ -607,7 +625,7 @@ const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
   preferredProgramPath: ""
 };
 const DEFAULT_SFTP_TRANSFER_PREFERENCES: SftpTransferPreferences = {
-  uploadConcurrency: 4,
+  uploadConcurrency: 2,
   downloadConcurrency: 2,
   uploadRateLimitKiBps: 0,
   downloadRateLimitKiBps: 0,
@@ -3154,6 +3172,43 @@ function readSessionSortMode(): SessionSortMode {
   }
 }
 
+function readLocalDurablePreferenceValue(key: string): unknown | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  try {
+    const rawValue = window.localStorage.getItem(key);
+    if (rawValue == null) {
+      return undefined;
+    }
+    if (key === SESSION_SORT_MODE_STORAGE_KEY) {
+      return rawValue;
+    }
+    try {
+      return JSON.parse(rawValue) as unknown;
+    } catch {
+      return rawValue;
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLocalDurablePreferenceValue(key: string, value: unknown): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    if (key === SESSION_SORT_MODE_STORAGE_KEY && typeof value === "string") {
+      window.localStorage.setItem(key, value);
+      return;
+    }
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage failures during SQLite hydrate bootstrap.
+  }
+}
+
 function readConnectionPreferences(): ConnectionPreferences {
   if (typeof window === "undefined") {
     return DEFAULT_CONNECTION_PREFERENCES;
@@ -3903,6 +3958,8 @@ function formatOperationCenterAppJobStatusLabel(status: OperationCenterAppJobSta
       return "Completed";
     case "failed":
       return "Failed";
+    case "canceled":
+      return "Canceled";
     default:
       return "Unknown";
   }
@@ -3916,6 +3973,8 @@ function getOperationCenterAppJobStateClass(status: OperationCenterAppJobStatus)
       return "operation-center__state is-success";
     case "failed":
       return "operation-center__state is-failed";
+    case "canceled":
+      return "operation-center__state is-idle";
     default:
       return "operation-center__state is-idle";
   }
@@ -4126,6 +4185,17 @@ function readSessionTemplates(): SessionTemplateRecord[] {
   }
 }
 
+function mergeSessionTemplateSecretsFromLocal(
+  remoteTemplates: ReturnType<typeof normalizePersistedSessionTemplates>,
+  localTemplates: SessionTemplateRecord[]
+): SessionTemplateRecord[] {
+  const secretsById = new Map(localTemplates.map((template) => [template.id, template.secret]));
+  return remoteTemplates.map((template) => ({
+    ...template,
+    secret: secretsById.get(template.id) ?? ""
+  }));
+}
+
 
 function readPortForwardPresets(): PortForwardPreset[] {
   if (typeof window === "undefined") {
@@ -4208,6 +4278,93 @@ function readPortForwardPresets(): PortForwardPreset[] {
   }
 }
 
+function normalizePortForwardEventHistory(parsed: unknown): PortForwardEventHistoryItem[] {
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  const normalized: PortForwardEventHistoryItem[] = [];
+  for (const row of parsed) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<PortForwardEventHistoryItem>;
+    const key = typeof candidate.key === "string" ? candidate.key.trim() : "";
+    const sessionId =
+      typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+    const eventId = typeof candidate.id === "string" ? candidate.id.trim() : "";
+    const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "";
+    const forwardId = typeof candidate.forwardId === "string" ? candidate.forwardId.trim() : "";
+    const bindHost =
+      typeof candidate.bindHost === "string" ? candidate.bindHost.trim() : "";
+    const bindPort =
+      typeof candidate.bindPort === "number" && Number.isFinite(candidate.bindPort)
+        ? Math.max(1, Math.min(65535, Math.trunc(candidate.bindPort)))
+        : 0;
+    const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
+    const createdAt =
+      typeof candidate.createdAt === "string" && candidate.createdAt.trim()
+        ? candidate.createdAt.trim()
+        : "";
+    const correlationKey =
+      typeof candidate.correlationKey === "string" && candidate.correlationKey.trim().length > 0
+        ? candidate.correlationKey.trim().slice(0, 120)
+        : undefined;
+    const connectionId =
+      typeof candidate.connectionId === "string" && candidate.connectionId.trim().length > 0
+        ? candidate.connectionId.trim().slice(0, 120)
+        : undefined;
+    const sourceEndpoint =
+      typeof candidate.sourceEndpoint === "string" && candidate.sourceEndpoint.trim().length > 0
+        ? candidate.sourceEndpoint.trim().slice(0, 180)
+        : undefined;
+    const targetEndpoint =
+      typeof candidate.targetEndpoint === "string" && candidate.targetEndpoint.trim().length > 0
+        ? candidate.targetEndpoint.trim().slice(0, 180)
+        : undefined;
+    const errorCode =
+      typeof candidate.errorCode === "string" && candidate.errorCode.trim().length > 0
+        ? candidate.errorCode.trim().slice(0, 40)
+        : undefined;
+    if (
+      !key ||
+      !sessionId ||
+      !eventId ||
+      !tabId ||
+      !forwardId ||
+      !bindHost ||
+      !bindPort ||
+      !message ||
+      !createdAt ||
+      !isPortForwardTypeValue(candidate.forwardType) ||
+      !isPortForwardEventTypeValue(candidate.type) ||
+      !isPortForwardEventLevelValue(candidate.level)
+    ) {
+      continue;
+    }
+    normalized.push({
+      key,
+      sessionId,
+      id: eventId,
+      tabId,
+      forwardId,
+      forwardType: candidate.forwardType,
+      bindHost,
+      bindPort,
+      level: candidate.level,
+      type: candidate.type,
+      message: message.slice(0, 600),
+      createdAt,
+      correlationKey,
+      connectionId,
+      sourceEndpoint,
+      targetEndpoint,
+      errorCode
+    });
+  }
+  normalized.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return normalized.slice(0, MAX_PORT_FORWARD_EVENT_HISTORY);
+}
+
 function readPortForwardEventHistory(): PortForwardEventHistoryItem[] {
   if (typeof window === "undefined") {
     return [];
@@ -4217,91 +4374,7 @@ function readPortForwardEventHistory(): PortForwardEventHistoryItem[] {
     if (!rawValue) {
       return [];
     }
-    const parsed = JSON.parse(rawValue);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    const normalized: PortForwardEventHistoryItem[] = [];
-    for (const row of parsed) {
-      if (!row || typeof row !== "object") {
-        continue;
-      }
-      const candidate = row as Partial<PortForwardEventHistoryItem>;
-      const key = typeof candidate.key === "string" ? candidate.key.trim() : "";
-      const sessionId =
-        typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
-      const eventId = typeof candidate.id === "string" ? candidate.id.trim() : "";
-      const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "";
-      const forwardId = typeof candidate.forwardId === "string" ? candidate.forwardId.trim() : "";
-      const bindHost =
-        typeof candidate.bindHost === "string" ? candidate.bindHost.trim() : "";
-      const bindPort =
-        typeof candidate.bindPort === "number" && Number.isFinite(candidate.bindPort)
-          ? Math.max(1, Math.min(65535, Math.trunc(candidate.bindPort)))
-          : 0;
-      const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
-      const createdAt =
-        typeof candidate.createdAt === "string" && candidate.createdAt.trim()
-          ? candidate.createdAt.trim()
-          : "";
-      const correlationKey =
-        typeof candidate.correlationKey === "string" && candidate.correlationKey.trim().length > 0
-          ? candidate.correlationKey.trim().slice(0, 120)
-          : undefined;
-      const connectionId =
-        typeof candidate.connectionId === "string" && candidate.connectionId.trim().length > 0
-          ? candidate.connectionId.trim().slice(0, 120)
-          : undefined;
-      const sourceEndpoint =
-        typeof candidate.sourceEndpoint === "string" && candidate.sourceEndpoint.trim().length > 0
-          ? candidate.sourceEndpoint.trim().slice(0, 180)
-          : undefined;
-      const targetEndpoint =
-        typeof candidate.targetEndpoint === "string" && candidate.targetEndpoint.trim().length > 0
-          ? candidate.targetEndpoint.trim().slice(0, 180)
-          : undefined;
-      const errorCode =
-        typeof candidate.errorCode === "string" && candidate.errorCode.trim().length > 0
-          ? candidate.errorCode.trim().slice(0, 40)
-          : undefined;
-      if (
-        !key ||
-        !sessionId ||
-        !eventId ||
-        !tabId ||
-        !forwardId ||
-        !bindHost ||
-        !bindPort ||
-        !message ||
-        !createdAt ||
-        !isPortForwardTypeValue(candidate.forwardType) ||
-        !isPortForwardEventTypeValue(candidate.type) ||
-        !isPortForwardEventLevelValue(candidate.level)
-      ) {
-        continue;
-      }
-      normalized.push({
-        key,
-        sessionId,
-        id: eventId,
-        tabId,
-        forwardId,
-        forwardType: candidate.forwardType,
-        bindHost,
-        bindPort,
-        level: candidate.level,
-        type: candidate.type,
-        message: message.slice(0, 600),
-        createdAt,
-        correlationKey,
-        connectionId,
-        sourceEndpoint,
-        targetEndpoint,
-        errorCode
-      });
-    }
-    normalized.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    return normalized.slice(0, MAX_PORT_FORWARD_EVENT_HISTORY);
+    return normalizePortForwardEventHistory(JSON.parse(rawValue));
   } catch {
     return [];
   }
@@ -4483,6 +4556,132 @@ function readDisconnectReportCapturePreferences(): DisconnectReportCapturePrefer
   }
 }
 
+function normalizeDisconnectReportHistory(parsed: unknown): DisconnectReportItem[] {
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  const normalized: DisconnectReportItem[] = [];
+  for (const row of parsed) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const candidate = row as Partial<DisconnectReportItem>;
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+    const createdAt = typeof candidate.createdAt === "string" ? candidate.createdAt.trim() : "";
+    const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "";
+    const tabTitle = typeof candidate.tabTitle === "string" ? candidate.tabTitle.trim() : "";
+    const sessionId = typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+    const sessionName =
+      typeof candidate.sessionName === "string" ? candidate.sessionName.trim() : "";
+    const target = typeof candidate.target === "string" ? candidate.target.trim() : "";
+    const trigger =
+      candidate.trigger === "error" ? "error" : candidate.trigger === "status" ? "status" : null;
+    const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
+    if (
+      !id ||
+      !createdAt ||
+      !tabId ||
+      !tabTitle ||
+      !sessionId ||
+      !sessionName ||
+      !target ||
+      !trigger ||
+      !message
+    ) {
+      continue;
+    }
+    const status =
+      candidate.status === "connected" ||
+      candidate.status === "connecting" ||
+      candidate.status === "closed"
+        ? candidate.status
+        : undefined;
+    const parseCount = (value: unknown): number =>
+      typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+    const parseBoolean = (value: unknown): boolean => value === true;
+    const parseText = (value: unknown, limit = 400): string | undefined => {
+      if (typeof value !== "string") {
+        return undefined;
+      }
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+      return trimmed.slice(0, limit);
+    };
+    const recentFailures: DisconnectReportFailureSample[] = Array.isArray(candidate.recentFailures)
+      ? candidate.recentFailures
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") {
+              return null;
+            }
+            const failure = entry as Partial<DisconnectReportFailureSample>;
+            if (!isSftpTransferDirection(failure.direction)) {
+              return null;
+            }
+            const name = typeof failure.name === "string" ? failure.name.trim() : "";
+            const failureMessage =
+              typeof failure.message === "string" ? failure.message.trim() : "";
+            const updatedAt =
+              typeof failure.updatedAt === "number" && Number.isFinite(failure.updatedAt)
+                ? Math.max(0, Math.trunc(failure.updatedAt))
+                : 0;
+            if (!name || !failureMessage || !updatedAt) {
+              return null;
+            }
+            return {
+              direction: failure.direction,
+              name: name.slice(0, 220),
+              message: failureMessage.slice(0, 400),
+              updatedAt
+            } satisfies DisconnectReportFailureSample;
+          })
+          .filter((entry): entry is DisconnectReportFailureSample => !!entry)
+          .slice(0, 8)
+      : [];
+    normalized.push({
+      id,
+      createdAt,
+      tabId,
+      tabTitle,
+      sessionId,
+      sessionName,
+      target,
+      trigger,
+      status,
+      message: message.slice(0, 500),
+      activeTabId:
+        typeof candidate.activeTabId === "string" && candidate.activeTabId.trim().length > 0
+          ? candidate.activeTabId.trim()
+          : null,
+      wasActiveTab: parseBoolean(candidate.wasActiveTab),
+      openTabCount: parseCount(candidate.openTabCount),
+      connectedTabCount: parseCount(candidate.connectedTabCount),
+      autoReconnect: parseBoolean(candidate.autoReconnect),
+      reconnectDelaySeconds: Math.min(
+        60,
+        Math.max(1, parseCount(candidate.reconnectDelaySeconds) || 1)
+      ),
+      uploadRunning: parseCount(candidate.uploadRunning),
+      uploadQueued: parseCount(candidate.uploadQueued),
+      downloadRunning: parseCount(candidate.downloadRunning),
+      downloadQueued: parseCount(candidate.downloadQueued),
+      pausedUpload: parseBoolean(candidate.pausedUpload),
+      pausedDownload: parseBoolean(candidate.pausedDownload),
+      portForwardTotal: parseCount(candidate.portForwardTotal),
+      portForwardDegraded: parseCount(candidate.portForwardDegraded),
+      portForwardBusy: parseBoolean(candidate.portForwardBusy),
+      serverHealthLoading: parseBoolean(candidate.serverHealthLoading),
+      serverProcessLoading: parseBoolean(candidate.serverProcessLoading),
+      serverHealthError: parseText(candidate.serverHealthError),
+      serverProcessError: parseText(candidate.serverProcessError),
+      recentFailures
+    });
+  }
+  normalized.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return normalized.slice(0, MAX_DISCONNECT_REPORT_HISTORY);
+}
+
 function readDisconnectReportHistory(): DisconnectReportItem[] {
   if (typeof window === "undefined") {
     return [];
@@ -4492,126 +4691,7 @@ function readDisconnectReportHistory(): DisconnectReportItem[] {
     if (!rawValue) {
       return [];
     }
-    const parsed = JSON.parse(rawValue);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    const normalized: DisconnectReportItem[] = [];
-    for (const row of parsed) {
-      if (!row || typeof row !== "object") {
-        continue;
-      }
-      const candidate = row as Partial<DisconnectReportItem>;
-      const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
-      const createdAt = typeof candidate.createdAt === "string" ? candidate.createdAt.trim() : "";
-      const tabId = typeof candidate.tabId === "string" ? candidate.tabId.trim() : "";
-      const tabTitle = typeof candidate.tabTitle === "string" ? candidate.tabTitle.trim() : "";
-      const sessionId = typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
-      const sessionName =
-        typeof candidate.sessionName === "string" ? candidate.sessionName.trim() : "";
-      const target = typeof candidate.target === "string" ? candidate.target.trim() : "";
-      const trigger = candidate.trigger === "error" ? "error" : candidate.trigger === "status" ? "status" : null;
-      const message = typeof candidate.message === "string" ? candidate.message.trim() : "";
-      if (
-        !id ||
-        !createdAt ||
-        !tabId ||
-        !tabTitle ||
-        !sessionId ||
-        !sessionName ||
-        !target ||
-        !trigger ||
-        !message
-      ) {
-        continue;
-      }
-      const status =
-        candidate.status === "connected" ||
-        candidate.status === "connecting" ||
-        candidate.status === "closed"
-          ? candidate.status
-          : undefined;
-      const parseCount = (value: unknown): number =>
-        typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
-      const parseBoolean = (value: unknown): boolean => value === true;
-      const parseText = (value: unknown, limit = 400): string | undefined => {
-        if (typeof value !== "string") {
-          return undefined;
-        }
-        const trimmed = value.trim();
-        if (!trimmed) {
-          return undefined;
-        }
-        return trimmed.slice(0, limit);
-      };
-      const recentFailures: DisconnectReportFailureSample[] = Array.isArray(candidate.recentFailures)
-        ? candidate.recentFailures
-            .map((entry) => {
-              if (!entry || typeof entry !== "object") {
-                return null;
-              }
-              const failure = entry as Partial<DisconnectReportFailureSample>;
-              if (!isSftpTransferDirection(failure.direction)) {
-                return null;
-              }
-              const name = typeof failure.name === "string" ? failure.name.trim() : "";
-              const failureMessage =
-                typeof failure.message === "string" ? failure.message.trim() : "";
-              const updatedAt =
-                typeof failure.updatedAt === "number" && Number.isFinite(failure.updatedAt)
-                  ? Math.max(0, Math.trunc(failure.updatedAt))
-                  : 0;
-              if (!name || !failureMessage || !updatedAt) {
-                return null;
-              }
-              return {
-                direction: failure.direction,
-                name: name.slice(0, 220),
-                message: failureMessage.slice(0, 400),
-                updatedAt
-              } satisfies DisconnectReportFailureSample;
-            })
-            .filter((entry): entry is DisconnectReportFailureSample => !!entry)
-            .slice(0, 8)
-        : [];
-      normalized.push({
-        id,
-        createdAt,
-        tabId,
-        tabTitle,
-        sessionId,
-        sessionName,
-        target,
-        trigger,
-        status,
-        message: message.slice(0, 500),
-        activeTabId:
-          typeof candidate.activeTabId === "string" && candidate.activeTabId.trim().length > 0
-            ? candidate.activeTabId.trim()
-            : null,
-        wasActiveTab: parseBoolean(candidate.wasActiveTab),
-        openTabCount: parseCount(candidate.openTabCount),
-        connectedTabCount: parseCount(candidate.connectedTabCount),
-        autoReconnect: parseBoolean(candidate.autoReconnect),
-        reconnectDelaySeconds: Math.min(60, Math.max(1, parseCount(candidate.reconnectDelaySeconds) || 1)),
-        uploadRunning: parseCount(candidate.uploadRunning),
-        uploadQueued: parseCount(candidate.uploadQueued),
-        downloadRunning: parseCount(candidate.downloadRunning),
-        downloadQueued: parseCount(candidate.downloadQueued),
-        pausedUpload: parseBoolean(candidate.pausedUpload),
-        pausedDownload: parseBoolean(candidate.pausedDownload),
-        portForwardTotal: parseCount(candidate.portForwardTotal),
-        portForwardDegraded: parseCount(candidate.portForwardDegraded),
-        portForwardBusy: parseBoolean(candidate.portForwardBusy),
-        serverHealthLoading: parseBoolean(candidate.serverHealthLoading),
-        serverProcessLoading: parseBoolean(candidate.serverProcessLoading),
-        serverHealthError: parseText(candidate.serverHealthError),
-        serverProcessError: parseText(candidate.serverProcessError),
-        recentFailures
-      });
-    }
-    normalized.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    return normalized.slice(0, MAX_DISCONNECT_REPORT_HISTORY);
+    return normalizeDisconnectReportHistory(JSON.parse(rawValue));
   } catch {
     return [];
   }
@@ -4843,6 +4923,19 @@ export function App() {
   const systemApi = bridge?.system ?? null;
   const terminalApi = bridge?.terminal ?? null;
   const sftpApi = bridge?.sftp ?? null;
+  const storageApi = bridge?.storage ?? null;
+  const appPrefsSqliteHydratedRef = useRef(false);
+  const dualWriteAppPreference = useCallback(
+    (key: string, value: unknown) => {
+      if (!appPrefsSqliteHydratedRef.current || !storageApi?.setAppPreference) {
+        return;
+      }
+      void storageApi.setAppPreference(key, value).catch(() => {
+        // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+      });
+    },
+    [storageApi]
+  );
   const isMacPlatform = /mac/i.test(navigator.platform);
   const [appLanguage, setAppLanguage] = useState<AppLanguage>(() => readAppLanguagePreference());
   const appLanguageRef = useRef<AppLanguage>(appLanguage);
@@ -4853,6 +4946,7 @@ export function App() {
   const smokeImportSshConfigHandlerRef = useRef<(() => void) | null>(null);
   const smokeImportSessionsJsonHandlerRef = useRef<(() => void) | null>(null);
   const smokeImportEncryptedMigrationHandlerRef = useRef<(() => void) | null>(null);
+  const smokeImportAppBackupHandlerRef = useRef<(() => void) | null>(null);
   const tr = useCallback((value: string) => translateAppText(appLanguage, value), [appLanguage]);
   const selectedLanguageOption = useMemo(
     () => APP_LANGUAGE_OPTIONS.find((option) => option.id === appLanguage) ?? APP_LANGUAGE_OPTIONS[0],
@@ -5121,6 +5215,7 @@ export function App() {
   const [transferHistory, setTransferHistory] = useState<SftpTransferHistoryItem[]>(
     () => readSftpTransferHistory()
   );
+  const transferSqliteHydratedRef = useRef(false);
   const [pendingTransferRestoreItems, setPendingTransferRestoreItems] = useState<
     PendingTransferRestoreItem[]
   >(() => readPendingTransferRestoreItems());
@@ -5133,6 +5228,9 @@ export function App() {
   const [sessionTemplates, setSessionTemplates] = useState<SessionTemplateRecord[]>(
     () => readSessionTemplates()
   );
+  const sessionQuickProfilesSqliteHydratedRef = useRef(false);
+  const sessionTemplatesSqliteHydratedRef = useRef(false);
+  const commandSnippetSqliteHydratedRef = useRef(false);
   const [isSessionTemplateManagerOpen, setIsSessionTemplateManagerOpen] = useState(false);
   const [editingSessionTemplateId, setEditingSessionTemplateId] = useState<string | null>(null);
   const [sessionTemplateDraft, setSessionTemplateDraft] = useState<SessionTemplateDraft>(
@@ -5168,6 +5266,7 @@ export function App() {
   const [disconnectReports, setDisconnectReports] = useState<DisconnectReportItem[]>(
     () => readDisconnectReportHistory()
   );
+  const disconnectSqliteHydratedRef = useRef(false);
   const initialDisconnectReportViewPreferences = useMemo(
     () => readDisconnectReportViewPreferences(),
     []
@@ -5250,6 +5349,7 @@ export function App() {
   const [portForwardEventHistory, setPortForwardEventHistory] = useState<
     PortForwardEventHistoryItem[]
   >(() => readPortForwardEventHistory());
+  const portForwardEventSqliteHydratedRef = useRef(false);
   const initialPortForwardEventViewPreferences = useMemo(
     () => readPortForwardEventViewPreferences(),
     []
@@ -5267,6 +5367,8 @@ export function App() {
   const [sftpDeleteProgress, setSftpDeleteProgress] = useState<{
     name: string;
     kind: SftpEntry["kind"];
+    path: string;
+    tabId: string;
   } | null>(null);
   const [isServerHealthDetailOpen, setIsServerHealthDetailOpen] = useState(false);
   const [serverHealthDetailTab, setServerHealthDetailTab] =
@@ -7913,9 +8015,11 @@ export function App() {
     writeAppLog
   ]);
   const {
+    cancelOperationCenterAppJob,
     clearFinishedOperationCenterAppJobs,
     copyOperationCenterAppJobOutputPath,
     finishOperationCenterAppJob,
+    isOperationCenterAppJobCanceled,
     operationCenterAppJobs,
     removeOperationCenterAppJob,
     startOperationCenterAppJob
@@ -7941,6 +8045,7 @@ export function App() {
     copyTextToClipboard,
     finishOperationCenterAppJob,
     isCommandSnippetManagerOpen,
+    isOperationCenterAppJobCanceled,
     normalizeCommandSnippetGroups,
     removeOperationCenterAppJob,
     setCommandSnippetGroups,
@@ -9154,30 +9259,39 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sessionSortMode]);
+    dualWriteAppPreference(SESSION_SORT_MODE_STORAGE_KEY, sessionSortMode);
+  }, [dualWriteAppPreference, sessionSortMode]);
 
   useEffect(() => {
     const validGroupKeys = new Set(groupedSessions.map((group) => group.key));
-    setSelectedGroupKeys((prev) => prev.filter((groupKey) => validGroupKeys.has(groupKey)));
+    setSelectedGroupKeys((prev) => {
+      const next = prev.filter((groupKey) => validGroupKeys.has(groupKey));
+      return next.length === prev.length ? prev : next;
+    });
   }, [groupedSessions]);
 
   useEffect(() => {
     const validSessionIds = new Set(sessions.map((session) => session.id));
-    setSelectedSessionIds((prev) => prev.filter((sessionId) => validSessionIds.has(sessionId)));
+    setSelectedSessionIds((prev) => {
+      const next = prev.filter((sessionId) => validSessionIds.has(sessionId));
+      return next.length === prev.length ? prev : next;
+    });
   }, [sessions]);
 
   useEffect(() => {
     const validSessionIds = new Set(sessions.map((session) => session.id));
-    setPortForwardPresets((prev) =>
-      prev.filter((preset) => validSessionIds.has(preset.sessionId))
-    );
+    setPortForwardPresets((prev) => {
+      const next = prev.filter((preset) => validSessionIds.has(preset.sessionId));
+      return next.length === prev.length ? prev : next;
+    });
   }, [sessions]);
 
   useEffect(() => {
     const validSessionIds = new Set(sessions.map((session) => session.id));
-    setPortForwardEventHistory((prev) =>
-      prev.filter((entry) => validSessionIds.has(entry.sessionId))
-    );
+    setPortForwardEventHistory((prev) => {
+      const next = prev.filter((entry) => validSessionIds.has(entry.sessionId));
+      return next.length === prev.length ? prev : next;
+    });
   }, [sessions]);
 
   useEffect(() => {
@@ -9203,11 +9317,14 @@ export function App() {
 
   useEffect(() => {
     if (!activeSessionGroup) {
-      setSelectedSessionIds([]);
+      setSelectedSessionIds((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     const validSessionIds = new Set(activeGroupSessions.map((session) => session.id));
-    setSelectedSessionIds((prev) => prev.filter((sessionId) => validSessionIds.has(sessionId)));
+    setSelectedSessionIds((prev) => {
+      const next = prev.filter((sessionId) => validSessionIds.has(sessionId));
+      return next.length === prev.length ? prev : next;
+    });
     if (selectedSessionId && !validSessionIds.has(selectedSessionId)) {
       setSelectedSessionId(activeGroupSessions[0]?.id ?? null);
     }
@@ -9222,7 +9339,8 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [connectionPreferences]);
+    dualWriteAppPreference(CONNECTION_PREFERENCES_STORAGE_KEY, connectionPreferences);
+  }, [connectionPreferences, dualWriteAppPreference]);
 
   useEffect(() => {
     writeSftpExplorerViewMode(sftpExplorerViewMode);
@@ -9259,7 +9377,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [terminalEditorFocusPreferences]);
+    dualWriteAppPreference(
+      TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY,
+      terminalEditorFocusPreferences
+    );
+  }, [dualWriteAppPreference, terminalEditorFocusPreferences]);
 
   useEffect(() => {
     try {
@@ -9270,7 +9392,8 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [workspaceProfilePreferences]);
+    dualWriteAppPreference(WORKSPACE_PROFILE_STORAGE_KEY, workspaceProfilePreferences);
+  }, [dualWriteAppPreference, workspaceProfilePreferences]);
 
   useEffect(() => {
     try {
@@ -9281,7 +9404,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [dangerousCommandGuardPreferences]);
+    dualWriteAppPreference(
+      DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY,
+      dangerousCommandGuardPreferences
+    );
+  }, [dangerousCommandGuardPreferences, dualWriteAppPreference]);
 
   useEffect(() => {
     try {
@@ -9292,7 +9419,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [dangerousCommandPolicyBundles]);
+    dualWriteAppPreference(
+      DANGEROUS_COMMAND_POLICY_BUNDLES_STORAGE_KEY,
+      dangerousCommandPolicyBundles
+    );
+  }, [dangerousCommandPolicyBundles, dualWriteAppPreference]);
 
   useEffect(() => {
     try {
@@ -9303,7 +9434,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [dangerousCommandPolicyBundleSyncState]);
+    dualWriteAppPreference(
+      DANGEROUS_COMMAND_POLICY_BUNDLE_SYNC_STORAGE_KEY,
+      dangerousCommandPolicyBundleSyncState
+    );
+  }, [dangerousCommandPolicyBundleSyncState, dualWriteAppPreference]);
 
   useEffect(() => {
     try {
@@ -9314,7 +9449,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [disconnectReportCapturePreferences]);
+    dualWriteAppPreference(
+      DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY,
+      disconnectReportCapturePreferences
+    );
+  }, [disconnectReportCapturePreferences, dualWriteAppPreference]);
 
   useEffect(() => {
     try {
@@ -9325,7 +9464,8 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [hotkeyPreferences]);
+    dualWriteAppPreference(HOTKEY_PREFERENCES_STORAGE_KEY, hotkeyPreferences);
+  }, [dualWriteAppPreference, hotkeyPreferences]);
 
   useEffect(() => {
     try {
@@ -9336,7 +9476,8 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [fileOpenPreferences]);
+    dualWriteAppPreference(FILE_OPEN_PREFERENCES_STORAGE_KEY, fileOpenPreferences);
+  }, [dualWriteAppPreference, fileOpenPreferences]);
 
   useEffect(() => {
     try {
@@ -9349,7 +9490,8 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sftpTransferPreferences]);
+    dualWriteAppPreference(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY, sftpTransferPreferences);
+  }, [dualWriteAppPreference, sftpTransferPreferences]);
 
   useEffect(() => {
     try {
@@ -9360,7 +9502,8 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sftpTransferPolicyPacks]);
+    dualWriteAppPreference(SFTP_TRANSFER_POLICY_PACKS_STORAGE_KEY, sftpTransferPolicyPacks);
+  }, [dualWriteAppPreference, sftpTransferPolicyPacks]);
 
   useEffect(() => {
     try {
@@ -9371,7 +9514,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sftpTransferPolicyPackSyncState]);
+    dualWriteAppPreference(
+      SFTP_TRANSFER_POLICY_PACK_SYNC_STORAGE_KEY,
+      sftpTransferPolicyPackSyncState
+    );
+  }, [dualWriteAppPreference, sftpTransferPolicyPackSyncState]);
 
   useEffect(() => {
     try {
@@ -9385,7 +9532,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [terminalCommandHistoryEntries]);
+    dualWriteAppPreference(
+      TERMINAL_COMMAND_HISTORY_STORAGE_KEY,
+      terminalCommandHistoryEntries.slice(0, MAX_TERMINAL_COMMAND_HISTORY)
+    );
+  }, [dualWriteAppPreference, terminalCommandHistoryEntries]);
 
   useEffect(() => {
     try {
@@ -9396,7 +9547,11 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sessionTransferConflictStrategyState]);
+    dualWriteAppPreference(
+      SFTP_CONFLICT_STRATEGY_STORAGE_KEY,
+      sessionTransferConflictStrategyState
+    );
+  }, [dualWriteAppPreference, sessionTransferConflictStrategyState]);
 
   useEffect(() => {
     try {
@@ -9407,7 +9562,126 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [transferHistory]);
+    if (!transferSqliteHydratedRef.current || !storageApi?.replaceTransferHistory) {
+      return;
+    }
+    void storageApi.replaceTransferHistory(transferHistory).catch(() => {
+      // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+    });
+  }, [storageApi, transferHistory]);
+
+  useEffect(() => {
+    if (!storageApi?.getTransferHistory || !storageApi.getPendingTransferRestore) {
+      transferSqliteHydratedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [remoteHistory, remotePending] = await Promise.all([
+          storageApi.getTransferHistory(),
+          storageApi.getPendingTransferRestore()
+        ]);
+        if (cancelled) {
+          return;
+        }
+        if (Array.isArray(remoteHistory) && remoteHistory.length > 0) {
+          const normalized = remoteHistory
+            .map((row) => {
+              if (!row || typeof row !== "object") {
+                return null;
+              }
+              const candidate = row as Partial<SftpTransferHistoryItem>;
+              const sessionId =
+                typeof candidate.sessionId === "string" ? candidate.sessionId.trim() : "";
+              const localPath =
+                typeof candidate.localPath === "string" ? candidate.localPath.trim() : "";
+              const remotePath =
+                typeof candidate.remotePath === "string" ? candidate.remotePath.trim() : "";
+              const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+              const updatedAt =
+                typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
+                  ? Math.max(0, Math.trunc(candidate.updatedAt))
+                  : 0;
+              const attemptCount =
+                typeof candidate.attemptCount === "number" && Number.isFinite(candidate.attemptCount)
+                  ? Math.max(1, Math.trunc(candidate.attemptCount))
+                  : 1;
+              if (
+                !sessionId ||
+                !localPath ||
+                !remotePath ||
+                !name ||
+                !updatedAt ||
+                !isSftpTransferDirection(candidate.direction) ||
+                !isSftpTransferStatus(candidate.status)
+              ) {
+                return null;
+              }
+              const item: SftpTransferHistoryItem = {
+                key:
+                  typeof candidate.key === "string" && candidate.key.trim()
+                    ? candidate.key.trim()
+                    : createTransferHistoryKey(
+                        sessionId,
+                        candidate.direction,
+                        localPath,
+                        remotePath
+                      ),
+                sessionId,
+                direction: candidate.direction,
+                status: candidate.status,
+                name,
+                localPath,
+                remotePath,
+                updatedAt,
+                attemptCount
+              };
+              if (
+                typeof candidate.message === "string" &&
+                candidate.message.trim().length > 0
+              ) {
+                item.message = candidate.message.trim().slice(0, 500);
+              }
+              return item;
+            })
+            .filter((entry): entry is SftpTransferHistoryItem => entry !== null)
+            .sort((left, right) => right.updatedAt - left.updatedAt)
+            .slice(0, MAX_SFTP_TRANSFER_HISTORY);
+          if (normalized.length > 0) {
+            setTransferHistory(normalized);
+          }
+        } else {
+          const localHistory = readSftpTransferHistory();
+          if (localHistory.length > 0) {
+            await storageApi.replaceTransferHistory(localHistory).catch(() => undefined);
+          }
+        }
+
+        if (Array.isArray(remotePending) && remotePending.length > 0) {
+          const normalizedPending = normalizePendingTransferRestoreItems(remotePending);
+          if (normalizedPending.length > 0) {
+            setPendingTransferRestoreItems(normalizedPending);
+            setPendingTransferRestoreResolved(false);
+          }
+        } else {
+          const localPending = readPendingTransferRestoreItems();
+          if (localPending.length > 0) {
+            await storageApi.replacePendingTransferRestore(localPending).catch(() => undefined);
+          }
+        }
+      } catch {
+        // Keep localStorage bootstrap if SQLite hydrate fails.
+      } finally {
+        if (!cancelled) {
+          transferSqliteHydratedRef.current = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageApi]);
 
   useEffect(() => {
     try {
@@ -9422,7 +9696,16 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sessionQuickProfiles]);
+    if (
+      !sessionQuickProfilesSqliteHydratedRef.current ||
+      !storageApi?.replaceSessionQuickProfiles
+    ) {
+      return;
+    }
+    void storageApi.replaceSessionQuickProfiles(sessionQuickProfiles).catch(() => {
+      // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+    });
+  }, [sessionQuickProfiles, storageApi]);
 
   useEffect(() => {
     try {
@@ -9437,7 +9720,166 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sessionTemplates]);
+    if (!sessionTemplatesSqliteHydratedRef.current || !storageApi?.replaceSessionTemplates) {
+      return;
+    }
+    void storageApi
+      .replaceSessionTemplates(stripSessionTemplateSecretsForSqlite(sessionTemplates))
+      .catch(() => {
+        // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+      });
+  }, [sessionTemplates, storageApi]);
+
+  useEffect(() => {
+    if (!storageApi?.getSessionQuickProfiles) {
+      sessionQuickProfilesSqliteHydratedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remoteProfiles = await storageApi.getSessionQuickProfiles();
+        if (cancelled) {
+          return;
+        }
+        if (Array.isArray(remoteProfiles) && remoteProfiles.length > 0) {
+          const normalized = normalizePersistedSessionQuickProfiles(remoteProfiles);
+          if (normalized.length > 0) {
+            setSessionQuickProfiles(normalized);
+          }
+        } else {
+          const localProfiles = readSessionQuickProfiles();
+          if (localProfiles.length > 0) {
+            await storageApi.replaceSessionQuickProfiles(localProfiles).catch(() => undefined);
+          }
+        }
+      } catch {
+        // Keep localStorage bootstrap if SQLite hydrate fails.
+      } finally {
+        if (!cancelled) {
+          sessionQuickProfilesSqliteHydratedRef.current = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageApi]);
+
+  useEffect(() => {
+    if (!storageApi?.getSessionTemplates) {
+      sessionTemplatesSqliteHydratedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remoteTemplates = await storageApi.getSessionTemplates();
+        if (cancelled) {
+          return;
+        }
+        if (Array.isArray(remoteTemplates) && remoteTemplates.length > 0) {
+          const normalized = normalizePersistedSessionTemplates(remoteTemplates);
+          if (normalized.length > 0) {
+            setSessionTemplates(
+              mergeSessionTemplateSecretsFromLocal(normalized, readSessionTemplates())
+            );
+          }
+        } else {
+          const localTemplates = readSessionTemplates();
+          if (localTemplates.length > 0) {
+            await storageApi
+              .replaceSessionTemplates(stripSessionTemplateSecretsForSqlite(localTemplates))
+              .catch(() => undefined);
+          }
+        }
+      } catch {
+        // Keep localStorage bootstrap if SQLite hydrate fails.
+      } finally {
+        if (!cancelled) {
+          sessionTemplatesSqliteHydratedRef.current = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageApi]);
+
+  useEffect(() => {
+    if (!commandSnippetSqliteHydratedRef.current || !storageApi?.replaceCommandSnippetGroups) {
+      return;
+    }
+    void storageApi
+      .replaceCommandSnippetGroups(
+        commandSnippetGroups.slice(0, MAX_COMMAND_SNIPPET_GROUPS) as PersistedCommandSnippetGroup[]
+      )
+      .catch(() => {
+        // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+      });
+  }, [commandSnippetGroups, storageApi]);
+
+  useEffect(() => {
+    if (
+      !commandSnippetSqliteHydratedRef.current ||
+      !storageApi?.replaceCommandSnippetScopedValues
+    ) {
+      return;
+    }
+    void storageApi
+      .replaceCommandSnippetScopedValues(normalizeCommandSnippetScopedValues(commandSnippetScopedValues))
+      .catch(() => {
+        // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+      });
+  }, [commandSnippetScopedValues, storageApi]);
+
+  useEffect(() => {
+    if (!storageApi?.getCommandSnippetGroups || !storageApi.getCommandSnippetScopedValues) {
+      commandSnippetSqliteHydratedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [remoteGroups, remoteScopedValues] = await Promise.all([
+          storageApi.getCommandSnippetGroups(),
+          storageApi.getCommandSnippetScopedValues()
+        ]);
+        if (cancelled) {
+          return;
+        }
+        const localGroups = readCommandSnippetGroups();
+        const localScopedValues = readCommandSnippetScopedValues();
+        if (Array.isArray(remoteGroups) && remoteGroups.length > 0) {
+          const normalizedGroups = normalizeCommandSnippetGroups(remoteGroups);
+          if (normalizedGroups.length > 0) {
+            setCommandSnippetGroups(normalizedGroups);
+          }
+        } else if (localGroups.length > 0) {
+          await storageApi.replaceCommandSnippetGroups(localGroups).catch(() => undefined);
+        }
+        if (remoteScopedValues && typeof remoteScopedValues === "object") {
+          const normalizedScopedValues = normalizeCommandSnippetScopedValues(remoteScopedValues);
+          if (Object.keys(normalizedScopedValues).length > 0) {
+            setCommandSnippetScopedValues(normalizedScopedValues);
+          }
+        } else if (Object.keys(localScopedValues).length > 0) {
+          await storageApi
+            .replaceCommandSnippetScopedValues(localScopedValues)
+            .catch(() => undefined);
+        }
+      } catch {
+        // Keep localStorage bootstrap if SQLite hydrate fails.
+      } finally {
+        if (!cancelled) {
+          commandSnippetSqliteHydratedRef.current = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [setCommandSnippetGroups, setCommandSnippetScopedValues, storageApi]);
 
   useEffect(() => {
     try {
@@ -9448,7 +9890,49 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [disconnectReports]);
+    if (!disconnectSqliteHydratedRef.current || !storageApi?.replaceDisconnectReports) {
+      return;
+    }
+    void storageApi.replaceDisconnectReports(disconnectReports).catch(() => {
+      // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+    });
+  }, [disconnectReports, storageApi]);
+
+  useEffect(() => {
+    if (!storageApi?.getDisconnectReports) {
+      disconnectSqliteHydratedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remoteReports = await storageApi.getDisconnectReports();
+        if (cancelled) {
+          return;
+        }
+        if (Array.isArray(remoteReports) && remoteReports.length > 0) {
+          const normalized = normalizeDisconnectReportHistory(remoteReports);
+          if (normalized.length > 0) {
+            setDisconnectReports(normalized);
+          }
+        } else {
+          const localReports = readDisconnectReportHistory();
+          if (localReports.length > 0) {
+            await storageApi.replaceDisconnectReports(localReports).catch(() => undefined);
+          }
+        }
+      } catch {
+        // Keep localStorage bootstrap if SQLite hydrate fails.
+      } finally {
+        if (!cancelled) {
+          disconnectSqliteHydratedRef.current = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageApi]);
 
   useEffect(() => {
     try {
@@ -9520,7 +10004,8 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [portForwardPresets]);
+    dualWriteAppPreference(PORT_FORWARD_PRESETS_STORAGE_KEY, portForwardPresets);
+  }, [dualWriteAppPreference, portForwardPresets]);
 
   useEffect(() => {
     try {
@@ -9531,7 +10016,52 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [portForwardEventHistory]);
+    if (
+      !portForwardEventSqliteHydratedRef.current ||
+      !storageApi?.replacePortForwardEventHistory
+    ) {
+      return;
+    }
+    void storageApi.replacePortForwardEventHistory(portForwardEventHistory).catch(() => {
+      // Best-effort SQLite dual-write; localStorage remains the soak-period fallback.
+    });
+  }, [portForwardEventHistory, storageApi]);
+
+  useEffect(() => {
+    if (!storageApi?.getPortForwardEventHistory) {
+      portForwardEventSqliteHydratedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remoteEvents = await storageApi.getPortForwardEventHistory();
+        if (cancelled) {
+          return;
+        }
+        if (Array.isArray(remoteEvents) && remoteEvents.length > 0) {
+          const normalized = normalizePortForwardEventHistory(remoteEvents);
+          if (normalized.length > 0) {
+            setPortForwardEventHistory(normalized);
+          }
+        } else {
+          const localEvents = readPortForwardEventHistory();
+          if (localEvents.length > 0) {
+            await storageApi.replacePortForwardEventHistory(localEvents).catch(() => undefined);
+          }
+        }
+      } catch {
+        // Keep localStorage bootstrap if SQLite hydrate fails.
+      } finally {
+        if (!cancelled) {
+          portForwardEventSqliteHydratedRef.current = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageApi]);
 
   useEffect(() => {
     try {
@@ -9556,12 +10086,18 @@ export function App() {
 
   useEffect(() => {
     const validGroupKeys = new Set(retryCenterGroupedEntries.map((entry) => entry.key));
-    setRetryCenterCollapsedGroupKeys((prev) => prev.filter((key) => validGroupKeys.has(key)));
+    setRetryCenterCollapsedGroupKeys((prev) => {
+      const next = prev.filter((key) => validGroupKeys.has(key));
+      return next.length === prev.length ? prev : next;
+    });
   }, [retryCenterGroupedEntries]);
 
   useEffect(() => {
     const validKeys = new Set(retryCenterEntries.map((entry) => entry.key));
-    setRetryCenterSelection((prev) => prev.filter((key) => validKeys.has(key)));
+    setRetryCenterSelection((prev) => {
+      const next = prev.filter((key) => validKeys.has(key));
+      return next.length === prev.length ? prev : next;
+    });
   }, [retryCenterEntries]);
 
   useEffect(() => {
@@ -9575,7 +10111,10 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [sessionGroupsState.groups]);
+    dualWriteAppPreference(SESSION_GROUPS_STORAGE_KEY, {
+      groups: normalizeSessionGroups(sessionGroupsState.groups)
+    });
+  }, [dualWriteAppPreference, sessionGroupsState.groups]);
 
   useEffect(() => {
     try {
@@ -9586,7 +10125,117 @@ export function App() {
     } catch {
       // Ignore storage failures; runtime settings still apply for this launch.
     }
-  }, [serverHealthAlertPreferences]);
+    dualWriteAppPreference(
+      SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY,
+      serverHealthAlertPreferences
+    );
+  }, [dualWriteAppPreference, serverHealthAlertPreferences]);
+
+  useEffect(() => {
+    if (!storageApi?.getAppPreferences) {
+      appPrefsSqliteHydratedRef.current = true;
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const remotePreferences = await storageApi.getAppPreferences();
+        if (cancelled) {
+          return;
+        }
+        const remoteEntries =
+          remotePreferences && typeof remotePreferences === "object"
+            ? remotePreferences
+            : {};
+        const remoteKeys = DURABLE_APP_PREFERENCE_KEYS.filter((key) =>
+          Object.prototype.hasOwnProperty.call(remoteEntries, key)
+        );
+        if (remoteKeys.length > 0) {
+          suppressNextSftpTransferPolicyPackAutoPushRef.current = true;
+          for (const key of remoteKeys) {
+            writeLocalDurablePreferenceValue(key, remoteEntries[key]);
+          }
+          if (remoteKeys.includes(CONNECTION_PREFERENCES_STORAGE_KEY)) {
+            setConnectionPreferences(readConnectionPreferences());
+          }
+          if (remoteKeys.includes(TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY)) {
+            setTerminalEditorFocusPreferences(readTerminalEditorFocusPreferences());
+          }
+          if (remoteKeys.includes(HOTKEY_PREFERENCES_STORAGE_KEY)) {
+            setHotkeyPreferences(readHotkeyPreferences());
+          }
+          if (remoteKeys.includes(FILE_OPEN_PREFERENCES_STORAGE_KEY)) {
+            setFileOpenPreferences(readFileOpenPreferences());
+          }
+          if (remoteKeys.includes(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY)) {
+            setSftpTransferPreferences(readSftpTransferPreferences());
+          }
+          if (remoteKeys.includes(SFTP_TRANSFER_POLICY_PACKS_STORAGE_KEY)) {
+            setSftpTransferPolicyPacks(readSftpTransferPolicyPacks());
+          }
+          if (remoteKeys.includes(SFTP_TRANSFER_POLICY_PACK_SYNC_STORAGE_KEY)) {
+            setSftpTransferPolicyPackSyncState(readSftpTransferPolicyPackSyncState());
+          }
+          if (remoteKeys.includes(SFTP_CONFLICT_STRATEGY_STORAGE_KEY)) {
+            setSessionTransferConflictStrategyState(readSessionTransferConflictStrategyState());
+          }
+          if (remoteKeys.includes(PORT_FORWARD_PRESETS_STORAGE_KEY)) {
+            setPortForwardPresets(readPortForwardPresets());
+          }
+          if (remoteKeys.includes(SESSION_GROUPS_STORAGE_KEY)) {
+            setSessionGroupsState(readSessionGroupsState());
+          }
+          if (remoteKeys.includes(SESSION_SORT_MODE_STORAGE_KEY)) {
+            setSessionSortMode(readSessionSortMode());
+          }
+          if (remoteKeys.includes(WORKSPACE_PROFILE_STORAGE_KEY)) {
+            setWorkspaceProfilePreferences(readWorkspaceProfilePreferences());
+          }
+          if (remoteKeys.includes(SERVER_HEALTH_ALERT_PREFERENCES_STORAGE_KEY)) {
+            setServerHealthAlertPreferences(readServerHealthAlertPreferences());
+          }
+          if (remoteKeys.includes(DANGEROUS_COMMAND_GUARD_PREFERENCES_STORAGE_KEY)) {
+            setDangerousCommandGuardPreferences(readDangerousCommandGuardPreferences());
+          }
+          if (remoteKeys.includes(DANGEROUS_COMMAND_POLICY_BUNDLES_STORAGE_KEY)) {
+            setDangerousCommandPolicyBundles(readDangerousCommandPolicyBundles());
+          }
+          if (remoteKeys.includes(DANGEROUS_COMMAND_POLICY_BUNDLE_SYNC_STORAGE_KEY)) {
+            setDangerousCommandPolicyBundleSyncState(readDangerousCommandPolicyBundleSyncState());
+          }
+          if (remoteKeys.includes(DISCONNECT_REPORT_CAPTURE_PREFERENCES_STORAGE_KEY)) {
+            setDisconnectReportCapturePreferences(readDisconnectReportCapturePreferences());
+          }
+          if (remoteKeys.includes(TERMINAL_COMMAND_HISTORY_STORAGE_KEY)) {
+            setTerminalCommandHistoryEntries(readTerminalCommandHistory());
+          }
+        }
+
+        const missingLocalEntries: PersistedAppPreferences = {};
+        for (const key of DURABLE_APP_PREFERENCE_KEYS) {
+          if (remoteKeys.includes(key)) {
+            continue;
+          }
+          const localValue = readLocalDurablePreferenceValue(key);
+          if (localValue !== undefined) {
+            missingLocalEntries[key] = localValue;
+          }
+        }
+        if (Object.keys(missingLocalEntries).length > 0 && storageApi.replaceAppPreferences) {
+          await storageApi.replaceAppPreferences(missingLocalEntries).catch(() => undefined);
+        }
+      } catch {
+        // Keep localStorage bootstrap if SQLite hydrate fails.
+      } finally {
+        if (!cancelled) {
+          appPrefsSqliteHydratedRef.current = true;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageApi]);
 
   useEffect(() => {
     if (!appApi) {
@@ -10568,6 +11217,12 @@ export function App() {
       let firstImportedSessionId: string | null = null;
 
       for (const candidate of parsed.candidates) {
+        if (operationJobId && isOperationCenterAppJobCanceled(operationJobId)) {
+          finishOperationCenterAppJob(operationJobId, "canceled", {
+            detail: `Canceled after creating ${createdCount}, updating ${updatedCount}, skipping ${skippedCount}, failing ${failedCount}.`
+          });
+          return;
+        }
         const connectionKey = buildSessionConnectionKey(
           candidate.host,
           candidate.port,
@@ -10773,6 +11428,34 @@ export function App() {
   }, []);
 
   const isSmokeMigrationSentinel = useCallback((value: string) => value === "__TERMDOCK_SMOKE_MIGRATION__", []);
+  const isSmokeAppBackupSentinel = useCallback(
+    (value: string) => value === "__TERMDOCK_SMOKE_APP_BACKUP__",
+    []
+  );
+
+  const buildSmokeAppBackupPreviewResult = useCallback(
+    (): AppBackupPreviewResult => ({
+      preview: {
+        exportedAtIso: new Date().toISOString(),
+        appVersion: "smoke",
+        schemaVersion: 6,
+        sessionCount: 2,
+        sessionsWithSecretFlag: 0,
+        transferHistoryCount: 1,
+        transferPendingRestoreCount: 0,
+        disconnectReportCount: 0,
+        portForwardEventCount: 0,
+        quickProfileCount: 0,
+        sessionTemplateCount: 0,
+        commandSnippetGroupCount: 1,
+        commandSnippetScopedValueCount: 0,
+        appPreferenceCount: 3,
+        hasCredentialsAttachment: false
+      },
+      warnings: []
+    }),
+    []
+  );
 
   const buildSmokeSessionMigrationImportResult = useCallback(
     (): { payload: SessionMigrationPlainPayload; warnings: string[] } => ({
@@ -10974,6 +11657,12 @@ export function App() {
       const sourceRemarkPrefix = `Imported JSON: ${selected.filePath}`;
 
       for (const candidate of parsedImport.candidates) {
+        if (operationJobId && isOperationCenterAppJobCanceled(operationJobId)) {
+          finishOperationCenterAppJob(operationJobId, "canceled", {
+            detail: `Canceled after creating ${createdCount}, updating ${updatedCount}, skipping ${skippedCount}, failing ${failedCount}.`
+          });
+          return;
+        }
         const connectionKey = buildSessionConnectionKey(
           candidate.host,
           candidate.port,
@@ -11235,7 +11924,7 @@ export function App() {
           detail: message
         });
       }
-      setError(message);
+      setError(`Failed to export encrypted migration. ${message}`);
       writeAppLog("error", "renderer:sessions", "Failed to export encrypted migration.", caughtError);
     }
   }, [
@@ -11570,7 +12259,7 @@ export function App() {
           detail: message
         });
       }
-      setError(message);
+      setError(`Failed to import encrypted migration. ${message}`);
       writeAppLog("error", "renderer:sessions", "Failed to import encrypted migration.", caughtError);
     }
   }, [
@@ -11591,12 +12280,440 @@ export function App() {
     writeAppLog
   ]);
 
+  const applyImportedAppBackupState = useCallback(
+    (state: TermDockAppBackupState) => {
+      try {
+        window.localStorage.setItem(
+          SFTP_TRANSFER_HISTORY_STORAGE_KEY,
+          JSON.stringify(state.transferHistory)
+        );
+        window.localStorage.setItem(
+          SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY,
+          JSON.stringify(state.transferPendingRestore)
+        );
+        window.localStorage.setItem(
+          DISCONNECT_REPORT_HISTORY_STORAGE_KEY,
+          JSON.stringify(state.disconnectReports)
+        );
+        window.localStorage.setItem(
+          PORT_FORWARD_EVENT_HISTORY_STORAGE_KEY,
+          JSON.stringify(state.portForwardEvents)
+        );
+        window.localStorage.setItem(
+          SESSION_QUICK_PROFILES_STORAGE_KEY,
+          JSON.stringify(state.quickProfiles)
+        );
+        window.localStorage.setItem(
+          SESSION_TEMPLATES_STORAGE_KEY,
+          JSON.stringify(
+            mergeSessionTemplateSecretsFromLocal(
+              normalizePersistedSessionTemplates(state.sessionTemplates),
+              readSessionTemplates()
+            )
+          )
+        );
+        window.localStorage.setItem(
+          COMMAND_SNIPPET_GROUPS_STORAGE_KEY,
+          JSON.stringify(state.commandSnippetGroups)
+        );
+        window.localStorage.setItem(
+          COMMAND_SNIPPET_SCOPED_VALUES_STORAGE_KEY,
+          JSON.stringify(state.commandSnippetScopedValues)
+        );
+        for (const [key, value] of Object.entries(state.appPreferences ?? {})) {
+          writeLocalDurablePreferenceValue(key, value);
+        }
+      } catch {
+        // Best-effort localStorage mirror after SQLite restore.
+      }
+
+      setTransferHistory(readSftpTransferHistory());
+      setPendingTransferRestoreItems(readPendingTransferRestoreItems());
+      setDisconnectReports(readDisconnectReportHistory());
+      setPortForwardEventHistory(readPortForwardEventHistory());
+      setSessionQuickProfiles(normalizePersistedSessionQuickProfiles(state.quickProfiles));
+      setSessionTemplates(
+        mergeSessionTemplateSecretsFromLocal(
+          normalizePersistedSessionTemplates(state.sessionTemplates),
+          readSessionTemplates()
+        )
+      );
+      setCommandSnippetGroups(normalizeCommandSnippetGroups(state.commandSnippetGroups));
+      setCommandSnippetScopedValues(
+        normalizeCommandSnippetScopedValues(state.commandSnippetScopedValues)
+      );
+      setConnectionPreferences(readConnectionPreferences());
+      setTerminalEditorFocusPreferences(readTerminalEditorFocusPreferences());
+      setHotkeyPreferences(readHotkeyPreferences());
+      setFileOpenPreferences(readFileOpenPreferences());
+      setSftpTransferPreferences(readSftpTransferPreferences());
+      setSftpTransferPolicyPacks(readSftpTransferPolicyPacks());
+      setSftpTransferPolicyPackSyncState(readSftpTransferPolicyPackSyncState());
+      setSessionTransferConflictStrategyState(readSessionTransferConflictStrategyState());
+      setPortForwardPresets(readPortForwardPresets());
+      setSessionGroupsState(readSessionGroupsState());
+      setSessionSortMode(readSessionSortMode());
+      setWorkspaceProfilePreferences(readWorkspaceProfilePreferences());
+      setServerHealthAlertPreferences(readServerHealthAlertPreferences());
+      setDangerousCommandGuardPreferences(readDangerousCommandGuardPreferences());
+      setDangerousCommandPolicyBundles(readDangerousCommandPolicyBundles());
+      setDangerousCommandPolicyBundleSyncState(readDangerousCommandPolicyBundleSyncState());
+      setDisconnectReportCapturePreferences(readDisconnectReportCapturePreferences());
+      setTerminalCommandHistoryEntries(readTerminalCommandHistory());
+    },
+    [
+      setCommandSnippetGroups,
+      setCommandSnippetScopedValues
+    ]
+  );
+
+  const exportAppBackup = useCallback(async () => {
+    let operationJobId: string | null = null;
+    try {
+      if (!storageApi?.exportAppBackup) {
+        throw new Error("Storage bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!systemApi?.saveTextFile) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      const credentialChoice = await showAppChoice(
+        "Include passphrase-protected session credentials in this app backup?",
+        [
+          { value: "include", label: "Include Credentials" },
+          { value: "plain", label: "Non-secret Only" }
+        ],
+        {
+          title: "Export App Backup",
+          cancelLabel: "Cancel",
+          detailText:
+            "Non-secret backup covers sessions metadata and durable SQLite state. Credentials use the same encrypted attachment format as session migration."
+        }
+      );
+      if (!credentialChoice) {
+        return;
+      }
+      const includeCredentials = credentialChoice === "include";
+      let passphrase: string | undefined;
+      let includePrivateKeyFiles = false;
+      if (includeCredentials) {
+        const entered = await showAppPrompt(
+          "Enter a backup passphrase. You will need it to restore credentials.",
+          "",
+          {
+            title: "Export App Backup",
+            confirmLabel: "Continue",
+            inputType: "password"
+          }
+        );
+        if (entered === null) {
+          return;
+        }
+        if (entered.length < 8) {
+          await showAppAlert("Backup passphrase must be at least 8 characters.", {
+            title: "Export App Backup"
+          });
+          return;
+        }
+        const confirmed = await showAppPrompt("Confirm backup passphrase.", "", {
+          title: "Export App Backup",
+          confirmLabel: "Export",
+          inputType: "password"
+        });
+        if (confirmed === null) {
+          return;
+        }
+        if (confirmed !== entered) {
+          await showAppAlert("Passphrases do not match.", {
+            title: "Export App Backup"
+          });
+          return;
+        }
+        passphrase = entered;
+        const keyChoice = await showAppChoice(
+          "Include private key file contents in the credential attachment?",
+          [
+            { value: "include", label: "Include Keys" },
+            { value: "paths", label: "Paths Only" }
+          ],
+          {
+            title: "Export App Backup",
+            cancelLabel: "Cancel"
+          }
+        );
+        if (!keyChoice) {
+          return;
+        }
+        includePrivateKeyFiles = keyChoice === "include";
+      }
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "App Backup Export",
+        description: includeCredentials
+          ? "Exporting durable SQLite state with encrypted credentials."
+          : "Exporting durable SQLite state (non-secret)."
+      });
+      const result = await storageApi.exportAppBackup({
+        appVersion: APP_VERSION,
+        includeCredentials,
+        passphrase,
+        includePrivateKeyFiles
+      });
+      const exportText = `${JSON.stringify(result.file, null, 2)}\n`;
+      const saved = await systemApi.saveTextFile({
+        title: "Export App Backup",
+        defaultFileName: `termdock-app-backup-${result.file.exportedAtIso.replace(/[:.]/g, "-")}.tdbackup`,
+        text: exportText,
+        filters: [
+          {
+            name: "TermDock App Backup",
+            extensions: ["tdbackup", "json"]
+          }
+        ]
+      });
+      if (saved.canceled || !saved.outputPath) {
+        if (operationJobId) {
+          removeOperationCenterAppJob(operationJobId);
+        }
+        return;
+      }
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Exported ${result.file.state.sessions.length} session(s)${
+            result.file.credentialsAttachment ? " with credentials attachment" : ""
+          }.`,
+          outputPath: saved.outputPath
+        });
+      }
+      const warningText =
+        result.warnings.length > 0 ? `\n\nWarnings:\n${result.warnings.join("\n")}` : "";
+      await showAppAlert("App backup exported.", {
+        title: "Export App Backup",
+        detailText: `App backup exported.\nPath:\n${saved.outputPath}${warningText}`,
+        translateDetailText: true
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", { detail: message });
+      }
+      setError(`Failed to export app backup. ${message}`);
+      writeAppLog("error", "renderer:backup", "Failed to export app backup.", caughtError);
+    }
+  }, [
+    finishOperationCenterAppJob,
+    removeOperationCenterAppJob,
+    showAppAlert,
+    showAppChoice,
+    showAppPrompt,
+    startOperationCenterAppJob,
+    storageApi,
+    systemApi,
+    writeAppLog
+  ]);
+
+  const importAppBackup = useCallback(async () => {
+    let operationJobId: string | null = null;
+    try {
+      if (!storageApi?.previewAppBackup || !storageApi.importAppBackup) {
+        throw new Error("Storage bridge unavailable. Restart `pnpm dev`.");
+      }
+      const smokeSelected = consumeSmokePickedTextFile();
+      if (!systemApi?.pickAndReadTextFile && !smokeSelected) {
+        throw new Error("System bridge unavailable. Restart `pnpm dev`.");
+      }
+      if (!sessionsApi) {
+        throw new Error("Session bridge unavailable. Restart `pnpm dev`.");
+      }
+      const selected =
+        smokeSelected ??
+        (await systemApi!.pickAndReadTextFile({
+          title: "Import App Backup",
+          buttonLabel: "Import",
+          filters: [
+            {
+              name: "TermDock App Backup",
+              extensions: ["tdbackup", "json"]
+            },
+            {
+              name: "JSON",
+              extensions: ["json"]
+            }
+          ]
+        }));
+      if (selected.canceled || !selected.text) {
+        return;
+      }
+      const previewResult = isSmokeAppBackupSentinel(selected.text)
+        ? buildSmokeAppBackupPreviewResult()
+        : await storageApi.previewAppBackup({ fileText: selected.text });
+      const previewText = formatAppBackupPreview(
+        previewResult.preview,
+        appLanguageRef.current
+      );
+      const proceed = await showAppConfirm("Restore this app backup?", {
+        title: "Import App Backup",
+        confirmLabel: "Continue",
+        cancelLabel: "Cancel",
+        detailText: previewText
+      });
+      if (!proceed) {
+        return;
+      }
+      const strategyChoice = await showAppChoice(
+        "Choose session duplicate strategy (matched by host:port:username).",
+        [
+          { value: "skip", label: "Skip Duplicates" },
+          { value: "overwrite", label: "Overwrite Existing" },
+          { value: "rename", label: "Create Renamed Copies" }
+        ],
+        { title: "Duplicate Strategy", cancelLabel: "Cancel" }
+      );
+      if (!strategyChoice) {
+        return;
+      }
+      const sessionDuplicateStrategy = strategyChoice as AppBackupSessionDuplicateStrategy;
+      let restoreCredentials = false;
+      let passphrase: string | undefined;
+      let includePrivateKeyFiles = false;
+      if (previewResult.preview.hasCredentialsAttachment) {
+        const credentialChoice = await showAppChoice(
+          "Restore passphrase-protected credentials from this backup?",
+          [
+            { value: "restore", label: "Restore Credentials" },
+            { value: "skip", label: "Skip Credentials" }
+          ],
+          {
+            title: "Import App Backup",
+            cancelLabel: "Cancel"
+          }
+        );
+        if (!credentialChoice) {
+          return;
+        }
+        restoreCredentials = credentialChoice === "restore";
+        if (restoreCredentials) {
+          const entered = await showAppPrompt("Enter the backup passphrase.", "", {
+            title: "Import App Backup",
+            confirmLabel: "Continue",
+            inputType: "password"
+          });
+          if (entered === null) {
+            return;
+          }
+          if (entered.length < 8) {
+            await showAppAlert("Backup passphrase must be at least 8 characters.", {
+              title: "Import App Backup"
+            });
+            return;
+          }
+          passphrase = entered;
+          const keyChoice = await showAppChoice(
+            "Restore embedded private key files from the credential attachment?",
+            [
+              { value: "include", label: "Restore Keys" },
+              { value: "paths", label: "Paths Only" }
+            ],
+            {
+              title: "Import App Backup",
+              cancelLabel: "Cancel"
+            }
+          );
+          if (!keyChoice) {
+            return;
+          }
+          includePrivateKeyFiles = keyChoice === "include";
+        }
+      }
+      const strategyLabel =
+        sessionDuplicateStrategy === "skip"
+          ? "Skip Duplicates"
+          : sessionDuplicateStrategy === "overwrite"
+            ? "Overwrite Existing"
+            : "Create Renamed Copies";
+      const confirmed = await showAppConfirm(
+        `Apply backup?\nSessions: ${strategyLabel}\nCredentials: ${
+          restoreCredentials ? "restore" : "skip"
+        }\nDurable SQLite tables will be replaced.`,
+        {
+          title: "Import App Backup",
+          confirmLabel: "Import",
+          cancelLabel: "Cancel",
+          danger: true
+        }
+      );
+      if (!confirmed) {
+        return;
+      }
+      if (isSmokeAppBackupSentinel(selected.text)) {
+        await showAppAlert("App backup smoke preview canceled before apply.", {
+          title: "Import App Backup"
+        });
+        return;
+      }
+      operationJobId = startOperationCenterAppJob({
+        category: "sessions",
+        title: "App Backup Import",
+        description: "Restoring durable SQLite state and sessions."
+      });
+      const result = await storageApi.importAppBackup({
+        fileText: selected.text,
+        sessionDuplicateStrategy,
+        restoreCredentials,
+        passphrase,
+        includePrivateKeyFiles
+      });
+      applyImportedAppBackupState(result.state);
+      const nextSessions = await sessionsApi.list();
+      setSessions(nextSessions);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "succeeded", {
+          detail: `Sessions +${result.applied.sessionsCreated}/~${result.applied.sessionsUpdated}/skip ${result.applied.sessionsSkipped}; secrets ${result.applied.secretsRestored}; tables ${result.applied.durableTablesReplaced.length}.`
+        });
+      }
+      const warningText =
+        result.warnings.length > 0 ? `\n\nWarnings:\n${result.warnings.join("\n")}` : "";
+      await showAppAlert("App backup restored.", {
+        title: "Import App Backup",
+        detailText: `App backup restored.\nCreated ${result.applied.sessionsCreated}, updated ${result.applied.sessionsUpdated}, skipped ${result.applied.sessionsSkipped}, secrets ${result.applied.secretsRestored}.${warningText}`,
+        translateDetailText: true
+      });
+    } catch (caughtError) {
+      const message = toLogMessage(caughtError);
+      if (operationJobId) {
+        finishOperationCenterAppJob(operationJobId, "failed", { detail: message });
+      }
+      setError(`Failed to import app backup. ${message}`);
+      writeAppLog("error", "renderer:backup", "Failed to import app backup.", caughtError);
+    }
+  }, [
+    applyImportedAppBackupState,
+    buildSmokeAppBackupPreviewResult,
+    consumeSmokePickedTextFile,
+    finishOperationCenterAppJob,
+    isSmokeAppBackupSentinel,
+    removeOperationCenterAppJob,
+    sessionsApi,
+    showAppAlert,
+    showAppChoice,
+    showAppConfirm,
+    showAppPrompt,
+    startOperationCenterAppJob,
+    storageApi,
+    systemApi,
+    writeAppLog
+  ]);
+
+  smokeImportAppBackupHandlerRef.current = () => {
+    void importAppBackup();
+  };
+
   useEffect(() => {
     const smokeWindow = window as typeof window & {
       __termdockSmokeImportSshConfig?: () => void;
       __termdockSmokeSshConfigResult?: SshConfigParseResult;
       __termdockSmokeImportSessionsJson?: () => void;
       __termdockSmokeImportEncryptedMigration?: () => void;
+      __termdockSmokeImportAppBackup?: () => void;
     };
     smokeWindow.__termdockSmokeImportSshConfig = () => {
       smokeImportSshConfigHandlerRef.current?.();
@@ -11607,10 +12724,14 @@ export function App() {
     smokeWindow.__termdockSmokeImportEncryptedMigration = () => {
       smokeImportEncryptedMigrationHandlerRef.current?.();
     };
+    smokeWindow.__termdockSmokeImportAppBackup = () => {
+      smokeImportAppBackupHandlerRef.current?.();
+    };
     return () => {
       delete smokeWindow.__termdockSmokeImportSshConfig;
       delete smokeWindow.__termdockSmokeImportSessionsJson;
       delete smokeWindow.__termdockSmokeImportEncryptedMigration;
+      delete smokeWindow.__termdockSmokeImportAppBackup;
     };
   }, []);
 
@@ -12357,6 +13478,7 @@ export function App() {
           cancelTransferTasksForTab,
           clearFinishedOperationCenterAppJobs,
           copyOperationCenterAppJobOutputPath,
+          onCancelAppJob: cancelOperationCenterAppJob,
           onClose: closeOperationCenter,
           onFocusTab: setActiveTabId,
           onOpenDiagnostics: openDiagnosticsFromOperationCenter,
@@ -12382,6 +13504,10 @@ export function App() {
           canStopActiveTabPortForwards:
             Boolean(activeTabId) && (portForwardRecordsByTab[activeTabId ?? ""]?.length ?? 0) > 0,
           deleteProgressLabel: operationCenterDeleteProgressLabel,
+          onCancelActiveDelete: () => {
+            void cancelActiveSftpDelete();
+          },
+          canCancelActiveDelete: Boolean(sftpDeleteProgress),
           downloadSummary: operationCenterDownloadSummary,
           failedRetryCandidateTotal,
           finishedAppJobCount: operationCenterFinishedAppJobCount,
@@ -15057,7 +16183,9 @@ export function App() {
     setSftpError(null);
     setSftpDeleteProgress({
       name: targetEntry.name,
-      kind: targetEntry.kind
+      kind: targetEntry.kind,
+      path: targetEntry.path,
+      tabId: activeTabId
     });
     try {
       await sftpApi.deletePath(activeTabId, targetEntry.path, targetEntry.kind);
@@ -15065,10 +16193,24 @@ export function App() {
       setSelectedSftpPath(null);
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
-      setSftpError((caughtError as Error).message);
+      const message = (caughtError as Error).message;
+      if (!/delete canceled/i.test(message)) {
+        setSftpError(message);
+      }
     } finally {
       setSftpDeleteProgress(null);
       setSftpActionLoading(false);
+    }
+  };
+
+  const cancelActiveSftpDelete = async () => {
+    if (!sftpApi || !sftpDeleteProgress) {
+      return;
+    }
+    try {
+      await sftpApi.cancelDeletePath(sftpDeleteProgress.tabId, sftpDeleteProgress.path);
+    } catch (caughtError) {
+      setSftpError((caughtError as Error).message);
     }
   };
 
@@ -16664,6 +17806,12 @@ export function App() {
     showAppConfirm,
     showTransferDockNotice,
     storageKey: SFTP_TRANSFER_PENDING_RESTORE_STORAGE_KEY,
+    persistPendingRestore: (items) => {
+      if (!storageApi?.replacePendingTransferRestore) {
+        return;
+      }
+      void storageApi.replacePendingTransferRestore(items).catch(() => undefined);
+    },
     terminalTabsDependency: terminalTabs,
     terminalTabsRef
   });
@@ -16978,8 +18126,10 @@ export function App() {
       exportAllSessionGroups,
       exportAllSessionsWithGroups,
       exportEncryptedSessionMigration,
+      exportAppBackup,
       groupedSessions,
       importEncryptedSessionMigration,
+      importAppBackup,
       importSessionsFromJson,
       importSessionsFromSshConfig,
       manageSessionQuickProfilesForSession,
@@ -17104,7 +18254,9 @@ export function App() {
           onDisconnectTimeRangeChange: setDisconnectReportTimeRangeValue,
           onDisconnectTriggerChange: setDisconnectReportTriggerFilterValue,
           onCheckForUpdatesAction: checkForUpdatesManually,
+          onExportAppBackupAction: exportAppBackup,
           onExportBugReportAction: exportBugReportBundle,
+          onImportAppBackupAction: importAppBackup,
           onExportDisconnectCsvAction: exportDisconnectReportsCsv,
           onExportDisconnectJsonAction: exportDisconnectReportsJson,
           onFocusDisconnectTab: focusVisibleDisconnectReportTab,

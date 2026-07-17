@@ -53,8 +53,10 @@ interface BuildSessionContextActionsArgs {
   exportAllSessionGroups: () => Promise<void>;
   exportAllSessionsWithGroups: () => Promise<void>;
   exportEncryptedSessionMigration: () => Promise<void>;
+  exportAppBackup: () => Promise<void>;
   groupedSessions: SessionGroupLike[];
   importEncryptedSessionMigration: () => Promise<void>;
+  importAppBackup: () => Promise<void>;
   importSessionsFromJson: () => Promise<void>;
   importSessionsFromSshConfig: () => Promise<void>;
   manageSessionQuickProfilesForSession: (session: SessionRecord) => Promise<void>;
@@ -134,8 +136,10 @@ function appendImportExportActions(
     | "importSessionsFromSshConfig"
     | "importSessionsFromJson"
     | "importEncryptedSessionMigration"
+    | "importAppBackup"
     | "exportAllSessionsWithGroups"
     | "exportEncryptedSessionMigration"
+    | "exportAppBackup"
     | "exportAllSessionGroups"
   >
 ) {
@@ -161,6 +165,13 @@ function appendImportExportActions(
     }
   });
   actions.push({
+    id: "import-app-backup",
+    label: args.tr("Import App Backup..."),
+    run: () => {
+      void args.importAppBackup();
+    }
+  });
+  actions.push({
     id: "export-all-sessions",
     label: args.tr("Export All Sessions..."),
     run: () => {
@@ -172,6 +183,13 @@ function appendImportExportActions(
     label: args.tr("Export Encrypted Migration..."),
     run: () => {
       void args.exportEncryptedSessionMigration();
+    }
+  });
+  actions.push({
+    id: "export-app-backup",
+    label: args.tr("Export App Backup..."),
+    run: () => {
+      void args.exportAppBackup();
     }
   });
   actions.push({

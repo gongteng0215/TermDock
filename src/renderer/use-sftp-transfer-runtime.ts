@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, type Dispatch, type MutableRefObject, t
 
 import type { SessionRecord } from "../shared/session";
 import type { SftpTransferEvent } from "../shared/sftp";
-import type { TerminalTab } from "./components/terminal-workspace";
+import type { TerminalTab } from "./terminal-workspace-types";
 
 interface PendingUploadJobLike {
   tabId: string;
@@ -180,6 +180,7 @@ interface UsePendingTransferRestoreRuntimeArgs {
   showAppConfirm: ShowAppConfirm;
   showTransferDockNotice: ShowTransferDockNotice;
   storageKey: string;
+  persistPendingRestore?: (items: PendingTransferRestoreItemLike[]) => void;
   terminalTabsDependency: unknown;
   terminalTabsRef: MutableRefObject<TerminalTab[]>;
 }
@@ -720,6 +721,7 @@ export function usePendingTransferRestoreRuntime({
   showAppConfirm,
   showTransferDockNotice,
   storageKey,
+  persistPendingRestore,
   terminalTabsDependency,
   terminalTabsRef
 }: UsePendingTransferRestoreRuntimeArgs) {
@@ -736,8 +738,14 @@ export function usePendingTransferRestoreRuntime({
       } catch {
         // Ignore storage failures; runtime state still applies.
       }
+      persistPendingRestore?.([]);
     },
-    [setPendingTransferRestoreItems, setPendingTransferRestoreResolved, storageKey]
+    [
+      persistPendingRestore,
+      setPendingTransferRestoreItems,
+      setPendingTransferRestoreResolved,
+      storageKey
+    ]
   );
 
   const discardPendingTransferRestoreQueue = useCallback(async () => {
@@ -898,11 +906,13 @@ export function usePendingTransferRestoreRuntime({
     } catch {
       // Ignore storage failures; runtime state still applies.
     }
+    persistPendingRestore?.(snapshot);
   }, [
     arePendingTransferRestoreItemsEqual,
     collectPendingTransferRestoreSnapshot,
     pendingTransferRestoreItems,
     pendingTransferRestoreResolved,
+    persistPendingRestore,
     setPendingTransferRestoreItems,
     sftpTransfersDependency,
     storageKey,

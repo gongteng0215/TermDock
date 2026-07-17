@@ -59,7 +59,7 @@ interface OperationCenterAppJobLike {
   category: "sessions" | "snippets" | "diagnostics";
   title: string;
   description: string;
-  status: "running" | "succeeded" | "failed";
+  status: "running" | "succeeded" | "failed" | "canceled";
   startedAt: number;
   finishedAt?: number;
   detail?: string;
@@ -69,6 +69,8 @@ interface OperationCenterAppJobLike {
 interface DeleteProgressLike {
   kind: "file" | "directory" | "symlink" | "other";
   name: string;
+  path?: string;
+  tabId?: string;
 }
 
 interface UseSftpActivityViewModelsArgs<
@@ -589,7 +591,8 @@ export function useSftpActivityViewModels<
         detail: job.detail?.trim() || job.description,
         outputPath: job.outputPath,
         stateClassName: getOperationCenterAppJobStateClass(job.status),
-        stateLabel: formatOperationCenterAppJobStatusLabel(job.status)
+        stateLabel: formatOperationCenterAppJobStatusLabel(job.status),
+        canCancel: job.status === "running"
       })),
     [
       formatHistoryTimestamp,

@@ -1,5 +1,14 @@
-import type { ComponentProps } from "react";
-
+import type {
+  ConnectionSettingsSectionProps,
+  DiagnosticsSettingsSectionProps,
+  FileOpeningSettingsSectionProps,
+  HotkeySettingsSectionProps,
+  PortForwardingSettingsSectionProps,
+  SafetySettingsSectionProps,
+  ServerHealthSettingsSectionProps,
+  SftpSettingsSectionProps,
+  WorkspaceSettingsSectionProps
+} from "./settings-sections";
 import {
   ConnectionSettingsSection,
   DiagnosticsSettingsSection,
@@ -25,15 +34,15 @@ export type SettingsSectionId =
 
 export interface SettingsModalContentProps {
   activeSectionId: SettingsSectionId;
-  connectionSectionProps: ComponentProps<typeof ConnectionSettingsSection>;
-  workspaceSectionProps: ComponentProps<typeof WorkspaceSettingsSection>;
-  safetySectionProps: ComponentProps<typeof SafetySettingsSection>;
-  hotkeySectionProps: ComponentProps<typeof HotkeySettingsSection>;
-  serverHealthSectionProps: ComponentProps<typeof ServerHealthSettingsSection>;
-  fileOpeningSectionProps: ComponentProps<typeof FileOpeningSettingsSection>;
-  sftpSectionProps: ComponentProps<typeof SftpSettingsSection>;
-  portForwardingSectionProps: ComponentProps<typeof PortForwardingSettingsSection>;
-  diagnosticsSectionProps: ComponentProps<typeof DiagnosticsSettingsSection>;
+  connectionSectionProps: ConnectionSettingsSectionProps;
+  workspaceSectionProps: WorkspaceSettingsSectionProps;
+  safetySectionProps: SafetySettingsSectionProps;
+  hotkeySectionProps: HotkeySettingsSectionProps;
+  serverHealthSectionProps: ServerHealthSettingsSectionProps;
+  fileOpeningSectionProps: FileOpeningSettingsSectionProps;
+  sftpSectionProps: SftpSettingsSectionProps;
+  portForwardingSectionProps: PortForwardingSettingsSectionProps;
+  diagnosticsSectionProps: DiagnosticsSettingsSectionProps;
 }
 
 export function SettingsModalContent({

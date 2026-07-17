@@ -14,6 +14,43 @@
 
 - 下一个候选版本发布时再补充验证结果。
 
+## v0.1.41 (2026-07-16)
+
+发布类型：稳定版
+
+### 主要变化
+
+- SQLite 持久化硬化（`v0.1.40` 之后）：
+  - 会话切到 SQLite 权威存储，保留 JSON 镜像/回滚。
+  - Phase 4 耐久偏好端口（schema v6）与 Phase 5 凭据安全 `.tdbackup` 导入/导出。
+  - WAL + 崩溃恢复验证（`test:session-sqlite-crash-recovery`）。
+- 应用备份 UX：
+  - `.tdbackup` 向导支持 Escape 安全三选一、中文覆盖、危险确认，以及设置 > 诊断中的导入/导出入口。
+  - smoke hook + 预览流程用于打包验证。
+- 启动性能（`P0-E1`）：
+  - 懒加载 `TerminalWorkspace`，启动时不再 preload `vendor-xterm` / `renderer-terminal`。
+  - `bench:startup` 脚本约 0.76 MiB / ~0.22 MiB gzip（原 ~1.22 MiB）。
+- 传输运行时（`P0-E2`）：
+  - 下载侧 SFTP 通道复用池对齐上传复用，并按标签限制 in-flight 数量。
+- 渲染器稳定性：
+  - 修复 selection-prune 无限重渲染循环（曾导致 smoke/UI 异常）。
+
+### 验证
+
+- `pnpm run typecheck` 已通过。
+- `pnpm run build` 已通过。
+- `pnpm run bench:startup` 已通过（脚本约 0.76 MiB）。
+- `pnpm run bench:transfer:memory` 已通过。
+- `pnpm run test:session-sqlite-crash-recovery` 已通过。
+- `pnpm run test:session-sqlite-app-backup` 已通过。
+- `pnpm run smoke:ui` → `PASS 51 / FAIL 0`（`artifacts/smoke/2026-07-16T09-27-19-124Z/summary.json`）。
+- `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0`（`artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`）。
+
+### 升级说明
+
+- 升级后首次启动可能将现有 JSON 会话数据导入 SQLite；会写入一次性 `sessions.json.pre-sqlite-cutover` 备份以便回滚。
+- `.tdbackup` 恢复会替换耐久 SQLite 表；应用前请查看预览并选择重复策略。
+
 ## v0.1.40 (2026-07-15)
 
 发布类型：稳定版

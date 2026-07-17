@@ -1,5 +1,5 @@
 import type { SftpDirectoryListResult, SftpEntry } from "../shared/sftp";
-import type { TerminalTab } from "./components/terminal-workspace";
+import type { TerminalTab } from "./terminal-workspace-types";
 import type { BuildSftpExplorerSectionPropsArgs } from "./workbench-panel-props";
 import type { SftpExplorerViewMode } from "./workbench-ui-preferences";
 
