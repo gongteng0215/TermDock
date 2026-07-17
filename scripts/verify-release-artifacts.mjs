@@ -158,10 +158,8 @@ function filterArtifactsForVersion(artifacts, version) {
   const dmgs = artifacts.dmgs.filter((filePath) => matchesReleaseVersion(filePath, version));
   const zips = artifacts.zips.filter((filePath) => matchesReleaseVersion(filePath, version));
   const exes = artifacts.exes.filter((filePath) => matchesReleaseVersion(filePath, version));
-  const appBundles = artifacts.appBundles.filter((filePath) =>
-    matchesReleaseVersion(filePath, version)
-  );
-  return { dmgs, zips, exes, appBundles };
+  // .app bundles stay as TermDock.app (no version in the basename); keep all under release/.
+  return { dmgs, zips, exes, appBundles: artifacts.appBundles };
 }
 
 function pickPreferredWindowsInstaller(exes) {
