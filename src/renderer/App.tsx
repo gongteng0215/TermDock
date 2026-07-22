@@ -5320,7 +5320,6 @@ export function App() {
   const [remoteOpenFileIssuesByTab, setRemoteOpenFileIssuesByTab] = useState<
     Record<string, RemoteOpenFileAutoSyncEvent>
   >({});
-  const [sftpWriteAccessHintByTab, setSftpWriteAccessHintByTab] = useState<Record<string, string>>({});
   const [privilegedRecoveryBusy, setPrivilegedRecoveryBusy] = useState<{
     stage: boolean;
     sudo: boolean;
@@ -5466,7 +5465,6 @@ export function App() {
   const sftpError = activeTabId
     ? activeRemoteOpenFileIssue?.message ?? sftpErrorsByTab[activeTabId] ?? null
     : globalSftpError;
-  const sftpWriteAccessHint = activeTabId ? sftpWriteAccessHintByTab[activeTabId] ?? null : null;
   const activePrivilegedRecoveryCommand =
     (activeTabId ? lastPrivilegedRecoveryCommandByTab[activeTabId] : null) ??
     getRemoteOpenFileRecoveryCommand(activeRemoteOpenFileIssue);
@@ -9049,38 +9047,6 @@ export function App() {
             return result.entries.some((entry) => entry.path === previousPath)
               ? previousPath
               : null;
-          });
-        }
-        try {
-          const writeAccess = await sftpApi.getRemotePathWriteAccess(targetTabId, result.cwd);
-          const hint =
-            !writeAccess.effectiveWritable
-              ? appLanguageRef.current === "zh-CN"
-                ? "当前目录对当前 SSH 用户不可写，上传会失败（Permission denied）。"
-                : "Current directory is not writable for this SSH user. Uploads will fail with Permission denied."
-              : "";
-          setSftpWriteAccessHintByTab((previous) => {
-            if (!hint) {
-              if (!(targetTabId in previous)) {
-                return previous;
-              }
-              const next = { ...previous };
-              delete next[targetTabId];
-              return next;
-            }
-            return {
-              ...previous,
-              [targetTabId]: hint
-            };
-          });
-        } catch {
-          setSftpWriteAccessHintByTab((previous) => {
-            if (!(targetTabId in previous)) {
-              return previous;
-            }
-            const next = { ...previous };
-            delete next[targetTabId];
-            return next;
           });
         }
       } catch (caughtError) {
@@ -17345,104 +17311,16 @@ export function App() {
           total: 0
         }
       }));
-      const discoveredEntries: UploadPathEntry[] = [];
-      let skippedEntries = 0;
-      const directoryQueue: Array<{
-        localDirectoryPath: string;
-        relativeDirectory: string;
-      }> = [];
-
-      for (const rawPath of paths) {
-        if (canceledUploadBatchIdsRef.current.has(batchId)) {
-          break;
-        }
-        const listing = await systemApi.scanLocalPathEntries(rawPath);
-        if (canceledUploadBatchIdsRef.current.has(batchId)) {
-          break;
-        }
-        if (listing.kind === "file") {
-          discoveredEntries.push({
-            localPath: listing.path,
-            relativeDirectory: ""
-          });
-          continue;
-        }
-        if (listing.kind === "directory") {
-          const topName = getPathBaseName(listing.path);
-          if (!topName) {
-            skippedEntries += 1;
-            continue;
-          }
-          if (listing.files.length > 0) {
-            discoveredEntries.push(
-              ...listing.files.map((localPath) => ({
-                localPath,
-                relativeDirectory: topName
-              }))
-            );
-          }
-          for (const childDirectoryPath of listing.directories) {
-            if (canceledUploadBatchIdsRef.current.has(batchId)) {
-              break;
-            }
-            const childName = getPathBaseName(childDirectoryPath);
-            if (!childName) {
-              skippedEntries += 1;
-              continue;
-            }
-            directoryQueue.push({
-              localDirectoryPath: childDirectoryPath,
-              relativeDirectory: joinRemotePath(topName, childName)
-            });
-          }
-          continue;
-        }
-        skippedEntries += 1;
-      }
-
-      while (directoryQueue.length > 0) {
-        if (canceledUploadBatchIdsRef.current.has(batchId)) {
-          break;
-        }
-        const currentDirectory = directoryQueue.shift();
-        if (!currentDirectory) {
-          continue;
-        }
-        const listing = await systemApi.scanLocalPathEntries(currentDirectory.localDirectoryPath);
-        if (canceledUploadBatchIdsRef.current.has(batchId)) {
-          break;
-        }
-        if (listing.kind !== "directory") {
-          skippedEntries += 1;
-          continue;
-        }
-        if (listing.files.length > 0) {
-          discoveredEntries.push(
-            ...listing.files.map((localPath) => ({
-              localPath,
-              relativeDirectory: currentDirectory.relativeDirectory
-            }))
-          );
-        }
-        for (const childDirectoryPath of listing.directories) {
-          if (canceledUploadBatchIdsRef.current.has(batchId)) {
-            break;
-          }
-          const childName = getPathBaseName(childDirectoryPath);
-          if (!childName) {
-            skippedEntries += 1;
-            continue;
-          }
-          directoryQueue.push({
-            localDirectoryPath: childDirectoryPath,
-            relativeDirectory: joinRemotePath(currentDirectory.relativeDirectory, childName)
-          });
-        }
-      }
-
+      const discoveredEntries: UploadPathEntry[] = (
+        await systemApi.expandUploadPaths(paths)
+      ).map((entry) => ({
+        localPath: entry.localPath,
+        relativeDirectory: entry.relativeDirectory
+      }));
       if (canceledUploadBatchIdsRef.current.has(batchId)) {
         return;
       }
+
       if (discoveredEntries.length === 0) {
         setUploadBatchByTab((prev) => {
           const current = prev[activeTabId];
@@ -17502,14 +17380,8 @@ export function App() {
         batchId,
         remoteDirectory: sftpDirectory.cwd,
         queuedFiles: totalQueuedFiles,
-        skippedEntries
+        skippedEntries: 0
       });
-      if (skippedEntries > 0) {
-        await showAppAlert(
-          `Queued ${totalQueuedFiles} upload files. Skipped ${skippedEntries} unsupported entries.`,
-          { title: "Upload Summary" }
-        );
-      }
     } finally {
       canceledUploadBatchIdsRef.current.delete(batchId);
     }
@@ -18813,7 +18685,6 @@ export function App() {
       sftpLoading,
       sftpPath,
       sftpSummary,
-      sftpWriteAccessHint,
       toggleSftpToolbarMenu
     }),
     terminalWorkspace: buildTerminalWorkspaceArgs({

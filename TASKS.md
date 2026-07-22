@@ -2,16 +2,16 @@
 
 [中文](TASKS.zh-CN.md)
 
-Last updated: 2026-07-16
+Last updated: 2026-07-22
 
 ## Current Release State
 
-- Stable release: `v0.1.41`
+- Stable release: `v0.1.42`
 - Active branch: `master`
 - Branch baseline: `origin/master`
-- Priority direction: `v0.1.41` release prep complete (self-use Windows ready); optional shared-buffer E2 / public macOS+signing remain lower priority
-- Current release note: SQLite-authoritative sessions, durable preference ports, credential-safe `.tdbackup`, lazy TerminalWorkspace startup (~0.76 MiB scripts), download SFTP channel reuse, and backup wizard/Settings entry
-- Latest validation on 2026-07-16: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup` (scripts ~0.76 MiB), `pnpm run bench:transfer:memory`, `pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`
+- Priority direction: Post-`v0.1.42` dogfood; optional deeper `P0-E2` multiplexing only if small-file uploads still lag; public macOS+signing remain lower priority
+- Current release note: SFTP Explorer chrome slim, many-small-file upload polish (`expandUploadPaths`, aligned reusable SFTP pools, mkdir stat-first), and `bench:transfer:small-files`
+- Latest validation on 2026-07-22: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:transfer:small-files`, `pnpm run bench:transfer:memory` passed
 
 ## P0 Matrix
 
@@ -42,7 +42,7 @@ Last updated: 2026-07-16
 | P0-D5 | PARTIAL | Create/rename/delete done; recursive safety flows still evolving |
 | P0-D6 | PARTIAL | Drag-and-drop works; very large folder workflows need more tuning |
 | P0-E1 | PARTIAL | Lazy `TerminalWorkspace` host defers `vendor-xterm` + `renderer-terminal` from startup preload; leaf types/options/history storage extracted; `bench:startup` scripts ~0.76 MiB (was ~1.22 MiB) |
-| P0-E2 | PARTIAL | Default upload concurrency 4→2; per-tab in-flight SFTP channels capped; download `highWaterMark` 64 KiB; download SFTP channel reuse pool mirrors upload (`reusableDownloadSftpByTab`); deeper shared-buffer / multiplexed-channel work remains |
+| P0-E2 | PARTIAL | Idle upload/download reusable SFTP pool aligned to in-flight (2); uploads use `expandUploadPaths`; mkdir stats-before-create; `bench:transfer:small-files` landed; deeper shared-buffer / multiplexed-channel work remains |
 | P0-E3 | PARTIAL | Recoverable global error routing now also covers remaining validation / migration / port-forward / snippet-limit / history / template-port phrases plus shared bridge-unavailable matching; guidance coverage is largely complete for current surfaces |
 | P0-E4 | DONE | Persistence crash-recovery verification: WAL mode, reopen durability, corrupt-SQLite fallback, corrupt-JSON mirror isolation, pre-cutover rollback (`test:session-sqlite-crash-recovery`) |
 | P0-F1 | TODO | Unit tests; low priority for current self-use track |
@@ -346,16 +346,15 @@ Last updated: 2026-07-16
 
 ## Immediate Next Target
 
-1. Watch real-usage feedback on density, accent themes, and workbench clarity after `v0.1.38`/`v0.1.39`.
-2. Convert repeated launch/trust/first-connect feedback into GitHub issues and Release FAQ updates.
-3. `P0-E2`: optional deeper transfer shared-buffer / multiplexed-channel work against formal baselines.
+1. Dogfood `v0.1.42`; optional deeper `P0-E2` multiplexing only if small-file uploads still lag.
+2. Keep public signing / macOS smoke evidence lower priority for the self-use track.
 4. Optional mid-flight main-process abort for single-shot migration/bug-report jobs (today UI cancel is best-effort).
 
 ## Not Done Yet (Top Blocking Items)
 
-1. `UI-WB-FEEDBACK`: optional polish after real usage of density/themes/workbench clarity
+1. Dogfood confirmation for SFTP chrome slim + small-file upload polish before `0.1.42`
 2. Remaining macOS/external-host packaged smoke evidence for broader release confidence
-3. `P0-E2`: optional deeper transfer shared-buffer / download channel reuse
+3. `P0-E2`: optional deeper shared-buffer / multiplexed-channel work
 4. Optional mid-flight main-process abort for single-shot migration/bug-report jobs
 5. `P0-F3`: remaining macOS/external-host packaged validation, low priority for current self-use track
 6. `P0-F4`: public-trust signing/notarization evidence, low priority for current self-use track

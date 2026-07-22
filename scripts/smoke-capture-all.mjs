@@ -1832,7 +1832,7 @@ async function main() {
         .locator(".sftp-list__name", { hasText: fixture.remoteSeedFileName })
         .first();
       await seedEntry.waitFor({ state: "visible", timeout: 15_000 });
-      const currentPath = (await page.locator(".sftp-current-path").first().textContent())?.trim() ?? "";
+      const currentPath = (await page.locator(".sftp-path-input").first().inputValue())?.trim() ?? "";
       const fileName = await recordShot(page, "live-sftp-directory");
       return `${currentPath}, seed=${fixture.remoteSeedFileName}, shot=${fileName}`;
     });

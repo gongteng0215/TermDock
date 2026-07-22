@@ -289,7 +289,6 @@ export interface BuildSftpExplorerSectionPropsArgs {
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpSummaryLike;
-  sftpWriteAccessHint?: string | null;
   toggleSftpToolbarMenu: ComponentProps<typeof SftpExplorerSection>["onActionsMenu"];
 }
 
@@ -320,12 +319,10 @@ export function buildSftpExplorerSectionProps({
   sftpLoading,
   sftpPath,
   sftpSummary,
-  sftpWriteAccessHint = null,
   toggleSftpToolbarMenu
 }: BuildSftpExplorerSectionPropsArgs): ComponentProps<typeof SftpExplorerSection> {
   return {
     bindingTabTitle: activeTerminalTab?.title ?? null,
-    currentPathLabel: sftpDirectory?.cwd ?? "(not loaded)",
     deleteProgressLabel: sftpDeleteProgress
       ? `Deleting ${sftpDeleteProgress.kind === "directory" ? "directory" : "file"} "${sftpDeleteProgress.name}"...`
       : null,
@@ -364,7 +361,6 @@ export function buildSftpExplorerSectionProps({
     entrySummaryLabel: `Entries: ${sftpSummary.entryCount} (Files: ${sftpSummary.fileCount}, Dirs: ${sftpSummary.directoryCount})`,
     errorMessage: sftpError,
     errorRecovery: sftpErrorRecovery,
-    writeAccessHint: sftpWriteAccessHint,
     loading: sftpLoading,
     onActionsMenu: toggleSftpToolbarMenu,
     onBodyContextMenu: (event) => openSftpContextMenu(event),

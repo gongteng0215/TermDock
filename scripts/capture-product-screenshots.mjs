@@ -249,8 +249,8 @@ async function runShellCommand(page, command) {
 async function waitForSftpDirectory(page) {
   await waitForCondition(
     async () => {
-      const pathText = ((await page.locator(".sftp-current-path").first().textContent()) ?? "").trim();
-      return pathText.startsWith("Current:") && !pathText.includes("...") ? pathText : false;
+      const pathValue = ((await page.locator(".sftp-path-input").first().inputValue()) ?? "").trim();
+      return pathValue.length > 0 && !pathValue.includes("...") ? pathValue : false;
     },
     { description: "SFTP directory listing" }
   );

@@ -47,7 +47,6 @@ type SftpExplorerValueArgs = {
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpSummaryLike;
-  sftpWriteAccessHint?: string | null;
 };
 
 interface BuildSftpExplorerCompositeArgsInput {

@@ -2,16 +2,16 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-07-16
+Last updated: 2026-07-22
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.41`
+- Stable release shipped: `v0.1.42`
 - Active branch: `master`
-- Active focus: `v0.1.41` release prep complete (self-use Windows ready); next is optional shared-buffer E2 or real-usage polish
+- Active focus: Post-`v0.1.42` dogfood; optional deeper `P0-E2` multiplexing only if small-file uploads still lag
 - Public docs now align with the shipped auto-update baseline, local-first trust model, and recommended download assets
-- Latest validation on 2026-07-16: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:startup` (scripts ~0.76 MiB), `pnpm run bench:transfer:memory`, `pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0` at `artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`
-- `v0.1.41` ships SQLite-authoritative sessions, durable preference ports, credential-safe `.tdbackup`, lazy TerminalWorkspace startup (~0.76 MiB scripts), download SFTP channel reuse, and backup wizard/Settings entry
+- Latest validation on 2026-07-22: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:transfer:small-files`, `pnpm run bench:transfer:memory` passed
+- `v0.1.42` ships SFTP Explorer chrome slim, many-small-file upload polish, and `bench:transfer:small-files`
 - `v0.1.40` expands recoverable global error routing for session-create, snippets, templates, command history, groups, and import/export failures
 - `v0.1.40` expands Operation Center with active-tab port-forward teardown, per-tab/cross-tab failed-transfer retry, and a Retry Center shortcut
 - Post-`v0.1.40` hardening: remaining global error matchers, deferred `renderer-settings` + lazy WebGL (~1.22 MiB startup assets), transfer concurrency/channel caps, Operation Center delete/app-job cancel, sessions dual-write, and Phase 3 SQLite-authoritative cutover with JSON backup/rollback
@@ -74,6 +74,19 @@ Last updated: 2026-07-16
   - `P0-F4`: installer signing/notarization and install validation
   - `P0-E3`: recoverable global error UX follow-up
 - Those broad-rollout gates are not the active priority for the current self-use track
+
+## Completed in v0.1.42
+
+- SFTP Explorer chrome slim; many-small-file upload polish (`expandUploadPaths`, aligned reusable SFTP pools, mkdir stat-first); `bench:transfer:small-files`
+- Validation: typecheck/build + transfer benches passed
+
+## Completed post-v0.1.41 SFTP chrome + small-file upload polish (2026-07-21)
+
+- Removed SFTP explorer resident hints (`Current:` path, not-writable banner, drag-drop instructional text); kept real errors and delete progress; dropped per-list write-access IPC
+- Upload batch discovery now uses `system:expandUploadPaths` (concurrent local tree walk) instead of sequential `scanLocalPathEntries` BFS
+- Idle reusable upload/download SFTP pools aligned to in-flight cap (2); remote `mkdir` stats before create
+- Added `bench:transfer:small-files` (500×1KiB evidence under `artifacts/benchmark/`)
+- Validation: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:transfer:small-files`, `pnpm run bench:transfer:memory` passed
 
 ## Completed in v0.1.41
 

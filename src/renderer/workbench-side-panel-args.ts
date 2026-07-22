@@ -124,7 +124,6 @@ interface BuildSftpExplorerArgsInput {
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpExplorerValueArgs["sftpSummary"];
-  sftpWriteAccessHint?: string | null;
   toggleSftpToolbarMenu: SftpExplorerActionArgs["toggleSftpToolbarMenu"];
 }
 
@@ -275,7 +274,6 @@ export function buildSftpExplorerArgs({
   sftpLoading,
   sftpPath,
   sftpSummary,
-  sftpWriteAccessHint = null,
   toggleSftpToolbarMenu
 }: BuildSftpExplorerArgsInput) {
   return buildSftpExplorerCompositeArgs({
@@ -308,8 +306,7 @@ export function buildSftpExplorerArgs({
       sftpExplorerViewMode,
       sftpLoading,
       sftpPath,
-      sftpSummary,
-      sftpWriteAccessHint
+      sftpSummary
     }
   });
 }

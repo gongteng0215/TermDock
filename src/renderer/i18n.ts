@@ -470,7 +470,6 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Go Up": "向上",
   "Refresh directory": "刷新目录",
   "SFTP actions": "SFTP 操作",
-  "Drop files or folders into this box to upload to current directory.": "将文件或文件夹拖到此处即可上传到当前目录。",
   "Loading remote directory...": "正在加载远程目录...",
   "Folder": "文件夹",
   "Open a terminal tab first. SFTP panel reuses the active tab SSH connection.": "请先打开终端标签页。SFTP 面板会复用活动标签页的 SSH 连接。",
@@ -783,8 +782,6 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Reveal Local Draft": "打开本地草稿",
   "Current SSH user cannot write this remote path. Fix ownership/permissions on the server, or upload to a writable directory and move the file with sudo.":
     "当前 SSH 用户无法写入此远程路径。请在服务器上修正属主/权限，或先传到可写目录再用 sudo 移动。",
-  "Current directory is not writable for this SSH user. Uploads will fail with Permission denied.":
-    "当前目录对当前 SSH 用户不可写，上传会失败（Permission denied）。",
   "This directory may require sudo to upload. Stage to ~/termdock-staging, then run sudo install in the terminal.":
     "当前目录可能需要 sudo 才能上传。可改传到 ~/termdock-staging，再在终端用 sudo install 写入。",
   "Current SSH user cannot write this path. Stage to ~/termdock-staging, then run sudo install in the terminal (or open the file read-only).":
@@ -1298,10 +1295,6 @@ const SIMPLIFIED_CHINESE_REPLACEMENTS: TextReplacement[] = [
   {
     pattern: /^Bound to tab: (.+)$/u,
     replace: (_match, name) => `绑定到标签页：${name}`
-  },
-  {
-    pattern: /^Current: (.+)$/u,
-    replace: (_match, path) => `当前：${path}`
   },
   {
     pattern: /^Entries: (\d+) \(Files: (\d+), Dirs: (\d+)\)$/u,

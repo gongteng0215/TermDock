@@ -2,7 +2,7 @@
 
 [English](news.md)
 
-Last updated: 2026-07-16
+Last updated: 2026-07-22
 
 ## 已确认方向
 
@@ -14,12 +14,13 @@ Last updated: 2026-07-16
 
 ## 当前发布基线
 
-- 当前公开稳定版本：`v0.1.41`（2026-07-16）
+- 当前公开稳定版本：`v0.1.42`（2026-07-22）
 - 当前主分支：`master`
-- 当前重点：`v0.1.41` 之后可选 shared-buffer 传输优化与真实使用反馈打磨。
+- 当前重点：`v0.1.42` 之后继续 dogfood；若小文件上传仍慢再考虑更深 `P0-E2` multiplexing。
 
 ## 最近周期已交付
 
+- v0.1.42：SFTP Explorer 瘦身（去掉常驻路径/不可写/拖拽提示）、大量小文件上传打磨（`expandUploadPaths`、对齐可复用 SFTP 池、`mkdir` 先 stat）、新增 `bench:transfer:small-files`。
 - v0.1.41：SQLite 权威会话 + 耐久偏好端口 + 凭据安全 `.tdbackup`、懒加载终端启动（脚本约 0.76 MiB）、下载 SFTP 通道复用、备份向导/Settings 入口，以及 selection-prune 重渲染修复；打包 smoke `PASS 51`。
 - v0.1.40：更广的可恢复全局错误路由（会话创建 / 片段 / 模板 / 命令历史 / 分组）、Operation Center 按标签 / 跨标签失败传输重试与当前标签端口转发拆除、正式 `bench:startup` / `bench:transfer:memory` 基准，以及英文 / 简体中文 SQLite 迁移规划（仅规划）。
 - v0.1.39：设置 > 工作区增加界面密度（紧凑默认 / 宽松）、进一步压紧侧栏间距、Retry Center 底部操作分组并标记危险删除、宽松密度下传输面板文字更清晰。

@@ -128,7 +128,6 @@ interface SftpExplorerEntryView {
 
 interface SftpExplorerSectionProps {
   bindingTabTitle: string | null;
-  currentPathLabel: string;
   deleteProgressLabel: string | null;
   directorySizeLabel: string;
   dropActive: boolean;
@@ -151,7 +150,6 @@ interface SftpExplorerSectionProps {
   refreshDisabled: boolean;
   onViewModeChange: (mode: "compact" | "details") => void;
   viewMode: "compact" | "details";
-  writeAccessHint?: string | null;
 }
 
 const SessionGroupRow = memo(function SessionGroupRow({
@@ -528,7 +526,6 @@ export function SessionsInspectorSection({
 
 export function SftpExplorerSection({
   bindingTabTitle,
-  currentPathLabel,
   deleteProgressLabel,
   directorySizeLabel,
   dropActive,
@@ -550,8 +547,7 @@ export function SftpExplorerSection({
   pathUpDisabled,
   refreshDisabled,
   onViewModeChange,
-  viewMode,
-  writeAccessHint = null
+  viewMode
 }: SftpExplorerSectionProps) {
   const entryMapRef = useRef(new Map<string, SftpExplorerEntryView>());
   entryMapRef.current = new Map(entries.map((entry) => [entry.id, entry]));
@@ -649,8 +645,6 @@ export function SftpExplorerSection({
               <UiIcon name="menu" />
             </button>
           </div>
-          <p className="hint sftp-current-path">Current: {currentPathLabel}</p>
-          {writeAccessHint ? <p className="hint sftp-write-access-hint">{writeAccessHint}</p> : null}
           {errorMessage ? <p className="hint sftp-error">{errorMessage}</p> : null}
           {errorRecovery}
           {deleteProgressLabel ? (
@@ -667,9 +661,6 @@ export function SftpExplorerSection({
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            <p className="hint sftp-drop-hint">
-              Drop files or folders into this box to upload to current directory.
-            </p>
             <div className="sftp-drop-zone__body" onContextMenu={onBodyContextMenu}>
               <ul className={viewMode === "compact" ? "sftp-list sftp-list--compact" : "sftp-list sftp-list--details"}>
                 {entries.map((entry) => (

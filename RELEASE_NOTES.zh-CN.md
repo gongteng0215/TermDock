@@ -14,6 +14,26 @@
 
 - 下一个候选版本发布时再补充验证结果。
 
+## v0.1.42 (2026-07-22)
+
+发布类型：稳定版
+
+### 主要变化
+
+- SFTP Explorer 瘦身：去掉常驻 `Current:` / 不可写提示 / 拖拽说明，列表上移；真实错误与删除进度保留。
+- 大量小文件上传打磨（`P0-E2`）：
+  - 上传批次改用并发 `expandUploadPaths` 展开本地树。
+  - 空闲可复用 SFTP 通道池对齐每标签 in-flight 上限（2）。
+  - 远端建目录先 `stat` 再 `mkdir`，减少已存在路径的失败往返。
+  - 新增 `bench:transfer:small-files` 基准脚本。
+
+### 验证
+
+- `pnpm run typecheck` 已通过。
+- `pnpm run build` 已通过。
+- `pnpm run bench:transfer:small-files` 已通过。
+- `pnpm run bench:transfer:memory` 已通过。
+
 ## v0.1.41 (2026-07-16)
 
 发布类型：稳定版

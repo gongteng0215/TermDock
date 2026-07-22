@@ -2,15 +2,15 @@
 
 [English](TASKS.md)
 
-Last updated: 2026-07-16
+Last updated: 2026-07-22
 
 ## 当前发布状态
 
-- 当前稳定版：`v0.1.41`
+- 当前稳定版：`v0.1.42`
 - 当前分支：`master`
-- 当前方向：`v0.1.41` 发版准备完成（自用 Windows 可发）；下一步是可选 shared-buffer E2 或真实使用反馈打磨。
-- 当前发布说明：SQLite 权威会话、耐久偏好端口、凭据安全 `.tdbackup`、懒加载终端启动（脚本约 0.76 MiB）、下载 SFTP 通道复用，以及备份向导/Settings 入口。
-- 最新验证（2026-07-16）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup`（脚本约 0.76 MiB）、`pnpm run bench:transfer:memory`、`pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0`（`artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`）。
+- 当前方向：`v0.1.42` 之后继续 dogfood；若小文件上传仍慢再考虑更深 `P0-E2` multiplexing；公开 macOS/签名仍后置。
+- 当前发布说明：SFTP 面板瘦身、大量小文件上传打磨（`expandUploadPaths`、对齐可复用 SFTP 池、`mkdir` 先 stat）、`bench:transfer:small-files`。
+- 最新验证（2026-07-22）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:transfer:small-files`、`pnpm run bench:transfer:memory` 已通过。
 
 ## P0 状态摘要
 
@@ -124,12 +124,13 @@ Last updated: 2026-07-16
    - 拆出 types/options/history leaf 模块；`TerminalWorkspaceHost` + modulePreload 过滤；`bench:startup` 脚本约 0.76 MiB。
 23. P0-E2 下载通道复用：
    - 下载侧新增 `reusableDownloadSftpByTab` 与 in-flight slot cap，对齐上传复用；`pnpm run bench:transfer:memory` 已通过。
+24. Post-`v0.1.41` SFTP 瘦身 + 小文件上传：
+   - 去掉 SFTP `Current` / 不可写常驻提示 / 拖拽说明；列表展开改走 `expandUploadPaths`；空闲通道池对齐 in-flight；`mkdir` 先 stat；新增 `bench:transfer:small-files`。
 
 ## 下一批建议任务
 
-1. 观察 `v0.1.38`/`v0.1.39` 之后密度、强调色主题和工作台清晰度的真实使用反馈。
-2. 将反复出现的启动 / 信任提示 / 首次连接反馈整理成 GitHub issues 和 Release FAQ。
-3. 可选：`P0-E2` 传输 shared-buffer / 多路复用优化。
+1. 继续 dogfood `v0.1.42`；若小文件上传仍慢再开更深 multiplexing。
+2. 公开签名 / macOS smoke 仍后置。
 4. 可选：单次主进程迁移 / bug-report 任务的真正中途中止（当前 UI 取消为 best-effort）。
 
 ## 详细任务历史

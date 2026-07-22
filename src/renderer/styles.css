@@ -2298,20 +2298,8 @@ body::before {
   min-width: 0;
 }
 
-.sftp-current-path {
-  margin-bottom: var(--space-1);
-  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-  color: #aac7e3;
-  font-size: var(--font-2xs);
-}
-
 .sftp-error {
   color: #ffc2d1;
-  margin-bottom: 4px;
-}
-
-.sftp-write-access-hint {
-  color: #f2d7aa;
   margin-bottom: 4px;
 }
 
@@ -2377,10 +2365,6 @@ body::before {
   }
 }
 
-.sftp-drop-hint {
-  margin-bottom: 0;
-}
-
 .sftp-drop-zone {
   min-height: 204px;
   height: auto;
@@ -2390,8 +2374,8 @@ body::before {
   border-radius: var(--radius-md);
   background: var(--ui-surface-bg);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  row-gap: 6px;
+  grid-template-rows: minmax(0, 1fr);
+  row-gap: 0;
   padding: 6px;
   box-shadow: var(--ui-surface-highlight);
   transition: border-color 130ms ease, background 130ms ease, box-shadow 130ms ease;

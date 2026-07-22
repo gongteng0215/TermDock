@@ -653,7 +653,7 @@ async function scanLocalPathEntries(inputPath: string): Promise<LocalPathScanRes
 }
 
 async function collectUploadPathEntries(inputPaths: string[]): Promise<LocalUploadPathEntry[]> {
-  const collected: LocalUploadPathEntry[] = [];
+      const collected: LocalUploadPathEntry[] = [];
   for (const rawPath of inputPaths) {
     const trimmed = typeof rawPath === "string" ? rawPath.trim() : "";
     if (!trimmed) {
@@ -680,10 +680,10 @@ async function collectUploadPathEntries(inputPaths: string[]): Promise<LocalUplo
         const relativeDirectory =
           parentRelativePath === "."
             ? topName
-            : join(topName, parentRelativePath);
+            : join(topName, parentRelativePath).replaceAll("\\", "/");
         collected.push({
           localPath: filePath,
-          relativeDirectory
+          relativeDirectory: relativeDirectory.replaceAll("\\", "/")
         });
       }
     } catch {

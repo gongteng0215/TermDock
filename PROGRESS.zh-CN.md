@@ -2,17 +2,18 @@
 
 [English](PROGRESS.md)
 
-Last updated: 2026-07-16
+Last updated: 2026-07-22
 
 ## 当前快照
 
 - 当前主分支：`master`
 - 远端：`origin/master`
-- 当前稳定版：`v0.1.41`
-- 当前方向：`v0.1.41` 发版准备完成（自用 Windows 可发）；下一步是可选 shared-buffer E2 或真实使用反馈打磨。
+- 当前稳定版：`v0.1.42`
+- 当前方向：`v0.1.42` 之后继续 dogfood；若小文件上传仍慢再考虑更深 `P0-E2` multiplexing。
 - 公开文档已经对齐到现有自动更新能力、本地优先信任模型和推荐下载包说明。
-- 最新验证（2026-07-16）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:startup`（脚本约 0.76 MiB）、`pnpm run bench:transfer:memory`、`pnpm run smoke:ui` + `pnpm run smoke:ui:packaged` → `PASS 51 / FAIL 0`（`artifacts/smoke/2026-07-16T09-37-42-134Z/summary.json`）。
-- `P0-E2` 下载侧现在也复用了每标签 SFTP 通道池，并保持与上传一致的 in-flight slot cap；`pnpm run bench:transfer:memory` 已通过。
+- 最新验证（2026-07-22）：`pnpm run typecheck`、`pnpm run build`、`pnpm run bench:transfer:small-files`、`pnpm run bench:transfer:memory` 已通过。
+- `v0.1.42` 已落地：SFTP 去常驻提示、小文件上传打磨、`bench:transfer:small-files`。
+- `P0-E2` 下载侧现在也复用了每标签 SFTP 通道池，并保持与上传一致的 in-flight slot cap。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 - README 已从开发日志重构为产品主页，并补充中文 README、截图、安全说明、安装排查、反馈分级、贡献说明和 GitHub Labels 指南。
 - `v0.1.41` 已落地：SQLite 权威会话、耐久偏好端口、凭据安全 `.tdbackup`、懒加载终端启动、下载通道复用与备份向导。
@@ -76,9 +77,8 @@ Last updated: 2026-07-16
 
 ## 下一步优先级
 
-1. 观察密度、强调色主题和工作台清晰度相关的真实使用反馈。
-2. 可选：更深的传输 shared-buffer / 通道复用（`P0-E2`）。
-3. 可选：单次主进程迁移 / bug-report 任务的真正中途中止。
+1. 继续 dogfood `v0.1.42`；若小文件上传仍慢再开更深 multiplexing。
+2. 可选：单次主进程迁移 / bug-report 任务的真正中途中止。
 
 ## 详细历史
 

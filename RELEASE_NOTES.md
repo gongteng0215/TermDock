@@ -14,6 +14,26 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.42 (2026-07-22)
+
+Release type: Stable
+
+### Highlights
+
+- SFTP Explorer chrome slim: removed resident `Current:` / not-writable / drag-drop instructional hints so the file list can start higher; real errors and delete progress remain.
+- Many-small-file upload polish (`P0-E2`):
+  - Upload batches expand local trees via concurrent `expandUploadPaths`.
+  - Idle reusable SFTP channel pools aligned to the per-tab in-flight cap (2).
+  - Remote directory create now stats before `mkdir` to avoid failure round-trips on existing paths.
+  - New `bench:transfer:small-files` baseline script.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run bench:transfer:small-files` passed.
+- `pnpm run bench:transfer:memory` passed.
+
 ## v0.1.41 (2026-07-16)
 
 Release type: Stable

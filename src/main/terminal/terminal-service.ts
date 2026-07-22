@@ -126,9 +126,9 @@ interface ReusableDownloadSftpEntry {
   sftp: SFTPWrapper;
 }
 
-const MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB = 1;
+const MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB = 2;
 const MAX_IN_FLIGHT_UPLOAD_SFTP_PER_TAB = 2;
-const MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB = 1;
+const MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB = 2;
 const MAX_IN_FLIGHT_DOWNLOAD_SFTP_PER_TAB = 2;
 const UPLOAD_SFTP_SLOT_POLL_MS = 40;
 const DOWNLOAD_SFTP_SLOT_POLL_MS = 40;
@@ -2723,6 +2723,9 @@ export class TerminalService {
   }
 
   private async mkdir(sftp: SFTPWrapper, targetPath: string): Promise<void> {
+    if (await this.pathExistsAsDirectory(sftp, targetPath)) {
+      return;
+    }
     try {
       await new Promise<void>((resolve, reject) => {
         sftp.mkdir(targetPath, (error) => {
