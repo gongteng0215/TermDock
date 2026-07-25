@@ -91,6 +91,8 @@ export interface AppInlineHintPanelProps {
   onSavePolicy: () => void;
   onRunOnce: () => void;
   onDismissHint: () => void;
+  /** Tech/cockpit only — Default keeps the empty placeholder row. */
+  hideWhenEmpty?: boolean;
 }
 
 interface WorkbenchLayoutProps {
@@ -106,12 +108,11 @@ export function WorkbenchTopbar({
   labels,
   workspaceProfile
 }: WorkbenchTopbarProps) {
-  if (!isMacPlatform) {
-    return null;
-  }
-
+  // Windows used to rely on the native title bar, so this row was Mac-only.
+  // The app window is now frameless (transparent Tech shell), so Default also
+  // needs this strip — otherwise content runs under the overlay window controls.
   return (
-    <header className="topbar">
+    <header className={isMacPlatform ? "topbar topbar--mac" : "topbar topbar--windows"}>
       <div className="topbar__brand">
         <strong>TermDock</strong>
         <span>{labels.subtitle}</span>
@@ -330,8 +331,13 @@ export function AppInlineHintPanel({
   onAllowInGroup,
   onSavePolicy,
   onRunOnce,
-  onDismissHint
+  onDismissHint,
+  hideWhenEmpty = false
 }: AppInlineHintPanelProps) {
+  if (hideWhenEmpty && !approval && !hintMessage) {
+    return null;
+  }
+
   const textClassName = approval
     ? approval.severity === "critical"
       ? "app-inline-hint-panel__text is-warn"

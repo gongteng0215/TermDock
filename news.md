@@ -2,7 +2,7 @@
 
 [中文](news.zh-CN.md)
 
-Last updated: 2026-07-22
+Last updated: 2026-07-25
 
 ## Confirmed Direction
 
@@ -14,12 +14,13 @@ Last updated: 2026-07-22
 
 ## Release Baseline
 
-- Current stable release: `v0.1.42` (2026-07-22)
+- Current stable release: `v0.1.43` (2026-07-25)
 - Active branch: `master`
-- Active branch focus: dogfood post-`v0.1.42` polish; optional deeper `P0-E2` multiplexing only if small-file uploads still lag
+- Active branch focus: dogfood post-`v0.1.43` Tech Cockpit polish
 
 ## Shipped in Recent Cycles
 
+- v0.1.43: Shell Theme Default + Tech (Cockpit) console, Windows transparent Tech gaps, denser lists / single-ring health gauges, wider SFTP rail, refreshed app icon
 - v0.1.42: SFTP Explorer chrome slim (removed resident path/writable/drag hints), many-small-file upload polish (`expandUploadPaths`, aligned reusable SFTP pools, mkdir stat-first), and `bench:transfer:small-files`
 - v0.1.41: SQLite-authoritative sessions + durable preference ports + credential-safe `.tdbackup`, lazy TerminalWorkspace startup (~0.76 MiB scripts), download SFTP channel reuse, backup wizard/Settings entry, and selection-prune re-render fix; packaged smoke `PASS 51`
 - v0.1.40: broader recoverable global error routing (session create / snippets / templates / command history / groups), Operation Center per-tab and cross-tab failed-transfer retry plus active-tab port-forward teardown, formal `bench:startup` / `bench:transfer:memory` baselines, and an English + Simplified Chinese SQLite migration plan (planning only)

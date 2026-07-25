@@ -1,6 +1,6 @@
 {
   "name": "termdock",
-  "version": "0.1.42",
+  "version": "0.1.43",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
@@ -54,6 +54,8 @@
   "author": "TermDock",
   "license": "MIT",
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/rajdhani": "^5.3.0",
     "@tanstack/react-virtual": "^3.14.4",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-webgl": "^0.19.0",

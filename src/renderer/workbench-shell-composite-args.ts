@@ -11,11 +11,15 @@ interface BuildWorkbenchOverlayStackArgsInput extends WorkbenchOverlayStackArgs 
 
 export function buildWorkbenchAppShellArgs({
   appInlineHintPanelProps,
-  isEditorFocusMode
+  cockpitChrome,
+  isEditorFocusMode,
+  shellThemeId
 }: BuildWorkbenchAppShellArgsInput) {
   return {
     appInlineHintPanelProps,
-    isEditorFocusMode
+    cockpitChrome,
+    isEditorFocusMode,
+    shellThemeId
   };
 }
 

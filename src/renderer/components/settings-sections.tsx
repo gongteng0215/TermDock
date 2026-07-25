@@ -30,6 +30,10 @@ export interface WorkspaceSettingsSectionProps {
   selectedLanguage: AppLanguage;
   selectedLanguageLabel: string;
   onLanguageSelect: (language: AppLanguage) => void;
+  shellThemeOptions: Array<{ id: string; label: string; description: string }>;
+  selectedShellThemeId: string;
+  selectedShellThemeLabel: string;
+  onShellThemeSelect: (themeId: string) => void;
   accentOptions: Array<{ id: string; label: string; description: string }>;
   selectedAccentId: string;
   selectedAccentLabel: string;
@@ -528,6 +532,10 @@ export function WorkspaceSettingsSection({
   selectedLanguage,
   selectedLanguageLabel,
   onLanguageSelect,
+  shellThemeOptions,
+  selectedShellThemeId,
+  selectedShellThemeLabel,
+  onShellThemeSelect,
   accentOptions,
   selectedAccentId,
   selectedAccentLabel,
@@ -586,6 +594,32 @@ export function WorkspaceSettingsSection({
           </select>
         </label>
         <p className="hint">{labels.currentLanguage(selectedLanguageLabel)}</p>
+      </div>
+      <div className="settings-safety-preset-section">
+        <div className="settings-safety-preset-header">
+          <h4 className="settings-group__title">{labels.shellThemeTitle}</h4>
+          <p className="hint">{labels.shellThemeDescription}</p>
+        </div>
+        <div className="settings-safety-preset-grid">
+          {shellThemeOptions.map((option) => (
+            <button
+              className={
+                option.id === selectedShellThemeId
+                  ? "settings-safety-preset is-active settings-shell-theme-preset"
+                  : "settings-safety-preset settings-shell-theme-preset"
+              }
+              data-shell-theme={option.id}
+              key={option.id}
+              onClick={() => onShellThemeSelect(option.id)}
+              type="button"
+            >
+              <span className="settings-shell-theme-preset__swatch" data-shell-theme={option.id} />
+              <span className="settings-safety-preset__title">{option.label}</span>
+              <span className="hint settings-safety-preset__meta">{option.description}</span>
+            </button>
+          ))}
+        </div>
+        <p className="hint">{labels.currentShellTheme(selectedShellThemeLabel)}</p>
       </div>
       <div className="settings-safety-preset-section">
         <div className="settings-safety-preset-header">

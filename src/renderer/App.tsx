@@ -93,6 +93,9 @@ import type {
 import {
   type MoveGroupDialogView
 } from "./components/app-dialogs";
+import {
+  type CockpitDockId
+} from "./components/cockpit-workbench-shell";
 import { WorkbenchRootFrame } from "./components/workbench-root-frame";
 import { type ServerHealthDetailTab } from "./components/server-health-detail-modal";
 import { buildSettingsCompositeProps } from "./settings-composite-props";
@@ -165,6 +168,7 @@ import {
   getUiAccentOption,
   getUiAccentOptions,
   isUiAccentId,
+  TECH_DEFAULT_UI_ACCENT_ID,
   type UiAccentId
 } from "./ui-accent";
 import {
@@ -175,12 +179,20 @@ import {
   type UiDensityId
 } from "./ui-density";
 import {
+  applyUiThemeToDocument,
+  getUiThemeOption,
+  getUiThemeOptions,
+  isUiThemeId,
+  type UiThemeId
+} from "./ui-theme";
+import {
   readCommandHistoryInspectorCollapsed,
   readFirstRunOnboardingDismissed,
   readInspectorSidebarTabId,
   readSftpExplorerViewMode,
   readUiAccentId,
   readUiDensityId,
+  readUiThemeId,
   type InspectorSidebarTabId,
   type SftpExplorerViewMode,
   writeCommandHistoryInspectorCollapsed,
@@ -188,7 +200,8 @@ import {
   writeInspectorSidebarTabId,
   writeSftpExplorerViewMode,
   writeUiAccentId,
-  writeUiDensityId
+  writeUiDensityId,
+  writeUiThemeId
 } from "./workbench-ui-preferences";
 import {
   APP_LANGUAGE_OPTIONS,
@@ -5114,6 +5127,9 @@ export function App() {
     useState<TerminalEditorFocusPreferences>(() => readTerminalEditorFocusPreferences());
   const [uiAccentId, setUiAccentIdState] = useState<UiAccentId>(() => readUiAccentId());
   const [uiDensityId, setUiDensityIdState] = useState<UiDensityId>(() => readUiDensityId());
+  const [uiThemeId, setUiThemeIdState] = useState<UiThemeId>(() => readUiThemeId());
+  const [cockpitActiveDock, setCockpitActiveDock] = useState<CockpitDockId>("terminal");
+  const [cockpitReconnectBusy, setCockpitReconnectBusy] = useState(false);
   const [workspaceProfilePreferences, setWorkspaceProfilePreferences] =
     useState<WorkspaceProfilePreferences>(() => readWorkspaceProfilePreferences());
   const [dangerousCommandGuardPreferences, setDangerousCommandGuardPreferences] =
@@ -5383,6 +5399,10 @@ export function App() {
   const terminalTabsRef = useRef<TerminalTab[]>([]);
   const activeTabIdRef = useRef<string | null>(null);
   const sftpPathByTabRef = useRef<Record<string, string>>({});
+  const sftpListingInFlightRef = useRef(0);
+  const sftpListGenerationRef = useRef(0);
+  const sftpTransferRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sftpTransferRefreshPathRef = useRef<{ tabId: string; path: string } | null>(null);
   const sftpTransfersRef = useRef<SftpTransferItem[]>([]);
   const transferHistoryRef = useRef<SftpTransferHistoryItem[]>([]);
   const portForwardsRef = useRef<PortForwardRecord[]>([]);
@@ -6005,6 +6025,14 @@ export function App() {
   const selectedUiDensity = useMemo(
     () => getUiDensityOption(uiDensityId, uiAccentLanguage),
     [uiDensityId, uiAccentLanguage]
+  );
+  const uiThemeOptions = useMemo(
+    () => [...getUiThemeOptions(uiAccentLanguage)],
+    [uiAccentLanguage]
+  );
+  const selectedUiTheme = useMemo(
+    () => getUiThemeOption(uiThemeId, uiAccentLanguage),
+    [uiThemeId, uiAccentLanguage]
   );
   const selectedTerminalEditorFocusTheme = useMemo(
     () =>
@@ -9014,6 +9042,8 @@ export function App() {
       options?: {
         tabId?: string;
         suppressDisconnectedError?: boolean;
+        /** Background refresh — keep toolbar/list interactive while updating. */
+        silent?: boolean;
       }
     ) => {
       if (!sftpApi) {
@@ -9032,10 +9062,22 @@ export function App() {
         return;
       }
 
-      setSftpLoading(true);
-      setSftpError(null, targetTabId);
+      const silent = options?.silent === true;
+      // Silent auto-refresh must not invalidate an in-flight user navigation.
+      const requestGeneration = silent
+        ? sftpListGenerationRef.current
+        : ++sftpListGenerationRef.current;
+      if (!silent) {
+        sftpListingInFlightRef.current += 1;
+        setSftpLoading(true);
+        setSftpError(null, targetTabId);
+      }
       try {
         const result = await sftpApi.listDirectory(targetTabId, path ?? ".");
+        // Drop stale responses from overlapping listings / auto-refresh.
+        if (requestGeneration !== sftpListGenerationRef.current) {
+          return;
+        }
         sftpPathByTabRef.current[targetTabId] = result.cwd;
         if (targetTabId === activeTabIdRef.current) {
           setSftpDirectory(result);
@@ -9050,16 +9092,49 @@ export function App() {
           });
         }
       } catch (caughtError) {
+        if (requestGeneration !== sftpListGenerationRef.current) {
+          return;
+        }
         const message = unwrapIpcErrorMessage((caughtError as Error).message ?? "");
         if (options?.suppressDisconnectedError && isTabNotConnectedError(message)) {
           return;
         }
-        setSftpError(message, targetTabId);
+        if (!silent) {
+          setSftpError(message, targetTabId);
+        }
       } finally {
-        setSftpLoading(false);
+        if (!silent) {
+          sftpListingInFlightRef.current = Math.max(0, sftpListingInFlightRef.current - 1);
+          if (sftpListingInFlightRef.current === 0) {
+            setSftpLoading(false);
+          }
+        }
       }
     },
     [activeTabId, sftpApi]
+  );
+
+  const scheduleSilentSftpRefresh = useCallback(
+    (tabId: string, path: string) => {
+      sftpTransferRefreshPathRef.current = { tabId, path };
+      if (sftpTransferRefreshTimerRef.current) {
+        clearTimeout(sftpTransferRefreshTimerRef.current);
+      }
+      sftpTransferRefreshTimerRef.current = setTimeout(() => {
+        sftpTransferRefreshTimerRef.current = null;
+        const pending = sftpTransferRefreshPathRef.current;
+        sftpTransferRefreshPathRef.current = null;
+        if (!pending) {
+          return;
+        }
+        void loadSftpDirectory(pending.path, {
+          tabId: pending.tabId,
+          suppressDisconnectedError: true,
+          silent: true
+        });
+      }, 450);
+    },
+    [loadSftpDirectory]
   );
 
   const clearDisconnectReportFingerprintsForTabIds = useCallback((tabIds: string[]) => {
@@ -9333,6 +9408,11 @@ export function App() {
     writeUiDensityId(uiDensityId);
     applyUiDensityToDocument(uiDensityId);
   }, [uiDensityId]);
+
+  useEffect(() => {
+    writeUiThemeId(uiThemeId);
+    applyUiThemeToDocument(uiThemeId);
+  }, [uiThemeId]);
 
   useEffect(() => {
     try {
@@ -10787,20 +10867,31 @@ export function App() {
 
       if (
         (event.status === "completed" || event.status === "canceled") &&
-        event.tabId === activeTabId &&
-        currentCwd
+        event.tabId === activeTabIdRef.current
       ) {
-        void loadSftpDirectory(currentCwd, {
-          tabId: event.tabId,
-          suppressDisconnectedError: true
-        });
+        const refreshPath =
+          sftpPathByTabRef.current[event.tabId] ?? currentCwd ?? ".";
+        // Coalesce per-file refresh so batch uploads don't keep sftpLoading locked.
+        scheduleSilentSftpRefresh(event.tabId, refreshPath);
       }
     });
 
     return () => {
       stopListening();
+      if (sftpTransferRefreshTimerRef.current) {
+        clearTimeout(sftpTransferRefreshTimerRef.current);
+        sftpTransferRefreshTimerRef.current = null;
+      }
     };
-  }, [activeTabId, applySftpTransferEvent, loadSftpDirectory, sftpApi, sftpDirectory?.cwd, writeAppLog]);
+  }, [
+    activeTabId,
+    applySftpTransferEvent,
+    loadSftpDirectory,
+    scheduleSilentSftpRefresh,
+    sftpApi,
+    sftpDirectory?.cwd,
+    writeAppLog
+  ]);
 
   useEffect(() => {
     if (!activeSessionGroupKey) {
@@ -14059,6 +14150,30 @@ export function App() {
       appLanguageRef.current === "zh-CN"
         ? `界面密度已切换为${nextDensity.label}。`
         : `Layout density set to ${nextDensity.label}.`,
+      {
+        level: "info",
+        durationMs: 3200
+      }
+    );
+  };
+
+  const setUiThemeId = (value: string) => {
+    if (!isUiThemeId(value) || value === uiThemeId) {
+      return;
+    }
+    const nextTheme = getUiThemeOption(
+      value,
+      appLanguageRef.current === "zh-CN" ? "zh" : "en"
+    );
+    setUiThemeIdState(nextTheme.id);
+    // Tech defaults to cyan; user can still change accent freely afterward.
+    if (nextTheme.id === "tech") {
+      setUiAccentIdState(TECH_DEFAULT_UI_ACCENT_ID);
+    }
+    pushAppHintMessage(
+      appLanguageRef.current === "zh-CN"
+        ? `壳层主题已切换为${nextTheme.label}。`
+        : `Shell theme set to ${nextTheme.label}.`,
       {
         level: "info",
         durationMs: 3200
@@ -17820,6 +17935,65 @@ export function App() {
     toLogMessage,
     writeAppLog
   });
+  const handleCockpitReconnect = useCallback(async () => {
+    if (cockpitReconnectBusy) {
+      return;
+    }
+    setCockpitReconnectBusy(true);
+    try {
+      await reconnectActiveTabFromError();
+    } finally {
+      setCockpitReconnectBusy(false);
+    }
+  }, [cockpitReconnectBusy, reconnectActiveTabFromError]);
+  const handleCockpitOpenSafety = useCallback(() => {
+    openSettingsPanel("safety");
+  }, [openSettingsPanel]);
+  const handleCockpitDockSelect = useCallback(
+    (id: CockpitDockId) => {
+      setCockpitActiveDock(id);
+      if (id === "retry") {
+        openRetryCenter();
+        return;
+      }
+      if (id === "operations") {
+        openOperationCenter();
+        return;
+      }
+      if (id === "settings") {
+        openSettingsPanel();
+      }
+    },
+    [openOperationCenter, openRetryCenter, openSettingsPanel]
+  );
+  const cockpitChromeProps = useMemo(
+    () =>
+      uiThemeId === "tech"
+        ? {
+            activeDock: cockpitActiveDock,
+            autoReconnectEnabled: connectionPreferences.autoReconnect,
+            onDockSelect: handleCockpitDockSelect,
+            onOpenSafety: handleCockpitOpenSafety,
+            onReconnect: () => {
+              void handleCockpitReconnect();
+            },
+            reconnectBusy: cockpitReconnectBusy,
+            reconnectDelaySeconds: connectionPreferences.reconnectDelaySeconds,
+            safetyEnabled: dangerousCommandGuardPreferences.enabled
+          }
+        : null,
+    [
+      cockpitActiveDock,
+      cockpitReconnectBusy,
+      connectionPreferences.autoReconnect,
+      connectionPreferences.reconnectDelaySeconds,
+      dangerousCommandGuardPreferences.enabled,
+      handleCockpitDockSelect,
+      handleCockpitOpenSafety,
+      handleCockpitReconnect,
+      uiThemeId
+    ]
+  );
   const {
     exportRetryCenterAnalyticsCsv,
     exportRetryCenterAnalyticsJson,
@@ -18472,6 +18646,7 @@ export function App() {
         onAccentSelect: setUiAccentId,
         onDensitySelect: setUiDensityId,
         onLanguageSelect: setAppLanguage,
+        onShellThemeSelect: setUiThemeId,
         onCursorSelectAction: setTerminalEditorFocusCursorId,
         onEditorFocusAutoLayoutEnabledChange:
           setTerminalEditorAutoLayoutEnabled,
@@ -18487,6 +18662,9 @@ export function App() {
         selectedAccentLabel: selectedUiAccent.label,
         selectedDensityId: uiDensityId,
         selectedDensityLabel: selectedUiDensity.label,
+        selectedShellThemeId: uiThemeId,
+        selectedShellThemeLabel: selectedUiTheme.label,
+        shellThemeOptions: uiThemeOptions,
         selectedCursorId: terminalEditorFocusPreferences.cursorId,
         selectedCursorLabel: selectedTerminalEditorFocusCursor.label,
         selectedFontId: terminalEditorFocusPreferences.fontId,
@@ -18518,7 +18696,13 @@ export function App() {
         sessionBadgeText
       }),
       rootFrame: {
-        appClassName: isMacPlatform ? "app app--mac" : "app app--windows",
+        appClassName: [
+          "app",
+          isMacPlatform ? "app--mac" : "app--windows",
+          uiThemeId === "tech" ? "app--cockpit" : null
+        ]
+          .filter(Boolean)
+          .join(" "),
         appRootRef
       },
       serverHealthInspectorContent: buildServerHealthInspectorContentArgs({
@@ -18562,14 +18746,17 @@ export function App() {
   const workbenchRootFrameProps = buildWorkbenchCompositeProps({
     appShell: buildWorkbenchAppShellArgs({
       appInlineHintPanelProps,
-      isEditorFocusMode: isTerminalEditorFocusMode
+      cockpitChrome: cockpitChromeProps,
+      isEditorFocusMode: isTerminalEditorFocusMode,
+      shellThemeId: uiThemeId
     }),
     commandHistoryInspector: buildCommandHistoryInspectorArgs({
       activeTabConnected: isActiveTabConnected,
       activeTabTitle: activeTerminalTab?.title ?? null,
       entries: inspectorTerminalCommandHistoryEntries,
       hiddenEntryCount: hiddenInspectorCommandHistoryCount,
-      isCollapsed: isCommandHistoryInspectorCollapsed,
+      isCollapsed:
+        uiThemeId === "tech" ? false : isCommandHistoryInspectorCollapsed,
       onEntryContextMenu: openCommandHistoryContextMenu,
       onEntryDoubleClick: pasteTerminalCommandHistoryEntry,
       onOpenContextMenu: openCommandHistoryPanelContextMenu,

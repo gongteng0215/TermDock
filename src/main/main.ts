@@ -44,6 +44,11 @@ if (smokeUserDataOverride) {
   app.setPath("sessionData", join(smokeUserDataPath, "session-data"));
 }
 
+// Required for per-pixel alpha on Windows before app ready.
+if (process.platform === "win32") {
+  app.commandLine.appendSwitch("enable-transparent-visuals");
+}
+
 if (shouldDisableGpu) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu");
@@ -66,26 +71,43 @@ function focusExistingWindow(): void {
   existingWindow.focus();
 }
 
+const WINDOW_TITLEBAR_OVERLAY_HEIGHT = 36;
+
 function createWindow(): void {
+  // Transparent client area is always on so Tech can show the desktop between
+  // floating panels. Default theme paints an opaque CSS fill over the whole stage.
+  // Windows needs hidden title bar + overlay controls; framed transparent windows
+  // commonly paint solid white on Win10/11.
   const windowOptions: BrowserWindowConstructorOptions = {
-    width: 1440,
-    height: 920,
-    minWidth: 1080,
-    minHeight: 640,
+    width: 1680,
+    height: 960,
+    minWidth: 1200,
+    minHeight: 720,
     title: "TermDock",
-    titleBarStyle: isMac ? "hiddenInset" : "default",
     autoHideMenuBar: !isMac,
-    backgroundColor: "#0b0e12",
+    show: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    // Shadow on layered Win windows often forces an opaque white underlay.
+    hasShadow: isMac,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false
     }
   };
+  if (isMac) {
+    windowOptions.titleBarStyle = "hiddenInset";
+  } else {
+    // Framed transparent windows paint white on many Windows setups.
+    windowOptions.frame = false;
+  }
   if (!isMac && runtimeWindowIconPath) {
     windowOptions.icon = runtimeWindowIconPath;
   }
   const mainWindow = new BrowserWindow(windowOptions);
+  // Re-assert after construction — some Windows builds reset the clear color.
+  mainWindow.setBackgroundColor("#00000000");
   if (isMac) {
     setupApplicationMenu(mainWindow);
   } else {
@@ -94,6 +116,30 @@ function createWindow(): void {
     mainWindow.setAutoHideMenuBar(true);
     mainWindow.setMenuBarVisibility(false);
   }
+  mainWindow.once("ready-to-show", () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundColor("#00000000");
+      mainWindow.show();
+    }
+  });
+  const markTransparentChrome = () => {
+    if (mainWindow.isDestroyed()) {
+      return;
+    }
+    void mainWindow.webContents
+      .executeJavaScript(
+        `(() => {
+          const root = document.documentElement;
+          root.dataset.windowTransparent = "1";
+          root.style.setProperty("--window-titlebar-height", "${WINDOW_TITLEBAR_OVERLAY_HEIGHT}px");
+        })();`
+      )
+      .catch((error: Error) => {
+        appLogger.log("warn", "main:window", "Failed to mark transparent chrome.", error);
+      });
+  };
+  mainWindow.webContents.on("dom-ready", markTransparentChrome);
+  mainWindow.webContents.on("did-finish-load", markTransparentChrome);
   mainWindow.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedURL) => {
@@ -103,6 +149,9 @@ function createWindow(): void {
         `Renderer load failed (${errorCode}): ${errorDescription}`,
         { validatedURL }
       );
+      if (!mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+        mainWindow.show();
+      }
     }
   );
   mainWindow.webContents.on("render-process-gone", (_event, details) => {

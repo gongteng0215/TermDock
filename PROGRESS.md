@@ -2,15 +2,16 @@
 
 [中文](PROGRESS.zh-CN.md)
 
-Last updated: 2026-07-22
+Last updated: 2026-07-25
 
 ## Snapshot
 
-- Stable release shipped: `v0.1.42`
+- Stable release shipped: `v0.1.43`
 - Active branch: `master`
-- Active focus: Post-`v0.1.42` dogfood; optional deeper `P0-E2` multiplexing only if small-file uploads still lag
+- Active focus: Post-`v0.1.43` Tech Cockpit dogfood polish
 - Public docs now align with the shipped auto-update baseline, local-first trust model, and recommended download assets
-- Latest validation on 2026-07-22: `pnpm run typecheck`, `pnpm run build`, `pnpm run bench:transfer:small-files`, `pnpm run bench:transfer:memory` passed
+- Latest validation on 2026-07-25: `pnpm run typecheck`, `pnpm run build` passed
+- `v0.1.43` ships Shell Theme Default + Tech (Cockpit), transparent Tech stage on Windows, denser lists, single-ring health gauges, wider SFTP rail, refreshed app icon
 - `v0.1.42` ships SFTP Explorer chrome slim, many-small-file upload polish, and `bench:transfer:small-files`
 - `v0.1.40` expands recoverable global error routing for session-create, snippets, templates, command history, groups, and import/export failures
 - `v0.1.40` expands Operation Center with active-tab port-forward teardown, per-tab/cross-tab failed-transfer retry, and a Retry Center shortcut

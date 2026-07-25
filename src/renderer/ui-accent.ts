@@ -1,4 +1,4 @@
-export type UiAccentId = "ocean" | "lavender" | "mint" | "amber" | "rose";
+export type UiAccentId = "ocean" | "cyan" | "lavender" | "mint" | "amber" | "rose";
 
 export interface UiAccentOption {
   id: UiAccentId;
@@ -11,6 +11,11 @@ const UI_ACCENT_OPTIONS_EN: readonly UiAccentOption[] = [
     id: "ocean",
     label: "Ocean",
     description: "Default cool blue tone across the whole workbench."
+  },
+  {
+    id: "cyan",
+    label: "Cyan",
+    description: "Cockpit neon cyan — default accent for the Tech shell."
   },
   {
     id: "lavender",
@@ -41,6 +46,11 @@ const UI_ACCENT_OPTIONS_ZH: readonly UiAccentOption[] = [
     description: "默认偏冷蓝色整体色调。"
   },
   {
+    id: "cyan",
+    label: "青色",
+    description: "控制台霓虹青，科技主题的默认强调色。"
+  },
+  {
     id: "lavender",
     label: "淡紫色",
     description: "整套工作台换成柔和紫色调。"
@@ -66,9 +76,13 @@ export const UI_ACCENT_OPTIONS = UI_ACCENT_OPTIONS_EN;
 
 export const DEFAULT_UI_ACCENT_ID: UiAccentId = "ocean";
 
+/** Default accent applied when switching into the Tech shell (user can change freely). */
+export const TECH_DEFAULT_UI_ACCENT_ID: UiAccentId = "cyan";
+
 export function isUiAccentId(value: unknown): value is UiAccentId {
   return (
     value === "ocean" ||
+    value === "cyan" ||
     value === "lavender" ||
     value === "mint" ||
     value === "amber" ||

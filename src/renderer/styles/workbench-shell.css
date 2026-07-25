@@ -1,12 +1,242 @@
 .app {
+  position: relative;
   display: grid;
-  grid-template-rows: 28px 1fr auto;
+  grid-template-rows: 28px minmax(0, 1fr) auto;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--bg-mid) 0%, var(--bg-app) 100%);
 }
 
-.app--windows {
-  grid-template-rows: 1fr auto;
+/* Default Windows: keep the classic topbar + stage + transfer dock rows.
+   (Tech/cockpit overrides this to a single full-stage row below.) */
+.app--windows:not(.app--cockpit) {
+  grid-template-rows: 28px minmax(0, 1fr) auto;
+}
+
+/* Hidden native title bar + overlay controls (transparent window on Windows). */
+html[data-window-transparent="1"] .app--windows:not(.app--cockpit)::before {
+  display: none;
+}
+
+html[data-window-transparent="1"] .app--windows.app--cockpit .cockpit-shell::before {
+  display: none;
+}
+
+html[data-window-transparent="1"] .app--windows:not(.app--cockpit) {
+  padding-top: 0;
+}
+
+html[data-ui-theme="default"][data-window-transparent="1"] .app--windows:not(.app--cockpit) {
+  /* Keep Default layout flush; window controls float top-right without shifting chrome. */
+  padding-top: 0;
+}
+
+html[data-window-transparent="1"] .app--windows.app--cockpit .cockpit-shell {
+  padding-top: 0;
+}
+
+/* Thin top strip — drag surface (IPC mouse drag; hit-testable fill required on Win) */
+.app-window-drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 160px;
+  height: 36px;
+  z-index: 55;
+  background: rgba(2, 10, 16, 0.04);
+  cursor: grab;
+}
+
+/* Compact window ops box — top-right corner (Tech floats over the stage) */
+.app-window-chrome {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* Default: sit inside the topbar row so controls never cover Sessions. */
+html[data-ui-theme="default"] .app-window-chrome,
+.app-window-chrome--default {
+  top: 0;
+  right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.app-window-chrome__panel {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 4px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: none;
+}
+
+html[data-ui-theme="tech"] .app-window-chrome__panel {
+  border: 1px solid rgba(0, 217, 230, 0.42);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(0, 217, 230, 0.08), transparent 55%),
+    rgb(2, 14, 20);
+  box-shadow:
+    inset 0 0 14px rgba(0, 216, 230, 0.04),
+    0 0 14px rgba(0, 216, 230, 0.12),
+    0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+html[data-ui-theme="default"] .app-window-chrome__panel {
+  height: 28px;
+  padding: 0 2px 0 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-window-chrome__drag {
+  border: 0;
+  background: transparent;
+  color: #7db7c5;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 2px;
+  height: 26px;
+  cursor: grab;
+  user-select: none;
+  font: 700 10px/1 var(--theme-font-ui, inherit);
+  letter-spacing: 0.06em;
+}
+
+.app-window-chrome__drag span {
+  color: #62dce5;
+}
+
+.app-window-chrome__drag svg {
+  flex: 0 0 auto;
+}
+
+.app-window-chrome__divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(23, 51, 61, 0.95);
+  margin: 0 2px;
+  flex: 0 0 auto;
+}
+
+.app-window-chrome__button {
+  -webkit-app-region: no-drag;
+  width: 30px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft, #8eabb5);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+html[data-ui-theme="tech"] .app-window-chrome__button {
+  color: #8eabb5;
+  border-radius: 7px;
+}
+
+html[data-ui-theme="tech"] .app-window-chrome__button:hover {
+  background: rgba(0, 217, 230, 0.12);
+  color: #d4edf3;
+}
+
+html[data-ui-theme="tech"] .app-window-chrome__button--close:hover {
+  background: rgba(220, 60, 80, 0.88);
+  color: #fff;
+}
+
+html[data-ui-theme="default"] .app-window-chrome__button {
+  width: 36px;
+  height: 28px;
+  border-radius: 0;
+  color: var(--text-soft);
+}
+
+html[data-ui-theme="default"] .app-window-chrome__drag--default {
+  width: 18px;
+  height: 100%;
+  cursor: grab;
+  flex: 0 0 auto;
+}
+
+html[data-ui-theme="default"] .app-window-chrome__button:hover {
+  background: color-mix(in srgb, var(--accent-muted) 35%, transparent);
+  color: var(--text-main);
+}
+
+html[data-ui-theme="default"] .app-window-chrome__button--close:hover {
+  background: color-mix(in srgb, var(--theme-danger-bg-hover, #44222c) 90%, transparent);
+  color: var(--theme-danger-text, #ffc3d1);
+}
+
+/* Default must stay fully opaque even though the Electron window is transparent. */
+html[data-ui-theme="default"][data-window-transparent="1"],
+html[data-ui-theme="default"][data-window-transparent="1"] body,
+html[data-ui-theme="default"][data-window-transparent="1"] #root {
+  background: var(--theme-bg-deep, #0b0d10) !important;
+  background-image: none !important;
+}
+
+html[data-ui-theme="default"][data-window-transparent="1"] .app {
+  background: linear-gradient(180deg, var(--bg-mid) 0%, var(--bg-app) 100%) !important;
+}
+
+html[data-ui-theme="default"] .app-window-drag-strip {
+  display: none;
+}
+
+.app__shell {
+  display: contents;
+}
+
+.app__overlays {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.app__overlays > * {
+  pointer-events: auto;
+}
+
+/* Cockpit owns the full stage; do not reserve topbar/transfer grid rows. */
+.app.app--cockpit,
+.app.app--cockpit.app--windows,
+.app.app--cockpit.app--mac {
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app.app--cockpit > .app__shell {
+  display: block;
+  grid-row: 1;
+  grid-column: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app.app--cockpit .cockpit-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .topbar {
@@ -18,10 +248,29 @@
   background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-sidebar) 100%);
   position: relative;
   z-index: 2;
+  min-height: 28px;
+  height: 28px;
+  box-sizing: border-box;
 }
 
-.app--mac .topbar {
+/* Frameless Windows Default: no rule under the title strip; leave room for window controls. */
+.app--windows:not(.app--cockpit) .topbar,
+.topbar--windows {
+  border-bottom: 0;
+  padding-right: 118px;
+  -webkit-app-region: drag;
+}
+
+.app--mac .topbar,
+.topbar--mac {
   padding-left: 84px;
+}
+
+.app--windows:not(.app--cockpit) .topbar button,
+.app--windows:not(.app--cockpit) .topbar a,
+.topbar--windows button,
+.topbar--windows a {
+  -webkit-app-region: no-drag;
 }
 
 .topbar__brand {
@@ -33,7 +282,7 @@
 .topbar__brand strong {
   font-size: var(--font-2xs);
   letter-spacing: 0.02em;
-  color: #f0f4fa;
+  color: var(--theme-brand-text);
   font-weight: var(--weight-semibold);
 }
 
@@ -53,8 +302,8 @@
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--bg-panel) 90%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 0 0 1px rgba(8, 11, 15, 0.12);
+    inset 0 1px 0 var(--theme-topbar-inset),
+    0 0 0 1px var(--theme-topbar-ring);
   color: var(--text-soft);
   font-size: var(--font-2xs);
 }
@@ -73,13 +322,13 @@
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
-  background: #45c07b;
-  box-shadow: 0 0 0 2px rgba(69, 192, 123, 0.14);
+  background: var(--theme-status-dot);
+  box-shadow: 0 0 0 2px var(--theme-status-dot-ring);
 }
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(204px, 248px) 1fr minmax(256px, 304px);
+  grid-template-columns: minmax(220px, 280px) 1fr minmax(220px, 260px);
   gap: 0;
   padding: 0;
   min-height: 0;
@@ -207,11 +456,11 @@
 }
 
 .transfer-dock__notice--info {
-  color: #9fb7d3;
+  color: var(--theme-meta-muted);
 }
 
 .transfer-dock__notice--warn {
-  color: #ffd49f;
+  color: var(--theme-meta-warn);
 }
 
 .transfer-dock__heading h3 {
@@ -319,8 +568,8 @@
 }
 
 .panel__section--drop-active {
-  background: rgba(60, 126, 184, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(114, 184, 245, 0.52);
+  background: var(--theme-drop-bg);
+  box-shadow: inset 0 0 0 1px var(--theme-drop-ring);
 }
 
 .panel__section:last-child {
@@ -407,33 +656,33 @@
   justify-content: center;
   min-height: 13px;
   padding: 0 4px;
-  border: 1px solid rgba(96, 118, 142, 0.42);
+  border: 1px solid var(--theme-profile-border);
   border-radius: var(--radius-full);
-  background: rgba(37, 45, 56, 0.92);
-  color: #d7e3ef;
+  background: var(--theme-profile-bg);
+  color: var(--theme-profile-text);
   font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0.2px;
   line-height: 1;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  box-shadow: inset 0 1px 0 var(--theme-topbar-inset);
 }
 
 .workspace-profile-badge--dev {
-  border-color: rgba(71, 143, 110, 0.86);
-  background: rgba(23, 58, 43, 0.92);
-  color: #c8f2de;
+  border-color: var(--theme-profile-dev-border);
+  background: var(--theme-profile-dev-bg);
+  color: var(--theme-profile-dev-text);
 }
 
 .workspace-profile-badge--staging {
-  border-color: rgba(184, 139, 67, 0.88);
-  background: rgba(73, 49, 15, 0.92);
-  color: #ffdca6;
+  border-color: var(--theme-profile-staging-border);
+  background: var(--theme-profile-staging-bg);
+  color: var(--theme-profile-staging-text);
 }
 
 .workspace-profile-badge--prod {
-  border-color: rgba(179, 77, 96, 0.9);
-  background: rgba(76, 22, 34, 0.92);
-  color: #ffd1d9;
+  border-color: var(--theme-profile-prod-border);
+  background: var(--theme-profile-prod-bg);
+  color: var(--theme-profile-prod-text);
 }
 
 .panel--left {
@@ -461,7 +710,7 @@
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, transparent 22%),
+    linear-gradient(180deg, var(--theme-panel-sheen) 0%, transparent 22%),
     linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-sidebar) 100%);
 }
 
@@ -523,7 +772,7 @@
   display: grid;
   grid-template-rows: 26px 1fr;
   background: var(--bg-app);
-  border-right: 1px solid rgba(9, 12, 16, 0.88);
+  border-right: 1px solid var(--theme-panel-edge);
   box-shadow: inset -1px 0 0 color-mix(in srgb, var(--accent) 12%, transparent);
   overflow: hidden;
 }
@@ -548,14 +797,14 @@
 
 .workbench-sidebar--explorer {
   background: var(--bg-sidebar);
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+  box-shadow: inset -1px 0 0 var(--theme-panel-inset-left);
 }
 
 .workbench-sidebar--inspector {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   background: linear-gradient(180deg, var(--bg-elevated) 0%, var(--bg-sidebar) 100%);
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.03);
+  box-shadow: inset 1px 0 0 var(--theme-panel-inset-right);
 }
 
 .workbench-inspector-tabs {

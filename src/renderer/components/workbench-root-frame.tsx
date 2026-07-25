@@ -1,5 +1,6 @@
 import type { ComponentProps, Ref } from "react";
 
+import { AppWindowChrome } from "./app-window-chrome";
 import { WorkbenchAppShell } from "./workbench-app-shell";
 import { WorkbenchOverlayStack } from "./workbench-overlay-stack";
 
@@ -18,8 +19,13 @@ export function WorkbenchRootFrame({
 }: WorkbenchRootFrameProps) {
   return (
     <div className={appClassName} ref={appRootRef}>
-      <WorkbenchAppShell {...appShellProps} />
-      <WorkbenchOverlayStack {...overlayStackProps} />
+      <AppWindowChrome />
+      <div className="app__shell">
+        <WorkbenchAppShell {...appShellProps} />
+      </div>
+      <div className="app__overlays" aria-live="polite">
+        <WorkbenchOverlayStack {...overlayStackProps} />
+      </div>
     </div>
   );
 }

@@ -64,12 +64,15 @@ type WorkspaceSectionValueProps = Pick<
   | "selectedLanguageLabel"
   | "selectedRhythmId"
   | "selectedRhythmLabel"
+  | "selectedShellThemeId"
+  | "selectedShellThemeLabel"
   | "selectedThemeId"
   | "selectedThemeLabel"
   | "selectedTypographyId"
   | "selectedTypographyLabel"
   | "selectedWorkspaceProfileId"
   | "selectedWorkspaceProfileLabel"
+  | "shellThemeOptions"
   | "syncDangerousCommandSafety"
   | "themeOptions"
   | "typographyOptions"
@@ -85,6 +88,7 @@ export interface BuildWorkspaceSettingsSectionPropsArgs extends WorkspaceSection
   onFontSelectAction: (value: TerminalEditorFocusFontId) => void;
   onLanguageSelect: WorkspaceSectionProps["onLanguageSelect"];
   onRhythmSelectAction: (value: TerminalEditorFocusRhythmId) => void;
+  onShellThemeSelect: WorkspaceSectionProps["onShellThemeSelect"];
   onSyncDangerousCommandSafetyChange:
     WorkspaceSectionProps["onSyncDangerousCommandSafetyChange"];
   onThemeSelectAction: (value: TerminalEditorFocusThemeId) => void;
@@ -433,6 +437,7 @@ export function buildWorkspaceSettingsSectionProps(
     onRhythmSelect: (rhythmId) => {
       args.onRhythmSelectAction(rhythmId as TerminalEditorFocusRhythmId);
     },
+    onShellThemeSelect: args.onShellThemeSelect,
     onSyncDangerousCommandSafetyChange:
       args.onSyncDangerousCommandSafetyChange,
     onThemeSelect: (themeId) => {
@@ -461,12 +466,15 @@ export function buildWorkspaceSettingsSectionProps(
     selectedLanguageLabel: args.selectedLanguageLabel,
     selectedRhythmId: args.selectedRhythmId,
     selectedRhythmLabel: args.selectedRhythmLabel,
+    selectedShellThemeId: args.selectedShellThemeId,
+    selectedShellThemeLabel: args.selectedShellThemeLabel,
     selectedThemeId: args.selectedThemeId,
     selectedThemeLabel: args.selectedThemeLabel,
     selectedTypographyId: args.selectedTypographyId,
     selectedTypographyLabel: args.selectedTypographyLabel,
     selectedWorkspaceProfileId: args.selectedWorkspaceProfileId,
     selectedWorkspaceProfileLabel: args.selectedWorkspaceProfileLabel,
+    shellThemeOptions: args.shellThemeOptions,
     syncDangerousCommandSafety: args.syncDangerousCommandSafety,
     themeOptions: args.themeOptions,
     typographyOptions: args.typographyOptions,

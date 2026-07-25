@@ -8,6 +8,11 @@ import {
   isUiDensityId,
   type UiDensityId
 } from "./ui-density";
+import {
+  DEFAULT_UI_THEME_ID,
+  isUiThemeId,
+  type UiThemeId
+} from "./ui-theme";
 
 export type SftpExplorerViewMode = "compact" | "details";
 export type InspectorSidebarTabId = "sessions" | "health" | "history";
@@ -19,6 +24,7 @@ const INSPECTOR_SIDEBAR_TAB_STORAGE_KEY = "termdock.inspector-sidebar-tab.v1";
 const FIRST_RUN_ONBOARDING_DISMISSED_STORAGE_KEY = "termdock.first-run-onboarding-dismissed.v1";
 const UI_ACCENT_STORAGE_KEY = "termdock.ui-accent.v1";
 const UI_DENSITY_STORAGE_KEY = "termdock.ui-density.v1";
+const UI_THEME_STORAGE_KEY = "termdock.ui-theme.v1";
 
 function readStorageItem(key: string): string | null {
   if (typeof window === "undefined") {
@@ -94,4 +100,13 @@ export function readUiDensityId(): UiDensityId {
 
 export function writeUiDensityId(value: UiDensityId): void {
   writeStorageItem(UI_DENSITY_STORAGE_KEY, value);
+}
+
+export function readUiThemeId(): UiThemeId {
+  const rawValue = readStorageItem(UI_THEME_STORAGE_KEY);
+  return isUiThemeId(rawValue) ? rawValue : DEFAULT_UI_THEME_ID;
+}
+
+export function writeUiThemeId(value: UiThemeId): void {
+  writeStorageItem(UI_THEME_STORAGE_KEY, value);
 }

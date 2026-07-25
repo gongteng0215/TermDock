@@ -84,6 +84,11 @@ interface TermDockApi {
     pickOpenProgram: () => Promise<string | null>;
     readClipboardText: () => Promise<string>;
     writeClipboardText: (value: string) => Promise<void>;
+    minimizeWindow: () => Promise<void>;
+    toggleMaximizeWindow: () => Promise<boolean>;
+    closeWindow: () => Promise<void>;
+    startWindowDrag: (payload: { screenX: number; screenY: number }) => void;
+    stopWindowDrag: () => void;
     writeLog: (
       level: "debug" | "info" | "warn" | "error",
       source: string,

@@ -14,6 +14,23 @@
 
 - 下一个候选版本发布时再补充验证结果。
 
+## v0.1.43 (2026-07-25)
+
+发布类型：稳定版
+
+### 主要变化
+
+- 壳层主题轴：**默认**工作台 + **科技风（Cockpit）**控制台（与强调色 / 密度正交）。
+- Tech Cockpit：浮动 SFTP / Sessions / Health / History 面板、顶栏 HUD、底栏 Dock；切换时默认青色强调色。
+- Windows 无边框透明窗支持 Tech 空隙透桌面；Default 仍用不透明底。
+- 布局打磨：侧栏列表更紧凑、Server Health 单环进度、SFTP 栏加宽、终端内边距、Dock 等比防变形。
+- 应用图标更新为最终赛博运维标（`build/icon.ico` / `.icns`）。
+
+### 验证
+
+- `pnpm run typecheck` 已通过。
+- `pnpm run build` 已通过。
+
 ## v0.1.42 (2026-07-22)
 
 发布类型：稳定版

@@ -5,9 +5,9 @@ import { lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/pr
 import { cpus, homedir, hostname, release, tmpdir, totalmem } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
-import { app, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell } from "electron";
 import type { Stats } from "node:fs";
-import type { WebContents } from "electron";
+import type { IpcMainEvent, WebContents } from "electron";
 import JSZip from "jszip";
 
 import { checkForUpdatesManually, getAutoUpdateStatus } from "../auto-update.js";
@@ -233,6 +233,68 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
   ipcMain.handle("system:writeClipboardText", async (_event, value: string) => {
     const text = typeof value === "string" ? value : "";
     clipboard.writeText(text);
+  });
+
+  ipcMain.handle("system:minimizeWindow", async (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    targetWindow?.minimize();
+  });
+
+  ipcMain.handle("system:toggleMaximizeWindow", async (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!targetWindow) {
+      return false;
+    }
+    if (targetWindow.isMaximized()) {
+      targetWindow.unmaximize();
+      return false;
+    }
+    targetWindow.maximize();
+    return true;
+  });
+
+  ipcMain.handle("system:closeWindow", async (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    targetWindow?.close();
+  });
+
+  const windowDragTimers = new Map<number, ReturnType<typeof setInterval>>();
+  const stopWindowDrag = (webContentsId: number) => {
+    const timer = windowDragTimers.get(webContentsId);
+    if (timer) {
+      clearInterval(timer);
+      windowDragTimers.delete(webContentsId);
+    }
+  };
+
+  ipcMain.on(
+    "system:windowDragStart",
+    (event: IpcMainEvent, payload: { screenX?: number; screenY?: number }) => {
+      const targetWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!targetWindow || targetWindow.isDestroyed() || targetWindow.isMaximized()) {
+        return;
+      }
+      const webContentsId = event.sender.id;
+      stopWindowDrag(webContentsId);
+      const screenX = typeof payload?.screenX === "number" ? payload.screenX : 0;
+      const screenY = typeof payload?.screenY === "number" ? payload.screenY : 0;
+      const [winX, winY] = targetWindow.getPosition();
+      const offsetX = screenX - winX;
+      const offsetY = screenY - winY;
+      const timer = setInterval(() => {
+        if (targetWindow.isDestroyed()) {
+          stopWindowDrag(webContentsId);
+          return;
+        }
+        const cursor = screen.getCursorScreenPoint();
+        targetWindow.setPosition(Math.round(cursor.x - offsetX), Math.round(cursor.y - offsetY));
+      }, 16);
+      windowDragTimers.set(webContentsId, timer);
+    }
+  );
+
+  ipcMain.on("system:windowDragStop", (event: IpcMainEvent) => {
+    stopWindowDrag(event.sender.id);
   });
 
   ipcMain.handle(

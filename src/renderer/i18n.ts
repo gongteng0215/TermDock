@@ -23,6 +23,9 @@ export interface WorkspaceSettingsLabels {
   languageDescription: string;
   languageLabel: string;
   currentLanguage: (languageLabel: string) => string;
+  shellThemeTitle: string;
+  shellThemeDescription: string;
+  currentShellTheme: (themeLabel: string) => string;
   accentTitle: string;
   accentDescription: string;
   currentAccent: (accentLabel: string) => string;
@@ -2154,6 +2157,10 @@ const ENGLISH_I18N: AppI18n = {
       languageDescription: "Choose the display language for the TermDock interface.",
       languageLabel: "Language",
       currentLanguage: (languageLabel) => `Current language: ${languageLabel}`,
+      shellThemeTitle: "Shell Theme",
+      shellThemeDescription:
+        "Choose the workbench shell language. Accent color stays independent and retints either theme.",
+      currentShellTheme: (themeLabel) => `Current shell theme: ${themeLabel}`,
       accentTitle: "Accent Color",
       accentDescription:
         "Shift the whole workbench tone—surfaces, borders, selections, and primary actions.",
@@ -2519,6 +2526,9 @@ const SIMPLIFIED_CHINESE_I18N: AppI18n = {
       languageDescription: "选择 TermDock 界面的显示语言。当前先覆盖常用工作台和设置入口。",
       languageLabel: "语言",
       currentLanguage: (languageLabel) => `当前语言：${languageLabel}`,
+      shellThemeTitle: "壳层主题",
+      shellThemeDescription: "选择工作台壳层风格。强调色保持独立，可在任意主题下换色。",
+      currentShellTheme: (themeLabel) => `当前壳层主题：${themeLabel}`,
       accentTitle: "强调色",
       accentDescription: "切换整套工作台色调：面板、边框、选中态和主操作都会一起变。",
       currentAccent: (accentLabel) => `当前强调色：${accentLabel}`,

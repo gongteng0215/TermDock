@@ -14,6 +14,23 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.43 (2026-07-25)
+
+Release type: Stable
+
+### Highlights
+
+- Shell Theme axis: **Default** workbench + **Tech (Cockpit)** console shell (orthogonal to Accent / Density).
+- Tech Cockpit: floating SFTP / Sessions / Health / History panels, top HUD, bottom dock chrome, cyan accent default on switch.
+- Windows frameless transparent window for Tech desktop gaps; Default stays opaque fill.
+- Layout density polish: denser side lists, single-ring Server Health gauges, wider SFTP rail, terminal content padding, dock aspect-safe scaling.
+- App icon refreshed to the finalized cyber-operations mark (`build/icon.ico` / `.icns`).
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+
 ## v0.1.42 (2026-07-22)
 
 Release type: Stable

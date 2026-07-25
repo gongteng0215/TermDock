@@ -2,7 +2,7 @@
 
 [English](news.md)
 
-Last updated: 2026-07-22
+Last updated: 2026-07-25
 
 ## 已确认方向
 
@@ -14,12 +14,13 @@ Last updated: 2026-07-22
 
 ## 当前发布基线
 
-- 当前公开稳定版本：`v0.1.42`（2026-07-22）
+- 当前公开稳定版本：`v0.1.43`（2026-07-25）
 - 当前主分支：`master`
-- 当前重点：`v0.1.42` 之后继续 dogfood；若小文件上传仍慢再考虑更深 `P0-E2` multiplexing。
+- 当前重点：`v0.1.43` 之后继续 Tech Cockpit dogfood 打磨。
 
 ## 最近周期已交付
 
+- v0.1.43：壳层主题 Default + Tech（Cockpit）控制台、Windows Tech 空隙透桌面、更紧列表 / 单环健康环、加宽 SFTP 栏、更新应用图标。
 - v0.1.42：SFTP Explorer 瘦身（去掉常驻路径/不可写/拖拽提示）、大量小文件上传打磨（`expandUploadPaths`、对齐可复用 SFTP 池、`mkdir` 先 stat）、新增 `bench:transfer:small-files`。
 - v0.1.41：SQLite 权威会话 + 耐久偏好端口 + 凭据安全 `.tdbackup`、懒加载终端启动（脚本约 0.76 MiB）、下载 SFTP 通道复用、备份向导/Settings 入口，以及 selection-prune 重渲染修复；打包 smoke `PASS 51`。
 - v0.1.40：更广的可恢复全局错误路由（会话创建 / 片段 / 模板 / 命令历史 / 分组）、Operation Center 按标签 / 跨标签失败传输重试与当前标签端口转发拆除、正式 `bench:startup` / `bench:transfer:memory` 基准，以及英文 / 简体中文 SQLite 迁移规划（仅规划）。

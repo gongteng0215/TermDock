@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import type { ServerHealthSnapshot } from "../../shared/terminal";
 import type { ServerHealthDerivedMetrics } from "../use-server-health-monitor";
 
@@ -59,6 +61,12 @@ export function ServerHealthInspectorContent({
                   ? "server-health-card server-health-card--cpu is-alert"
                   : "server-health-card server-health-card--cpu"
               }
+              data-gauge={Math.round(metrics?.cpuUsagePercent ?? 0)}
+              style={
+                {
+                  "--gauge-pct": `${Math.max(0, Math.min(100, metrics?.cpuUsagePercent ?? 0))}`
+                } as CSSProperties
+              }
             >
               <span className="server-health-card__label">CPU</span>
               <strong className="server-health-card__value">
@@ -70,6 +78,12 @@ export function ServerHealthInspectorContent({
                 alertStatus.memoryHigh
                   ? "server-health-card server-health-card--memory is-alert"
                   : "server-health-card server-health-card--memory"
+              }
+              data-gauge={Math.round(metrics?.memoryUsagePercent ?? 0)}
+              style={
+                {
+                  "--gauge-pct": `${Math.max(0, Math.min(100, metrics?.memoryUsagePercent ?? 0))}`
+                } as CSSProperties
               }
             >
               <span className="server-health-card__label">Memory</span>
@@ -86,6 +100,12 @@ export function ServerHealthInspectorContent({
                 alertStatus.diskHigh
                   ? "server-health-card server-health-card--disk is-alert"
                   : "server-health-card server-health-card--disk"
+              }
+              data-gauge={Math.round(metrics?.diskUsagePercent ?? 0)}
+              style={
+                {
+                  "--gauge-pct": `${Math.max(0, Math.min(100, metrics?.diskUsagePercent ?? 0))}`
+                } as CSSProperties
               }
             >
               <span className="server-health-card__label">Disk</span>

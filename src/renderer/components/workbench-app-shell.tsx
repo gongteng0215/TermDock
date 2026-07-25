@@ -1,5 +1,10 @@
 import type { ComponentProps } from "react";
 
+import type { UiThemeId } from "../ui-theme";
+import {
+  CockpitWorkbenchShell,
+  type CockpitChromeProps
+} from "./cockpit-workbench-shell";
 import {
   AppInlineHintPanel,
   TransferDock,
@@ -25,6 +30,8 @@ export interface WorkbenchAppShellProps {
   serverHealthInspectorSectionProps: WorkbenchInspectorPaneProps["serverHealthInspectorSectionProps"];
   sessionsInspectorSectionProps: WorkbenchInspectorPaneProps["sessionsInspectorSectionProps"];
   sftpExplorerSectionProps: WorkbenchExplorerPaneProps["sftpExplorerSectionProps"];
+  shellThemeId: UiThemeId;
+  cockpitChrome: CockpitChromeProps | null;
   terminalWorkspaceProps: WorkbenchCenterPaneProps["terminalWorkspaceProps"];
   topbarProps: ComponentProps<typeof WorkbenchTopbar>;
   transferDockProps: ComponentProps<typeof TransferDock>;
@@ -39,10 +46,28 @@ export function WorkbenchAppShell({
   serverHealthInspectorSectionProps,
   sessionsInspectorSectionProps,
   sftpExplorerSectionProps,
+  shellThemeId = "default",
+  cockpitChrome = null,
   terminalWorkspaceProps,
   topbarProps,
   transferDockProps
 }: WorkbenchAppShellProps) {
+  if (shellThemeId === "tech" && cockpitChrome) {
+    return (
+      <CockpitWorkbenchShell
+        appInlineHintPanelProps={appInlineHintPanelProps}
+        chrome={cockpitChrome}
+        commandHistoryInspectorSectionProps={commandHistoryInspectorSectionProps}
+        serverHealthInspectorContentProps={serverHealthInspectorContentProps}
+        serverHealthInspectorSectionProps={serverHealthInspectorSectionProps}
+        sessionsInspectorSectionProps={sessionsInspectorSectionProps}
+        sftpExplorerSectionProps={sftpExplorerSectionProps}
+        terminalWorkspaceProps={terminalWorkspaceProps}
+        transferDockProps={transferDockProps}
+      />
+    );
+  }
+
   return (
     <>
       <WorkbenchTopbar {...topbarProps} />
@@ -61,7 +86,7 @@ export function WorkbenchAppShell({
         }
       />
       <TransferDock {...transferDockProps} />
-      <AppInlineHintPanel {...appInlineHintPanelProps} />
+      <AppInlineHintPanel {...appInlineHintPanelProps} hideWhenEmpty />
     </>
   );
 }

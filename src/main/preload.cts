@@ -86,6 +86,16 @@ const api = {
       ipcRenderer.invoke("system:readClipboardText") as Promise<string>,
     writeClipboardText: (value: string) =>
       ipcRenderer.invoke("system:writeClipboardText", value) as Promise<void>,
+    minimizeWindow: () => ipcRenderer.invoke("system:minimizeWindow") as Promise<void>,
+    toggleMaximizeWindow: () =>
+      ipcRenderer.invoke("system:toggleMaximizeWindow") as Promise<boolean>,
+    closeWindow: () => ipcRenderer.invoke("system:closeWindow") as Promise<void>,
+    startWindowDrag: (payload: { screenX: number; screenY: number }) => {
+      ipcRenderer.send("system:windowDragStart", payload);
+    },
+    stopWindowDrag: () => {
+      ipcRenderer.send("system:windowDragStop");
+    },
     writeLog: (
       level: "debug" | "info" | "warn" | "error",
       source: string,

@@ -256,7 +256,8 @@
   position: absolute;
   inset: 0;
   display: none;
-  padding: 0;
+  padding: 8px 12px 10px;
+  box-sizing: border-box;
 }
 
 .terminal-pane.is-editor-focus {
