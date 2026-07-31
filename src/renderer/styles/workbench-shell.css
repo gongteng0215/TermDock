@@ -253,12 +253,12 @@ html[data-ui-theme="default"] .app-window-drag-strip {
   box-sizing: border-box;
 }
 
-/* Frameless Windows Default: no rule under the title strip; leave room for window controls. */
+/* Frameless Windows Default: IPC drag on the topbar (not native app-region drag). */
 .app--windows:not(.app--cockpit) .topbar,
 .topbar--windows {
   border-bottom: 0;
   padding-right: 118px;
-  -webkit-app-region: drag;
+  cursor: grab;
 }
 
 .app--mac .topbar,

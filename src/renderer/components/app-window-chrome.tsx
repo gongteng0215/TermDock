@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { GripHorizontal, Minus, Square, X } from "lucide-react";
 
+import { beginWindowDrag } from "../window-drag";
+
 function isWindowsPlatform(): boolean {
   return typeof navigator !== "undefined" && /win/i.test(navigator.platform);
 }
@@ -22,28 +24,6 @@ function readUiThemeId(): string {
     return "default";
   }
   return document.documentElement.dataset.uiTheme ?? "default";
-}
-
-function beginWindowDrag(event: React.MouseEvent<HTMLElement>): void {
-  if (event.button !== 0) {
-    return;
-  }
-  const systemApi = window.termdock?.system;
-  if (!systemApi?.startWindowDrag || !systemApi.stopWindowDrag) {
-    return;
-  }
-  event.preventDefault();
-  systemApi.startWindowDrag({
-    screenX: event.screenX,
-    screenY: event.screenY
-  });
-  const stop = () => {
-    systemApi.stopWindowDrag();
-    window.removeEventListener("mouseup", stop);
-    window.removeEventListener("blur", stop);
-  };
-  window.addEventListener("mouseup", stop);
-  window.addEventListener("blur", stop);
 }
 
 export function AppWindowChrome() {

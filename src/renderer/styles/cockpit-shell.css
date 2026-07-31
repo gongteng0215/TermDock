@@ -629,6 +629,19 @@
   isolation: isolate;
 }
 
+.cockpit-bottom-dock__terminal-mask {
+  position: absolute;
+  z-index: 1;
+  top: 18%;
+  left: 9.8%;
+  width: 15.4%;
+  height: 63%;
+  pointer-events: none;
+  clip-path: polygon(12% 0, 100% 0, 86% 100%, 0 100%);
+  background: linear-gradient(135deg, #03111a 0%, #020c13 76%);
+  box-shadow: inset 0 0 0 1px rgba(76, 136, 155, 0.16);
+}
+
 .cockpit-bottom-dock__hitgrid {
   position: absolute;
   /*
@@ -654,24 +667,26 @@
   margin: 0;
   padding: 0;
   border: 0;
-  /* Invisible hit target only — never paint over the PNG chrome. */
-  background: rgba(255, 255, 255, 0.01);
+  background: transparent;
   box-shadow: none;
-  outline: none;
+  outline: 0;
   display: block;
   cursor: pointer;
   -webkit-app-region: no-drag;
 }
 
-.cockpit-bottom-dock__item:hover,
-.cockpit-bottom-dock__item:focus,
-.cockpit-bottom-dock__item:focus-visible,
-.cockpit-bottom-dock__item.is-active,
-.cockpit-bottom-dock__item:first-child.is-active,
-.cockpit-shell:not([data-active-panel="terminal"]) .cockpit-bottom-dock__item:first-child {
-  background: rgba(255, 255, 255, 0.01);
+.cockpit-bottom-dock__item::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 2% 3%;
+  pointer-events: none;
+  clip-path: polygon(12% 0, 100% 0, 88% 100%, 0 100%);
+  background: transparent;
   box-shadow: none;
-  filter: none;
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .cockpit-bottom-dock__item span,
@@ -682,6 +697,60 @@
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
+}
+
+.cockpit-bottom-dock__item.is-active::before,
+.cockpit-bottom-dock__item:focus-visible::before {
+  background: linear-gradient(135deg, rgba(0, 217, 230, 0.2), rgba(0, 111, 137, 0.05));
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 225, 239, 0.85),
+    0 0 14px rgba(0, 217, 230, 0.24);
+}
+
+.cockpit-bottom-dock__item:not(.is-active):hover::before {
+  background: rgba(0, 164, 186, 0.11);
+  box-shadow: inset 0 0 0 1px rgba(72, 194, 204, 0.34);
+}
+
+/* dock-chrome.png has Terminal baked in as its original active state. Mask it
+ * and render the real Terminal control so the highlight can follow app state. */
+.cockpit-bottom-dock__item[data-dock-id="terminal"] {
+  display: grid;
+  grid-template-rows: 28px auto;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+}
+
+.cockpit-bottom-dock__item[data-dock-id="terminal"] svg,
+.cockpit-bottom-dock__item[data-dock-id="terminal"] span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: auto;
+  height: auto;
+  opacity: 1;
+  overflow: visible;
+}
+
+.cockpit-bottom-dock__item[data-dock-id="terminal"] svg {
+  color: #70a4bb;
+}
+
+.cockpit-bottom-dock__item[data-dock-id="terminal"] span {
+  color: #71909d;
+  font: 600 9px/1 var(--cockpit-mono);
+  letter-spacing: 0.04em;
+}
+
+.cockpit-bottom-dock__item[data-dock-id="terminal"].is-active svg,
+.cockpit-bottom-dock__item[data-dock-id="terminal"]:focus-visible svg {
+  color: var(--accent, var(--cockpit-cyan));
+}
+
+.cockpit-bottom-dock__item[data-dock-id="terminal"].is-active span,
+.cockpit-bottom-dock__item[data-dock-id="terminal"]:focus-visible span {
+  color: #74eaf0;
 }
 
 /* Tech health cards → single-ring circular gauges */
@@ -946,8 +1015,53 @@
   }
 
   .cockpit-stage {
-    grid-template-columns: clamp(210px, 17vw, 260px) minmax(0, 1fr) clamp(170px, 13vw, 210px);
+    grid-template-columns: clamp(200px, 17vw, 230px) minmax(0, 1fr) clamp(220px, 18vw, 250px);
     gap: 10px;
+  }
+
+  /* Keep the inspector readable at the app's 1200px minimum width. The dock
+   * selects Monitor/History modes; other workspace modes keep Sessions open. */
+  .cockpit-rail--right {
+    grid-template-rows: minmax(0, 1fr);
+    padding-top: 48px;
+  }
+
+  .cockpit-rail--right > .cockpit-module {
+    display: none;
+  }
+
+  .cockpit-rail--right > .cockpit-module[data-testid="cockpit-sessions"] {
+    display: flex;
+  }
+
+  .cockpit-shell[data-active-panel="monitor"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-sessions"],
+  .cockpit-shell[data-active-panel="history"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-sessions"],
+  .cockpit-shell[data-active-panel="retry"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-sessions"],
+  .cockpit-shell[data-active-panel="operations"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-sessions"] {
+    display: none;
+  }
+
+  .cockpit-shell[data-active-panel="monitor"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-health"],
+  .cockpit-shell[data-active-panel="history"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-history"],
+  .cockpit-shell[data-active-panel="retry"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-history"],
+  .cockpit-shell[data-active-panel="operations"]
+    .cockpit-rail--right
+    > .cockpit-module[data-testid="cockpit-history"] {
+    display: flex;
   }
 
   .cockpit-top-hud {
@@ -978,7 +1092,6 @@
   }
 
   .cockpit-rail--right {
-    grid-template-rows: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
     padding-top: 48px;
   }
 
@@ -994,6 +1107,12 @@
 
   .cockpit-bottom-dock {
     --dock-max-h: min(96px, 12vh);
+  }
+}
+
+@media (max-height: 860px) and (min-width: 1321px) {
+  .cockpit-rail--right {
+    grid-template-rows: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 

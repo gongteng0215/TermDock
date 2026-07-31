@@ -282,18 +282,33 @@ function CockpitBottomDock({
   active: CockpitDockId;
   onSelect: (id: CockpitDockId) => void;
 }) {
+  const handleSelect = (id: CockpitDockId) => {
+    if (id === "transfers" && active === "transfers") {
+      onSelect("terminal");
+      return;
+    }
+
+    onSelect(id);
+  };
+
   return (
     <nav className="cockpit-bottom-dock" aria-label="Main product navigation">
+      <span aria-hidden="true" className="cockpit-bottom-dock__terminal-mask" />
       <div className="cockpit-bottom-dock__hitgrid">
         {DOCK_ITEMS.map(({ id, label, Icon }) => (
           <button
             aria-current={active === id ? "page" : undefined}
-            aria-label={`Open ${label.toLowerCase()}`}
+            aria-label={
+              id === "transfers" && active === "transfers"
+                ? "Hide transfer details"
+                : `Open ${label.toLowerCase()}`
+            }
             className={
               active === id ? "cockpit-bottom-dock__item is-active" : "cockpit-bottom-dock__item"
             }
+            data-dock-id={id}
             key={id}
-            onClick={() => onSelect(id)}
+            onClick={() => handleSelect(id)}
             type="button"
           >
             <Icon aria-hidden="true" size={28} strokeWidth={1.7} />

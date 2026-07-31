@@ -14,6 +14,22 @@ Release type: In development
 
 - Validation will be added with the next release candidate.
 
+## v0.1.44 (2026-07-31)
+
+Release type: Stable
+
+### Highlights
+
+- Windows frameless window dragging is now reliable across the Default workbench and Tech Cockpit, while preserving the window's size during movement.
+- Tech Cockpit navigation polish: the bottom dock highlight follows the active workspace, the baked-in Terminal state is replaced with a real stateful control, and the Transfers control can close its detail view.
+- Cockpit compact-window layout now keeps the right inspector readable by showing the Sessions, Health, or History module appropriate to the selected dock mode.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run smoke:ui` passed: 51 passed, 0 failed.
+
 ## v0.1.43 (2026-07-25)
 
 Release type: Stable

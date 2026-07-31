@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { AppLanguage, TransferDockLabels, WorkbenchTopbarLabels } from "../i18n";
+import { beginWindowDrag } from "../window-drag";
 import { translateAppText } from "../i18n";
 import { UiIcon } from "./ui-icon";
 
@@ -112,7 +113,10 @@ export function WorkbenchTopbar({
   // The app window is now frameless (transparent Tech shell), so Default also
   // needs this strip — otherwise content runs under the overlay window controls.
   return (
-    <header className={isMacPlatform ? "topbar topbar--mac" : "topbar topbar--windows"}>
+    <header
+      className={isMacPlatform ? "topbar topbar--mac" : "topbar topbar--windows"}
+      onMouseDown={isMacPlatform ? undefined : beginWindowDrag}
+    >
       <div className="topbar__brand">
         <strong>TermDock</strong>
         <span>{labels.subtitle}</span>

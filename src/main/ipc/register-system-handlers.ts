@@ -276,18 +276,25 @@ export function registerSystemHandlers(terminalService: TerminalService): void {
       }
       const webContentsId = event.sender.id;
       stopWindowDrag(webContentsId);
-      const screenX = typeof payload?.screenX === "number" ? payload.screenX : 0;
-      const screenY = typeof payload?.screenY === "number" ? payload.screenY : 0;
-      const [winX, winY] = targetWindow.getPosition();
-      const offsetX = screenX - winX;
-      const offsetY = screenY - winY;
+      const bounds = targetWindow.getBounds();
+      const screenX = typeof payload?.screenX === "number" ? payload.screenX : bounds.x;
+      const screenY = typeof payload?.screenY === "number" ? payload.screenY : bounds.y;
+      const offsetX = screenX - bounds.x;
+      const offsetY = screenY - bounds.y;
+      const width = bounds.width;
+      const height = bounds.height;
       const timer = setInterval(() => {
         if (targetWindow.isDestroyed()) {
           stopWindowDrag(webContentsId);
           return;
         }
         const cursor = screen.getCursorScreenPoint();
-        targetWindow.setPosition(Math.round(cursor.x - offsetX), Math.round(cursor.y - offsetY));
+        targetWindow.setBounds({
+          x: Math.round(cursor.x - offsetX),
+          y: Math.round(cursor.y - offsetY),
+          width,
+          height
+        });
       }, 16);
       windowDragTimers.set(webContentsId, timer);
     }
