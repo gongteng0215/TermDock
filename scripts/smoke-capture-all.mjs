@@ -3583,6 +3583,116 @@ async function main() {
       return `${summaryText}, shot=${fileName}`;
     });
 
+    await runStep("tech cockpit shell keeps dock state and window chrome", async () => {
+      const dismissErrorOverlay = async () => {
+        const dismissErrorButton = page
+          .locator(".error-bar .icon-button[aria-label='Dismiss error']")
+          .first();
+        if (await isVisible(dismissErrorButton)) {
+          await dismissErrorButton.click();
+          await page.locator(".error-bar").waitFor({ state: "hidden", timeout: 2_000 });
+        }
+      };
+
+      await dismissErrorOverlay();
+
+      await openSettingsModal(page);
+      const workspaceNav = settingsNavButton(page, ["Workspace"]);
+      if (!(await isVisible(workspaceNav))) {
+        throw new Error("workspace settings navigation not found for Tech shell");
+      }
+      await workspaceNav.click();
+      await waitForCondition(
+        async () => await workspaceNav.evaluate((element) => element.classList.contains("is-active")),
+        {
+          timeout: 5_000,
+          description: "workspace settings navigation for Tech shell"
+        }
+      );
+
+      const techTheme = page.locator(".modal--settings button[data-shell-theme='tech']").first();
+      if (!(await isVisible(techTheme))) {
+        throw new Error("Tech shell theme option not found");
+      }
+      await techTheme.click();
+      await waitForCondition(
+        async () =>
+          await page.evaluate(
+            () =>
+              document.documentElement.dataset.uiTheme === "tech" &&
+              Boolean(document.querySelector(".app.app--cockpit"))
+          ),
+        {
+          timeout: 8_000,
+          description: "Tech cockpit shell activation"
+        }
+      );
+
+      const done = settingsDoneButton(page);
+      if (!(await isVisible(done))) {
+        throw new Error("settings Done button not found after selecting Tech shell");
+      }
+      await done.click();
+      await page.locator(".cockpit-shell").waitFor({ state: "visible", timeout: 8_000 });
+      // The fixture shutdown immediately before this check can publish its final
+      // disconnect notification while the shell is swapping themes.
+      await page.waitForTimeout(360);
+      await dismissErrorOverlay();
+
+      const windowControls = page.locator(".app-window-chrome__button");
+      if ((await windowControls.count()) !== 3) {
+        throw new Error("Tech cockpit must keep all three window controls");
+      }
+
+      const cockpitShell = page.locator(".cockpit-shell").first();
+      const selectDock = async (dockId) => {
+        const item = page
+          .locator(`.cockpit-bottom-dock__item[data-dock-id='${dockId}']`)
+          .first();
+        if (!(await isVisible(item))) {
+          throw new Error(`cockpit dock item not visible: ${dockId}`);
+        }
+        await dismissErrorOverlay();
+        await item.click();
+        await waitForCondition(
+          async () =>
+            (await cockpitShell.getAttribute("data-active-panel")) === dockId &&
+            (await item.getAttribute("aria-current")) === "page",
+          {
+            timeout: 5_000,
+            description: `cockpit dock state ${dockId}`
+          }
+        );
+      };
+
+      await selectDock("terminal");
+      const terminalShot = await recordShot(page, "tech-cockpit-terminal");
+      await selectDock("files");
+      const filesShot = await recordShot(page, "tech-cockpit-files");
+      await selectDock("monitor");
+      await selectDock("history");
+      await selectDock("transfers");
+      const transfersShot = await recordShot(page, "tech-cockpit-transfers");
+
+      const transfersDock = page
+        .locator(".cockpit-bottom-dock__item[data-dock-id='transfers']")
+        .first();
+      await page.waitForTimeout(360);
+      await dismissErrorOverlay();
+      await transfersDock.click();
+      await waitForCondition(
+        async () =>
+          (await cockpitShell.getAttribute("data-active-panel")) === "terminal" &&
+          (await page.locator(".cockpit-transfer .transfer-dock").count()) === 0,
+        {
+          timeout: 5_000,
+          description: "cockpit transfer details close on second dock click"
+        }
+      );
+
+      return `shots=${terminalShot}, ${filesShot}, ${transfersShot}`;
+    });
+
     await runStep("final home screenshot", async () => {
       const fileName = await recordShot(page, "home-final");
       return fileName;

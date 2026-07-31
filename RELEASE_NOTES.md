@@ -2,17 +2,22 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
-## Unreleased (master)
+## v0.1.45 (2026-07-31)
 
-Release type: In development
+Release type: Stable
 
 ### Highlights
 
-- No unreleased notes have been recorded yet.
+- Tech Cockpit now uses an app-owned starfield scene, quieter opaque chassis treatment, compact window controls, and the high-fidelity dock artwork while preserving all existing navigation and state behavior.
+- The three-column Cockpit layout now gives the terminal the working focus: both rails sit 10px from the scene edges and bottom, while the right rail keeps a true 10px seam below the floating HUD at desktop, narrow, and compact heights.
+- Server Health telemetry rings now use the prototype's lighter 2px stroke rather than the previous heavy ring.
+- UI smoke coverage now verifies Tech Cockpit activation, window controls, dock state, Files/Monitor/History/Transfers switching, and closing Transfers from the dock.
 
 ### Validation
 
-- Validation will be added with the next release candidate.
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run smoke:ui` passed: 52 passed, 0 failed.
 
 ## v0.1.44 (2026-07-31)
 

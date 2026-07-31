@@ -7,13 +7,26 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 0 10px 6px;
+  /* Keep both side rails just inside the scene edge; the center is allowed to
+   * claim all remaining width for terminal work. */
+  padding: 0 10px 10px;
   overflow: hidden;
   background: transparent;
   background-color: transparent;
   font-family: var(--theme-font-ui);
   letter-spacing: var(--theme-letter-spacing, 0);
   position: relative;
+  isolation: isolate;
+}
+
+/* The star-field is app-owned so Tech keeps its scene on transparent windows. */
+.cockpit-shell::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background: #02070b url("../assets/cockpit/cockpit-background.png") center / cover no-repeat;
 }
 
 .cockpit-top-hud {
@@ -24,8 +37,8 @@
   z-index: 6;
   display: flex;
   justify-content: center;
-  height: 70px;
-  min-height: 70px;
+  height: 64px;
+  min-height: 64px;
   pointer-events: none;
   background: transparent;
 }
@@ -33,9 +46,9 @@
 .cockpit-top-hud__panel {
   /* Prototype fluid: min(620px, 88%); locked: 550×70 */
   pointer-events: auto;
-  width: min(620px, 88%);
-  height: 70px;
-  min-height: 70px;
+  width: min(550px, 72%);
+  height: 64px;
+  min-height: 64px;
   display: grid;
   grid-template-columns: 1.2fr 1fr;
   overflow: hidden;
@@ -62,7 +75,7 @@
   text-align: left;
   color: inherit;
   min-width: 0;
-  height: 70px;
+  height: 64px;
 }
 
 .cockpit-top-hud__reconnect:disabled {
@@ -137,50 +150,54 @@
 }
 
 .cockpit-stage {
-  /* Give the terminal stage the bulk of the width; left SFTP needs usable width. */
+  /* Widen the main span so the two rails sit nearer the scene edges and the
+   * terminal remains the visual and working focus. */
   display: grid;
-  grid-template-columns: clamp(240px, 18vw, 300px) minmax(0, 1fr) clamp(188px, 14vw, 228px);
-  gap: 12px;
+  width: 100%;
+  justify-self: center;
+  grid-template-columns: clamp(220px, 18vw, 264px) minmax(0, 1fr) clamp(220px, 18vw, 264px);
+  gap: 14px;
   min-height: 0;
   height: 100%;
   background: transparent;
   align-items: stretch;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
 }
 
 .cockpit-rail {
   display: grid;
-  gap: 14px;
+  gap: 12px;
   min-height: 0;
   min-width: 0;
   height: 100%;
   background: transparent;
+  box-sizing: border-box;
 }
 
 /* Left column: flush to the top edge */
 .cockpit-rail--left {
   grid-template-rows: minmax(0, 1fr);
-  padding-top: 0;
+  padding: 38px 0 10px;
 }
 
-/*
- * Right column: clear the top-right window ops chrome (Move / min / max / close)
- * and leave a small seam under it.
- */
+/* Right column: keep a real 10px seam below the 64px floating HUD. */
 .cockpit-rail--right {
   grid-template-rows: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
-  padding-top: 52px; /* chrome top 10 + 34 height + ~8 gap */
+  padding: 74px 0 10px;
 }
 
 .cockpit-center {
   /* Clear floating HUD; terminal + transfer + dock */
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto auto;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   min-height: 0;
   height: 100%;
   /* HUD is 70px — keep a visible seam under it so it does not glue to the terminal. */
-  padding-top: 82px;
+  padding-top: 85px;
   box-sizing: border-box;
   background: transparent;
   align-content: stretch;
@@ -192,7 +209,7 @@
   position: relative;
   min-height: 0;
   min-width: 0;
-  border: 1px solid rgba(0, 217, 230, 0.35);
+  border: 1px solid rgba(0, 217, 230, 0.28);
   /* Fully opaque chassis (explicit alpha=1 for Windows transparent windows). */
   background-color: rgba(1, 13, 19, 1) !important;
   background-image: linear-gradient(rgba(1, 13, 19, 1), rgba(1, 13, 19, 1)) !important;
@@ -201,12 +218,13 @@
   -webkit-backdrop-filter: none !important;
   isolation: isolate;
   box-shadow:
-    inset 0 0 28px rgba(0, 217, 230, 0.03),
-    0 0 13px rgba(0, 217, 230, 0.085);
+    inset 0 0 20px rgba(0, 217, 230, 0.018),
+    0 8px 22px rgba(0, 0, 0, 0.22),
+    0 0 8px rgba(0, 217, 230, 0.045);
 }
 
 .cockpit-module {
-  border-radius: 21px;
+  border-radius: 14px;
   padding: 8px 10px 6px;
   display: flex;
   flex-direction: column;
@@ -216,10 +234,11 @@
 .cockpit-module.is-focus,
 .cockpit-terminal.is-focus,
 .cockpit-transfer.is-focus {
-  border-color: rgba(0, 234, 245, 0.78);
+  border-color: rgba(0, 234, 245, 0.62);
   box-shadow:
-    inset 0 0 25px rgba(0, 217, 230, 0.04),
-    0 0 20px rgba(0, 217, 230, 0.13);
+    inset 0 0 20px rgba(0, 217, 230, 0.028),
+    0 10px 26px rgba(0, 0, 0, 0.26),
+    0 0 13px rgba(0, 217, 230, 0.1);
 }
 
 .cockpit-module__header {
@@ -388,7 +407,7 @@
 }
 
 .cockpit-terminal {
-  border-radius: 0 12px 12px 12px;
+  border-radius: 0 14px 14px 14px;
   overflow: hidden;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -433,7 +452,7 @@
 }
 
 .cockpit-transfer {
-  border-radius: 32px;
+  border-radius: 18px;
   overflow: hidden;
   min-height: 64px;
   background-color: rgba(1, 14, 20, 1) !important;
@@ -609,13 +628,13 @@
  * Never stretch the chrome PNG — width is derived from height so aspect stays 1120:170.
  */
 .cockpit-bottom-dock {
-  --dock-max-h: min(132px, 15vh);
+  --dock-max-h: min(148px, 16vh);
   justify-self: center;
   align-self: end;
   position: relative;
   z-index: 5;
-  width: min(100%, calc(var(--dock-max-h) * 1120 / 170));
-  max-width: 100%;
+  width: min(calc(100% + 160px), calc(var(--dock-max-h) * 1120 / 170));
+  max-width: none;
   height: auto;
   aspect-ratio: 1120 / 170;
   max-height: var(--dock-max-h);
@@ -624,7 +643,7 @@
   border-radius: 0;
   overflow: visible;
   opacity: 1 !important;
-  background: transparent url("../assets/cockpit/dock-chrome.png") center / 100% 100% no-repeat;
+  background: transparent url("../assets/cockpit/reference-dock.png") center / 100% 100% no-repeat;
   box-shadow: none;
   isolation: isolate;
 }
@@ -701,10 +720,10 @@
 
 .cockpit-bottom-dock__item.is-active::before,
 .cockpit-bottom-dock__item:focus-visible::before {
-  background: linear-gradient(135deg, rgba(0, 217, 230, 0.2), rgba(0, 111, 137, 0.05));
+  background: #06242c;
   box-shadow:
-    inset 0 0 0 1px rgba(0, 225, 239, 0.85),
-    0 0 14px rgba(0, 217, 230, 0.24);
+    inset 0 0 0 1px rgba(0, 225, 239, 0.72),
+    0 0 10px rgba(0, 217, 230, 0.16);
 }
 
 .cockpit-bottom-dock__item:not(.is-active):hover::before {
@@ -712,9 +731,10 @@
   box-shadow: inset 0 0 0 1px rgba(72, 194, 204, 0.34);
 }
 
-/* dock-chrome.png has Terminal baked in as its original active state. Mask it
- * and render the real Terminal control so the highlight can follow app state. */
-.cockpit-bottom-dock__item[data-dock-id="terminal"] {
+/* The artwork has Terminal baked in as active. Render active controls above it
+ * so every dock destination can own the selected state. */
+.cockpit-bottom-dock__item.is-active,
+.cockpit-bottom-dock__item:focus-visible {
   display: grid;
   grid-template-rows: 28px auto;
   align-content: center;
@@ -722,8 +742,10 @@
   gap: 2px;
 }
 
-.cockpit-bottom-dock__item[data-dock-id="terminal"] svg,
-.cockpit-bottom-dock__item[data-dock-id="terminal"] span {
+.cockpit-bottom-dock__item.is-active svg,
+.cockpit-bottom-dock__item.is-active span,
+.cockpit-bottom-dock__item:focus-visible svg,
+.cockpit-bottom-dock__item:focus-visible span {
   position: relative;
   z-index: 1;
   display: block;
@@ -733,24 +755,16 @@
   overflow: visible;
 }
 
-.cockpit-bottom-dock__item[data-dock-id="terminal"] svg {
-  color: #70a4bb;
-}
-
-.cockpit-bottom-dock__item[data-dock-id="terminal"] span {
-  color: #71909d;
-  font: 600 9px/1 var(--cockpit-mono);
-  letter-spacing: 0.04em;
-}
-
-.cockpit-bottom-dock__item[data-dock-id="terminal"].is-active svg,
-.cockpit-bottom-dock__item[data-dock-id="terminal"]:focus-visible svg {
+.cockpit-bottom-dock__item.is-active svg,
+.cockpit-bottom-dock__item:focus-visible svg {
   color: var(--accent, var(--cockpit-cyan));
 }
 
-.cockpit-bottom-dock__item[data-dock-id="terminal"].is-active span,
-.cockpit-bottom-dock__item[data-dock-id="terminal"]:focus-visible span {
+.cockpit-bottom-dock__item.is-active span,
+.cockpit-bottom-dock__item:focus-visible span {
   color: #74eaf0;
+  font: 600 9px/1 var(--cockpit-mono);
+  letter-spacing: 0.04em;
 }
 
 /* Tech health cards → single-ring circular gauges */
@@ -764,7 +778,9 @@
 
 .cockpit-module .server-health-card {
   --gauge-track: #102b35;
-  --gauge-thickness: 5px;
+  /* Match the prototype's hairline telemetry rings; the prior 5px stroke
+   * dominated the compact health panel. */
+  --gauge-thickness: 2px;
   width: 66px;
   height: 66px;
   border-radius: 50%;
@@ -1019,11 +1035,16 @@
     gap: 10px;
   }
 
+  .cockpit-rail--left {
+    padding: 34px 0 10px;
+  }
+
   /* Keep the inspector readable at the app's 1200px minimum width. The dock
    * selects Monitor/History modes; other workspace modes keep Sessions open. */
   .cockpit-rail--right {
     grid-template-rows: minmax(0, 1fr);
-    padding-top: 48px;
+    /* The compact HUD is 62px high; preserve the same 10px seam. */
+    padding: 72px 0 10px;
   }
 
   .cockpit-rail--right > .cockpit-module {
@@ -1084,6 +1105,11 @@
   .cockpit-center {
     padding-top: 74px;
   }
+
+  .cockpit-bottom-dock {
+    width: min(100%, calc(var(--dock-max-h) * 1120 / 170));
+    max-width: 100%;
+  }
 }
 
 @media (max-height: 860px) {
@@ -1092,7 +1118,14 @@
   }
 
   .cockpit-rail--right {
-    padding-top: 48px;
+    /* Preserve the HUD's 10px seam even in compact-height windows. */
+    padding-top: 74px;
+    padding-bottom: 10px;
+  }
+
+  .cockpit-rail--left {
+    padding-top: 34px;
+    padding-bottom: 10px;
   }
 
   .cockpit-rail,
@@ -1106,7 +1139,7 @@
   }
 
   .cockpit-bottom-dock {
-    --dock-max-h: min(96px, 12vh);
+    --dock-max-h: min(104px, 13vh);
   }
 }
 

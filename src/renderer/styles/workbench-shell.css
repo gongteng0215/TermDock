@@ -20,10 +20,6 @@ html[data-window-transparent="1"] .app--windows:not(.app--cockpit)::before {
   display: none;
 }
 
-html[data-window-transparent="1"] .app--windows.app--cockpit .cockpit-shell::before {
-  display: none;
-}
-
 html[data-window-transparent="1"] .app--windows:not(.app--cockpit) {
   padding-top: 0;
 }
@@ -42,7 +38,7 @@ html[data-window-transparent="1"] .app--windows.app--cockpit .cockpit-shell {
   position: absolute;
   top: 0;
   left: 0;
-  right: 160px;
+  right: 150px;
   height: 36px;
   z-index: 55;
   background: rgba(2, 10, 16, 0.04);
@@ -52,8 +48,8 @@ html[data-window-transparent="1"] .app--windows.app--cockpit .cockpit-shell {
 /* Compact window ops box — top-right corner (Tech floats over the stage) */
 .app-window-chrome {
   position: absolute;
-  top: 10px;
-  right: 14px;
+  top: 8px;
+  right: 16px;
   z-index: 60;
   pointer-events: none;
 }
@@ -82,7 +78,9 @@ html[data-ui-theme="default"] .app-window-chrome,
 
 html[data-ui-theme="tech"] .app-window-chrome__panel {
   border: 1px solid rgba(0, 217, 230, 0.42);
-  border-radius: 12px;
+  height: 30px;
+  padding: 0 3px 0 6px;
+  border-radius: 10px;
   background:
     linear-gradient(180deg, rgba(0, 217, 230, 0.08), transparent 55%),
     rgb(2, 14, 20);
@@ -146,8 +144,17 @@ html[data-ui-theme="default"] .app-window-chrome__panel {
 }
 
 html[data-ui-theme="tech"] .app-window-chrome__button {
+  width: 28px;
+  height: 24px;
   color: #8eabb5;
-  border-radius: 7px;
+  border-radius: 5px;
+}
+
+html[data-ui-theme="tech"] .app-window-chrome__drag {
+  height: 24px;
+  gap: 4px;
+  padding-right: 6px;
+  font-size: 9px;
 }
 
 html[data-ui-theme="tech"] .app-window-chrome__button:hover {
