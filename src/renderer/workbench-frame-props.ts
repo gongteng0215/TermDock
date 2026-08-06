@@ -19,6 +19,7 @@ type WorkbenchInspectorSidebarFrameProps = Omit<
 
 export function buildWorkbenchTopbarProps({
   autoReconnectEnabled,
+  hasTerminalTab,
   reconnectDelaySeconds,
   isMacPlatform,
   labels,
@@ -26,6 +27,7 @@ export function buildWorkbenchTopbarProps({
   workspaceProfileShortLabel
 }: {
   autoReconnectEnabled: boolean;
+  hasTerminalTab: boolean;
   reconnectDelaySeconds: number;
   isMacPlatform: boolean;
   labels: ComponentProps<typeof WorkbenchTopbar>["labels"];
@@ -36,6 +38,7 @@ export function buildWorkbenchTopbarProps({
     autoReconnectLabel: autoReconnectEnabled
       ? labels.autoReconnect(reconnectDelaySeconds)
       : labels.autoReconnectOff,
+    showAutoReconnect: hasTerminalTab,
     isMacPlatform,
     labels,
     workspaceProfile:

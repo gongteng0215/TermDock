@@ -53,6 +53,8 @@ type TransferDockValueArgs<TTransfer extends TransferLike> = Pick<
   | "pendingRestoreCount"
   | "sftpTransferScheduleSummary"
   | "uploadConcurrency"
+  | "uploadEffectiveConcurrency"
+  | "uploadConcurrencyBackpressureReason"
   | "uploadPauseReason"
 >;
 

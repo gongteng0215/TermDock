@@ -2552,6 +2552,14 @@ body::before {
   line-height: var(--density-transfer-progress-line-height);
 }
 
+.sftp-transfer-panel__concurrency-status {
+  margin: calc(var(--space-1) * -0.5) 0 var(--space-1);
+  color: var(--text-faint);
+  font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: var(--font-2xs);
+  line-height: 1.2;
+}
+
 .sftp-transfer-list {
   list-style: none;
   margin: 0 0 var(--space-1);
@@ -3018,6 +3026,12 @@ body::before {
   border-color: rgba(179, 81, 105, 0.8);
   background: rgba(61, 20, 34, 0.72);
   color: #ffc4d2;
+}
+
+.server-health__state--neutral {
+  border-color: color-mix(in srgb, var(--text-faint) 44%, var(--border-strong));
+  background: color-mix(in srgb, var(--text-faint) 9%, var(--bg-panel-hover));
+  color: var(--text-faint);
 }
 
 .server-health__detail-toggle {

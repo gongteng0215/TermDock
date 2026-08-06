@@ -701,7 +701,7 @@ export function SftpExplorerSection({
         </>
       ) : (
         <p className="hint workbench-section__status">
-          Open a terminal tab first. SFTP panel reuses the active tab SSH connection.
+          Open a session from the right Sessions panel first. SFTP reuses that terminal tab's SSH connection.
         </p>
       )}
     </section>
@@ -754,8 +754,20 @@ export function ServerHealthInspectorSection({
               <UiIcon name="refresh" />
             </button>
             <span
-              className={hasAlert ? "server-health__state server-health__state--alert" : "server-health__state"}
-              title={hasAlert ? "One or more metrics exceeded alert threshold." : "No alert triggered."}
+              className={
+                hasAlert
+                  ? "server-health__state server-health__state--alert"
+                  : isConnected
+                    ? "server-health__state"
+                    : "server-health__state server-health__state--neutral"
+              }
+              title={
+                hasAlert
+                  ? "One or more metrics exceeded alert threshold."
+                  : isConnected
+                    ? "No alert triggered."
+                    : "Monitoring starts after the active terminal tab connects."
+              }
             >
               {hasAlert ? "ALERT" : healthyLabel}
             </span>
@@ -842,7 +854,11 @@ export function CommandHistoryInspectorSection({
           </div>
         </div>
       </div>
-      {isCollapsed ? null : (
+      {isCollapsed ? null : !activeTabTitle ? (
+        <p className="hint workbench-section__status">
+          Open a session from the Sessions panel to view captured command history.
+        </p>
+      ) : (
         <>
           <div className="command-history-panel__filters">
             <select onChange={onScopeChange} value={scope}>
@@ -852,19 +868,17 @@ export function CommandHistoryInspectorSection({
             <input onChange={onQueryChange} placeholder="Search command" value={query} />
           </div>
           <div className="command-history-panel__target-row">
-            <span className="command-history-panel__target" title={activeTabTitle ?? undefined}>
-              {activeTabTitle ?? "No active tab"}
+            <span className="command-history-panel__target" title={activeTabTitle}>
+              {activeTabTitle}
             </span>
             <span
               className={
-                activeTabTitle
-                  ? activeTabConnected
-                    ? "command-history-panel__state command-history-panel__state--ok"
-                    : "command-history-panel__state command-history-panel__state--warn"
-                  : "command-history-panel__state command-history-panel__state--neutral"
+                activeTabConnected
+                  ? "command-history-panel__state command-history-panel__state--ok"
+                  : "command-history-panel__state command-history-panel__state--warn"
               }
             >
-              {activeTabTitle ? (activeTabConnected ? "Ready" : "Offline") : "No Tab"}
+              {activeTabConnected ? "Ready" : "Offline"}
             </span>
           </div>
           <div className="command-history-panel__list-shell workbench-list-shell" onContextMenu={onOpenContextMenu}>

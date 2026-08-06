@@ -2,6 +2,38 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## Unreleased (master)
+
+Release type: In development
+
+### Highlights
+
+- No unreleased notes have been recorded yet.
+
+### Validation
+
+- Validation will be added with the next release candidate.
+
+## v0.1.46 (2026-08-06)
+
+Release type: Stable
+
+### Highlights
+
+- Transfer counts now reflect the complete active queue rather than the ten visible rows, and return to zero as soon as all running and queued work finishes.
+- Idle transfers collapse into a compact state; recently completed work is clearly labeled as completed instead of appearing in progress, while failures and user-expanded details remain visible.
+- Tech Cockpit transfer rows are now single-line and non-overlapping, with full timing retained in accessible labels and hover text.
+- Upload and download concurrency now defaults to 32 lanes, with immediate slot wake-ups, cancellation-safe cleanup, adaptive server backoff, and eight reusable SFTP channels per tab for small-file throughput.
+- Transfer and SFTP settings now explain configured versus effective upload concurrency and any automatic server-imposed limit.
+- Disconnected workbench panels now use neutral, action-oriented empty states; Server Health reports “Not monitoring” until an SSH session is connected.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run bench:transfer:small-files` passed: 120 small files at 2 / 12 / 24 / 32 concurrency, with the fastest measured run at 24 lanes (382.17 files/s).
+- `pnpm run smoke:ui` passed: 52 passed, 0 failed.
+
 ## v0.1.45 (2026-07-31)
 
 Release type: Stable

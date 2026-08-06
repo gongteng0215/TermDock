@@ -133,6 +133,34 @@ function countTransferStatuses<TTransfer extends SftpTransferLike>(transfers: TT
   };
 }
 
+function getTransferDisplayPriority(status: SftpTransferEvent["status"]): number {
+  if (status === "running") {
+    return 0;
+  }
+  if (status === "queued") {
+    return 1;
+  }
+  if (status === "failed") {
+    return 2;
+  }
+  return 3;
+}
+
+function selectVisibleTransfers<TTransfer extends SftpTransferLike>(
+  transfers: TTransfer[],
+  tabId: string,
+  direction: SftpTransferEvent["direction"]
+): TTransfer[] {
+  return transfers
+    .filter((transfer) => transfer.tabId === tabId && transfer.direction === direction)
+    .sort((left, right) => {
+      const priorityDifference =
+        getTransferDisplayPriority(left.status) - getTransferDisplayPriority(right.status);
+      return priorityDifference !== 0 ? priorityDifference : right.updatedAt - left.updatedAt;
+    })
+    .slice(0, 10);
+}
+
 function buildRetryCandidates<
   TTransfer extends Pick<SftpTransferLike, "localPath" | "remotePath" | "updatedAt" | "name">,
   THistory extends Pick<
@@ -232,9 +260,7 @@ export function useSftpActivityViewModels<
     if (!activeTabId) {
       return [] as TTransfer[];
     }
-    return sftpTransfers
-      .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "upload")
-      .slice(0, 10);
+    return selectVisibleTransfers(sftpTransfers, activeTabId, "upload");
   }, [activeTabId, sftpTransfers]);
 
   const failedUploadTransfers = useMemo(() => {
@@ -253,9 +279,7 @@ export function useSftpActivityViewModels<
     if (!activeTabId) {
       return [] as TTransfer[];
     }
-    return sftpTransfers
-      .filter((transfer) => transfer.tabId === activeTabId && transfer.direction === "download")
-      .slice(0, 10);
+    return selectVisibleTransfers(sftpTransfers, activeTabId, "download");
   }, [activeTabId, sftpTransfers]);
 
   const failedDownloadTransfers = useMemo(() => {

@@ -2251,7 +2251,9 @@ export function TerminalWorkspace({
         data-editor-typography={activeEditorTypographyId ?? undefined}
       >
         {tabs.length === 0 ? (
-          <div className="hint">No terminal tab. Use "Open" from session list.</div>
+          <div className="hint">
+            No terminal tab. Choose a session in the right Sessions panel and click "Open".
+          </div>
         ) : null}
         {tabs.map((tab) => {
           const isActiveTab = activeTabId === tab.id;

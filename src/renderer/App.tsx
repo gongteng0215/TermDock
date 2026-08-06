@@ -361,13 +361,13 @@ const MAX_OPERATION_CENTER_APP_JOBS = 24;
 const DEFAULT_RETRY_BATCH_CONFIRM_THRESHOLD = 100;
 const MIN_RETRY_BATCH_CONFIRM_THRESHOLD = 0;
 const MAX_RETRY_BATCH_CONFIRM_THRESHOLD = 2000;
-const MAX_SFTP_TRANSFER_CONCURRENCY = 12;
+const MAX_SFTP_TRANSFER_CONCURRENCY = 32;
 const MAX_SFTP_TRANSFER_RATE_LIMIT_KIBPS = 1024 * 1024;
 const SFTP_UPLOAD_CHANNEL_OPEN_RETRY_LIMIT = 4;
 const SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_BASE_MS = 250;
 const SFTP_UPLOAD_CHANNEL_OPEN_BACKOFF_MAX_MS = 2_500;
-const SFTP_UPLOAD_DIRECTORY_PREWARM_CONCURRENCY = 12;
-const SFTP_UPLOAD_CONFLICT_SCAN_CONCURRENCY = 10;
+const SFTP_UPLOAD_DIRECTORY_PREWARM_CONCURRENCY = 32;
+const SFTP_UPLOAD_CONFLICT_SCAN_CONCURRENCY = 16;
 const SFTP_TRANSFER_WINDOW_EVALUATION_INTERVAL_MS = 30_000;
 const SFTP_TRANSFER_SCHEDULE_DAY_OPTIONS = [
   { value: 0, label: "Sun" },
@@ -638,8 +638,8 @@ const DEFAULT_FILE_OPEN_PREFERENCES: FileOpenPreferences = {
   preferredProgramPath: ""
 };
 const DEFAULT_SFTP_TRANSFER_PREFERENCES: SftpTransferPreferences = {
-  uploadConcurrency: 2,
-  downloadConcurrency: 2,
+  uploadConcurrency: 32,
+  downloadConcurrency: 32,
   uploadRateLimitKiBps: 0,
   downloadRateLimitKiBps: 0,
   scheduleWindowEnabled: false,
@@ -3662,23 +3662,16 @@ function readSftpTransferPreferences(): SftpTransferPreferences {
       return DEFAULT_SFTP_TRANSFER_PREFERENCES;
     }
     const normalized = normalizeSftpTransferPreferences(JSON.parse(rawValue));
-    const migratedLegacyDefaults =
-      normalized.uploadConcurrency === 2 &&
-      normalized.downloadConcurrency === 2 &&
-      window.localStorage.getItem(SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null &&
-      window.localStorage.getItem(PREVIOUS_SFTP_TRANSFER_PREFERENCES_STORAGE_KEY) === null;
-    return migratedLegacyDefaults
-      ? {
-          uploadConcurrency: DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency,
-          downloadConcurrency: normalized.downloadConcurrency,
-          uploadRateLimitKiBps: normalized.uploadRateLimitKiBps,
-          downloadRateLimitKiBps: normalized.downloadRateLimitKiBps,
-          scheduleWindowEnabled: normalized.scheduleWindowEnabled,
-          scheduleWindowStartMinutes: normalized.scheduleWindowStartMinutes,
-          scheduleWindowEndMinutes: normalized.scheduleWindowEndMinutes,
-          scheduleWindowDays: normalized.scheduleWindowDays
-        }
-      : normalized;
+    const isLegacyConcurrency = (value: number) => value === 2 || value === 12;
+    return {
+      ...normalized,
+      uploadConcurrency: isLegacyConcurrency(normalized.uploadConcurrency)
+        ? DEFAULT_SFTP_TRANSFER_PREFERENCES.uploadConcurrency
+        : normalized.uploadConcurrency,
+      downloadConcurrency: isLegacyConcurrency(normalized.downloadConcurrency)
+        ? DEFAULT_SFTP_TRANSFER_PREFERENCES.downloadConcurrency
+        : normalized.downloadConcurrency
+    };
   } catch {
     return DEFAULT_SFTP_TRANSFER_PREFERENCES;
   }
@@ -5184,6 +5177,37 @@ export function App() {
   const [sftpTransferPreferences, setSftpTransferPreferences] = useState<SftpTransferPreferences>(
     () => readSftpTransferPreferences()
   );
+  const [adaptiveUploadConcurrencyStatusByTab, setAdaptiveUploadConcurrencyStatusByTab] = useState<
+    Record<string, { effectiveConcurrency: number; reason: string }>
+  >({});
+  useEffect(() => {
+    const openTabIds = new Set(terminalTabs.map((tab) => tab.id));
+    setAdaptiveUploadConcurrencyStatusByTab((previous) => {
+      const nextEntries = Object.entries(previous).filter(([tabId]) => openTabIds.has(tabId));
+      if (nextEntries.length === Object.keys(previous).length) {
+        return previous;
+      }
+      return Object.fromEntries(nextEntries);
+    });
+  }, [terminalTabs]);
+  useEffect(() => {
+    const configuredConcurrency = Math.max(1, sftpTransferPreferences.uploadConcurrency);
+    for (const [tabId, effectiveConcurrency] of adaptiveUploadConcurrencyByTabRef.current) {
+      if (effectiveConcurrency >= configuredConcurrency) {
+        adaptiveUploadConcurrencyByTabRef.current.delete(tabId);
+        adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(tabId);
+      }
+    }
+    setAdaptiveUploadConcurrencyStatusByTab((previous) => {
+      const nextEntries = Object.entries(previous).filter(
+        ([, status]) => status.effectiveConcurrency < configuredConcurrency
+      );
+      if (nextEntries.length === Object.keys(previous).length) {
+        return previous;
+      }
+      return Object.fromEntries(nextEntries);
+    });
+  }, [sftpTransferPreferences.uploadConcurrency]);
   const [sftpTransferPolicyPacks, setSftpTransferPolicyPacks] =
     useState<SftpTransferPolicyPackRecord[]>(() => readSftpTransferPolicyPacks());
   const [sftpTransferPolicyPackSyncState, setSftpTransferPolicyPackSyncState] =
@@ -6189,6 +6213,14 @@ export function App() {
       download: strategy?.download ?? null
     };
   }, [activeSessionId, sessionTransferConflictStrategyState.bySessionId]);
+  const activeUploadConcurrencyStatus = activeTabId
+    ? adaptiveUploadConcurrencyStatusByTab[activeTabId] ?? null
+    : null;
+  const activeUploadEffectiveConcurrency = Math.min(
+    Math.max(1, sftpTransferPreferences.uploadConcurrency),
+    Math.max(1, activeUploadConcurrencyStatus?.effectiveConcurrency ?? sftpTransferPreferences.uploadConcurrency)
+  );
+  const activeUploadConcurrencyBackpressureReason = activeUploadConcurrencyStatus?.reason ?? null;
   const {
     sftpActiveSessionConflictHint,
     sftpConcurrencyHint,
@@ -6200,6 +6232,8 @@ export function App() {
     sftpTransferPolicyPackLastSyncLabel,
     sftpTransferPolicyPackViews
   } = useSftpSettingsViewModels({
+    activeUploadConcurrencyBackpressureReason,
+    activeUploadEffectiveConcurrency,
     activeSessionId,
     activeSessionTransferConflictStrategy,
     activeSftpTransferSchedulePresetId,
@@ -8812,6 +8846,13 @@ export function App() {
         return;
       }
       adaptiveUploadConcurrencyByTabRef.current.set(tabId, next);
+      setAdaptiveUploadConcurrencyStatusByTab((previous) => ({
+        ...previous,
+        [tabId]: {
+          effectiveConcurrency: next,
+          reason: "Server limited simultaneous SFTP channels."
+        }
+      }));
       writeAppLog(
         "warn",
         "renderer:sftp-transfer",
@@ -8835,6 +8876,14 @@ export function App() {
       if (!current || current >= configured) {
         adaptiveUploadConcurrencyByTabRef.current.delete(tabId);
         adaptiveUploadConcurrencyRecoveryByTabRef.current.delete(tabId);
+        setAdaptiveUploadConcurrencyStatusByTab((previous) => {
+          if (!previous[tabId]) {
+            return previous;
+          }
+          const next = { ...previous };
+          delete next[tabId];
+          return next;
+        });
         return;
       }
       const recoveredCount =
@@ -8851,6 +8900,23 @@ export function App() {
         adaptiveUploadConcurrencyByTabRef.current.set(tabId, next);
         adaptiveUploadConcurrencyRecoveryByTabRef.current.set(tabId, 0);
       }
+      setAdaptiveUploadConcurrencyStatusByTab((previous) => {
+        if (next >= configured) {
+          if (!previous[tabId]) {
+            return previous;
+          }
+          const nextState = { ...previous };
+          delete nextState[tabId];
+          return nextState;
+        }
+        return {
+          ...previous,
+          [tabId]: {
+            effectiveConcurrency: next,
+            reason: previous[tabId]?.reason ?? "Server limited simultaneous SFTP channels."
+          }
+        };
+      });
       writeAppLog(
         "info",
         "renderer:sftp-transfer",
@@ -17972,6 +18038,7 @@ export function App() {
         ? {
             activeDock: cockpitActiveDock,
             autoReconnectEnabled: connectionPreferences.autoReconnect,
+            hasReconnectTarget: Boolean(activeTerminalTab),
             onDockSelect: handleCockpitDockSelect,
             onOpenSafety: handleCockpitOpenSafety,
             onReconnect: () => {
@@ -17985,6 +18052,7 @@ export function App() {
     [
       cockpitActiveDock,
       cockpitReconnectBusy,
+      activeTerminalTab,
       connectionPreferences.autoReconnect,
       connectionPreferences.reconnectDelaySeconds,
       dangerousCommandGuardPreferences.enabled,
@@ -18706,7 +18774,14 @@ export function App() {
         appRootRef
       },
       serverHealthInspectorContent: buildServerHealthInspectorContentArgs({
-        alertStatus: serverHealthAlertStatus,
+        alertStatus: isActiveTabConnected
+          ? serverHealthAlertStatus
+          : {
+              cpuHigh: false,
+              memoryHigh: false,
+              diskHigh: false,
+              hasAny: false
+            },
         formatPercent,
         formatTransferBytes,
         isConnected: isActiveTabConnected,
@@ -18718,8 +18793,8 @@ export function App() {
       }),
       serverHealthInspectorSection: buildServerHealthInspectorSectionArgs({
         activeTabTitle: activeTerminalTab?.title ?? null,
-        hasAlert: serverHealthAlertStatus.hasAny,
-        healthyLabel: tr("Healthy"),
+        hasAlert: isActiveTabConnected && serverHealthAlertStatus.hasAny,
+        healthyLabel: isActiveTabConnected ? tr("Healthy") : "Not monitoring",
         isConnected: isActiveTabConnected,
         isDetailOpen: isServerHealthDetailOpen,
         onOpenDetail: () => setIsServerHealthDetailOpen(true),
@@ -18730,10 +18805,11 @@ export function App() {
           (isServerHealthDetailOpen && serverProcessLoading),
         refreshServerHealth,
         refreshServerProcesses,
-        toggleDisabled: !activeTerminalTab
+        toggleDisabled: !activeTerminalTab || !isActiveTabConnected
       }),
       topbar: buildWorkbenchTopbarArgs({
         autoReconnectEnabled: connectionPreferences.autoReconnect,
+        hasTerminalTab: terminalTabs.length > 0,
         isMacPlatform,
         labels: i18n.topbar,
         reconnectDelaySeconds: connectionPreferences.reconnectDelaySeconds,
@@ -18955,6 +19031,8 @@ export function App() {
         pendingRestoreCount: pendingTransferRestoreCount,
         sftpTransferScheduleSummary,
         uploadConcurrency: sftpTransferPreferences.uploadConcurrency,
+        uploadEffectiveConcurrency: activeUploadEffectiveConcurrency,
+        uploadConcurrencyBackpressureReason: activeUploadConcurrencyBackpressureReason,
         uploadPauseReason: activeUploadPauseReason
       }
     })

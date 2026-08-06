@@ -47,6 +47,8 @@ interface ActiveSessionTransferConflictStrategyLike {
 }
 
 interface UseSftpSettingsViewModelsArgs {
+  activeUploadConcurrencyBackpressureReason: string | null;
+  activeUploadEffectiveConcurrency: number;
   activeSessionId: string | null;
   activeSessionTransferConflictStrategy: ActiveSessionTransferConflictStrategyLike | null;
   activeSftpTransferSchedulePresetId: string | null;
@@ -70,6 +72,8 @@ interface UseSftpSettingsViewModelsArgs {
 }
 
 export function useSftpSettingsViewModels({
+  activeUploadConcurrencyBackpressureReason,
+  activeUploadEffectiveConcurrency,
   activeSessionId,
   activeSessionTransferConflictStrategy,
   activeSftpTransferSchedulePresetId,
@@ -136,7 +140,11 @@ export function useSftpSettingsViewModels({
     sftpTransferPolicyPackSyncState.lastPushedAtIso
   ]);
 
-  const sftpConcurrencyHint = `Controls max parallel upload/download tasks. Range: 1-${maxSftpTransferConcurrency}. New installs default uploads to 2 and downloads to 2.`;
+  const sftpConcurrencyHint = `Controls max parallel upload/download tasks. Range: 1-${maxSftpTransferConcurrency}. Configured uploads: ${sftpTransferPreferences.uploadConcurrency}; active effective uploads: ${activeUploadEffectiveConcurrency}.${
+    activeUploadConcurrencyBackpressureReason
+      ? ` ${activeUploadConcurrencyBackpressureReason}`
+      : ""
+  } New and legacy 2/12-thread installs default to ${maxSftpTransferConcurrency}.`;
 
   const sftpRateLimitHint = `Per-direction rate limit uses KiB/s. Set 0 to disable throttling. Current upload limit: ${
     sftpTransferPreferences.uploadRateLimitKiBps > 0

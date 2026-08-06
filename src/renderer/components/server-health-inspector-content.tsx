@@ -36,7 +36,7 @@ export function ServerHealthInspectorContent({
   return (
     <>
       {!isConnected ? (
-        <p className="hint">Connect the active terminal tab to collect metrics.</p>
+        <p className="hint">Monitoring is paused until the active terminal tab connects.</p>
       ) : null}
       {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
       {alertStatus.hasAny ? (
@@ -52,7 +52,7 @@ export function ServerHealthInspectorContent({
           Collecting server metrics...
         </p>
       ) : null}
-      {serverHealth ? (
+      {serverHealth && isConnected ? (
         <>
           <div className="server-health-grid">
             <div

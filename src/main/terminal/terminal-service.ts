@@ -119,19 +119,23 @@ interface ActiveDownloadTransfer {
 interface ReusableUploadSftpEntry {
   tabId: string;
   sftp: SFTPWrapper;
+  releasedAt: number;
 }
 
 interface ReusableDownloadSftpEntry {
   tabId: string;
   sftp: SFTPWrapper;
+  releasedAt: number;
 }
 
-const MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB = 2;
-const MAX_IN_FLIGHT_UPLOAD_SFTP_PER_TAB = 2;
-const MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB = 2;
-const MAX_IN_FLIGHT_DOWNLOAD_SFTP_PER_TAB = 2;
-const UPLOAD_SFTP_SLOT_POLL_MS = 40;
-const DOWNLOAD_SFTP_SLOT_POLL_MS = 40;
+const MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB = 8;
+// The renderer exposes up to 32 transfer threads. Keep the channel gate in
+// sync so a user-selected value above 2 can take effect; renderer-side
+// backpressure handling reduces concurrency when a server rejects channels.
+const MAX_IN_FLIGHT_UPLOAD_SFTP_PER_TAB = 32;
+const MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB = 8;
+const MAX_IN_FLIGHT_DOWNLOAD_SFTP_PER_TAB = 32;
+const REUSABLE_SFTP_IDLE_TTL_MS = 45_000;
 
 interface ActivePortForwardBase {
   id: string;
@@ -219,9 +223,13 @@ export class TerminalService {
   private readonly activeDeletes = new Map<string, ActiveDeleteOperation>();
   private readonly pendingDeleteCancelKeys = new Set<string>();
   private readonly reusableUploadSftpByTab = new Map<string, ReusableUploadSftpEntry[]>();
+  private readonly reusableUploadSftpExpiryTimersByTab = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly reservedUploadSftpSlotsByTab = new Map<string, number>();
+  private readonly uploadSftpSlotWaitersByTab = new Map<string, Set<() => void>>();
   private readonly reusableDownloadSftpByTab = new Map<string, ReusableDownloadSftpEntry[]>();
+  private readonly reusableDownloadSftpExpiryTimersByTab = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly reservedDownloadSftpSlotsByTab = new Map<string, number>();
+  private readonly downloadSftpSlotWaitersByTab = new Map<string, Set<() => void>>();
   private readonly pendingUploadCancelKeys = new Set<string>();
   private readonly pendingUploadCancelIds = new Set<string>();
   private readonly pendingDownloadCancelKeys = new Set<string>();
@@ -346,6 +354,9 @@ export class TerminalService {
         return;
       }
       this.closeAllPortForwardsSync(tabId, connection);
+      this.clearReusableUploadSftp(tabId);
+      this.clearReusableDownloadSftp(tabId);
+      this.clearSftpSlotState(tabId);
       this.emitClosed(connection);
       this.connections.delete(tabId);
     });
@@ -389,6 +400,7 @@ export class TerminalService {
     connection.sftp?.end();
     this.clearReusableUploadSftp(connection.tabId);
     this.clearReusableDownloadSftp(connection.tabId);
+    this.clearSftpSlotState(connection.tabId);
     connection.client.end();
 
     try {
@@ -513,6 +525,7 @@ export class TerminalService {
 
   async close(tabId: string): Promise<void> {
     const connection = this.connections.get(tabId);
+    this.clearSftpSlotState(tabId);
     if (!connection) {
       return;
     }
@@ -811,6 +824,7 @@ export class TerminalService {
       return true;
     }
     transfer.canceled = true;
+    this.notifySftpSlotWaiters(this.uploadSftpSlotWaitersByTab, transfer.tabId);
     if (transfer.sftp) {
       safeEndSftp(transfer.sftp);
       return true;
@@ -843,6 +857,7 @@ export class TerminalService {
       return true;
     }
     transfer.canceled = true;
+    this.notifySftpSlotWaiters(this.downloadSftpSlotWaitersByTab, transfer.tabId);
     if (transfer.sftp) {
       safeEndSftp(transfer.sftp);
       return true;
@@ -897,7 +912,7 @@ export class TerminalService {
       options?.rateLimitBytesPerSecond
     );
     try {
-      const releaseDownloadSlot = await this.reserveDownloadSftpSlot(tabId);
+      const releaseDownloadSlot = await this.reserveDownloadSftpSlot(tabId, () => activeTransfer.canceled);
       try {
         if (activeTransfer.canceled) {
           throw new TransferCanceledError();
@@ -1135,6 +1150,7 @@ export class TerminalService {
         safeEndSftp(downloadSftp);
       }
       this.activeDownloadTransfers.delete(transferKey);
+      this.notifySftpSlotWaiters(this.downloadSftpSlotWaitersByTab, tabId);
     }
   }
 
@@ -2156,7 +2172,7 @@ export class TerminalService {
       };
 
       reportProgress(true);
-      const releaseUploadSlot = await this.reserveUploadSftpSlot(tabId);
+      const releaseUploadSlot = await this.reserveUploadSftpSlot(tabId, () => activeTransfer.canceled);
       try {
         if (activeTransfer.canceled) {
           throw new TransferCanceledError();
@@ -2323,6 +2339,7 @@ export class TerminalService {
         safeEndSftp(uploadSftp);
       }
       this.activeUploadTransfers.delete(transferKey);
+      this.notifySftpSlotWaiters(this.uploadSftpSlotWaitersByTab, tabId);
     }
   }
 
@@ -2405,11 +2422,18 @@ export class TerminalService {
     return count + (this.reservedUploadSftpSlotsByTab.get(tabId) ?? 0);
   }
 
-  private async reserveUploadSftpSlot(tabId: string): Promise<() => void> {
+  private async reserveUploadSftpSlot(
+    tabId: string,
+    isCanceled: () => boolean
+  ): Promise<() => void> {
     while (this.countInFlightUploadSftp(tabId) >= MAX_IN_FLIGHT_UPLOAD_SFTP_PER_TAB) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, UPLOAD_SFTP_SLOT_POLL_MS);
-      });
+      if (isCanceled()) {
+        throw new TransferCanceledError();
+      }
+      await this.waitForSftpSlot(this.uploadSftpSlotWaitersByTab, tabId);
+    }
+    if (isCanceled()) {
+      throw new TransferCanceledError();
     }
     this.reservedUploadSftpSlotsByTab.set(
       tabId,
@@ -2424,32 +2448,19 @@ export class TerminalService {
       const next = (this.reservedUploadSftpSlotsByTab.get(tabId) ?? 1) - 1;
       if (next <= 0) {
         this.reservedUploadSftpSlotsByTab.delete(tabId);
-        return;
+      } else {
+        this.reservedUploadSftpSlotsByTab.set(tabId, next);
       }
-      this.reservedUploadSftpSlotsByTab.set(tabId, next);
+      this.notifySftpSlotWaiters(this.uploadSftpSlotWaitersByTab, tabId);
     };
   }
 
   private acquireReusableUploadSftp(connection: Ssh2TerminalConnection): SFTPWrapper | undefined {
-    const pool = this.reusableUploadSftpByTab.get(connection.tabId);
-    if (!pool || pool.length === 0) {
-      return undefined;
-    }
-    while (pool.length > 0) {
-      const next = pool.pop();
-      if (!next) {
-        break;
-      }
-      if (connection.closed) {
-        safeEndSftp(next.sftp);
-        continue;
-      }
-      return next.sftp;
-    }
-    if (pool.length === 0) {
-      this.reusableUploadSftpByTab.delete(connection.tabId);
-    }
-    return undefined;
+    return this.acquireReusableSftp(
+      connection,
+      this.reusableUploadSftpByTab,
+      this.reusableUploadSftpExpiryTimersByTab
+    );
   }
 
   private releaseReusableUploadSftp(
@@ -2463,29 +2474,21 @@ export class TerminalService {
       safeEndSftp(sftp);
       return;
     }
-    const pool = this.reusableUploadSftpByTab.get(connection.tabId) ?? [];
-    if (!this.reusableUploadSftpByTab.has(connection.tabId)) {
-      this.reusableUploadSftpByTab.set(connection.tabId, pool);
-    }
-    pool.push({
-      tabId: connection.tabId,
-      sftp
-    });
-    while (pool.length > MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB) {
-      const staleEntry = pool.shift();
-      safeEndSftp(staleEntry?.sftp);
-    }
+    this.releaseReusableSftp(
+      connection,
+      sftp,
+      this.reusableUploadSftpByTab,
+      this.reusableUploadSftpExpiryTimersByTab,
+      MAX_IDLE_REUSABLE_UPLOAD_SFTP_PER_TAB
+    );
   }
 
   private clearReusableUploadSftp(tabId: string): void {
-    const pool = this.reusableUploadSftpByTab.get(tabId);
-    if (!pool) {
-      return;
-    }
-    this.reusableUploadSftpByTab.delete(tabId);
-    for (const entry of pool) {
-      safeEndSftp(entry.sftp);
-    }
+    this.clearReusableSftp(
+      tabId,
+      this.reusableUploadSftpByTab,
+      this.reusableUploadSftpExpiryTimersByTab
+    );
   }
 
   private countInFlightDownloadSftp(tabId: string): number {
@@ -2498,11 +2501,18 @@ export class TerminalService {
     return count + (this.reservedDownloadSftpSlotsByTab.get(tabId) ?? 0);
   }
 
-  private async reserveDownloadSftpSlot(tabId: string): Promise<() => void> {
+  private async reserveDownloadSftpSlot(
+    tabId: string,
+    isCanceled: () => boolean
+  ): Promise<() => void> {
     while (this.countInFlightDownloadSftp(tabId) >= MAX_IN_FLIGHT_DOWNLOAD_SFTP_PER_TAB) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, DOWNLOAD_SFTP_SLOT_POLL_MS);
-      });
+      if (isCanceled()) {
+        throw new TransferCanceledError();
+      }
+      await this.waitForSftpSlot(this.downloadSftpSlotWaitersByTab, tabId);
+    }
+    if (isCanceled()) {
+      throw new TransferCanceledError();
     }
     this.reservedDownloadSftpSlotsByTab.set(
       tabId,
@@ -2517,32 +2527,45 @@ export class TerminalService {
       const next = (this.reservedDownloadSftpSlotsByTab.get(tabId) ?? 1) - 1;
       if (next <= 0) {
         this.reservedDownloadSftpSlotsByTab.delete(tabId);
-        return;
+      } else {
+        this.reservedDownloadSftpSlotsByTab.set(tabId, next);
       }
-      this.reservedDownloadSftpSlotsByTab.set(tabId, next);
+      this.notifySftpSlotWaiters(this.downloadSftpSlotWaitersByTab, tabId);
     };
   }
 
+  private waitForSftpSlot(waitersByTab: Map<string, Set<() => void>>, tabId: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const waiters = waitersByTab.get(tabId) ?? new Set<() => void>();
+      waiters.add(resolve);
+      waitersByTab.set(tabId, waiters);
+    });
+  }
+
+  private notifySftpSlotWaiters(waitersByTab: Map<string, Set<() => void>>, tabId: string): void {
+    const waiters = waitersByTab.get(tabId);
+    if (!waiters || waiters.size === 0) {
+      return;
+    }
+    waitersByTab.delete(tabId);
+    for (const resolve of waiters) {
+      resolve();
+    }
+  }
+
+  private clearSftpSlotState(tabId: string): void {
+    this.reservedUploadSftpSlotsByTab.delete(tabId);
+    this.reservedDownloadSftpSlotsByTab.delete(tabId);
+    this.notifySftpSlotWaiters(this.uploadSftpSlotWaitersByTab, tabId);
+    this.notifySftpSlotWaiters(this.downloadSftpSlotWaitersByTab, tabId);
+  }
+
   private acquireReusableDownloadSftp(connection: Ssh2TerminalConnection): SFTPWrapper | undefined {
-    const pool = this.reusableDownloadSftpByTab.get(connection.tabId);
-    if (!pool || pool.length === 0) {
-      return undefined;
-    }
-    while (pool.length > 0) {
-      const next = pool.pop();
-      if (!next) {
-        break;
-      }
-      if (connection.closed) {
-        safeEndSftp(next.sftp);
-        continue;
-      }
-      return next.sftp;
-    }
-    if (pool.length === 0) {
-      this.reusableDownloadSftpByTab.delete(connection.tabId);
-    }
-    return undefined;
+    return this.acquireReusableSftp(
+      connection,
+      this.reusableDownloadSftpByTab,
+      this.reusableDownloadSftpExpiryTimersByTab
+    );
   }
 
   private releaseReusableDownloadSftp(
@@ -2556,29 +2579,137 @@ export class TerminalService {
       safeEndSftp(sftp);
       return;
     }
-    const pool = this.reusableDownloadSftpByTab.get(connection.tabId) ?? [];
-    if (!this.reusableDownloadSftpByTab.has(connection.tabId)) {
-      this.reusableDownloadSftpByTab.set(connection.tabId, pool);
-    }
-    pool.push({
-      tabId: connection.tabId,
-      sftp
-    });
-    while (pool.length > MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB) {
-      const staleEntry = pool.shift();
-      safeEndSftp(staleEntry?.sftp);
-    }
+    this.releaseReusableSftp(
+      connection,
+      sftp,
+      this.reusableDownloadSftpByTab,
+      this.reusableDownloadSftpExpiryTimersByTab,
+      MAX_IDLE_REUSABLE_DOWNLOAD_SFTP_PER_TAB
+    );
   }
 
   private clearReusableDownloadSftp(tabId: string): void {
-    const pool = this.reusableDownloadSftpByTab.get(tabId);
+    this.clearReusableSftp(
+      tabId,
+      this.reusableDownloadSftpByTab,
+      this.reusableDownloadSftpExpiryTimersByTab
+    );
+  }
+
+  private acquireReusableSftp(
+    connection: Ssh2TerminalConnection,
+    poolByTab: Map<string, ReusableUploadSftpEntry[]>,
+    expiryTimersByTab: Map<string, ReturnType<typeof setTimeout>>
+  ): SFTPWrapper | undefined {
+    const pool = poolByTab.get(connection.tabId);
+    if (!pool || pool.length === 0) {
+      return undefined;
+    }
+    const now = Date.now();
+    while (pool.length > 0) {
+      const next = pool.pop();
+      if (!next) {
+        break;
+      }
+      if (connection.closed || now - next.releasedAt >= REUSABLE_SFTP_IDLE_TTL_MS) {
+        safeEndSftp(next.sftp);
+        continue;
+      }
+      if (pool.length === 0) {
+        poolByTab.delete(connection.tabId);
+        this.clearReusableSftpExpiryTimer(connection.tabId, expiryTimersByTab);
+      }
+      return next.sftp;
+    }
+    poolByTab.delete(connection.tabId);
+    this.clearReusableSftpExpiryTimer(connection.tabId, expiryTimersByTab);
+    return undefined;
+  }
+
+  private releaseReusableSftp(
+    connection: Ssh2TerminalConnection,
+    sftp: SFTPWrapper,
+    poolByTab: Map<string, ReusableUploadSftpEntry[]>,
+    expiryTimersByTab: Map<string, ReturnType<typeof setTimeout>>,
+    maxIdleEntries: number
+  ): void {
+    const pool = poolByTab.get(connection.tabId) ?? [];
+    if (!poolByTab.has(connection.tabId)) {
+      poolByTab.set(connection.tabId, pool);
+    }
+    pool.push({
+      tabId: connection.tabId,
+      sftp,
+      releasedAt: Date.now()
+    });
+    while (pool.length > maxIdleEntries) {
+      const staleEntry = pool.shift();
+      safeEndSftp(staleEntry?.sftp);
+    }
+    this.scheduleReusableSftpExpiry(connection.tabId, poolByTab, expiryTimersByTab);
+  }
+
+  private clearReusableSftp(
+    tabId: string,
+    poolByTab: Map<string, ReusableUploadSftpEntry[]>,
+    expiryTimersByTab: Map<string, ReturnType<typeof setTimeout>>
+  ): void {
+    this.clearReusableSftpExpiryTimer(tabId, expiryTimersByTab);
+    const pool = poolByTab.get(tabId);
     if (!pool) {
       return;
     }
-    this.reusableDownloadSftpByTab.delete(tabId);
+    poolByTab.delete(tabId);
     for (const entry of pool) {
       safeEndSftp(entry.sftp);
     }
+  }
+
+  private scheduleReusableSftpExpiry(
+    tabId: string,
+    poolByTab: Map<string, ReusableUploadSftpEntry[]>,
+    expiryTimersByTab: Map<string, ReturnType<typeof setTimeout>>
+  ): void {
+    this.clearReusableSftpExpiryTimer(tabId, expiryTimersByTab);
+    const pool = poolByTab.get(tabId);
+    if (!pool || pool.length === 0) {
+      return;
+    }
+    const nextExpiryAt = Math.min(...pool.map((entry) => entry.releasedAt + REUSABLE_SFTP_IDLE_TTL_MS));
+    const timer = setTimeout(() => {
+      expiryTimersByTab.delete(tabId);
+      const activePool = poolByTab.get(tabId);
+      if (!activePool) {
+        return;
+      }
+      const now = Date.now();
+      const freshEntries = activePool.filter((entry) => {
+        const isFresh = now - entry.releasedAt < REUSABLE_SFTP_IDLE_TTL_MS;
+        if (!isFresh) {
+          safeEndSftp(entry.sftp);
+        }
+        return isFresh;
+      });
+      if (freshEntries.length === 0) {
+        poolByTab.delete(tabId);
+        return;
+      }
+      poolByTab.set(tabId, freshEntries);
+      this.scheduleReusableSftpExpiry(tabId, poolByTab, expiryTimersByTab);
+    }, Math.max(1, nextExpiryAt - Date.now()));
+    expiryTimersByTab.set(tabId, timer);
+  }
+
+  private clearReusableSftpExpiryTimer(
+    tabId: string,
+    expiryTimersByTab: Map<string, ReturnType<typeof setTimeout>>
+  ): void {
+    const timer = expiryTimersByTab.get(tabId);
+    if (!timer) {
+      return;
+    }
+    clearTimeout(timer);
+    expiryTimersByTab.delete(tabId);
   }
 
   private async executeRemoteCommand(

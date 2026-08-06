@@ -623,6 +623,46 @@
   display: none;
 }
 
+/* The main transfer dock carries timestamps as a second metadata line. The
+ * cockpit keeps its dense scanline layout intentionally single-line so the
+ * metadata cannot overflow into the following transfer row. */
+.cockpit-transfer .sftp-transfer-list {
+  gap: 1px;
+}
+
+.cockpit-transfer .sftp-transfer {
+  grid-template-columns: 14px minmax(0, 1fr) minmax(112px, auto) auto;
+  min-height: 18px;
+  height: 18px;
+  gap: 4px;
+  padding: 0 4px;
+  line-height: 14px;
+  overflow: hidden;
+}
+
+.cockpit-transfer .sftp-transfer__meta {
+  display: block;
+  min-width: 0;
+  line-height: 14px;
+}
+
+.cockpit-transfer .sftp-transfer__name,
+.cockpit-transfer .sftp-transfer__progress {
+  display: block;
+  line-height: 14px;
+}
+
+.cockpit-transfer .sftp-transfer__time {
+  display: none;
+}
+
+.cockpit-transfer .sftp-transfer-panel__concurrency-status {
+  margin-top: -1px;
+  margin-bottom: 3px;
+  font-size: 9px;
+  line-height: 1.15;
+}
+
 /*
  * Bottom dock sits in the center column.
  * Never stretch the chrome PNG — width is derived from height so aspect stays 1120:170.

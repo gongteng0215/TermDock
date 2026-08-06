@@ -41,6 +41,7 @@ export interface CockpitChromeProps {
   activeDock: CockpitDockId;
   onDockSelect: (id: CockpitDockId) => void;
   autoReconnectEnabled: boolean;
+  hasReconnectTarget: boolean;
   reconnectDelaySeconds: number;
   reconnectBusy: boolean;
   onReconnect: () => void;
@@ -78,13 +79,6 @@ const DOCK_ITEMS: Array<{
   { id: "settings", label: "SETTINGS", Icon: Settings }
 ];
 
-function countTransfers(
-  transfers: TransferDockProps["uploadPanel"]["transfers"],
-  status: string
-): number {
-  return transfers.filter((transfer) => transfer.status === status).length;
-}
-
 function parseProgressPercent(label: string): number | null {
   const match = label.match(/(\d+(?:\.\d+)?)\s*%/);
   if (!match) {
@@ -113,23 +107,29 @@ function CockpitTransferStrip({
     notice
   } = transferDockProps;
 
-  const uploadRunning = countTransfers(uploadPanel.transfers, "running");
-  const uploadQueued = countTransfers(uploadPanel.transfers, "queued");
-  const downloadRunning = countTransfers(downloadPanel.transfers, "running");
-  const downloadQueued = countTransfers(downloadPanel.transfers, "queued");
+  const uploadRunning = uploadPanel.runningCount;
+  const uploadQueued = uploadPanel.queuedCount;
+  const downloadRunning = downloadPanel.runningCount;
+  const downloadQueued = downloadPanel.queuedCount;
+  const uploadActive = uploadPanel.activeCount;
+  const downloadActive = downloadPanel.activeCount;
   const primary =
     uploadPanel.transfers.find((transfer) => transfer.status === "running") ??
     uploadPanel.transfers.find((transfer) => transfer.status === "queued") ??
     downloadPanel.transfers.find((transfer) => transfer.status === "running") ??
     downloadPanel.transfers.find((transfer) => transfer.status === "queued") ??
-    uploadPanel.transfers[0] ??
-    downloadPanel.transfers[0] ??
+    null;
+  const lastCompleted =
+    uploadPanel.transfers.find((transfer) => transfer.status === "completed") ??
+    downloadPanel.transfers.find((transfer) => transfer.status === "completed") ??
     null;
   const progressPercent = primary ? parseProgressPercent(primary.progressLabel) : null;
-  const isComplete = primary?.status === "completed" || progressPercent === 100;
+  const isComplete = primary?.status === "completed";
   const directionLabel =
     primary == null
-      ? bindingLabel || "No active transfer"
+      ? lastCompleted
+        ? `Last completed: ${lastCompleted.name}`
+        : bindingLabel || "No active transfer"
       : primary.direction === "upload"
         ? `Uploading · ${bindingLabel || "active tab"}`
         : `Downloading · ${bindingLabel || "active tab"}`;
@@ -160,13 +160,13 @@ function CockpitTransferStrip({
           }
         >
           <i />
-          <small>{primary?.progressLabel ?? "0% · waiting"}</small>
+          <small>{primary?.progressLabel ?? "0 active tasks"}</small>
         </span>
         {isComplete ? <Check aria-hidden="true" size={18} strokeWidth={2.2} /> : <span />}
       </button>
       <div className="cockpit-transfer-strip__count">
         <small>UPLOADS</small>
-        <strong>{uploadPanel.transfers.length}</strong>
+        <strong>{uploadActive}</strong>
         <span>
           Running {uploadRunning}
           <br />
@@ -175,7 +175,7 @@ function CockpitTransferStrip({
       </div>
       <div className="cockpit-transfer-strip__count">
         <small>DOWNLOADS</small>
-        <strong>{downloadPanel.transfers.length}</strong>
+        <strong>{downloadActive}</strong>
         <span>
           Running {downloadRunning}
           <br />
@@ -224,6 +224,7 @@ function CockpitModule({
 
 function CockpitTopHud({
   autoReconnectEnabled,
+  hasReconnectTarget,
   reconnectDelaySeconds,
   reconnectBusy,
   onReconnect,
@@ -232,6 +233,7 @@ function CockpitTopHud({
 }: Pick<
   CockpitChromeProps,
   | "autoReconnectEnabled"
+  | "hasReconnectTarget"
   | "reconnectDelaySeconds"
   | "reconnectBusy"
   | "onReconnect"
@@ -243,17 +245,23 @@ function CockpitTopHud({
       <div className="cockpit-top-hud__panel">
         <button
           className="cockpit-top-hud__reconnect"
-          disabled={reconnectBusy}
+          disabled={reconnectBusy || !hasReconnectTarget}
           onClick={onReconnect}
           type="button"
         >
           <ShieldCheck aria-hidden="true" size={18} strokeWidth={1.8} />
           <span className="cockpit-top-hud__copy">
-            <strong>{reconnectBusy ? "RECONNECTING" : "RECONNECT"}</strong>
-            <small>Auto reconnect: {autoReconnectEnabled ? "ON" : "OFF"}</small>
+            <strong>{reconnectBusy ? "RECONNECTING" : hasReconnectTarget ? "RECONNECT" : "NO SESSION"}</strong>
+            <small>
+              {hasReconnectTarget
+                ? `Auto reconnect: ${autoReconnectEnabled ? "ON" : "OFF"}`
+                : "Open a session to connect"}
+            </small>
           </span>
-          <i className="cockpit-top-hud__divider" />
-          <small className="cockpit-top-hud__delay">Delay: {reconnectDelaySeconds}s</small>
+          {hasReconnectTarget ? <i className="cockpit-top-hud__divider" /> : null}
+          {hasReconnectTarget ? (
+            <small className="cockpit-top-hud__delay">Delay: {reconnectDelaySeconds}s</small>
+          ) : null}
           <RefreshCw
             aria-hidden="true"
             className={
@@ -337,6 +345,7 @@ export function CockpitWorkbenchShell({
     <div className="cockpit-shell" data-active-panel={activeDock}>
       <CockpitTopHud
         autoReconnectEnabled={chrome.autoReconnectEnabled}
+        hasReconnectTarget={chrome.hasReconnectTarget}
         onOpenSafety={chrome.onOpenSafety}
         onReconnect={chrome.onReconnect}
         reconnectBusy={chrome.reconnectBusy}
@@ -371,7 +380,7 @@ export function CockpitWorkbenchShell({
               }
               transferDockProps={transferDockProps}
             />
-            {activeDock === "transfers" ? <TransferDock {...transferDockProps} /> : null}
+            {activeDock === "transfers" ? <TransferDock {...transferDockProps} forceExpanded /> : null}
           </section>
           <CockpitBottomDock active={activeDock} onSelect={chrome.onDockSelect} />
         </div>

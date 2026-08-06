@@ -19,6 +19,28 @@ function parseIntegerEnv(name, fallback, min, max) {
   return value;
 }
 
+function parseIntegerListEnv(name, fallback, min, max) {
+  const raw = process.env[name];
+  if (!raw) {
+    return [fallback];
+  }
+  const values = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  if (values.length === 0) {
+    return [fallback];
+  }
+  return Array.from(
+    new Set(
+      values.map((value) => {
+        const parsed = Number(value);
+        if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+          throw new Error(`${name} entries must be integers in [${min}, ${max}].`);
+        }
+        return parsed;
+      })
+    )
+  );
+}
+
 function nowTag() {
   return new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-");
 }
@@ -123,7 +145,13 @@ async function runPool(items, concurrency, worker) {
 async function main() {
   const fileCount = parseIntegerEnv("TD_BENCH_SMALL_FILE_COUNT", 500, 10, 20_000);
   const fileSizeBytes = parseIntegerEnv("TD_BENCH_SMALL_FILE_BYTES", 1024, 1, 64 * 1024);
-  const uploadConcurrency = parseIntegerEnv("TD_BENCH_SMALL_UPLOAD_CONCURRENCY", 2, 1, 12);
+  const uploadConcurrency = parseIntegerEnv("TD_BENCH_SMALL_UPLOAD_CONCURRENCY", 2, 1, 32);
+  const uploadConcurrencies = parseIntegerListEnv(
+    "TD_BENCH_SMALL_UPLOAD_CONCURRENCIES",
+    uploadConcurrency,
+    1,
+    32
+  );
   const reuseChannels = process.env.TD_BENCH_SMALL_REUSE_CHANNELS !== "0";
 
   const artifactRoot = join(process.cwd(), "artifacts", "benchmark");
@@ -163,45 +191,60 @@ async function main() {
       await closeSftp(setupSftp);
     }
 
-    const uploadStartedAt = Date.now();
-    if (reuseChannels) {
-      const pool = [];
-      for (let index = 0; index < uploadConcurrency; index += 1) {
-        pool.push(await openSftp(client));
-      }
+    const runs = [];
+    for (const concurrency of uploadConcurrencies) {
+      const runRemoteDir = `${remoteDir}/c-${concurrency}`;
+      const runSetupSftp = await openSftp(client);
       try {
-        let cursor = 0;
-        await runPool(localFiles, uploadConcurrency, async (localPath) => {
-          const sftp = pool[cursor % pool.length];
-          cursor += 1;
-          const name = localPath.split(/[/\\]/).at(-1);
-          await fastPut(sftp, localPath, `${remoteDir}/${name}`);
-        });
+        await mkdirRemote(runSetupSftp, runRemoteDir);
       } finally {
-        await Promise.all(pool.map((sftp) => closeSftp(sftp)));
+        await closeSftp(runSetupSftp);
       }
-    } else {
-      await runPool(localFiles, uploadConcurrency, async (localPath) => {
-        const sftp = await openSftp(client);
-        try {
-          const name = localPath.split(/[/\\]/).at(-1);
-          await fastPut(sftp, localPath, `${remoteDir}/${name}`);
-        } finally {
-          await closeSftp(sftp);
+
+      const uploadStartedAt = Date.now();
+      if (reuseChannels) {
+        const pool = [];
+        for (let index = 0; index < concurrency; index += 1) {
+          pool.push(await openSftp(client));
         }
+        try {
+          let cursor = 0;
+          await runPool(localFiles, concurrency, async (localPath) => {
+            const sftp = pool[cursor % pool.length];
+            cursor += 1;
+            const name = localPath.split(/[/\\]/).at(-1);
+            await fastPut(sftp, localPath, `${runRemoteDir}/${name}`);
+          });
+        } finally {
+          await Promise.all(pool.map((sftp) => closeSftp(sftp)));
+        }
+      } else {
+        await runPool(localFiles, concurrency, async (localPath) => {
+          const sftp = await openSftp(client);
+          try {
+            const name = localPath.split(/[/\\]/).at(-1);
+            await fastPut(sftp, localPath, `${runRemoteDir}/${name}`);
+          } finally {
+            await closeSftp(sftp);
+          }
+        });
+      }
+      const uploadElapsedMs = Date.now() - uploadStartedAt;
+      runs.push({
+        uploadConcurrency: concurrency,
+        uploadElapsedMs,
+        filesPerSecond: round(fileCount / Math.max(uploadElapsedMs / 1000, 0.001), 2)
       });
     }
-    const uploadElapsedMs = Date.now() - uploadStartedAt;
-    const filesPerSecond = fileCount / Math.max(uploadElapsedMs / 1000, 0.001);
 
     const report = {
       createdAt: new Date().toISOString(),
       fileCount,
       fileSizeBytes,
       uploadConcurrency,
+      uploadConcurrencies,
       reuseChannels,
-      uploadElapsedMs,
-      filesPerSecond: round(filesPerSecond, 2),
+      runs,
       totalBytes: fileCount * fileSizeBytes,
       wallClockMs: Date.now() - startedAt
     };
@@ -209,9 +252,11 @@ async function main() {
     const reportPath = join(artifactRoot, `transfer-small-files-${nowTag()}.json`);
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
     console.log(`[bench:transfer:small-files] ${fileCount} x ${fileSizeBytes}B`);
-    console.log(
-      `[bench:transfer:small-files] concurrency=${uploadConcurrency} reuse=${reuseChannels} elapsed=${uploadElapsedMs}ms files/s=${report.filesPerSecond}`
-    );
+    for (const run of runs) {
+      console.log(
+        `[bench:transfer:small-files] concurrency=${run.uploadConcurrency} reuse=${reuseChannels} elapsed=${run.uploadElapsedMs}ms files/s=${run.filesPerSecond}`
+      );
+    }
     console.log(`[bench:transfer:small-files] wrote ${reportPath}`);
   } finally {
     if (client) {

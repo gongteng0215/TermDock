@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { AppLanguage, TransferDockLabels, WorkbenchTopbarLabels } from "../i18n";
 import { beginWindowDrag } from "../window-drag";
@@ -7,6 +7,7 @@ import { UiIcon } from "./ui-icon";
 
 interface WorkbenchTopbarProps {
   isMacPlatform: boolean;
+  showAutoReconnect: boolean;
   autoReconnectLabel: string;
   labels: WorkbenchTopbarLabels;
   workspaceProfile: {
@@ -33,6 +34,10 @@ interface TransferDockItemView {
 
 interface TransferDockPanelView {
   title: string;
+  runningCount: number;
+  queuedCount: number;
+  activeCount: number;
+  concurrencyStatus: string | null;
   retryFailedCount: number;
   retryFailedDisabled: boolean;
   onRetryFailed: () => void;
@@ -50,6 +55,7 @@ interface TransferDockPanelView {
 }
 
 export interface TransferDockProps {
+  forceExpanded?: boolean;
   bindingLabel: string;
   labels: TransferDockLabels;
   notice: TransferDockNoticeView | null;
@@ -105,6 +111,7 @@ interface WorkbenchLayoutProps {
 
 export function WorkbenchTopbar({
   isMacPlatform,
+  showAutoReconnect,
   autoReconnectLabel,
   labels,
   workspaceProfile
@@ -122,8 +129,12 @@ export function WorkbenchTopbar({
         <span>{labels.subtitle}</span>
       </div>
       <div className="topbar__meta">
-        <span className="topbar__meta-dot" />
-        <span className="topbar__meta-label">{autoReconnectLabel}</span>
+        {showAutoReconnect ? (
+          <>
+            <span className="topbar__meta-dot" />
+            <span className="topbar__meta-label">{autoReconnectLabel}</span>
+          </>
+        ) : null}
         {workspaceProfile ? (
           <span className={`workspace-profile-badge workspace-profile-badge--${workspaceProfile.id}`}>
             {workspaceProfile.shortLabel}
@@ -150,6 +161,7 @@ export function WorkbenchLayout({
 }
 
 export function TransferDock({
+  forceExpanded = false,
   bindingLabel,
   labels,
   notice,
@@ -166,9 +178,10 @@ export function TransferDock({
   uploadPanel,
   downloadPanel
 }: TransferDockProps) {
+  const [isManuallyExpanded, setIsManuallyExpanded] = useState(false);
   const hasTransferActivity =
-    uploadPanel.transfers.length > 0 ||
-    downloadPanel.transfers.length > 0 ||
+    uploadPanel.activeCount > 0 ||
+    downloadPanel.activeCount > 0 ||
     Boolean(uploadPanel.pauseMessage || downloadPanel.pauseMessage) ||
     Boolean(uploadPanel.historyMessage || downloadPanel.historyMessage) ||
     pendingRestoreCount > 0 ||
@@ -176,10 +189,23 @@ export function TransferDock({
     operationCenterActiveCount > 0 ||
     Boolean(notice);
 
+  const canManuallyToggle = !forceExpanded && !hasTransferActivity;
+  const isCompact = canManuallyToggle && !isManuallyExpanded;
+
   return (
-    <section className={hasTransferActivity ? "transfer-dock" : "transfer-dock transfer-dock--compact"}>
+    <section className={isCompact ? "transfer-dock transfer-dock--compact" : "transfer-dock"}>
       <div className="transfer-dock__heading">
         <h3>{labels.title}</h3>
+        {canManuallyToggle ? (
+          <button
+            aria-expanded={!isCompact}
+            className="secondary-button secondary-button--small transfer-dock__toggle"
+            onClick={() => setIsManuallyExpanded((previous) => !previous)}
+            type="button"
+          >
+            {isCompact ? "Show details" : "Hide details"}
+          </button>
+        ) : null}
         <div className="transfer-dock__heading-actions">
           <div className="transfer-dock__heading-meta">
             <span className="hint transfer-dock__binding">{bindingLabel}</span>
@@ -238,10 +264,12 @@ export function TransferDock({
           </button>
         </div>
       </div>
-      <div className="transfer-dock__grid">
-        <TransferDockPanel labels={labels} panel={uploadPanel} />
-        <TransferDockPanel labels={labels} panel={downloadPanel} />
-      </div>
+      {!isCompact ? (
+        <div className="transfer-dock__grid">
+          <TransferDockPanel labels={labels} panel={uploadPanel} />
+          <TransferDockPanel labels={labels} panel={downloadPanel} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -287,6 +315,9 @@ function TransferDockPanel({
         </div>
       </div>
       <p className="hint sftp-transfer-panel__batch-progress">{panel.progressSummary}</p>
+      {panel.concurrencyStatus ? (
+        <p className="hint sftp-transfer-panel__concurrency-status">{panel.concurrencyStatus}</p>
+      ) : null}
       {panel.pauseMessage ? (
         <p className="hint sftp-transfer-panel__batch-progress">{panel.pauseMessage}</p>
       ) : null}
@@ -296,7 +327,16 @@ function TransferDockPanel({
       {panel.transfers.length > 0 ? (
         <ul className="sftp-transfer-list transfer-dock__list">
           {panel.transfers.map((transfer) => (
-            <li className={`sftp-transfer sftp-transfer--${transfer.status}`} key={transfer.transferId}>
+            <li
+              aria-label={
+                transfer.timeLabel
+                  ? `${transfer.name}, ${transfer.progressLabel}, ${transfer.timeLabel}`
+                  : `${transfer.name}, ${transfer.progressLabel}`
+              }
+              className={`sftp-transfer sftp-transfer--${transfer.status}`}
+              key={transfer.transferId}
+              title={transfer.timeLabel ? `${transfer.name} — ${transfer.timeLabel}` : transfer.name}
+            >
               <span className="sftp-transfer__icon">
                 <UiIcon name={transfer.direction} />
               </span>

@@ -62,6 +62,8 @@ export interface BuildTransferDockCompositePropsArgs<TTransfer extends TransferL
   retryFailedUploads: () => Promise<void>;
   sftpTransferScheduleSummary: string;
   uploadConcurrency: number;
+  uploadEffectiveConcurrency: number;
+  uploadConcurrencyBackpressureReason: string | null;
   uploadPauseReason: string | null;
   downloadPauseReason: string | null;
   activeUploadProgressStats: TransferProgressStatsLike;
@@ -134,6 +136,8 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
   retryFailedUploads,
   sftpTransferScheduleSummary,
   uploadConcurrency,
+  uploadEffectiveConcurrency,
+  uploadConcurrencyBackpressureReason,
   uploadPauseReason,
   downloadPauseReason,
   activeUploadProgressStats,
@@ -153,6 +157,9 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
       clearFinishedTransfers("upload");
     },
     clearFinishedDisabled: !canClearFinishedUploads,
+    concurrencyStatus: `Concurrency: configured ${uploadConcurrency} / effective ${uploadEffectiveConcurrency}${
+      uploadConcurrencyBackpressureReason ? ` (${uploadConcurrencyBackpressureReason})` : ""
+    }`,
     emptyLabel: labels.uploadEmpty,
     getTransferDirection: () => "upload",
     getTransferId: (transfer) => transfer.transferId,
@@ -179,9 +186,12 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
       activeUploadProgressStats.running,
       activeUploadProgressStats.queued
     ),
+    activeCount: activeUploadQueueStats.running + activeUploadQueueStats.queued,
+    queuedCount: activeUploadQueueStats.queued,
     retryFailedAction: retryFailedUploads,
     retryFailedCount: failedUploadRetryCandidateCount,
     retryFailedDisabled: !canRetryFailedUploads,
+    runningCount: activeUploadQueueStats.running,
     title: labels.uploadsTitle(
       activeUploadQueueStats.running,
       activeUploadQueueStats.queued,
@@ -200,6 +210,7 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
       clearFinishedTransfers("download");
     },
     clearFinishedDisabled: !canClearFinishedDownloads,
+    concurrencyStatus: `Concurrency: configured ${downloadConcurrency} / effective ${downloadConcurrency}`,
     emptyLabel: labels.downloadEmpty,
     getTransferDirection: () => "download",
     getTransferId: (transfer) => transfer.transferId,
@@ -228,9 +239,12 @@ export function buildTransferDockCompositeProps<TTransfer extends TransferLike>(
       activeDownloadProgressStats.running,
       activeDownloadProgressStats.queued
     ),
+    activeCount: activeDownloadQueueStats.running + activeDownloadQueueStats.queued,
+    queuedCount: activeDownloadQueueStats.queued,
     retryFailedAction: retryFailedDownloads,
     retryFailedCount: failedDownloadRetryCandidateCount,
     retryFailedDisabled: !canRetryFailedDownloads,
+    runningCount: activeDownloadQueueStats.running,
     title: labels.downloadsTitle(
       activeDownloadQueueStats.running,
       activeDownloadQueueStats.queued,

@@ -370,28 +370,21 @@ html[data-ui-theme="default"] .app-window-drag-strip {
 }
 
 .transfer-dock--compact {
-  height: 112px;
-  min-height: 112px;
-  max-height: 112px;
+  height: 42px;
+  min-height: 42px;
+  max-height: 42px;
   padding-top: var(--space-2);
   padding-bottom: var(--space-2);
 }
 
 .transfer-dock--compact .transfer-dock__heading {
   min-height: 22px;
-  margin-bottom: var(--space-1);
-  padding-bottom: var(--space-1);
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
-.transfer-dock--compact .transfer-dock__panel {
-  padding: var(--space-2);
-}
-
-.transfer-dock--compact .sftp-transfer-panel__batch-progress {
-  margin-bottom: var(--space-1);
-  min-height: 12px;
-}
-
+.transfer-dock--compact .transfer-dock__heading-actions,
 .transfer-dock--compact .transfer-dock__empty {
   display: none;
 }
@@ -490,6 +483,11 @@ html[data-ui-theme="default"] .app-window-drag-strip {
   border-radius: 1px;
   background: var(--accent);
   flex-shrink: 0;
+}
+
+.transfer-dock__toggle {
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .transfer-dock__action-button {
