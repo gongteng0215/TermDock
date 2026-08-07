@@ -20,6 +20,7 @@ type WorkbenchInspectorSidebarFrameProps = Omit<
 export function buildWorkbenchTopbarProps({
   autoReconnectEnabled,
   hasTerminalTab,
+  onOpenOperations,
   reconnectDelaySeconds,
   isMacPlatform,
   labels,
@@ -28,6 +29,7 @@ export function buildWorkbenchTopbarProps({
 }: {
   autoReconnectEnabled: boolean;
   hasTerminalTab: boolean;
+  onOpenOperations: () => void;
   reconnectDelaySeconds: number;
   isMacPlatform: boolean;
   labels: ComponentProps<typeof WorkbenchTopbar>["labels"];
@@ -39,6 +41,7 @@ export function buildWorkbenchTopbarProps({
       ? labels.autoReconnect(reconnectDelaySeconds)
       : labels.autoReconnectOff,
     showAutoReconnect: hasTerminalTab,
+    onOpenOperations,
     isMacPlatform,
     labels,
     workspaceProfile:
@@ -83,9 +86,19 @@ export function buildServerHealthInspectorSectionProps({
   healthyLabel,
   isConnected,
   isDetailOpen,
+  isMonitorPinned,
+  monitorCheckBusy,
+  monitorPinBusy,
+  monitorStatusLabel,
+  monitorStatusUpdatedLabel,
+  onCheckMonitor,
+  onOpenFleet,
   onOpenDetail,
+  onPinMonitor,
+  checkMonitorDisabled,
   refreshServerHealth,
   refreshServerProcesses,
+  pinMonitorDisabled,
   refreshDisabled,
   toggleDisabled
 }: {
@@ -94,9 +107,19 @@ export function buildServerHealthInspectorSectionProps({
   healthyLabel: string;
   isConnected: boolean;
   isDetailOpen: boolean;
+  isMonitorPinned: boolean;
+  monitorCheckBusy: boolean;
+  monitorPinBusy: boolean;
+  monitorStatusLabel: string | null;
+  monitorStatusUpdatedLabel: string | null;
+  onCheckMonitor: () => void;
+  onOpenFleet: () => void;
   onOpenDetail: () => void;
+  onPinMonitor: () => void;
+  checkMonitorDisabled: boolean;
   refreshServerHealth: () => Promise<void>;
   refreshServerProcesses: () => Promise<void>;
+  pinMonitorDisabled: boolean;
   refreshDisabled: boolean;
   toggleDisabled: boolean;
 }): Omit<ComponentProps<typeof ServerHealthInspectorSection>, "children"> {
@@ -106,6 +129,13 @@ export function buildServerHealthInspectorSectionProps({
     healthyLabel,
     isConnected,
     isDetailOpen,
+    isMonitorPinned,
+    monitorCheckBusy,
+    monitorPinBusy,
+    monitorStatusLabel,
+    monitorStatusUpdatedLabel,
+    onCheckMonitor,
+    onOpenFleet,
     onRefresh: () => {
       void refreshServerHealth();
       if (isDetailOpen) {
@@ -113,6 +143,9 @@ export function buildServerHealthInspectorSectionProps({
       }
     },
     onToggleDetail: onOpenDetail,
+    onPinMonitor,
+    checkMonitorDisabled,
+    pinMonitorDisabled,
     refreshDisabled,
     toggleDisabled
   };

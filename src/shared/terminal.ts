@@ -146,4 +146,22 @@ export type TerminalEvent =
       tabId: string;
       type: "error";
       message: string;
+    }
+  | {
+      tabId: string;
+      type: "hostKeyPrompt";
+      promptId: string;
+      host: string;
+      port: number;
+      fingerprint: string;
+      changed: boolean;
+      isJumpHost: boolean;
+    }
+  | {
+      tabId: string;
+      type: "keyboardInteractivePrompt";
+      promptId: string;
+      name: string;
+      instruction: string;
+      prompts: Array<{ prompt: string; echo: boolean }>;
     };

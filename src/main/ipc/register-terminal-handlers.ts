@@ -13,6 +13,16 @@ export function registerTerminalHandlers(terminalService: TerminalService): void
     terminalService.write(tabId, data)
   );
   ipcMain.handle(
+    "terminal:respondHostKeyPrompt",
+    async (_event, tabId: string, promptId: string, decision: "trust" | "replace" | "reject") =>
+      terminalService.respondHostKeyPrompt(tabId, promptId, decision)
+  );
+  ipcMain.handle(
+    "terminal:respondKeyboardInteractivePrompt",
+    async (_event, tabId: string, promptId: string, responses: string[]) =>
+      terminalService.respondKeyboardInteractivePrompt(tabId, promptId, responses)
+  );
+  ipcMain.handle(
     "terminal:resize",
     async (_event, tabId: string, cols: number, rows: number) =>
       terminalService.resize(tabId, cols, rows)

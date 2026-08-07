@@ -7,6 +7,7 @@ import { UiIcon } from "./ui-icon";
 
 interface WorkbenchTopbarProps {
   isMacPlatform: boolean;
+  onOpenOperations: () => void;
   showAutoReconnect: boolean;
   autoReconnectLabel: string;
   labels: WorkbenchTopbarLabels;
@@ -111,6 +112,7 @@ interface WorkbenchLayoutProps {
 
 export function WorkbenchTopbar({
   isMacPlatform,
+  onOpenOperations,
   showAutoReconnect,
   autoReconnectLabel,
   labels,
@@ -129,6 +131,7 @@ export function WorkbenchTopbar({
         <span>{labels.subtitle}</span>
       </div>
       <div className="topbar__meta">
+        <button className="secondary-button secondary-button--small topbar__operations-button" onClick={onOpenOperations} title="Open Operations Hub (Ctrl/Cmd+P)" type="button">Operations</button>
         {showAutoReconnect ? (
           <>
             <span className="topbar__meta-dot" />

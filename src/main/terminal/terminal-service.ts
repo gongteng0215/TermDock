@@ -1,9 +1,11 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { createReadStream, createWriteStream } from "node:fs";
 import {
   mkdir as mkdirLocalDirectory,
+  readdir as readLocalDirectory,
   readFile,
   stat as statLocalFile,
   unlink as unlinkLocalFile
@@ -27,6 +29,17 @@ import type {
 
 import type { SessionRecord } from "../../shared/session.js";
 import { formatSshConnectionError } from "../../shared/ssh-error-diagnostics.js";
+import type {
+  OperationsEvent,
+  HealthObservation,
+  RunbookRun,
+  RunbookStartInput,
+  RunbookTargetResult,
+  SyncPlan,
+  SyncPlanItem,
+  SyncProfile,
+  SyncRun
+} from "../../shared/operations.js";
 import type {
   PrivilegedUploadSaveResult,
   RemotePathWriteAccess,
@@ -66,6 +79,7 @@ import type {
   TerminalEvent
 } from "../../shared/terminal.js";
 import type { CredentialStore } from "../security/credential-store.js";
+import type { SqliteOperationsStore } from "../storage/sqlite/sqlite-operations-store.js";
 import type { DualWriteSessionStore } from "../storage/dual-write-session-store.js";
 import type { SessionStore } from "../storage/session-store.js";
 import {
@@ -76,6 +90,7 @@ import {
 
 interface BaseTerminalConnection {
   tabId: string;
+  sessionId: string;
   sender: WebContents;
   mode: "ssh2" | "native";
   closed: boolean;
@@ -87,6 +102,7 @@ interface Ssh2TerminalConnection extends BaseTerminalConnection {
   shell?: ClientChannel;
   sftp?: SFTPWrapper;
   fallbackTried: boolean;
+  jumpClient?: Client;
 }
 
 interface NativeTerminalConnection extends BaseTerminalConnection {
@@ -213,6 +229,38 @@ interface ActiveDeleteOperation {
   channelRef: ClientChannel | null;
 }
 
+class RunbookCommandError extends Error {
+  constructor(
+    message: string,
+    readonly outputTail: string,
+    readonly exitCode: number | null = null
+  ) {
+    super(message);
+    this.name = "RunbookCommandError";
+  }
+}
+
+interface SyncFileMetadata {
+  size: number;
+  modifiedTimeMs: number | null;
+}
+
+interface ActiveSyncRun {
+  canceled: boolean;
+  client?: Client;
+  jumpClient?: Client;
+  sender: WebContents;
+  transferTabId: string;
+  transferStatuses: Map<string, SftpTransferEvent["status"]>;
+}
+
+interface ActiveRunbook {
+  canceled: boolean;
+  sender: WebContents;
+  channels: Set<ClientChannel>;
+  promptTabIds: Set<string>;
+}
+
 export class TerminalService {
   private readonly connections = new Map<string, TerminalConnection>();
   private readonly activePortForwardsByTab = new Map<string, Map<string, ActivePortForward>>();
@@ -236,10 +284,25 @@ export class TerminalService {
   private readonly pendingDownloadCancelIds = new Set<string>();
   private readonly remoteIdentityByTab = new Map<string, RemoteIdentity>();
   private readonly remoteHomeByTab = new Map<string, string>();
+  private readonly pendingHostKeyPrompts = new Map<string, {
+    tabId: string;
+    resolve: (decision: "trust" | "replace" | "reject") => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }>();
+  private readonly pendingKeyboardPrompts = new Map<string, {
+    tabId: string;
+    resolve: (responses: string[]) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }>();
+  private readonly transientTrustedHostKeys = new Map<string, { fingerprint: string; publicKeyBase64: string }>();
+  private readonly activeRunbooks = new Map<string, ActiveRunbook>();
+  private readonly syncPlans = new Map<string, SyncPlan>();
+  private readonly activeSyncRuns = new Map<string, ActiveSyncRun>();
 
   constructor(
     private readonly sessionStore: SessionStore | DualWriteSessionStore,
-    private readonly credentialStore: CredentialStore
+    private readonly credentialStore: CredentialStore,
+    private readonly operationsStore: SqliteOperationsStore | null = null
   ) {}
 
   async connect(tabId: string, sessionId: string, sender: WebContents): Promise<void> {
@@ -264,17 +327,35 @@ export class TerminalService {
     session: SessionRecord,
     sender: WebContents
   ): Promise<void> {
-    const connectConfig = await this.buildConnectConfig(session);
+    let jumpClient: Client | undefined;
+    let connectConfig: ConnectConfig;
+    try {
+      if (session.jumpSessionId) {
+        const jumpSession = await this.resolveJumpSession(session);
+        jumpClient = await this.connectAuxiliaryClient(tabId, sender, jumpSession, true);
+        const socket = await this.forwardThroughJump(jumpClient, session.host, session.port);
+        connectConfig = await this.buildConnectConfigForPrompt(tabId, sender, session, false);
+        connectConfig.sock = socket;
+      } else {
+        connectConfig = await this.buildConnectConfigForPrompt(tabId, sender, session, false);
+      }
+    } catch (error) {
+      jumpClient?.end();
+      throw error;
+    }
     const client = new Client();
     const connection: Ssh2TerminalConnection = {
       tabId,
+      sessionId: session.id,
       sender,
       mode: "ssh2",
       client,
       closed: false,
-      fallbackTried: false
+      fallbackTried: false,
+      jumpClient
     };
     this.connections.set(tabId, connection);
+    this.attachKeyboardInteractiveHandler(client, tabId, sender);
 
     client.on("ready", () => {
       if (this.connections.get(tabId) !== connection || connection.closed) {
@@ -357,6 +438,8 @@ export class TerminalService {
       this.clearReusableUploadSftp(tabId);
       this.clearReusableDownloadSftp(tabId);
       this.clearSftpSlotState(tabId);
+      this.clearPendingTerminalPrompts(tabId);
+      connection.jumpClient?.end();
       this.emitClosed(connection);
       this.connections.delete(tabId);
     });
@@ -365,17 +448,15 @@ export class TerminalService {
   }
 
   private shouldFallbackToNative(
-    error: Error,
-    session: SessionRecord,
-    connection: Ssh2TerminalConnection
+    _error: Error,
+    _session: SessionRecord,
+    _connection: Ssh2TerminalConnection
   ): boolean {
-    if (connection.fallbackTried || session.authType !== "privateKey") {
-      return false;
-    }
-    const message = error.message.toLowerCase();
-    return /before handshake|kex_exchange_identification|connection reset|closed by remote host/.test(
-      message
-    );
+    // The system ssh fallback used its own known_hosts policy, which would
+    // bypass TermDock's explicit SHA-256 host-key confirmation. Keep a single
+    // verification path until native ssh can receive the same verified key
+    // material without accepting new keys implicitly.
+    return false;
   }
 
   private async fallbackToNative(
@@ -402,6 +483,7 @@ export class TerminalService {
     this.clearReusableDownloadSftp(connection.tabId);
     this.clearSftpSlotState(connection.tabId);
     connection.client.end();
+    connection.jumpClient?.end();
 
     try {
       await this.connectViaNative(connection.tabId, session, connection.sender);
@@ -451,6 +533,7 @@ export class TerminalService {
     });
     const nativeConnection: NativeTerminalConnection = {
       tabId,
+      sessionId: session.id,
       sender,
       mode: "native",
       process,
@@ -526,6 +609,7 @@ export class TerminalService {
   async close(tabId: string): Promise<void> {
     const connection = this.connections.get(tabId);
     this.clearSftpSlotState(tabId);
+    this.clearPendingTerminalPrompts(tabId);
     if (!connection) {
       return;
     }
@@ -549,7 +633,9 @@ export class TerminalService {
       connection.sftp?.end();
       this.clearReusableUploadSftp(connection.tabId);
       this.clearReusableDownloadSftp(connection.tabId);
+      connection.jumpClient?.end();
       connection.client.end();
+      connection.jumpClient?.end();
     } else {
       if (!connection.process.stdin.destroyed) {
         connection.process.stdin.end();
@@ -560,6 +646,775 @@ export class TerminalService {
     }
 
     this.emitClosed(connection);
+  }
+
+  async startRunbook(input: RunbookStartInput, sender: WebContents): Promise<RunbookRun> {
+    if (!this.operationsStore) {
+      throw new Error("Runbook storage is unavailable.");
+    }
+    const runbook = this.operationsStore.getRunbook(input.runbookId);
+    if (!runbook) {
+      throw new Error("Runbook not found.");
+    }
+    const sessionIds = Array.from(new Set((input.sessionIds ?? []).map((id) => id.trim()).filter(Boolean))).slice(0, 200);
+    if (sessionIds.length === 0) {
+      throw new Error("Select at least one session before running a Runbook.");
+    }
+    if (input.incidentId) {
+      const incident = this.operationsStore.getHealthIncident(input.incidentId);
+      if (!incident || incident.status === "resolved") {
+        throw new Error("This Fleet Health incident is no longer active.");
+      }
+      if (!sessionIds.includes(incident.sessionId)) {
+        throw new Error("An incident Runbook must include the affected session.");
+      }
+    }
+    const command = expandRunbookCommand(runbook.command, runbook.variables, input.variables ?? {});
+    if (isPotentiallyDangerousRunbookCommand(command) && input.approvedDangerousCommand !== true) {
+      throw new Error("This Runbook matches a dangerous-command rule. Review the expanded command and confirm execution.");
+    }
+    const sessions = await Promise.all(sessionIds.map((id) => this.sessionStore.getById(id)));
+    const resolvedSessions = sessions.filter((session): session is SessionRecord => Boolean(session));
+    const now = new Date().toISOString();
+    const run: RunbookRun = {
+      id: randomUUID(),
+      runbookId: runbook.id,
+      runbookName: runbook.name,
+      command,
+      ...(input.incidentId ? { incidentId: input.incidentId } : {}),
+      status: "running",
+      startedAt: now,
+      targetResults: resolvedSessions.map((session) => ({
+        sessionId: session.id,
+        sessionName: session.name,
+        status: "queued",
+        outputTail: ""
+      }))
+    };
+    const active: ActiveRunbook = {
+      canceled: false,
+      sender,
+      channels: new Set<ClientChannel>(),
+      promptTabIds: new Set(resolvedSessions.map((session) => `runbook:${session.id}`))
+    };
+    this.activeRunbooks.set(run.id, active);
+    this.operationsStore.saveRunbookRun(run);
+    this.operationsStore.recordIncidentRunbookEvent(run.incidentId, run, "started");
+    this.emitOperations(sender, { type: "runbookRun", run });
+
+    let nextIndex = 0;
+    const workerCount = Math.min(
+      Math.max(1, Math.min(16, Math.round(runbook.concurrency ?? 6))),
+      resolvedSessions.length
+    );
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (!active.canceled) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const session = resolvedSessions[index];
+        if (!session) return;
+        const result = run.targetResults[index];
+        if (!result) continue;
+        result.status = "running";
+        result.startedAt = new Date().toISOString();
+        this.persistRunbookRun(run, sender);
+        try {
+          const completed = await this.executeRunbookForSession(
+            session,
+            command,
+            Math.max(5, Math.min(3600, Math.round(runbook.timeoutSeconds ?? 60))) * 1_000,
+            active
+          );
+          result.status = active.canceled ? "canceled" : "succeeded";
+          result.exitCode = active.canceled ? null : 0;
+          result.outputTail = redactSensitiveOutput(completed);
+        } catch (error) {
+          result.status = active.canceled ? "canceled" : "failed";
+          result.exitCode = error instanceof RunbookCommandError ? error.exitCode : null;
+          result.outputTail = error instanceof RunbookCommandError ? redactSensitiveOutput(error.outputTail) : "";
+          result.error = toSafeRunbookError(error);
+        }
+        result.finishedAt = new Date().toISOString();
+        this.persistRunbookRun(run, sender);
+      }
+    });
+    await Promise.all(workers);
+    for (const result of run.targetResults) {
+      if (result.status === "queued" || (active.canceled && result.status === "running")) {
+        result.status = "canceled";
+        result.finishedAt = new Date().toISOString();
+      }
+    }
+    run.status = active.canceled
+      ? "canceled"
+      : run.targetResults.some((result) => result.status === "failed")
+        ? "failed"
+        : "succeeded";
+    run.finishedAt = new Date().toISOString();
+    this.persistRunbookRun(run, sender);
+    this.operationsStore.recordIncidentRunbookEvent(run.incidentId, run, "finished");
+    this.activeRunbooks.delete(run.id);
+    return run;
+  }
+
+  async cancelRunbook(runId: string): Promise<boolean> {
+    const active = this.activeRunbooks.get(runId);
+    if (!active) return false;
+    active.canceled = true;
+    for (const tabId of active.promptTabIds) {
+      this.clearPendingTerminalPrompts(tabId);
+    }
+    for (const channel of active.channels) {
+      try { channel.close(); } catch { /* cooperative cancel */ }
+    }
+    return true;
+  }
+
+  private persistRunbookRun(run: RunbookRun, sender: WebContents): void {
+    this.operationsStore?.saveRunbookRun(run);
+    this.emitOperations(sender, { type: "runbookRun", run });
+  }
+
+  private async executeRunbookForSession(
+    session: SessionRecord,
+    command: string,
+    timeoutMs: number,
+    active: ActiveRunbook
+  ): Promise<string> {
+    const existing = Array.from(this.connections.values()).find(
+      (connection): connection is Ssh2TerminalConnection =>
+        connection.sessionId === session.id && connection.mode === "ssh2" && !connection.closed
+    );
+    let ephemeral: { client: Client; jumpClient?: Client } | null = null;
+    const client = existing?.client ?? (ephemeral = await this.connectRunbookClient(session, active.sender)).client;
+    try {
+      return await this.executeRunbookCommand(client, command, timeoutMs, active);
+    } finally {
+      ephemeral?.client.end();
+      ephemeral?.jumpClient?.end();
+    }
+  }
+
+  private async connectRunbookClient(
+    session: SessionRecord,
+    sender: WebContents,
+    options?: { allowHostKeyPrompt?: boolean; allowInteractive?: boolean }
+  ): Promise<{ client: Client; jumpClient?: Client }> {
+    const runbookTabId = `runbook:${session.id}`;
+    if (!session.jumpSessionId) {
+      return { client: await this.connectAuxiliaryClient(runbookTabId, sender, session, false, options) };
+    }
+    const jumpSession = await this.resolveJumpSession(session);
+    const jumpClient = await this.connectAuxiliaryClient(runbookTabId, sender, jumpSession, true, options);
+    try {
+      const socket = await this.forwardThroughJump(jumpClient, session.host, session.port);
+      const config = await this.buildConnectConfigForPrompt(runbookTabId, sender, session, false, options);
+      config.sock = socket;
+      const client = new Client();
+      if (options?.allowInteractive !== false) {
+        this.attachKeyboardInteractiveHandler(client, runbookTabId, sender);
+      }
+      await new Promise<void>((resolve, reject) => {
+        client.once("ready", resolve);
+        client.once("error", reject);
+        client.connect(config);
+      });
+      return { client, jumpClient };
+    } catch (error) {
+      jumpClient.end();
+      throw error;
+    }
+  }
+
+  private async executeRunbookCommand(
+    client: Client,
+    command: string,
+    timeoutMs: number,
+    active: ActiveRunbook
+  ): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      let outputTail = "";
+      let settled = false;
+      let channel: ClientChannel | null = null;
+      const append = (chunk: Buffer) => {
+        outputTail = `${outputTail}${chunk.toString("utf-8")}`;
+        if (outputTail.length > 65_536) outputTail = outputTail.slice(-65_536);
+      };
+      const complete = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (channel) active.channels.delete(channel);
+        if (error) reject(error); else resolve(outputTail);
+      };
+      const timeout = setTimeout(() => {
+        channel?.close();
+        complete(new RunbookCommandError("Runbook command timed out.", outputTail));
+      }, timeoutMs);
+      if (active.canceled) {
+        complete(new Error("Runbook canceled."));
+        return;
+      }
+      client.exec(command, (error, stream) => {
+        if (error) { complete(error); return; }
+        channel = stream;
+        active.channels.add(stream);
+        stream.on("data", append);
+        stream.stderr.on("data", append);
+        stream.once("error", complete);
+        stream.once("close", (code: number | null) => {
+          if (active.canceled) { complete(new RunbookCommandError("Runbook canceled.", outputTail)); return; }
+          if (code && code !== 0) { complete(new RunbookCommandError(`Remote command failed with code ${code}.`, outputTail, code)); return; }
+          complete();
+        });
+      });
+    });
+  }
+
+  async planSync(profileId: string, sender: WebContents): Promise<SyncPlan> {
+    if (!this.operationsStore) {
+      throw new Error("Sync profile storage is unavailable.");
+    }
+    const profile = this.operationsStore.getSyncProfile(profileId);
+    if (!profile) {
+      throw new Error("Sync profile not found.");
+    }
+    const localRoot = normalizeLocalPath(profile.localRoot, "Sync local root");
+    const localRootStats = await statLocalFile(localRoot);
+    if (!localRootStats.isDirectory()) {
+      throw new Error("Sync local root must be an existing directory.");
+    }
+    const remoteRoot = normalizeRemotePath(profile.remoteRoot);
+    const session = await this.sessionStore.getById(profile.sessionId);
+    if (!session) {
+      throw new Error("The session for this sync profile no longer exists.");
+    }
+
+    const connection = await this.connectRunbookClient(session, sender);
+    try {
+      const sftp = await this.openSftpChannelForClient(connection.client);
+      try {
+        const [localFiles, remoteFiles] = await Promise.all([
+          this.scanLocalSyncTree(localRoot, profile.excludePatterns),
+          this.scanRemoteSyncTree(sftp, remoteRoot, profile.excludePatterns)
+        ]);
+        const paths = Array.from(new Set([...localFiles.keys(), ...remoteFiles.keys()])).sort((left, right) => left.localeCompare(right));
+        const items = paths.map((relativePath) => this.toSyncPlanItem(profile, localRoot, remoteRoot, relativePath, localFiles.get(relativePath), remoteFiles.get(relativePath)));
+        const plan: SyncPlan = {
+          id: randomUUID(),
+          profileId: profile.id,
+          createdAt: new Date().toISOString(),
+          items
+        };
+        this.syncPlans.set(plan.id, plan);
+        while (this.syncPlans.size > 40) {
+          const oldest = this.syncPlans.keys().next().value;
+          if (!oldest) break;
+          this.syncPlans.delete(oldest);
+        }
+        return plan;
+      } finally {
+        safeEndSftp(sftp);
+      }
+    } finally {
+      connection.client.end();
+      connection.jumpClient?.end();
+    }
+  }
+
+  async startSync(profileId: string, planId: string, sender: WebContents): Promise<SyncRun> {
+    if (!this.operationsStore) {
+      throw new Error("Sync profile storage is unavailable.");
+    }
+    const profile = this.operationsStore.getSyncProfile(profileId);
+    const plan = this.syncPlans.get(planId);
+    if (!profile || !plan || plan.profileId !== profile.id) {
+      throw new Error("Sync preview expired. Generate a new preview before running it.");
+    }
+    const runnable = plan.items.filter((item) => item.action === "create" || item.action === "update");
+    const run: SyncRun = {
+      id: randomUUID(),
+      profileId: profile.id,
+      profileName: profile.name,
+      direction: profile.direction,
+      status: "running",
+      startedAt: new Date().toISOString(),
+      totalFiles: runnable.length,
+      completedFiles: 0,
+      failedFiles: 0,
+      canceledFiles: 0,
+      errors: []
+    };
+    const active: ActiveSyncRun = {
+      canceled: false,
+      sender,
+      // Prefer the already-open tab for a session so a sync appears in the
+      // familiar Transfers panel. A virtual id still lets the Operation Center
+      // show work for sessions that are not currently open.
+      transferTabId: this.getConnectedTransferTabId(profile.sessionId) ?? `sync:${run.id}`,
+      transferStatuses: new Map()
+    };
+    this.activeSyncRuns.set(run.id, active);
+    this.persistSyncRun(run, sender);
+    if (runnable.length === 0) {
+      run.status = "succeeded";
+      run.finishedAt = new Date().toISOString();
+      this.persistSyncRun(run, sender);
+      this.activeSyncRuns.delete(run.id);
+      return run;
+    }
+
+    const session = await this.sessionStore.getById(profile.sessionId);
+    if (!session) {
+      run.status = "failed";
+      run.finishedAt = new Date().toISOString();
+      run.failedFiles = runnable.length;
+      run.errors.push({
+        relativePath: "",
+        message: "The session for this sync profile no longer exists."
+      });
+      this.persistSyncRun(run, sender);
+      this.activeSyncRuns.delete(run.id);
+      return run;
+    }
+    try {
+      for (const item of runnable) {
+        this.emitSyncTransfer(active, run, profile, item, "queued", 0, "Queued for sync");
+      }
+      const connection = await this.connectRunbookClient(session, sender);
+      active.client = connection.client;
+      active.jumpClient = connection.jumpClient;
+      let nextIndex = 0;
+      const workerCount = Math.min(32, runnable.length);
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (!active.canceled) {
+          const index = nextIndex;
+          nextIndex += 1;
+          const item = runnable[index];
+          if (!item) return;
+          try {
+            await this.runSyncPlanItem(active, run, profile, item);
+            if (active.canceled) {
+              run.canceledFiles += 1;
+              this.emitSyncTransfer(active, run, profile, item, "canceled", 0, "Sync canceled");
+            } else {
+              run.completedFiles += 1;
+              this.emitSyncTransfer(active, run, profile, item, "completed", item.size, "Sync completed");
+            }
+          } catch (error) {
+            if (active.canceled || error instanceof TransferCanceledError) {
+              run.canceledFiles += 1;
+              this.emitSyncTransfer(active, run, profile, item, "canceled", 0, "Sync canceled");
+            } else {
+              run.failedFiles += 1;
+              const message = toSafeRunbookError(error);
+              run.errors.push({ relativePath: item.relativePath, message });
+              this.emitSyncTransfer(active, run, profile, item, "failed", 0, message);
+            }
+          }
+          this.persistSyncRun(run, sender);
+        }
+      });
+      await Promise.all(workers);
+      const unstarted = runnable.length - run.completedFiles - run.failedFiles - run.canceledFiles;
+      if (active.canceled && unstarted > 0) {
+        run.canceledFiles += unstarted;
+      }
+      if (active.canceled) {
+        this.completePendingSyncTransfers(active, run, profile, runnable, "canceled", "Sync canceled");
+      }
+      run.status = active.canceled
+        ? "canceled"
+        : run.failedFiles > 0
+          ? "failed"
+          : "succeeded";
+    } catch (error) {
+      run.status = active.canceled ? "canceled" : "failed";
+      const message = toSafeRunbookError(error);
+      const unfinishedItems = runnable.filter((item) => {
+        const current = active.transferStatuses.get(item.relativePath);
+        return current !== "completed" && current !== "failed" && current !== "canceled";
+      });
+      if (active.canceled) {
+        run.canceledFiles += unfinishedItems.length;
+      } else {
+        run.failedFiles += unfinishedItems.length;
+      }
+      run.errors.push({ relativePath: "", message });
+      this.completePendingSyncTransfers(
+        active,
+        run,
+        profile,
+        runnable,
+        active.canceled ? "canceled" : "failed",
+        active.canceled ? "Sync canceled" : message
+      );
+    } finally {
+      run.finishedAt = new Date().toISOString();
+      active.client?.end();
+      active.jumpClient?.end();
+      this.persistSyncRun(run, sender);
+      this.activeSyncRuns.delete(run.id);
+    }
+    return run;
+  }
+
+  async cancelSync(runId: string): Promise<boolean> {
+    const active = this.activeSyncRuns.get(runId);
+    if (!active) return false;
+    active.canceled = true;
+    active.client?.end();
+    active.jumpClient?.end();
+    return true;
+  }
+
+  private persistSyncRun(run: SyncRun, sender: WebContents): void {
+    this.operationsStore?.saveSyncRun(run);
+    this.emitOperations(sender, { type: "syncRun", run });
+  }
+
+  private async runSyncPlanItem(
+    active: ActiveSyncRun,
+    run: SyncRun,
+    profile: SyncProfile,
+    item: SyncPlanItem
+  ): Promise<void> {
+    if (active.canceled || !active.client) {
+      throw new TransferCanceledError();
+    }
+    this.emitSyncTransfer(active, run, profile, item, "running", 0, "Syncing");
+    const sftp = await this.openSftpChannelForClient(active.client);
+    try {
+      if (active.canceled) throw new TransferCanceledError();
+      if (profile.direction === "upload") {
+        await this.ensureRemoteDirectoryTreeForSftp(sftp, posixPath.dirname(item.remotePath));
+        await this.fastPut(sftp, item.localPath, item.remotePath, () => active.canceled);
+      } else {
+        await mkdirLocalDirectory(dirnamePath(item.localPath), { recursive: true });
+        await this.fastGet(sftp, item.remotePath, item.localPath, () => active.canceled);
+      }
+    } finally {
+      safeEndSftp(sftp);
+    }
+  }
+
+  private getConnectedTransferTabId(sessionId: string): string | undefined {
+    for (const connection of this.connections.values()) {
+      if (!connection.closed && connection.sessionId === sessionId) {
+        return connection.tabId;
+      }
+    }
+    return undefined;
+  }
+
+  private emitSyncTransfer(
+    active: ActiveSyncRun,
+    run: SyncRun,
+    profile: SyncProfile,
+    item: SyncPlanItem,
+    status: SftpTransferEvent["status"],
+    transferredBytes: number,
+    message: string
+  ): void {
+    active.transferStatuses.set(item.relativePath, status);
+    this.emitTransferToSender(
+      active.sender,
+      this.createTransferEvent({
+        tabId: active.transferTabId,
+        sessionId: profile.sessionId,
+        syncRunId: run.id,
+        transferId: `sync:${run.id}:${item.relativePath}`,
+        direction: profile.direction,
+        status,
+        name: item.relativePath,
+        localPath: item.localPath,
+        remotePath: item.remotePath,
+        transferredBytes,
+        totalBytes: item.size,
+        message: `${profile.name}: ${message}`
+      })
+    );
+  }
+
+  private completePendingSyncTransfers(
+    active: ActiveSyncRun,
+    run: SyncRun,
+    profile: SyncProfile,
+    items: SyncPlanItem[],
+    status: "failed" | "canceled",
+    message: string
+  ): void {
+    for (const item of items) {
+      const current = active.transferStatuses.get(item.relativePath);
+      if (current === "completed" || current === "failed" || current === "canceled") {
+        continue;
+      }
+      this.emitSyncTransfer(active, run, profile, item, status, 0, message);
+    }
+  }
+
+  private async scanLocalSyncTree(
+    root: string,
+    excludePatterns: string[]
+  ): Promise<Map<string, SyncFileMetadata>> {
+    const files = new Map<string, SyncFileMetadata>();
+    const visit = async (directory: string, relativeDirectory: string): Promise<void> => {
+      const entries = await readLocalDirectory(directory, { withFileTypes: true });
+      for (const entry of entries) {
+        const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
+        if (matchesSyncExclude(relativePath, excludePatterns)) continue;
+        const absolutePath = joinPath(directory, entry.name);
+        if (entry.isDirectory()) {
+          await visit(absolutePath, relativePath);
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        const details = await statLocalFile(absolutePath);
+        files.set(relativePath, { size: details.size, modifiedTimeMs: details.mtimeMs });
+        if (files.size > 50_000) throw new Error("Sync preview is limited to 50,000 files.");
+      }
+    };
+    await visit(root, "");
+    return files;
+  }
+
+  private async scanRemoteSyncTree(
+    sftp: SFTPWrapper,
+    root: string,
+    excludePatterns: string[]
+  ): Promise<Map<string, SyncFileMetadata>> {
+    const files = new Map<string, SyncFileMetadata>();
+    const visit = async (directory: string, relativeDirectory: string): Promise<void> => {
+      const rows = await this.readDirectory(sftp, directory);
+      for (const row of rows) {
+        const name = row.filename?.trim();
+        if (!name || name === "." || name === "..") continue;
+        const relativePath = relativeDirectory ? `${relativeDirectory}/${name}` : name;
+        if (matchesSyncExclude(relativePath, excludePatterns)) continue;
+        const remotePath = posixPath.join(directory, name);
+        const kind = detectSftpEntryKind(row.attrs);
+        if (kind === "directory") {
+          await visit(remotePath, relativePath);
+          continue;
+        }
+        if (kind !== "file") continue;
+        files.set(relativePath, {
+          size: typeof row.attrs.size === "number" ? Math.max(0, row.attrs.size) : 0,
+          modifiedTimeMs: typeof row.attrs.mtime === "number" ? row.attrs.mtime * 1000 : null
+        });
+        if (files.size > 50_000) throw new Error("Sync preview is limited to 50,000 files.");
+      }
+    };
+    try {
+      await visit(root, "");
+    } catch (error) {
+      if (!isSftpNotFoundError(error)) throw error;
+    }
+    return files;
+  }
+
+  private toSyncPlanItem(
+    profile: SyncProfile,
+    localRoot: string,
+    remoteRoot: string,
+    relativePath: string,
+    local: SyncFileMetadata | undefined,
+    remote: SyncFileMetadata | undefined
+  ): SyncPlanItem {
+    const source = profile.direction === "upload" ? local : remote;
+    const target = profile.direction === "upload" ? remote : local;
+    const localPath = joinPath(localRoot, ...relativePath.split("/"));
+    const remotePath = posixPath.join(remoteRoot, relativePath);
+    if (!source) {
+      return { relativePath, action: "preserve", reason: "Target-only file is preserved; sync never deletes extras.", localPath, remotePath, size: target?.size ?? 0 };
+    }
+    if (!target) {
+      return { relativePath, action: "create", reason: "Missing on target.", localPath, remotePath, size: source.size };
+    }
+    const sourceTime = source.modifiedTimeMs;
+    const targetTime = target.modifiedTimeMs;
+    if (source.size === target.size && sourceTime !== null && targetTime !== null && Math.abs(sourceTime - targetTime) <= 2_000) {
+      return { relativePath, action: "skip", reason: "Size and modification time match.", localPath, remotePath, size: source.size };
+    }
+    if (sourceTime !== null && targetTime !== null && sourceTime > targetTime + 2_000) {
+      return { relativePath, action: "update", reason: "Source is newer than target.", localPath, remotePath, size: source.size };
+    }
+    return { relativePath, action: "conflict", reason: "Target is newer or timestamps are unreliable; left unchanged.", localPath, remotePath, size: source.size };
+  }
+
+  private async openSftpChannelForClient(client: Client): Promise<SFTPWrapper> {
+    return new Promise<SFTPWrapper>((resolve, reject) => {
+      client.sftp((error, sftp) => {
+        if (error) reject(error); else resolve(sftp);
+      });
+    });
+  }
+
+  private async ensureRemoteDirectoryTreeForSftp(sftp: SFTPWrapper, directory: string): Promise<void> {
+    const normalized = normalizeRemotePath(directory);
+    if (!normalized || normalized === "." || normalized === "/") return;
+    const segments = normalized.split("/").filter(Boolean);
+    let current = normalized.startsWith("/") ? "/" : ".";
+    for (const segment of segments) {
+      current = posixPath.join(current, segment);
+      await this.mkdir(sftp, current);
+    }
+  }
+
+  private async fastPut(
+    sftp: SFTPWrapper,
+    localPath: string,
+    remotePath: string,
+    isCanceled: () => boolean
+  ): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      sftp.fastPut(localPath, remotePath, (error) => {
+        if (isCanceled()) reject(new TransferCanceledError());
+        else if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  private async fastGet(
+    sftp: SFTPWrapper,
+    remotePath: string,
+    localPath: string,
+    isCanceled: () => boolean
+  ): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      sftp.fastGet(remotePath, localPath, (error) => {
+        if (isCanceled()) reject(new TransferCanceledError());
+        else if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  async collectPinnedHealth(sessionId: string, sender: WebContents): Promise<HealthObservation> {
+    const session = await this.sessionStore.getById(sessionId);
+    const collectedAt = new Date().toISOString();
+    const needsAttention = (reason: string): HealthObservation => {
+      const observation: HealthObservation = {
+        sessionId,
+        collectedAt,
+        cpuUsagePercent: 0,
+        memoryUsagePercent: 0,
+        diskUsagePercent: 0,
+        load1: 0,
+        failedServices: 0,
+        connectionState: "needsAttention"
+      };
+      this.persistHealthObservation(observation, sender);
+      this.emit(sender, {
+        tabId: `fleet:${sessionId}`,
+        type: "output",
+        data: `[Fleet Health] ${reason}\r\n`
+      });
+      return observation;
+    };
+    if (!session) return needsAttention("Session no longer exists.");
+    if (!this.operationsStore) return needsAttention("Operations storage is unavailable.");
+    if (session.authType === "keyboardInteractive") {
+      return needsAttention("Interactive MFA requires a manual connection.");
+    }
+    if (!(await this.isSessionPreparedForBackgroundMonitor(session))) {
+      return needsAttention("Host trust or credentials require a manual connection.");
+    }
+    try {
+      const connection = await this.connectRunbookClient(session, sender, {
+        allowHostKeyPrompt: false,
+        allowInteractive: false
+      });
+      try {
+        const [healthRaw, processRaw] = await Promise.all([
+          this.executeRemoteCommand(connection.client, SERVER_HEALTH_COMMAND, 10_000),
+          this.executeRemoteCommand(connection.client, SERVER_PROCESS_COMMAND, 10_000)
+        ]);
+        const health = parseServerHealthOutput(healthRaw);
+        const processes = parseServerProcessOutput(processRaw);
+        const observation: HealthObservation = {
+          sessionId: session.id,
+          collectedAt,
+          // A short probe has no preceding CPU-tick sample. Load/core is a
+          // stable, bounded proxy until the next persisted observation.
+          cpuUsagePercent: toBoundedPercent(
+            health.cpuCoreCount && health.cpuCoreCount > 0
+              ? (health.load1 / health.cpuCoreCount) * 100
+              : 0
+          ),
+          memoryUsagePercent: toBoundedPercent(
+            health.memoryTotalBytes > 0
+              ? (health.memoryUsedBytes / health.memoryTotalBytes) * 100
+              : 0
+          ),
+          diskUsagePercent: toBoundedPercent(
+            health.diskTotalBytes > 0 ? (health.diskUsedBytes / health.diskTotalBytes) * 100 : 0
+          ),
+          load1: Number.isFinite(health.load1) ? Math.max(0, health.load1) : 0,
+          failedServices: processes.failedServices.length,
+          connectionState: "healthy"
+        };
+        this.persistHealthObservation(observation, sender);
+        return observation;
+      } finally {
+        connection.client.end();
+        connection.jumpClient?.end();
+      }
+    } catch {
+      const observation: HealthObservation = {
+        sessionId: session.id,
+        collectedAt,
+        cpuUsagePercent: 0,
+        memoryUsagePercent: 0,
+        diskUsagePercent: 0,
+        load1: 0,
+        failedServices: 0,
+        connectionState: "unreachable"
+      };
+      this.persistHealthObservation(observation, sender);
+      return observation;
+    }
+  }
+
+  private async isSessionPreparedForBackgroundMonitor(session: SessionRecord): Promise<boolean> {
+    const isTrusted = (candidate: SessionRecord): boolean =>
+      Boolean(this.operationsStore?.getTrustedHostKey(`${candidate.host.trim().toLowerCase()}:${candidate.port}`));
+    if (!isTrusted(session)) return false;
+    if (session.jumpSessionId) {
+      const jumpSession = await this.sessionStore.getById(session.jumpSessionId);
+      if (!jumpSession || jumpSession.jumpSessionId || !isTrusted(jumpSession)) return false;
+    }
+    if (session.authType === "password") {
+      // The secret remains in the OS credential vault and is read only when
+      // the monitor opens its short-lived connection.
+      return Boolean(await this.credentialStore.getSessionSecret(session.id));
+    }
+    if (session.authType === "agent") {
+      return process.platform === "win32" || Boolean(process.env.SSH_AUTH_SOCK?.trim());
+    }
+    if (session.authType === "privateKey") {
+      if (!session.privateKeyPath) return false;
+      try {
+        const details = await statLocalFile(expandHomePath(session.privateKeyPath));
+        return details.isFile();
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  private persistHealthObservation(observation: HealthObservation, sender: WebContents): void {
+    const incident = this.operationsStore?.recordHealthObservation(observation);
+    this.emitOperations(sender, { type: "healthObservation", observation });
+    if (incident) {
+      this.emitOperations(sender, { type: "healthIncident", incident });
+    }
+  }
+
+  hasActiveTransfers(): boolean {
+    return this.activeUploadTransfers.size > 0 || this.activeDownloadTransfers.size > 0;
   }
 
   async getServerHealth(tabId: string): Promise<ServerHealthSnapshot> {
@@ -2343,7 +3198,13 @@ export class TerminalService {
     }
   }
 
-  private async buildConnectConfig(session: SessionRecord): Promise<ConnectConfig> {
+  private async buildConnectConfigForPrompt(
+    tabId: string,
+    sender: WebContents | null,
+    session: SessionRecord,
+    isJumpHost: boolean,
+    options?: { allowHostKeyPrompt?: boolean; allowInteractive?: boolean }
+  ): Promise<ConnectConfig> {
     const config: ConnectConfig = {
       host: session.host,
       port: session.port,
@@ -2352,6 +3213,29 @@ export class TerminalService {
       keepaliveCountMax: 3,
       readyTimeout: 15_000
     };
+
+    if (sender) {
+      config.hostVerifier = (key: Buffer, verify: (allowed: boolean) => void) => {
+        const verification = options?.allowHostKeyPrompt === false
+          ? this.verifyKnownHostKey(session.host, session.port, key)
+          : this.verifyHostKey(tabId, sender, session.host, session.port, key, isJumpHost);
+        void verification.then(verify, () => verify(false));
+      };
+      config.tryKeyboard = options?.allowInteractive !== false;
+    }
+
+    if (session.authType === "agent") {
+      const agent = process.platform === "win32" ? "pageant" : process.env.SSH_AUTH_SOCK?.trim();
+      if (!agent) {
+        throw new Error("SSH agent is unavailable. Start ssh-agent or configure an SSH_AUTH_SOCK socket.");
+      }
+      config.agent = agent;
+      return config;
+    }
+
+    if (session.authType === "keyboardInteractive") {
+      return config;
+    }
 
     if (session.authType === "password") {
       const password = await this.credentialStore.getSessionSecret(session.id);
@@ -2374,6 +3258,185 @@ export class TerminalService {
     }
 
     return config;
+  }
+
+  async respondHostKeyPrompt(
+    tabId: string,
+    promptId: string,
+    decision: "trust" | "replace" | "reject"
+  ): Promise<void> {
+    const pending = this.pendingHostKeyPrompts.get(promptId);
+    if (!pending || pending.tabId !== tabId) return;
+    this.pendingHostKeyPrompts.delete(promptId);
+    clearTimeout(pending.timeout);
+    pending.resolve(decision);
+  }
+
+  async respondKeyboardInteractivePrompt(
+    tabId: string,
+    promptId: string,
+    responses: string[]
+  ): Promise<void> {
+    const pending = this.pendingKeyboardPrompts.get(promptId);
+    if (!pending || pending.tabId !== tabId) return;
+    this.pendingKeyboardPrompts.delete(promptId);
+    clearTimeout(pending.timeout);
+    pending.resolve(Array.isArray(responses) ? responses.map((value) => String(value ?? "").slice(0, 2048)) : []);
+  }
+
+  private clearPendingTerminalPrompts(tabId: string): void {
+    for (const [promptId, pending] of this.pendingHostKeyPrompts) {
+      if (pending.tabId !== tabId) continue;
+      this.pendingHostKeyPrompts.delete(promptId);
+      clearTimeout(pending.timeout);
+      pending.resolve("reject");
+    }
+    for (const [promptId, pending] of this.pendingKeyboardPrompts) {
+      if (pending.tabId !== tabId) continue;
+      this.pendingKeyboardPrompts.delete(promptId);
+      clearTimeout(pending.timeout);
+      pending.resolve([]);
+    }
+  }
+
+  private async resolveJumpSession(session: SessionRecord): Promise<SessionRecord> {
+    const jumpId = session.jumpSessionId?.trim();
+    if (!jumpId || jumpId === session.id) {
+      throw new Error("A session cannot use itself as its SSH jump host.");
+    }
+    const jumpSession = await this.sessionStore.getById(jumpId);
+    if (!jumpSession) {
+      throw new Error("The configured SSH jump host session no longer exists.");
+    }
+    if (jumpSession.jumpSessionId) {
+      throw new Error("Only one SSH jump host is supported.");
+    }
+    return jumpSession;
+  }
+
+  private async connectAuxiliaryClient(
+    tabId: string,
+    sender: WebContents,
+    session: SessionRecord,
+    isJumpHost: boolean,
+    options?: { allowHostKeyPrompt?: boolean; allowInteractive?: boolean }
+  ): Promise<Client> {
+    const config = await this.buildConnectConfigForPrompt(tabId, sender, session, isJumpHost, options);
+    const client = new Client();
+    if (options?.allowInteractive !== false) {
+      this.attachKeyboardInteractiveHandler(client, tabId, sender);
+    }
+    return new Promise<Client>((resolve, reject) => {
+      const onReady = () => {
+        cleanup();
+        resolve(client);
+      };
+      const onError = (error: Error) => {
+        cleanup();
+        client.end();
+        reject(error);
+      };
+      const cleanup = () => {
+        client.removeListener("ready", onReady);
+        client.removeListener("error", onError);
+      };
+      client.once("ready", onReady);
+      client.once("error", onError);
+      client.connect(config);
+    });
+  }
+
+  private async forwardThroughJump(client: Client, host: string, port: number): Promise<ClientChannel> {
+    return new Promise<ClientChannel>((resolve, reject) => {
+      client.forwardOut("127.0.0.1", 0, host, port, (error, stream) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stream);
+      });
+    });
+  }
+
+  private attachKeyboardInteractiveHandler(client: Client, tabId: string, sender: WebContents): void {
+    client.on("keyboard-interactive", (name, instructions, _language, prompts, finish) => {
+      void this.requestKeyboardInteractive(tabId, sender, name, instructions, prompts).then(
+        (responses) => finish(responses),
+        () => finish([])
+      );
+    });
+  }
+
+  private async verifyHostKey(
+    tabId: string,
+    sender: WebContents,
+    host: string,
+    port: number,
+    key: Buffer,
+    isJumpHost: boolean
+  ): Promise<boolean> {
+    const normalizedHost = host.trim();
+    const endpoint = `${normalizedHost.toLowerCase()}:${port}`;
+    const publicKeyBase64 = key.toString("base64");
+    const fingerprint = `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/g, "")}`;
+    const stored = this.operationsStore?.getTrustedHostKey(endpoint) ?? this.transientTrustedHostKeys.get(endpoint);
+    if (stored?.publicKeyBase64 === publicKeyBase64) return true;
+    const changed = Boolean(stored);
+    const decision = await this.requestHostKeyDecision(tabId, sender, {
+      host: normalizedHost, port, fingerprint, changed, isJumpHost
+    });
+    const accepted = changed ? decision === "replace" : decision === "trust";
+    if (!accepted) return false;
+    if (this.operationsStore) {
+      this.operationsStore.trustHostKey({ host: normalizedHost, port, fingerprint, publicKeyBase64 });
+    } else {
+      this.transientTrustedHostKeys.set(endpoint, { fingerprint, publicKeyBase64 });
+    }
+    return true;
+  }
+
+  private async verifyKnownHostKey(host: string, port: number, key: Buffer): Promise<boolean> {
+    const endpoint = `${host.trim().toLowerCase()}:${port}`;
+    const stored = this.operationsStore?.getTrustedHostKey(endpoint) ?? this.transientTrustedHostKeys.get(endpoint);
+    return Boolean(stored && stored.publicKeyBase64 === key.toString("base64"));
+  }
+
+  private requestHostKeyDecision(
+    tabId: string,
+    sender: WebContents,
+    payload: Omit<Extract<TerminalEvent, { type: "hostKeyPrompt" }>, "tabId" | "type" | "promptId">
+  ): Promise<"trust" | "replace" | "reject"> {
+    const promptId = randomUUID();
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingHostKeyPrompts.delete(promptId);
+        resolve("reject");
+      }, 60_000);
+      this.pendingHostKeyPrompts.set(promptId, { tabId, resolve, timeout });
+      this.emit(sender, { tabId, type: "hostKeyPrompt", promptId, ...payload });
+    });
+  }
+
+  private requestKeyboardInteractive(
+    tabId: string,
+    sender: WebContents,
+    name: string,
+    instruction: string,
+    prompts: Array<{ prompt: string; echo?: boolean }>
+  ): Promise<string[]> {
+    const promptId = randomUUID();
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingKeyboardPrompts.delete(promptId);
+        resolve([]);
+      }, 60_000);
+      this.pendingKeyboardPrompts.set(promptId, { tabId, resolve, timeout });
+      this.emit(sender, {
+        tabId, type: "keyboardInteractivePrompt", promptId,
+        name: name || "SSH authentication", instruction: instruction || "",
+        prompts: prompts.map((prompt) => ({ prompt: prompt.prompt, echo: prompt.echo === true }))
+      });
+    });
   }
 
   private async ensureSftp(connection: Ssh2TerminalConnection): Promise<SFTPWrapper> {
@@ -3181,6 +4244,12 @@ export class TerminalService {
     sender.send("terminal:event", payload);
   }
 
+  private emitOperations(sender: WebContents, payload: OperationsEvent): void {
+    if (!sender.isDestroyed()) {
+      sender.send("operations:event", payload);
+    }
+  }
+
   private async markSessionConnected(sessionId: string): Promise<void> {
     try {
       await this.sessionStore.markConnected(sessionId);
@@ -3190,14 +4259,19 @@ export class TerminalService {
   }
 
   private emitTransfer(connection: TerminalConnection, payload: SftpTransferEvent): void {
-    if (connection.sender.isDestroyed()) {
-      return;
+    this.emitTransferToSender(connection.sender, payload);
+  }
+
+  private emitTransferToSender(sender: WebContents, payload: SftpTransferEvent): void {
+    if (!sender.isDestroyed()) {
+      sender.send("sftp:transfer:event", payload);
     }
-    connection.sender.send("sftp:transfer:event", payload);
   }
 
   private createTransferEvent(payload: {
     tabId: string;
+    sessionId?: string;
+    syncRunId?: string;
     transferId: string;
     direction: SftpTransferDirection;
     status: SftpTransferEvent["status"];
@@ -3215,6 +4289,8 @@ export class TerminalService {
     );
     return {
       tabId: payload.tabId,
+      sessionId: payload.sessionId,
+      syncRunId: payload.syncRunId,
       transferId: payload.transferId,
       direction: payload.direction,
       status: payload.status,
@@ -4246,6 +5322,60 @@ function compareSftpEntries(left: SftpEntry, right: SftpEntry): number {
     return 1;
   }
   return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+}
+
+function expandRunbookCommand(
+  command: string,
+  variables: Array<{ name: string; required: boolean; defaultValue?: string }>,
+  values: Record<string, string>
+): string {
+  const normalized = command.trim();
+  if (!normalized) throw new Error("Runbook command cannot be empty.");
+  const byName = new Map(variables.map((variable) => [variable.name, variable]));
+  return normalized.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, name: string) => {
+    const definition = byName.get(name);
+    if (!definition) throw new Error(`Runbook variable "${name}" is not defined.`);
+    const value = typeof values[name] === "string" ? values[name].trim() : definition.defaultValue?.trim() ?? "";
+    if (definition.required && !value) throw new Error(`Runbook variable "${name}" is required.`);
+    return value;
+  });
+}
+
+function isPotentiallyDangerousRunbookCommand(command: string): boolean {
+  return /(?:\brm\s+-[a-z]*r|\bshutdown\b|\breboot\b|\bpoweroff\b|\bmkfs\b|\bdd\s+if=|\bchmod\s+-R|\buserdel\b)/i.test(command);
+}
+
+function matchesSyncExclude(relativePath: string, patterns: string[]): boolean {
+  const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  return patterns.some((pattern) => {
+    const candidate = pattern.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!candidate) return false;
+    const escaped = candidate
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*\//g, "(?:.*/)?")
+      .replace(/\*\*/g, ".*")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\?/g, "[^/]");
+    return new RegExp(`^${escaped}$`, "i").test(normalized);
+  });
+}
+
+function toBoundedPercent(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+}
+
+function toSafeRunbookError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/(?:password|passphrase|otp)\s*[:=]\s*\S+/gi, "credential=[redacted]")
+    .slice(0, 1000);
+}
+
+function redactSensitiveOutput(value: string): string {
+  return value
+    .replace(/((?:password|passphrase|otp|token|secret|api[_-]?key)\s*[:=]\s*)\S+/gi, "$1[redacted]")
+    .replace(/(authorization\s*:\s*bearer\s+)\S+/gi, "$1[redacted]")
+    .slice(-65_536);
 }
 
 function formatPosixMode(mode: number, fallbackKind: SftpEntryKind): string {

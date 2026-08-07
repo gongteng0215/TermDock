@@ -56,6 +56,31 @@ import type {
   RemoteOpenFilePrepareOptions,
   RemoteOpenFilePrepareResult
 } from "../shared/system";
+import type {
+  FleetHealthOverviewItem,
+  HealthIncident,
+  HealthIncidentEvent,
+  HealthIncidentEvidence,
+  HealthObservation,
+  HealthIncidentStatus,
+  HealthTrendPoint,
+  HealthTrendRange,
+  OperationsEvent,
+  PinnedMonitor,
+  Runbook,
+  RunbookRun,
+  RunbookStartInput,
+  SyncPlan,
+  SyncProfile,
+  SyncRun,
+  TrustedHostKey,
+  WorkspacePackageExportInput,
+  WorkspacePackageExportResult,
+  WorkspacePackageImportInput,
+  WorkspacePackageImportResult,
+  WorkspacePackagePreviewInput,
+  WorkspacePackagePreviewResult
+} from "../shared/operations";
 
 interface TermDockApi {
   app: {
@@ -188,6 +213,8 @@ interface TermDockApi {
   terminal: {
     connect: (tabId: string, sessionId: string) => Promise<void>;
     write: (tabId: string, data: string) => Promise<void>;
+    respondHostKeyPrompt: (tabId: string, promptId: string, decision: "trust" | "replace" | "reject") => Promise<void>;
+    respondKeyboardInteractivePrompt: (tabId: string, promptId: string, responses: string[]) => Promise<void>;
     resize: (tabId: string, cols: number, rows: number) => Promise<void>;
     getServerHealth: (tabId: string) => Promise<ServerHealthSnapshot>;
     getServerProcesses: (tabId: string) => Promise<ServerProcessSnapshot>;
@@ -243,6 +270,41 @@ interface TermDockApi {
       options?: SftpTransferRunOptions
     ) => Promise<void>;
     onTransferEvent: (listener: (event: SftpTransferEvent) => void) => () => void;
+  };
+  operations: {
+    listTrustedHostKeys: () => Promise<TrustedHostKey[]>;
+    trustHostKey: (input: Omit<TrustedHostKey, "endpoint" | "firstTrustedAt" | "lastTrustedAt">) => Promise<TrustedHostKey>;
+    removeTrustedHostKey: (endpoint: string) => Promise<void>;
+    listRunbooks: () => Promise<Runbook[]>;
+    saveRunbook: (input: Partial<Runbook>) => Promise<Runbook>;
+    removeRunbook: (id: string) => Promise<void>;
+    listRunbookRuns: (limit?: number) => Promise<RunbookRun[]>;
+    clearRunbookRuns: () => Promise<void>;
+    startRunbook: (input: RunbookStartInput) => Promise<RunbookRun>;
+    cancelRunbook: (runId: string) => Promise<boolean>;
+    onEvent: (listener: (event: OperationsEvent) => void) => () => void;
+    listSyncProfiles: () => Promise<SyncProfile[]>;
+    saveSyncProfile: (input: Partial<SyncProfile>) => Promise<SyncProfile>;
+    removeSyncProfile: (id: string) => Promise<void>;
+    listSyncRuns: (limit?: number) => Promise<SyncRun[]>;
+    clearSyncRuns: () => Promise<void>;
+    planSync: (profileId: string) => Promise<SyncPlan>;
+    startSync: (profileId: string, planId: string) => Promise<SyncRun>;
+    cancelSync: (runId: string) => Promise<boolean>;
+    listPinnedMonitors: () => Promise<PinnedMonitor[]>;
+    savePinnedMonitor: (input: PinnedMonitor) => Promise<PinnedMonitor>;
+    removePinnedMonitor: (sessionId: string) => Promise<void>;
+    listHealthObservations: (sessionId: string, limit?: number) => Promise<HealthObservation[]>;
+    listFleetHealthOverview: () => Promise<FleetHealthOverviewItem[]>;
+    listHealthTrend: (sessionId: string, range: HealthTrendRange) => Promise<HealthTrendPoint[]>;
+    listHealthIncidents: (status?: HealthIncidentStatus, limit?: number) => Promise<HealthIncident[]>;
+    listHealthIncidentEvents: (incidentId: string) => Promise<HealthIncidentEvent[]>;
+    acknowledgeHealthIncident: (incidentId: string) => Promise<HealthIncident | null>;
+    exportHealthIncidentEvidence: (incidentId: string) => Promise<HealthIncidentEvidence>;
+    collectPinnedHealth: (sessionId: string) => Promise<HealthObservation>;
+    exportWorkspace: (input: WorkspacePackageExportInput) => Promise<WorkspacePackageExportResult>;
+    previewWorkspace: (input: WorkspacePackagePreviewInput) => Promise<WorkspacePackagePreviewResult>;
+    importWorkspace: (input: WorkspacePackageImportInput) => Promise<WorkspacePackageImportResult>;
   };
   storage: {
     getTransferHistory: () => Promise<PersistedTransferHistoryItem[]>;

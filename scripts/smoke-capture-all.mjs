@@ -260,6 +260,24 @@ async function isVisible(locator) {
   return (await locator.count()) > 0 && (await locator.first().isVisible());
 }
 
+async function trustLocalSshFixtureIfPrompted(page, timeout = 5_000) {
+  const trustDialog = page
+    .locator(".modal.app-dialog", { hasText: "Trust SSH Host" })
+    .first();
+  try {
+    await trustDialog.waitFor({ state: "visible", timeout });
+  } catch {
+    return false;
+  }
+  const fingerprint = await trustDialog.locator(".app-dialog__textarea--readonly").first().inputValue();
+  if (!fingerprint.includes("SHA-256 fingerprint")) {
+    throw new Error("Trust SSH Host dialog did not include the SHA-256 fingerprint.");
+  }
+  await trustDialog.getByRole("button", { name: "Trust Host" }).click();
+  await trustDialog.waitFor({ state: "hidden", timeout: 5_000 });
+  return true;
+}
+
 function cssStringLiteral(value) {
   return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
@@ -1417,6 +1435,7 @@ async function main() {
           description: "first opened terminal tab"
         }
       );
+      const trustedLocalFixture = await trustLocalSshFixtureIfPrompted(page);
 
       await sessionButton.click();
       await page.waitForTimeout(180);
@@ -1433,7 +1452,7 @@ async function main() {
           `dedupe failed: afterFirst=${afterFirstOpen}, afterSecond=${afterSecondOpen}`
         );
       }
-      return `before=${before}, afterFirst=${afterFirstOpen}, afterSecond=${afterSecondOpen}, shot=${fileName}`;
+      return `before=${before}, afterFirst=${afterFirstOpen}, afterSecond=${afterSecondOpen}, trustedLocalFixture=${trustedLocalFixture}, shot=${fileName}`;
     });
 
     await runStep("live SSH session connected", async () => {

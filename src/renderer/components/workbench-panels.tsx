@@ -75,8 +75,18 @@ interface ServerHealthInspectorSectionProps {
   healthyLabel: string;
   isConnected: boolean;
   isDetailOpen: boolean;
+  isMonitorPinned: boolean;
+  monitorCheckBusy: boolean;
+  monitorPinBusy: boolean;
+  monitorStatusLabel: string | null;
+  monitorStatusUpdatedLabel: string | null;
+  onCheckMonitor: () => void;
+  onOpenFleet: () => void;
+  onPinMonitor: () => void;
+  checkMonitorDisabled: boolean;
   onRefresh: () => void;
   onToggleDetail: () => void;
+  pinMonitorDisabled: boolean;
   refreshDisabled: boolean;
   toggleDisabled: boolean;
 }
@@ -715,8 +725,18 @@ export function ServerHealthInspectorSection({
   healthyLabel,
   isConnected,
   isDetailOpen,
+  isMonitorPinned,
+  monitorCheckBusy,
+  monitorPinBusy,
+  monitorStatusLabel,
+  monitorStatusUpdatedLabel,
+  onCheckMonitor,
+  onOpenFleet,
+  onPinMonitor,
+  checkMonitorDisabled,
   onRefresh,
   onToggleDetail,
+  pinMonitorDisabled,
   refreshDisabled,
   toggleDisabled
 }: ServerHealthInspectorSectionProps) {
@@ -753,6 +773,36 @@ export function ServerHealthInspectorSection({
             >
               <UiIcon name="refresh" />
             </button>
+            {isMonitorPinned ? (
+              <button
+                aria-label="Run a Fleet Health check now"
+                className="server-health__fleet-button"
+                disabled={checkMonitorDisabled || monitorCheckBusy}
+                onClick={onCheckMonitor}
+                title="Run one controlled Fleet Health check now."
+                type="button"
+              >
+                {monitorCheckBusy ? "Checking..." : "Check"}
+              </button>
+            ) : null}
+            <button
+              aria-label={isMonitorPinned ? "Open Fleet Health" : "Pin this session for Fleet Health monitoring"}
+              className={
+                isMonitorPinned
+                  ? "server-health__fleet-button is-pinned"
+                  : "server-health__fleet-button"
+              }
+              disabled={pinMonitorDisabled || monitorPinBusy}
+              onClick={isMonitorPinned ? onOpenFleet : onPinMonitor}
+              title={
+                isMonitorPinned
+                  ? "This session is fixed in Fleet Health. Open Fleet Health."
+                  : "Pin this session for controlled Fleet Health checks every 60 seconds."
+              }
+              type="button"
+            >
+              {monitorPinBusy ? "Pinning…" : isMonitorPinned ? "Pinned" : "Pin monitor"}
+            </button>
             <span
               className={
                 hasAlert
@@ -776,6 +826,13 @@ export function ServerHealthInspectorSection({
       </div>
       {activeTabTitle ? (
         <>
+          {isMonitorPinned ? (
+            <div className="server-health__fleet-summary">
+              <span>Fleet monitor</span>
+              <strong>{monitorStatusLabel ?? "Awaiting first check"}</strong>
+              {monitorStatusUpdatedLabel ? <time>{monitorStatusUpdatedLabel}</time> : null}
+            </div>
+          ) : null}
           <div className="server-health__target-row">
             <span className="server-health__target" title={activeTabTitle}>{activeTabTitle}</span>
             <span

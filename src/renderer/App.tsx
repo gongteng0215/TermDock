@@ -52,6 +52,7 @@ import type {
   PortForwardRecord,
   TerminalConnectionStatus
 } from "../shared/terminal";
+import type { FleetHealthOverviewItem, PinnedMonitor } from "../shared/operations";
 import { formatSshConnectionError } from "../shared/ssh-error-diagnostics";
 import type { RemoteOpenFileAutoSyncEvent } from "../shared/system";
 import { PrivilegedUploadRecoveryActions } from "./components/privileged-upload-recovery-actions";
@@ -97,6 +98,7 @@ import {
   type CockpitDockId
 } from "./components/cockpit-workbench-shell";
 import { WorkbenchRootFrame } from "./components/workbench-root-frame";
+import { OperationsHub } from "./components/operations-hub";
 import { type ServerHealthDetailTab } from "./components/server-health-detail-modal";
 import { buildSettingsCompositeProps } from "./settings-composite-props";
 import {
@@ -4930,6 +4932,16 @@ export function App() {
   const terminalApi = bridge?.terminal ?? null;
   const sftpApi = bridge?.sftp ?? null;
   const storageApi = bridge?.storage ?? null;
+  const operationsApi = bridge?.operations ?? null;
+  const [isOperationsHubOpen, setIsOperationsHubOpen] = useState(false);
+  const [pinnedMonitorSessionIds, setPinnedMonitorSessionIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [fleetHealthOverviewBySession, setFleetHealthOverviewBySession] = useState<
+    Record<string, FleetHealthOverviewItem | undefined>
+  >({});
+  const [monitorCheckBusy, setMonitorCheckBusy] = useState(false);
+  const [monitorPinBusy, setMonitorPinBusy] = useState(false);
   const appPrefsSqliteHydratedRef = useRef(false);
   const dualWriteAppPreference = useCallback(
     (key: string, value: unknown) => {
@@ -5947,6 +5959,112 @@ export function App() {
       ? transferDockNotice
       : null;
   const activeSessionId = activeTerminalTab?.sessionId ?? null;
+  const handlePinnedMonitorChange = useCallback((monitor: PinnedMonitor) => {
+    setPinnedMonitorSessionIds((previous) => {
+      const next = new Set(previous);
+      if (monitor.enabled) {
+        next.add(monitor.sessionId);
+      } else {
+        next.delete(monitor.sessionId);
+      }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    if (!operationsApi) {
+      setPinnedMonitorSessionIds(new Set());
+      setFleetHealthOverviewBySession({});
+      return undefined;
+    }
+    void Promise.all([
+      operationsApi.listPinnedMonitors(),
+      operationsApi.listFleetHealthOverview()
+    ])
+      .then(([monitors, overview]) => {
+        if (!cancelled) {
+          setPinnedMonitorSessionIds(
+            new Set(monitors.filter((monitor) => monitor.enabled).map((monitor) => monitor.sessionId))
+          );
+          setFleetHealthOverviewBySession(
+            Object.fromEntries(overview.map((item) => [item.sessionId, item]))
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [operationsApi]);
+  const handlePinActiveSessionMonitor = useCallback(async () => {
+    if (!operationsApi || !activeSessionId) return;
+    setMonitorPinBusy(true);
+    try {
+      const existing = (await operationsApi.listPinnedMonitors()).find(
+        (monitor) => monitor.sessionId === activeSessionId
+      );
+      const saved = await operationsApi.savePinnedMonitor({
+        ...existing,
+        sessionId: activeSessionId,
+        enabled: true,
+        intervalSeconds: existing?.intervalSeconds ?? 60,
+        updatedAt: new Date().toISOString()
+      });
+      handlePinnedMonitorChange(saved);
+    } catch (error) {
+      setError(
+        `Could not pin this session for Fleet Health. ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      setMonitorPinBusy(false);
+    }
+  }, [activeSessionId, handlePinnedMonitorChange, operationsApi]);
+  const isActiveSessionMonitorPinned = Boolean(
+    activeSessionId && pinnedMonitorSessionIds.has(activeSessionId)
+  );
+  const handleCheckActiveSessionMonitor = useCallback(async () => {
+    if (!operationsApi || !activeSessionId || !isActiveSessionMonitorPinned) return;
+    setMonitorCheckBusy(true);
+    try {
+      await operationsApi.collectPinnedHealth(activeSessionId);
+      const overview = await operationsApi.listFleetHealthOverview();
+      setFleetHealthOverviewBySession(
+        Object.fromEntries(overview.map((item) => [item.sessionId, item]))
+      );
+    } catch (error) {
+      setError(
+        `Could not run Fleet Health check. ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    } finally {
+      setMonitorCheckBusy(false);
+    }
+  }, [activeSessionId, isActiveSessionMonitorPinned, operationsApi]);
+  const activeFleetMonitorOverview = activeSessionId
+    ? fleetHealthOverviewBySession[activeSessionId]
+    : undefined;
+  const activeFleetMonitorStatusLabel = !isActiveSessionMonitorPinned
+    ? null
+    : monitorCheckBusy
+      ? "Checking..."
+      : activeFleetMonitorOverview?.severity === "critical"
+        ? "Critical"
+        : activeFleetMonitorOverview?.severity === "warning"
+          ? "Warning"
+          : activeFleetMonitorOverview?.severity === "needsAttention"
+            ? "Needs manual connection"
+            : activeFleetMonitorOverview?.severity === "healthy"
+              ? "Healthy"
+              : "Awaiting first check";
+  const activeFleetMonitorUpdatedLabel =
+    activeFleetMonitorOverview?.lastObservation?.collectedAt && !monitorCheckBusy
+      ? `checked ${new Date(
+          activeFleetMonitorOverview.lastObservation.collectedAt
+        ).toLocaleTimeString()}`
+      : null;
   const portForwards = activeTabId ? portForwardRecordsByTab[activeTabId] ?? [] : [];
   const portForwardStatusMessage = activeTabId
     ? portForwardStatusMessagesByTab[activeTabId] ?? null
@@ -8672,7 +8790,9 @@ export function App() {
       let mutated = false;
       for (const event of events) {
         const tabSessionId =
-          terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.sessionId ?? "";
+          event.sessionId?.trim() ||
+          terminalTabsRef.current.find((tab) => tab.id === event.tabId)?.sessionId ||
+          "";
         const nextItem: SftpTransferItem = {
           ...event,
           createdAt: now,
@@ -10680,6 +10800,60 @@ export function App() {
     }
 
     const stopListening = terminalApi.onEvent((event) => {
+      if (event.type === "hostKeyPrompt") {
+        const location = `${event.host}:${event.port}`;
+        const role = event.isJumpHost ? "jump host" : "target host";
+        void (async () => {
+          const accepted = await showAppConfirm(
+            event.changed
+              ? "The server identity differs from the key previously saved on this device. Verify the fingerprint with your server administrator before continuing."
+              : `Verify and trust this SSH ${role} before the first connection.`,
+            {
+              title: event.changed ? "SSH Host Key Changed" : "Trust SSH Host",
+              confirmLabel: event.changed ? "Replace and Trust" : "Trust Host",
+              cancelLabel: "Reject",
+              danger: event.changed,
+              detailText: [
+                `Endpoint: ${location}`,
+                `Role: ${role}`,
+                "",
+                "SHA-256 fingerprint",
+                event.fingerprint
+              ].join("\n")
+            }
+          ).catch(() => false);
+          await terminalApi.respondHostKeyPrompt(
+            event.tabId,
+            event.promptId,
+            accepted ? (event.changed ? "replace" : "trust") : "reject"
+          );
+        })();
+        return;
+      }
+      if (event.type === "keyboardInteractivePrompt") {
+        void (async () => {
+          const responses: string[] = [];
+          for (const prompt of event.prompts) {
+            const value = await showAppPrompt(
+              `${event.name}${event.instruction ? `\n${event.instruction}` : ""}\n\n${prompt.prompt}`,
+              "",
+              {
+                title: "SSH Interactive Authentication",
+                confirmLabel: "Continue",
+                cancelLabel: "Cancel",
+                inputType: prompt.echo ? "text" : "password"
+              }
+            ).catch(() => null);
+            if (value === null) {
+              await terminalApi.respondKeyboardInteractivePrompt(event.tabId, event.promptId, []);
+              return;
+            }
+            responses.push(value);
+          }
+          await terminalApi.respondKeyboardInteractivePrompt(event.tabId, event.promptId, responses);
+        })();
+        return;
+      }
       if (event.type === "status") {
         if (event.status === "connected") {
           intentionalTabCloseIdsRef.current.delete(event.tabId);
@@ -10882,6 +11056,8 @@ export function App() {
     resetServerHealth,
     resetServerProcesses,
     restorePortForwardPresetsForTab,
+    showAppConfirm,
+    showAppPrompt,
     terminalApi,
     writeAppLog
   ]);
@@ -11337,7 +11513,9 @@ export function App() {
       let updatedCount = 0;
       let skippedCount = 0;
       let failedCount = 0;
+      let jumpWarningCount = 0;
       let firstImportedSessionId: string | null = null;
+      const importedSessionIdByAlias = new Map<string, string>();
 
       for (const candidate of parsed.candidates) {
         if (operationJobId && isOperationCenterAppJobCanceled(operationJobId)) {
@@ -11354,6 +11532,7 @@ export function App() {
         const existing = sessionByConnection.get(connectionKey) ?? null;
         if (existing && duplicateStrategy === "skip") {
           skippedCount += 1;
+          importedSessionIdByAlias.set(candidate.hostAlias, existing.id);
           continue;
         }
 
@@ -11380,6 +11559,7 @@ export function App() {
               localSessions[index] = updated;
             }
             sessionByConnection.set(connectionKey, updated);
+            importedSessionIdByAlias.set(candidate.hostAlias, updated.id);
             usedNames.add(updated.name.trim().toLowerCase());
           } catch {
             failedCount += 1;
@@ -11414,9 +11594,33 @@ export function App() {
           if (!current) {
             sessionByConnection.set(connectionKey, created);
           }
+          importedSessionIdByAlias.set(candidate.hostAlias, created.id);
           usedNames.add(created.name.trim().toLowerCase());
         } catch {
           failedCount += 1;
+        }
+      }
+
+      for (const candidate of parsed.candidates) {
+        const targetSessionId = importedSessionIdByAlias.get(candidate.hostAlias);
+        const jumpSessionId = candidate.jumpHostAlias
+          ? importedSessionIdByAlias.get(candidate.jumpHostAlias)
+          : undefined;
+        if (!candidate.jumpHostAlias || !targetSessionId) {
+          continue;
+        }
+        if (!jumpSessionId || jumpSessionId === targetSessionId) {
+          jumpWarningCount += 1;
+          continue;
+        }
+        try {
+          const updated = await sessionsApi.update(targetSessionId, { jumpSessionId });
+          const index = localSessions.findIndex((session) => session.id === updated.id);
+          if (index >= 0) {
+            localSessions[index] = updated;
+          }
+        } catch {
+          jumpWarningCount += 1;
         }
       }
 
@@ -11433,11 +11637,11 @@ export function App() {
       }
       if (operationJobId) {
         finishOperationCenterAppJob(operationJobId, "succeeded", {
-          detail: `Created ${createdCount}, updated ${updatedCount}, skipped ${skippedCount}, failed ${failedCount}, warnings ${parsed.warnings.length}.`
+          detail: `Created ${createdCount}, updated ${updatedCount}, skipped ${skippedCount}, failed ${failedCount}, warnings ${parsed.warnings.length + jumpWarningCount}.`
         });
       }
       await showAppAlert(
-        `Import completed.\nCreated: ${createdCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}\nFailed: ${failedCount}\nWarnings: ${parsed.warnings.length}`,
+        `Import completed.\nCreated: ${createdCount}\nUpdated: ${updatedCount}\nSkipped: ${skippedCount}\nFailed: ${failedCount}\nWarnings: ${parsed.warnings.length + jumpWarningCount}`,
         {
           title: "SSH Config Import"
         }
@@ -13244,6 +13448,19 @@ export function App() {
       return id;
     },
     [queueStartupCommandsForTab, terminalApi]
+  );
+
+  const saveSessionAssetFields = useCallback(
+    async (sessionId: string, patch: SessionUpdateInput): Promise<void> => {
+      if (!sessionsApi) {
+        throw new Error("Sessions bridge unavailable.");
+      }
+      const updated = await sessionsApi.update(sessionId, patch);
+      setSessions((previous) =>
+        previous.map((session) => (session.id === updated.id ? updated : session))
+      );
+    },
+    [sessionsApi]
   );
 
   useEffect(() => {
@@ -16075,6 +16292,17 @@ export function App() {
     setIsSettingsOpen(true);
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setIsOperationsHubOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const dismissFirstRunOnboarding = useCallback(() => {
     setIsFirstRunOnboardingDismissed(true);
   }, []);
@@ -18040,6 +18268,7 @@ export function App() {
             autoReconnectEnabled: connectionPreferences.autoReconnect,
             hasReconnectTarget: Boolean(activeTerminalTab),
             onDockSelect: handleCockpitDockSelect,
+            onOpenOperations: () => setIsOperationsHubOpen(true),
             onOpenSafety: handleCockpitOpenSafety,
             onReconnect: () => {
               void handleCockpitReconnect();
@@ -18797,7 +19026,17 @@ export function App() {
         healthyLabel: isActiveTabConnected ? tr("Healthy") : "Not monitoring",
         isConnected: isActiveTabConnected,
         isDetailOpen: isServerHealthDetailOpen,
+        isMonitorPinned: isActiveSessionMonitorPinned,
+        monitorCheckBusy,
+        monitorPinBusy,
+        monitorStatusLabel: activeFleetMonitorStatusLabel,
+        monitorStatusUpdatedLabel: activeFleetMonitorUpdatedLabel,
+        onCheckMonitor: () => void handleCheckActiveSessionMonitor(),
+        onOpenFleet: () => setIsOperationsHubOpen(true),
         onOpenDetail: () => setIsServerHealthDetailOpen(true),
+        onPinMonitor: () => void handlePinActiveSessionMonitor(),
+        checkMonitorDisabled: !isActiveSessionMonitorPinned || !operationsApi,
+        pinMonitorDisabled: !activeSessionId || !operationsApi,
         refreshDisabled:
           !activeTerminalTab ||
           !isActiveTabConnected ||
@@ -18812,6 +19051,7 @@ export function App() {
         hasTerminalTab: terminalTabs.length > 0,
         isMacPlatform,
         labels: i18n.topbar,
+        onOpenOperations: () => setIsOperationsHubOpen(true),
         reconnectDelaySeconds: connectionPreferences.reconnectDelaySeconds,
         workspaceProfileId: workspaceProfilePreferences.profileId,
         workspaceProfileShortLabel: selectedWorkspaceProfile.shortLabel
@@ -19038,5 +19278,36 @@ export function App() {
     })
   });
 
-  return <WorkbenchRootFrame {...workbenchRootFrameProps} />;
+  return (
+    <>
+      <WorkbenchRootFrame {...workbenchRootFrameProps} />
+      <OperationsHub
+        onClose={() => setIsOperationsHubOpen(false)}
+        onRequestOpen={() => setIsOperationsHubOpen(true)}
+        onError={setError}
+        onOpenSession={(session) => {
+          setSelectedSessionId(session.id);
+          setSelectedSessionIds([session.id]);
+          setActiveSessionGroupKey(session.groupId?.trim() || null);
+          openTerminalTab(session);
+          setIsOperationsHubOpen(false);
+        }}
+        onOpenSettings={() => {
+          setIsOperationsHubOpen(false);
+          openSettingsPanel("connection");
+        }}
+        onReloadSessions={async () => {
+          if (!sessionsApi) {
+            throw new Error("Sessions bridge unavailable.");
+          }
+          setSessions(await sessionsApi.list());
+        }}
+        onPinnedMonitorChange={handlePinnedMonitorChange}
+        onSaveSession={saveSessionAssetFields}
+        open={isOperationsHubOpen}
+        selectedSessionIds={selectedSessionIds}
+        sessions={sessions}
+      />
+    </>
+  );
 }

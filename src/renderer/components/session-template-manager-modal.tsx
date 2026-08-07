@@ -1,6 +1,5 @@
 import type { FormEvent } from "react";
-
-type SessionAuthType = "password" | "privateKey";
+import type { SessionAuthType } from "../../shared/session";
 
 interface SessionTemplateEnvVarView {
   id: string;
@@ -199,8 +198,10 @@ export function SessionTemplateManagerModal({
                   }
                   value={draft.authType}
                 >
-                  <option value="password">Password</option>
-                  <option value="privateKey">Private Key</option>
+              <option value="password">Password</option>
+              <option value="privateKey">Private Key</option>
+              <option value="agent">SSH Agent</option>
+              <option value="keyboardInteractive">Keyboard Interactive / MFA</option>
                 </select>
               </label>
             </div>

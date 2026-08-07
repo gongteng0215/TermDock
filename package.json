@@ -1,6 +1,6 @@
 {
   "name": "termdock",
-  "version": "0.1.46",
+  "version": "0.1.49",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
@@ -30,6 +30,8 @@
     "test:session-sqlite-workbench-data": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-workbench-data.mjs",
     "test:session-sqlite-app-preferences": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-app-preferences.mjs",
     "test:session-sqlite-app-backup": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-session-sqlite-app-backup.mjs",
+    "test:workspace-package": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-workspace-package.mjs",
+    "test:fleet-health-incidents": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-fleet-health-incidents.mjs",
     "test:main-auto-update": "node scripts/test-main-auto-update.mjs",
     "test:main-single-instance": "node scripts/test-main-single-instance.mjs",
     "build": "pnpm run build:renderer && pnpm run build:main",

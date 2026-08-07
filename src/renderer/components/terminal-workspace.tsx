@@ -1700,10 +1700,12 @@ export function TerminalWorkspace({
         return;
       }
 
-      setTabStatus(event.tabId, { status: "error", message: event.message });
-      instance.terminal.writeln(`\r\n[error] ${event.message}`);
-      onError(event.message);
-      scheduleReconnect(event.tabId);
+      if (event.type === "error") {
+        setTabStatus(event.tabId, { status: "error", message: event.message });
+        instance.terminal.writeln(`\r\n[error] ${event.message}`);
+        onError(event.message);
+        scheduleReconnect(event.tabId);
+      }
     });
 
     return () => {

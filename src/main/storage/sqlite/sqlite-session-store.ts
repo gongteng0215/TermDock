@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import type {
   SessionAuthType,
   SessionCreateInput,
+  SessionCustomField,
+  SessionEnvironment,
   SessionRecord,
   SessionUpdateInput
 } from "../../../shared/session.js";
@@ -19,8 +21,13 @@ interface SessionRow {
   username: string;
   auth_type: SessionAuthType;
   private_key_path: string | null;
+  jump_session_id: string | null;
   group_id: string | null;
   remark: string | null;
+  environment: SessionEnvironment | null;
+  tags_json: string | null;
+  owner: string | null;
+  custom_fields_json: string | null;
   favorite: number;
   has_secret: number;
   last_connected_at: string | null;
@@ -54,11 +61,28 @@ function rowToSession(row: SessionRow): SessionRecord {
   if (row.private_key_path) {
     session.privateKeyPath = row.private_key_path;
   }
+  if (row.jump_session_id) {
+    session.jumpSessionId = row.jump_session_id;
+  }
   if (row.group_id) {
     session.groupId = row.group_id;
   }
   if (row.remark) {
     session.remark = row.remark;
+  }
+  if (row.environment) {
+    session.environment = row.environment;
+  }
+  const tags = parseStringArray(row.tags_json);
+  if (tags.length > 0) {
+    session.tags = tags;
+  }
+  if (row.owner) {
+    session.owner = row.owner;
+  }
+  const customFields = parseCustomFields(row.custom_fields_json);
+  if (customFields.length > 0) {
+    session.customFields = customFields;
   }
   if (row.last_connected_at) {
     session.lastConnectedAt = row.last_connected_at;
@@ -76,8 +100,15 @@ function sessionToRow(session: SessionRecord): SessionRow {
     username: session.username,
     auth_type: session.authType,
     private_key_path: session.privateKeyPath ?? null,
+    jump_session_id: session.jumpSessionId ?? null,
     group_id: session.groupId ?? null,
     remark: session.remark ?? null,
+    environment: session.environment ?? null,
+    tags_json: session.tags?.length ? JSON.stringify(normalizeTags(session.tags)) : null,
+    owner: session.owner?.trim() || null,
+    custom_fields_json: session.customFields?.length
+      ? JSON.stringify(normalizeCustomFields(session.customFields))
+      : null,
     favorite: session.favorite ? 1 : 0,
     has_secret: session.hasSecret ? 1 : 0,
     last_connected_at: session.lastConnectedAt ?? null,
@@ -95,8 +126,13 @@ INSERT INTO sessions (
   username,
   auth_type,
   private_key_path,
+  jump_session_id,
   group_id,
   remark,
+  environment,
+  tags_json,
+  owner,
+  custom_fields_json,
   favorite,
   has_secret,
   last_connected_at,
@@ -110,8 +146,13 @@ INSERT INTO sessions (
   @username,
   @auth_type,
   @private_key_path,
+  @jump_session_id,
   @group_id,
   @remark,
+  @environment,
+  @tags_json,
+  @owner,
+  @custom_fields_json,
   @favorite,
   @has_secret,
   @last_connected_at,
@@ -129,8 +170,13 @@ INSERT INTO sessions (
   username,
   auth_type,
   private_key_path,
+  jump_session_id,
   group_id,
   remark,
+  environment,
+  tags_json,
+  owner,
+  custom_fields_json,
   favorite,
   has_secret,
   last_connected_at,
@@ -144,8 +190,13 @@ INSERT INTO sessions (
   @username,
   @auth_type,
   @private_key_path,
+  @jump_session_id,
   @group_id,
   @remark,
+  @environment,
+  @tags_json,
+  @owner,
+  @custom_fields_json,
   @favorite,
   @has_secret,
   @last_connected_at,
@@ -159,8 +210,13 @@ ON CONFLICT(id) DO UPDATE SET
   username = excluded.username,
   auth_type = excluded.auth_type,
   private_key_path = excluded.private_key_path,
+  jump_session_id = excluded.jump_session_id,
   group_id = excluded.group_id,
   remark = excluded.remark,
+  environment = excluded.environment,
+  tags_json = excluded.tags_json,
+  owner = excluded.owner,
+  custom_fields_json = excluded.custom_fields_json,
   favorite = excluded.favorite,
   has_secret = excluded.has_secret,
   last_connected_at = excluded.last_connected_at,
@@ -215,8 +271,13 @@ export class SqliteSessionStore {
       username: input.username.trim(),
       authType: input.authType,
       privateKeyPath: input.privateKeyPath?.trim() || undefined,
+      jumpSessionId: input.jumpSessionId?.trim() || undefined,
       groupId: input.groupId?.trim() || undefined,
       remark: input.remark?.trim() || undefined,
+      environment: normalizeEnvironment(input.environment),
+      tags: normalizeTags(input.tags ?? []),
+      owner: input.owner?.trim() || undefined,
+      customFields: normalizeCustomFields(input.customFields ?? []),
       favorite: input.favorite ?? false,
       hasSecret: false,
       createdAt: now,
@@ -243,9 +304,21 @@ export class SqliteSessionStore {
         patch.privateKeyPath === undefined
           ? existing.privateKeyPath
           : patch.privateKeyPath.trim() || undefined,
+      jumpSessionId:
+        patch.jumpSessionId === undefined
+          ? existing.jumpSessionId
+          : patch.jumpSessionId.trim() || undefined,
       groupId:
         patch.groupId === undefined ? existing.groupId : patch.groupId.trim() || undefined,
       remark: patch.remark === undefined ? existing.remark : patch.remark.trim() || undefined,
+      environment:
+        patch.environment === undefined ? existing.environment : normalizeEnvironment(patch.environment),
+      tags: patch.tags === undefined ? existing.tags : normalizeTags(patch.tags),
+      owner: patch.owner === undefined ? existing.owner : patch.owner.trim() || undefined,
+      customFields:
+        patch.customFields === undefined
+          ? existing.customFields
+          : normalizeCustomFields(patch.customFields),
       favorite: patch.favorite ?? existing.favorite,
       hasSecret:
         patch.secret === undefined ? existing.hasSecret : patch.secret.trim().length > 0,
@@ -321,4 +394,39 @@ export class SqliteSessionStore {
   close(): void {
     this.db.close();
   }
+}
+
+function normalizeEnvironment(value: unknown): SessionEnvironment | undefined {
+  return value === "dev" || value === "staging" || value === "prod" || value === "custom"
+    ? value
+    : undefined;
+}
+
+function normalizeTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(
+    new Set(value.filter((tag): tag is string => typeof tag === "string").map((tag) => tag.trim()).filter(Boolean))
+  ).slice(0, 32);
+}
+
+function normalizeCustomFields(value: unknown): SessionCustomField[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is SessionCustomField => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      key: typeof item.key === "string" ? item.key.trim().slice(0, 80) : "",
+      value: typeof item.value === "string" ? item.value.trim().slice(0, 400) : ""
+    }))
+    .filter((item) => item.key.length > 0)
+    .slice(0, 24);
+}
+
+function parseStringArray(value: string | null): string[] {
+  if (!value) return [];
+  try { return normalizeTags(JSON.parse(value)); } catch { return []; }
+}
+
+function parseCustomFields(value: string | null): SessionCustomField[] {
+  if (!value) return [];
+  try { return normalizeCustomFields(JSON.parse(value)); } catch { return []; }
 }

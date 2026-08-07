@@ -36,6 +36,30 @@ import type {
   RemoteOpenFilePrepareOptions,
   RemoteOpenFilePrepareResult
 } from "../shared/system.js";
+import type {
+  FleetHealthOverviewItem,
+  HealthIncident,
+  HealthIncidentEvent,
+  HealthIncidentEvidence,
+  HealthObservation,
+  HealthIncidentStatus,
+  HealthTrendPoint,
+  HealthTrendRange,
+  PinnedMonitor,
+  Runbook,
+  RunbookRun,
+  RunbookStartInput,
+  SyncPlan,
+  SyncProfile,
+  SyncRun,
+  TrustedHostKey,
+  WorkspacePackageExportInput,
+  WorkspacePackageExportResult,
+  WorkspacePackageImportInput,
+  WorkspacePackageImportResult,
+  WorkspacePackagePreviewInput,
+  WorkspacePackagePreviewResult
+} from "../shared/operations.js";
 
 const api = {
   app: {
@@ -237,6 +261,10 @@ const api = {
       ipcRenderer.invoke("terminal:connect", tabId, sessionId) as Promise<void>,
     write: (tabId: string, data: string) =>
       ipcRenderer.invoke("terminal:write", tabId, data) as Promise<void>,
+    respondHostKeyPrompt: (tabId: string, promptId: string, decision: "trust" | "replace" | "reject") =>
+      ipcRenderer.invoke("terminal:respondHostKeyPrompt", tabId, promptId, decision) as Promise<void>,
+    respondKeyboardInteractivePrompt: (tabId: string, promptId: string, responses: string[]) =>
+      ipcRenderer.invoke("terminal:respondKeyboardInteractivePrompt", tabId, promptId, responses) as Promise<void>,
     resize: (tabId: string, cols: number, rows: number) =>
       ipcRenderer.invoke("terminal:resize", tabId, cols, rows) as Promise<void>,
     getServerHealth: (tabId: string) =>
@@ -376,6 +404,46 @@ const api = {
         ipcRenderer.removeListener("sftp:transfer:event", wrapped);
       };
     }
+  },
+  operations: {
+    listTrustedHostKeys: () => ipcRenderer.invoke("operations:listTrustedHostKeys") as Promise<TrustedHostKey[]>,
+    trustHostKey: (input: Omit<TrustedHostKey, "endpoint" | "firstTrustedAt" | "lastTrustedAt">) =>
+      ipcRenderer.invoke("operations:trustHostKey", input) as Promise<TrustedHostKey>,
+    removeTrustedHostKey: (endpoint: string) => ipcRenderer.invoke("operations:removeTrustedHostKey", endpoint) as Promise<void>,
+    listRunbooks: () => ipcRenderer.invoke("operations:listRunbooks") as Promise<Runbook[]>,
+    saveRunbook: (input: Partial<Runbook>) => ipcRenderer.invoke("operations:saveRunbook", input) as Promise<Runbook>,
+    removeRunbook: (id: string) => ipcRenderer.invoke("operations:removeRunbook", id) as Promise<void>,
+    listRunbookRuns: (limit?: number) => ipcRenderer.invoke("operations:listRunbookRuns", limit) as Promise<RunbookRun[]>,
+    clearRunbookRuns: () => ipcRenderer.invoke("operations:clearRunbookRuns") as Promise<void>,
+    startRunbook: (input: RunbookStartInput) => ipcRenderer.invoke("operations:startRunbook", input) as Promise<RunbookRun>,
+    cancelRunbook: (runId: string) => ipcRenderer.invoke("operations:cancelRunbook", runId) as Promise<boolean>,
+    onEvent: (listener: (event: import("../shared/operations.js").OperationsEvent) => void) => {
+      const wrapped = (_event: IpcRendererEvent, payload: import("../shared/operations.js").OperationsEvent) => listener(payload);
+      ipcRenderer.on("operations:event", wrapped);
+      return () => ipcRenderer.removeListener("operations:event", wrapped);
+    },
+    listSyncProfiles: () => ipcRenderer.invoke("operations:listSyncProfiles") as Promise<SyncProfile[]>,
+    saveSyncProfile: (input: Partial<SyncProfile>) => ipcRenderer.invoke("operations:saveSyncProfile", input) as Promise<SyncProfile>,
+    removeSyncProfile: (id: string) => ipcRenderer.invoke("operations:removeSyncProfile", id) as Promise<void>,
+    listSyncRuns: (limit?: number) => ipcRenderer.invoke("operations:listSyncRuns", limit) as Promise<SyncRun[]>,
+    clearSyncRuns: () => ipcRenderer.invoke("operations:clearSyncRuns") as Promise<void>,
+    planSync: (profileId: string) => ipcRenderer.invoke("operations:planSync", profileId) as Promise<SyncPlan>,
+    startSync: (profileId: string, planId: string) => ipcRenderer.invoke("operations:startSync", profileId, planId) as Promise<SyncRun>,
+    cancelSync: (runId: string) => ipcRenderer.invoke("operations:cancelSync", runId) as Promise<boolean>,
+    listPinnedMonitors: () => ipcRenderer.invoke("operations:listPinnedMonitors") as Promise<PinnedMonitor[]>,
+    savePinnedMonitor: (input: PinnedMonitor) => ipcRenderer.invoke("operations:savePinnedMonitor", input) as Promise<PinnedMonitor>,
+    removePinnedMonitor: (sessionId: string) => ipcRenderer.invoke("operations:removePinnedMonitor", sessionId) as Promise<void>,
+    listHealthObservations: (sessionId: string, limit?: number) => ipcRenderer.invoke("operations:listHealthObservations", sessionId, limit) as Promise<HealthObservation[]>,
+    listFleetHealthOverview: () => ipcRenderer.invoke("operations:listFleetHealthOverview") as Promise<FleetHealthOverviewItem[]>,
+    listHealthTrend: (sessionId: string, range: HealthTrendRange) => ipcRenderer.invoke("operations:listHealthTrend", sessionId, range) as Promise<HealthTrendPoint[]>,
+    listHealthIncidents: (status?: HealthIncidentStatus, limit?: number) => ipcRenderer.invoke("operations:listHealthIncidents", status, limit) as Promise<HealthIncident[]>,
+    listHealthIncidentEvents: (incidentId: string) => ipcRenderer.invoke("operations:listHealthIncidentEvents", incidentId) as Promise<HealthIncidentEvent[]>,
+    acknowledgeHealthIncident: (incidentId: string) => ipcRenderer.invoke("operations:acknowledgeHealthIncident", incidentId) as Promise<HealthIncident | null>,
+    exportHealthIncidentEvidence: (incidentId: string) => ipcRenderer.invoke("operations:exportHealthIncidentEvidence", incidentId) as Promise<HealthIncidentEvidence>,
+    collectPinnedHealth: (sessionId: string) => ipcRenderer.invoke("operations:collectPinnedHealth", sessionId) as Promise<HealthObservation>,
+    exportWorkspace: (input: WorkspacePackageExportInput) => ipcRenderer.invoke("operations:exportWorkspace", input) as Promise<WorkspacePackageExportResult>,
+    previewWorkspace: (input: WorkspacePackagePreviewInput) => ipcRenderer.invoke("operations:previewWorkspace", input) as Promise<WorkspacePackagePreviewResult>,
+    importWorkspace: (input: WorkspacePackageImportInput) => ipcRenderer.invoke("operations:importWorkspace", input) as Promise<WorkspacePackageImportResult>
   },
   storage: {
     getTransferHistory: () =>

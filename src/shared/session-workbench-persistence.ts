@@ -1,4 +1,5 @@
 /** Shared shapes for Phase 4 session quick profiles + templates (SQLite-safe). */
+import type { SessionAuthType } from "./session.js";
 
 export interface PersistedSessionQuickProfile {
   id: string;
@@ -22,7 +23,7 @@ export interface PersistedSessionTemplateRecord {
   host: string;
   port: string;
   username: string;
-  authType: "password" | "privateKey";
+  authType: SessionAuthType;
   privateKeyPath: string;
   groupId: string;
   remark: string;
@@ -156,7 +157,12 @@ export function normalizePersistedSessionTemplates(
       port: typeof candidate.port === "string" ? candidate.port.trim().slice(0, 16) : "22",
       username:
         typeof candidate.username === "string" ? candidate.username.trim().slice(0, 120) : "",
-      authType: candidate.authType === "privateKey" ? "privateKey" : "password",
+      authType:
+        candidate.authType === "privateKey" ||
+        candidate.authType === "agent" ||
+        candidate.authType === "keyboardInteractive"
+          ? candidate.authType
+          : "password",
       privateKeyPath:
         typeof candidate.privateKeyPath === "string"
           ? candidate.privateKeyPath.trim().slice(0, 512)

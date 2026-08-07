@@ -28,6 +28,7 @@ export function registerSessionHandlers(
 ): void {
   ipcMain.handle("sessions:list", async () => store.list());
   ipcMain.handle("sessions:create", async (_event, input: SessionCreateInput) => {
+    await assertValidJumpSession(store, undefined, input.jumpSessionId);
     const created = await store.create(input);
     if (input.secret?.trim()) {
       await credentialStore.saveSessionSecret(created.id, input.secret.trim());
@@ -38,6 +39,9 @@ export function registerSessionHandlers(
   ipcMain.handle(
     "sessions:update",
     async (_event, id: string, patch: SessionUpdateInput) => {
+      if (patch.jumpSessionId !== undefined) {
+        await assertValidJumpSession(store, id, patch.jumpSessionId);
+      }
       if (patch.secret !== undefined) {
         const value = patch.secret.trim();
         if (value.length > 0) {
@@ -50,6 +54,12 @@ export function registerSessionHandlers(
     }
   );
   ipcMain.handle("sessions:delete", async (_event, id: string) => {
+    const dependents = (await store.list()).filter((session) => session.jumpSessionId === id);
+    if (dependents.length > 0) {
+      throw new Error(
+        `This session is used as an SSH jump host by: ${dependents.map((session) => session.name).join(", ")}. Remove those references first.`
+      );
+    }
     await store.remove(id);
     await credentialStore.deleteSessionSecret(id);
   });
@@ -79,4 +89,23 @@ export function registerSessionHandlers(
         userDataDirectory: input.userDataDirectory ?? app.getPath("userData")
       })
   );
+}
+
+async function assertValidJumpSession(
+  store: SessionStore | DualWriteSessionStore,
+  sessionId: string | undefined,
+  rawJumpSessionId: string | undefined
+): Promise<void> {
+  const jumpSessionId = rawJumpSessionId?.trim();
+  if (!jumpSessionId) return;
+  if (sessionId && jumpSessionId === sessionId) {
+    throw new Error("A session cannot use itself as an SSH jump host.");
+  }
+  const jumpSession = await store.getById(jumpSessionId);
+  if (!jumpSession) {
+    throw new Error("The selected SSH jump session does not exist.");
+  }
+  if (jumpSession.jumpSessionId) {
+    throw new Error("Only one SSH jump host is supported. Choose a direct session as the jump host.");
+  }
 }

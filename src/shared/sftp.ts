@@ -32,6 +32,14 @@ export interface SftpTransferRunOptions {
 
 export interface SftpTransferEvent {
   tabId: string;
+  /**
+   * Background operations such as a saved sync profile do not always have an
+   * open terminal tab. Keep their session identity explicit so the renderer
+   * can retain history and associate the work with the right server.
+   */
+  sessionId?: string;
+  /** Stable group identifier for a saved sync run, when applicable. */
+  syncRunId?: string;
   transferId: string;
   direction: SftpTransferDirection;
   status: SftpTransferStatus;

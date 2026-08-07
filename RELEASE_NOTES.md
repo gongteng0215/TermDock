@@ -2,17 +2,28 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
-## Unreleased (master)
+## v0.1.49 (2026-08-07)
 
-Release type: In development
+Release type: Stable
 
 ### Highlights
 
-- No unreleased notes have been recorded yet.
+- Fleet Health now classifies pinned sessions as Critical, Warning, Healthy, needs manual connection, or unmonitored, with durable acknowledgement and automatic resolution after two healthy samples.
+- Added 24-hour / 7-day / 30-day trends, local incident evidence export, main-process desktop alerts, and Runbook recommendations that always require preview and operator confirmation.
+- Monitor policies now support warning/critical CPU, memory, disk, and failed-service thresholds, cooldowns, and up to three recommended Runbooks.
+- Added explicit SSH SHA-256 host-key trust, one-hop jump sessions, SSH agent authentication, and keyboard-interactive MFA without persisting MFA responses.
+- Added Operations Hub (`Ctrl/Cmd+P`) with session asset fields, Runbooks, Trust Center, one-way SFTP sync previews, Fleet Health, and encrypted `.tdworkspace` import/export.
+- Added persisted sync/run summaries, controlled Fleet Health polling, 24-hour raw health retention with 30-day five-minute aggregates, and optional local desktop alerts.
+- Server Health now lets the current session be pinned directly, run an immediate controlled check, and show the latest Fleet status without waiting for the next polling interval.
+- Cockpit keeps Fleet controls in the Server Health header, with compact empty states that do not overlap the draggable window chrome.
 
 ### Validation
 
-- Validation will be added with the next release candidate.
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run test:fleet-health-incidents` passed.
+- `pnpm run test:workspace-package` passed.
+- `pnpm run smoke:ui` passed: 52 passed, 0 failed. The smoke run explicitly verifies first-use SHA-256 host-key confirmation for the embedded local SSH fixture.
 
 ## v0.1.46 (2026-08-06)
 

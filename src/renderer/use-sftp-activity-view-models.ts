@@ -469,7 +469,9 @@ export function useSftpActivityViewModels<
   const operationCenterUploadSummary = useMemo(() => {
     const openTabIds = new Set(terminalTabs.map((tab) => tab.id));
     const relevantTransfers = sftpTransfers.filter(
-      (transfer) => transfer.direction === "upload" && openTabIds.has(transfer.tabId)
+      (transfer) =>
+        transfer.direction === "upload" &&
+        (openTabIds.has(transfer.tabId) || Boolean(transfer.syncRunId))
     );
     return {
       ...countTransferStatuses(relevantTransfers),
@@ -480,7 +482,9 @@ export function useSftpActivityViewModels<
   const operationCenterDownloadSummary = useMemo(() => {
     const openTabIds = new Set(terminalTabs.map((tab) => tab.id));
     const relevantTransfers = sftpTransfers.filter(
-      (transfer) => transfer.direction === "download" && openTabIds.has(transfer.tabId)
+      (transfer) =>
+        transfer.direction === "download" &&
+        (openTabIds.has(transfer.tabId) || Boolean(transfer.syncRunId))
     );
     return {
       ...countTransferStatuses(relevantTransfers),
@@ -547,7 +551,7 @@ export function useSftpActivityViewModels<
       }
       const current = byTabId.get(transfer.tabId) ?? {
         tabId: transfer.tabId,
-        title: transfer.tabId,
+        title: transfer.syncRunId ? "Background Sync" : transfer.tabId,
         connected: connectedTabIds.has(transfer.tabId),
         uploadRunning: 0,
         uploadQueued: 0,
@@ -645,11 +649,11 @@ export function useSftpActivityViewModels<
     const tabTitleById = new Map(terminalTabs.map((tab) => [tab.id, tab.title]));
 
     for (const transfer of sftpTransfers.slice(0, 18)) {
-      if (!tabTitleById.has(transfer.tabId)) {
+      if (!tabTitleById.has(transfer.tabId) && !transfer.syncRunId) {
         continue;
       }
       const directionLabel = transfer.direction === "upload" ? "Upload" : "Download";
-      const tabTitle = tabTitleById.get(transfer.tabId) ?? transfer.tabId;
+      const tabTitle = tabTitleById.get(transfer.tabId) ?? (transfer.syncRunId ? "Background Sync" : transfer.tabId);
       const route =
         transfer.direction === "upload"
           ? `${transfer.localPath} -> ${transfer.remotePath}`

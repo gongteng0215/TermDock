@@ -11,9 +11,10 @@ interface SshOptionState {
   identityFile?: string;
   identityFileLine?: number;
   identityFileSourcePath?: string;
+  proxyJump?: string;
 }
 
-type SshOptionKey = "hostName" | "username" | "port" | "identityFile";
+type SshOptionKey = "hostName" | "username" | "port" | "identityFile" | "proxyJump";
 
 interface SshHostBlock {
   line: number;
@@ -48,7 +49,6 @@ const UNSUPPORTED_DIRECTIVE_WARNINGS: Record<string, string> = {
   identitiesonly: "IdentitiesOnly is not imported; verify the selected private key after import.",
   localforward: "LocalForward is not imported; recreate the local forward in Port Forwarding after connecting.",
   proxycommand: "ProxyCommand is not imported yet; sessions that require a proxy command may need manual setup.",
-  proxyjump: "ProxyJump is not imported yet; sessions that require a bastion host may need manual setup.",
   remoteforward: "RemoteForward is not imported; recreate the remote forward in Port Forwarding after connecting."
 };
 
@@ -250,6 +250,24 @@ function parseOptionDirective(
       value: normalized
     };
   }
+  if (directive === "proxyjump") {
+    const tokens = tokenizeSshValue(rawValue)
+      .map((token) => unquoteToken(token).trim())
+      .filter(Boolean);
+    const value = tokens[0] ?? "";
+    if (!value) {
+      return null;
+    }
+    if (value.includes(",") || tokens.length > 1) {
+      warnings.push(`${sourcePath}:${lineNumber}: multi-hop ProxyJump is not imported; configure the chain manually.`);
+      return null;
+    }
+    if (/[@:\[\]]/.test(value)) {
+      warnings.push(`${sourcePath}:${lineNumber}: ProxyJump must be a single existing Host alias to import automatically.`);
+      return null;
+    }
+    return { option: "proxyJump", value };
+  }
   return null;
 }
 
@@ -283,6 +301,8 @@ async function buildCandidates(
         state.identityFile = String(directive.value);
         state.identityFileLine = directive.line;
         state.identityFileSourcePath = directive.sourcePath;
+      } else if (directive.option === "proxyJump" && !state.proxyJump) {
+        state.proxyJump = String(directive.value);
       }
     }
     const hostName = state.hostName ?? aliasDeclaration.alias;
@@ -313,6 +333,7 @@ async function buildCandidates(
       username,
       authType,
       privateKeyPath: identityFile,
+      jumpHostAlias: state.proxyJump,
       sourceLine: aliasDeclaration.line
     });
   }

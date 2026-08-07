@@ -85,8 +85,13 @@ export class SessionStore {
       username: input.username.trim(),
       authType: input.authType,
       privateKeyPath: input.privateKeyPath?.trim() || undefined,
+      jumpSessionId: input.jumpSessionId?.trim() || undefined,
       groupId: normalizeOptionalSessionText(input.groupId?.trim()),
       remark: normalizeOptionalSessionText(input.remark?.trim()),
+      environment: normalizeEnvironment(input.environment),
+      tags: normalizeTags(input.tags),
+      owner: normalizeOptionalSessionText(input.owner?.trim()),
+      customFields: normalizeCustomFields(input.customFields),
       favorite: input.favorite ?? false,
       hasSecret: false,
       createdAt: now,
@@ -131,8 +136,17 @@ export class SessionStore {
       username: patch.username?.trim() ?? existing.username,
       authType: patch.authType ?? existing.authType,
       privateKeyPath: normalizedPrivateKeyPath,
+      jumpSessionId:
+        patch.jumpSessionId === undefined
+          ? existing.jumpSessionId
+          : normalizeOptionalSessionText(patch.jumpSessionId.trim()),
       groupId: normalizedGroupId,
       remark: normalizedRemark,
+      environment: patch.environment === undefined ? existing.environment : normalizeEnvironment(patch.environment),
+      tags: patch.tags === undefined ? existing.tags : normalizeTags(patch.tags),
+      owner: patch.owner === undefined ? existing.owner : normalizeOptionalSessionText(patch.owner.trim()),
+      customFields:
+        patch.customFields === undefined ? existing.customFields : normalizeCustomFields(patch.customFields),
       favorite: patch.favorite ?? existing.favorite,
       hasSecret:
         patch.secret === undefined ? existing.hasSecret : patch.secret.trim().length > 0,
@@ -229,4 +243,26 @@ export class SessionStore {
     }
     await this.writeDb(db);
   }
+}
+
+function normalizeEnvironment(value: unknown): SessionRecord["environment"] {
+  return value === "dev" || value === "staging" || value === "prod" || value === "custom"
+    ? value
+    : undefined;
+}
+
+function normalizeTags(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const next = Array.from(new Set(value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean))).slice(0, 32);
+  return next.length > 0 ? next : undefined;
+}
+
+function normalizeCustomFields(value: unknown): SessionRecord["customFields"] {
+  if (!Array.isArray(value)) return undefined;
+  const next = value
+    .filter((item): item is { key?: unknown; value?: unknown } => Boolean(item && typeof item === "object"))
+    .map((item) => ({ key: typeof item.key === "string" ? item.key.trim().slice(0, 80) : "", value: typeof item.value === "string" ? item.value.trim().slice(0, 400) : "" }))
+    .filter((item) => item.key.length > 0)
+    .slice(0, 24);
+  return next.length > 0 ? next : undefined;
 }

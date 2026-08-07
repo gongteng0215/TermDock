@@ -11,7 +11,7 @@
 import type Database from "better-sqlite3";
 
 /** Current schema version; bump when adding forward migrations. */
-export const SQLITE_SCHEMA_VERSION = 6;
+export const SQLITE_SCHEMA_VERSION = 12;
 
 /** Where session secrets are stored; never written into SQLite rows. */
 export const SQLITE_SECRET_STORAGE_OWNER = "keytar" as const;
@@ -151,6 +151,133 @@ CREATE INDEX IF NOT EXISTS idx_app_preferences_updated_at
   ON app_preferences (updated_at DESC);
 `.trim();
 
+/** v7: connection trust, session asset metadata, and runbook persistence. */
+export const SQLITE_SCHEMA_DDL_V7 = `
+CREATE TABLE IF NOT EXISTS trusted_host_keys (
+  endpoint TEXT PRIMARY KEY,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  fingerprint TEXT NOT NULL,
+  public_key_base64 TEXT NOT NULL,
+  first_trusted_at TEXT NOT NULL,
+  last_trusted_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runbooks (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runbook_runs (
+  id TEXT PRIMARY KEY,
+  runbook_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER NULL,
+  status TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_runbook_runs_started_at ON runbook_runs (started_at DESC);
+`.trim();
+
+/** v8: one-way sync profiles and persisted Fleet Health observations. */
+export const SQLITE_SCHEMA_DDL_V8 = `
+CREATE TABLE IF NOT EXISTS sync_profiles (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pinned_monitors (
+  session_id TEXT PRIMARY KEY,
+  enabled INTEGER NOT NULL,
+  interval_seconds INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS health_observations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  collected_at INTEGER NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_observations_session_time
+  ON health_observations (session_id, collected_at DESC);
+`.trim();
+
+/** v9: persisted sync execution summaries for Operation Center recovery. */
+export const SQLITE_SCHEMA_DDL_V9 = `
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER NULL,
+  status TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_runs_started_at ON sync_runs (started_at DESC);
+`.trim();
+
+/** v10: retain raw Fleet samples for 24h and compact five-minute history for 30d. */
+export const SQLITE_SCHEMA_DDL_V10 = `
+CREATE TABLE IF NOT EXISTS health_observation_aggregates (
+  session_id TEXT NOT NULL,
+  bucket_at INTEGER NOT NULL,
+  sample_count INTEGER NOT NULL,
+  cpu_sum REAL NOT NULL,
+  memory_sum REAL NOT NULL,
+  disk_sum REAL NOT NULL,
+  load1_sum REAL NOT NULL,
+  failed_services_max INTEGER NOT NULL,
+  unhealthy_count INTEGER NOT NULL,
+  PRIMARY KEY (session_id, bucket_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_aggregate_session_time
+  ON health_observation_aggregates (session_id, bucket_at DESC);
+`.trim();
+
+/** v11: per-target Fleet alert thresholds and cooldown preferences. */
+export const SQLITE_SCHEMA_DDL_V11 = `
+ALTER TABLE pinned_monitors ADD COLUMN settings_json TEXT NULL;
+`.trim();
+
+/** v12: durable Fleet Health incident lifecycle and operator audit trail. */
+export const SQLITE_SCHEMA_DDL_V12 = `
+CREATE TABLE IF NOT EXISTS health_incidents (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  first_detected_at INTEGER NOT NULL,
+  last_detected_at INTEGER NOT NULL,
+  resolved_at INTEGER NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_incidents_session_status
+  ON health_incidents (session_id, status, last_detected_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_health_incidents_status_severity
+  ON health_incidents (status, severity, last_detected_at DESC);
+
+CREATE TABLE IF NOT EXISTS health_incident_events (
+  id TEXT PRIMARY KEY,
+  incident_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  event_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_health_incident_events_incident_time
+  ON health_incident_events (incident_id, created_at ASC);
+`.trim();
+
 /** @deprecated Use migrateSqliteSchema(); kept for docs / dual-write test imports. */
 export const SQLITE_SCHEMA_DDL = SQLITE_SCHEMA_DDL_V1;
 
@@ -182,6 +309,45 @@ export function migrateSqliteSchema(db: Database.Database): void {
   }
   if (userVersion < 6) {
     db.exec(SQLITE_SCHEMA_DDL_V6);
+  }
+  if (userVersion < 7) {
+    for (const statement of [
+      "ALTER TABLE sessions ADD COLUMN jump_session_id TEXT NULL",
+      "ALTER TABLE sessions ADD COLUMN environment TEXT NULL",
+      "ALTER TABLE sessions ADD COLUMN tags_json TEXT NULL",
+      "ALTER TABLE sessions ADD COLUMN owner TEXT NULL",
+      "ALTER TABLE sessions ADD COLUMN custom_fields_json TEXT NULL"
+    ]) {
+      try {
+        db.exec(statement);
+      } catch (error) {
+        if (!String(error).includes("duplicate column name")) {
+          throw error;
+        }
+      }
+    }
+    db.exec(SQLITE_SCHEMA_DDL_V7);
+  }
+  if (userVersion < 8) {
+    db.exec(SQLITE_SCHEMA_DDL_V8);
+  }
+  if (userVersion < 9) {
+    db.exec(SQLITE_SCHEMA_DDL_V9);
+  }
+  if (userVersion < 10) {
+    db.exec(SQLITE_SCHEMA_DDL_V10);
+  }
+  if (userVersion < 11) {
+    try {
+      db.exec(SQLITE_SCHEMA_DDL_V11);
+    } catch (error) {
+      if (!String(error).includes("duplicate column name")) {
+        throw error;
+      }
+    }
+  }
+  if (userVersion < 12) {
+    db.exec(SQLITE_SCHEMA_DDL_V12);
   }
   db.pragma(`user_version = ${SQLITE_SCHEMA_VERSION}`);
   db.prepare(

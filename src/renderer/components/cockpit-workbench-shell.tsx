@@ -45,6 +45,7 @@ export interface CockpitChromeProps {
   reconnectDelaySeconds: number;
   reconnectBusy: boolean;
   onReconnect: () => void;
+  onOpenOperations: () => void;
   safetyEnabled: boolean;
   onOpenSafety: () => void;
 }
@@ -392,6 +393,62 @@ export function CockpitWorkbenchShell({
             focus={activeDock === "monitor"}
             testId="cockpit-health"
             title="SERVER HEALTH"
+            trailing={
+              <>
+                {!serverHealthInspectorSectionProps.toggleDisabled ? (
+                  <button
+                    className="cockpit-module__health-action"
+                    onClick={serverHealthInspectorSectionProps.onToggleDetail}
+                    title="Show server health details"
+                    type="button"
+                  >
+                    Details
+                  </button>
+                ) : null}
+                {serverHealthInspectorSectionProps.isMonitorPinned ? (
+                  <button
+                    className="cockpit-module__health-action"
+                    disabled={
+                      serverHealthInspectorSectionProps.checkMonitorDisabled ||
+                      serverHealthInspectorSectionProps.monitorCheckBusy
+                    }
+                    onClick={serverHealthInspectorSectionProps.onCheckMonitor}
+                    title="Run a Fleet Health check now"
+                    type="button"
+                  >
+                    {serverHealthInspectorSectionProps.monitorCheckBusy ? "Checking" : "Check"}
+                  </button>
+                ) : null}
+                <button
+                  className={
+                    serverHealthInspectorSectionProps.isMonitorPinned
+                      ? "cockpit-module__health-action is-pinned"
+                      : "cockpit-module__health-action"
+                  }
+                  disabled={
+                    serverHealthInspectorSectionProps.pinMonitorDisabled ||
+                    serverHealthInspectorSectionProps.monitorPinBusy
+                  }
+                  onClick={
+                    serverHealthInspectorSectionProps.isMonitorPinned
+                      ? serverHealthInspectorSectionProps.onOpenFleet
+                      : serverHealthInspectorSectionProps.onPinMonitor
+                  }
+                  title={
+                    serverHealthInspectorSectionProps.isMonitorPinned
+                      ? "Open Fleet Health for this fixed monitor"
+                      : "Pin this session for Fleet Health monitoring"
+                  }
+                  type="button"
+                >
+                  {serverHealthInspectorSectionProps.monitorPinBusy
+                    ? "Pinning..."
+                    : serverHealthInspectorSectionProps.isMonitorPinned
+                      ? "Pinned"
+                      : "Pin"}
+                </button>
+              </>
+            }
           >
             <ServerHealthInspectorSection {...serverHealthInspectorSectionProps}>
               <ServerHealthInspectorContent {...serverHealthInspectorContentProps} />

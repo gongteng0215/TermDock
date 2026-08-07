@@ -9,9 +9,12 @@ import { registerSftpHandlers } from "./ipc/register-sftp-handlers.js";
 import { registerSessionHandlers } from "./ipc/register-session-handlers.js";
 import { registerStorageHandlers } from "./ipc/register-storage-handlers.js";
 import { registerAppBackupHandlers } from "./ipc/register-app-backup-handlers.js";
+import { registerOperationsHandlers } from "./ipc/register-operations-handlers.js";
 import { registerSystemHandlers } from "./ipc/register-system-handlers.js";
 import { registerTerminalHandlers } from "./ipc/register-terminal-handlers.js";
 import { appLogger } from "./logging/app-logger.js";
+import { FleetHealthService } from "./operations/fleet-health-service.js";
+import { WorkspacePackageService } from "./operations/workspace-package-service.js";
 import { createCredentialStore } from "./security/credential-store.js";
 import { DualWriteSessionStore } from "./storage/dual-write-session-store.js";
 import { SessionStore } from "./storage/session-store.js";
@@ -21,6 +24,7 @@ import { SqliteWorkbenchStore } from "./storage/sqlite/sqlite-workbench-store.js
 import { SqlitePreferenceStore } from "./storage/sqlite/sqlite-preference-store.js";
 import { SqliteSessionStore } from "./storage/sqlite/sqlite-session-store.js";
 import { SqliteTransferStore } from "./storage/sqlite/sqlite-transfer-store.js";
+import { SqliteOperationsStore } from "./storage/sqlite/sqlite-operations-store.js";
 import { TerminalService } from "./terminal/terminal-service.js";
 
 const isMac = process.platform === "darwin";
@@ -267,6 +271,7 @@ async function bootstrap(): Promise<void> {
   let portForwardEventStore: SqlitePortForwardEventStore | null = null;
   let workbenchStore: SqliteWorkbenchStore | null = null;
   let preferenceStore: SqlitePreferenceStore | null = null;
+  let operationsStore: SqliteOperationsStore | null = null;
   try {
     const sqliteSessionStore = new SqliteSessionStore(sqlitePath);
     const sqliteDb = sqliteSessionStore.getDatabase();
@@ -275,6 +280,7 @@ async function bootstrap(): Promise<void> {
     portForwardEventStore = new SqlitePortForwardEventStore(sqliteDb);
     workbenchStore = new SqliteWorkbenchStore(sqliteDb);
     preferenceStore = new SqlitePreferenceStore(sqliteDb);
+    operationsStore = new SqliteOperationsStore(sqliteDb);
     if (forceJsonStore) {
       console.warn(
         "[sqlite] TERMDOCK_SESSION_STORE=json — sessions use JSON; durable SQLite stores remain available."
@@ -287,7 +293,13 @@ async function bootstrap(): Promise<void> {
   }
   const credentialStore = await createCredentialStore();
 
-  const terminalService = new TerminalService(sessionStore, credentialStore);
+  const terminalService = new TerminalService(sessionStore, credentialStore, operationsStore);
+  const fleetHealthService = new FleetHealthService(operationsStore, terminalService);
+  const workspacePackageService = new WorkspacePackageService(
+    sessionStore,
+    credentialStore,
+    operationsStore
+  );
   registerSessionHandlers(sessionStore, credentialStore);
   registerStorageHandlers({
     transferStore,
@@ -296,6 +308,7 @@ async function bootstrap(): Promise<void> {
     workbenchStore,
     preferenceStore
   });
+  registerOperationsHandlers(operationsStore, terminalService, workspacePackageService, sessionStore);
   registerAppBackupHandlers({
     sessionStore,
     credentialStore,
@@ -313,7 +326,12 @@ async function bootstrap(): Promise<void> {
     await applyMacDockIcon();
   }
   createWindow();
+  fleetHealthService.start();
   initializeAutoUpdate();
+
+  app.once("before-quit", () => {
+    fleetHealthService.dispose();
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
