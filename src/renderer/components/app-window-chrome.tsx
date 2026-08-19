@@ -44,11 +44,11 @@ export function AppWindowChrome() {
     return null;
   }
 
-  const isTech = uiThemeId === "tech";
+  const isCockpit = uiThemeId === "tech" || uiThemeId === "industrial";
 
   return (
     <>
-      {isTech ? (
+      {isCockpit ? (
         <div
           aria-hidden="true"
           className="app-window-drag-strip"
@@ -58,12 +58,12 @@ export function AppWindowChrome() {
       ) : null}
       <div
         className={
-          isTech ? "app-window-chrome" : "app-window-chrome app-window-chrome--default"
+          isCockpit ? "app-window-chrome" : "app-window-chrome app-window-chrome--default"
         }
         aria-label="Window controls"
       >
         <div className="app-window-chrome__panel">
-          {isTech ? (
+          {isCockpit ? (
             <>
               <div
                 className="app-window-chrome__drag"

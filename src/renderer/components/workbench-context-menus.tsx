@@ -10,6 +10,8 @@ export interface WorkbenchContextMenuAction {
 
 export interface WorkbenchContextMenuProps {
   actions: WorkbenchContextMenuAction[];
+  contextLabel?: string | null;
+  contextLabelTitle?: string;
   x: number;
   y: number;
   width: number;
@@ -17,7 +19,10 @@ export interface WorkbenchContextMenuProps {
 }
 
 export const WorkbenchContextMenu = forwardRef<HTMLDivElement, WorkbenchContextMenuProps>(
-  function WorkbenchContextMenu({ actions, x, y, width, height }, ref) {
+  function WorkbenchContextMenu(
+    { actions, contextLabel = null, contextLabelTitle = "Target", x, y, width, height },
+    ref
+  ) {
     const left = Math.max(8, Math.min(x, window.innerWidth - width));
     const top = Math.max(8, Math.min(y, window.innerHeight - height));
 
@@ -28,9 +33,16 @@ export const WorkbenchContextMenu = forwardRef<HTMLDivElement, WorkbenchContextM
         ref={ref}
         style={{
           left: `${left}px`,
-          top: `${top}px`
+          top: `${top}px`,
+          width: `${width}px`
         }}
       >
+        {contextLabel ? (
+          <div className="sftp-context-menu__context" title={contextLabel}>
+            <span>{contextLabelTitle}</span>
+            <code>{contextLabel}</code>
+          </div>
+        ) : null}
         {actions.map((action) => (
           <button
             className={

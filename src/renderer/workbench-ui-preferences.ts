@@ -15,9 +15,24 @@ import {
 } from "./ui-theme";
 
 export type SftpExplorerViewMode = "compact" | "details";
+export type SftpExplorerEntryTypeFilter = "all" | "files" | "directories";
+export type SftpExplorerSortKey = "name" | "size" | "modifiedAt";
+export type SftpExplorerSortDirection = "asc" | "desc";
+export interface SftpExplorerBrowsePreferences {
+  query: string;
+  typeFilter: SftpExplorerEntryTypeFilter;
+  sortKey: SftpExplorerSortKey;
+  sortDirection: SftpExplorerSortDirection;
+}
+export type SftpExplorerBrowsePreferencesBySession = Record<
+  string,
+  SftpExplorerBrowsePreferences
+>;
 export type InspectorSidebarTabId = "sessions" | "health" | "history";
 
 const SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY = "termdock.sftp-explorer-view-mode.v1";
+const SFTP_EXPLORER_BROWSE_PREFERENCES_STORAGE_KEY =
+  "termdock.sftp-explorer-browse-preferences.v1";
 const COMMAND_HISTORY_INSPECTOR_COLLAPSED_STORAGE_KEY =
   "termdock.command-history-inspector-collapsed.v1";
 const INSPECTOR_SIDEBAR_TAB_STORAGE_KEY = "termdock.inspector-sidebar-tab.v1";
@@ -25,6 +40,13 @@ const FIRST_RUN_ONBOARDING_DISMISSED_STORAGE_KEY = "termdock.first-run-onboardin
 const UI_ACCENT_STORAGE_KEY = "termdock.ui-accent.v1";
 const UI_DENSITY_STORAGE_KEY = "termdock.ui-density.v1";
 const UI_THEME_STORAGE_KEY = "termdock.ui-theme.v1";
+
+export const DEFAULT_SFTP_EXPLORER_BROWSE_PREFERENCES: SftpExplorerBrowsePreferences = {
+  query: "",
+  typeFilter: "all",
+  sortKey: "name",
+  sortDirection: "asc"
+};
 
 function readStorageItem(key: string): string | null {
   if (typeof window === "undefined") {
@@ -82,6 +104,66 @@ export function readSftpExplorerViewMode(): SftpExplorerViewMode {
 
 export function writeSftpExplorerViewMode(value: SftpExplorerViewMode): void {
   writeStorageItem(SFTP_EXPLORER_VIEW_MODE_STORAGE_KEY, value);
+}
+
+function normalizeSftpExplorerBrowsePreferences(
+  value: unknown
+): SftpExplorerBrowsePreferences {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_SFTP_EXPLORER_BROWSE_PREFERENCES };
+  }
+  const candidate = value as Partial<SftpExplorerBrowsePreferences>;
+  return {
+    query: typeof candidate.query === "string" ? candidate.query.slice(0, 160) : "",
+    typeFilter:
+      candidate.typeFilter === "files" || candidate.typeFilter === "directories"
+        ? candidate.typeFilter
+        : "all",
+    sortKey:
+      candidate.sortKey === "size" || candidate.sortKey === "modifiedAt"
+        ? candidate.sortKey
+        : "name",
+    sortDirection: candidate.sortDirection === "desc" ? "desc" : "asc"
+  };
+}
+
+export function readSftpExplorerBrowsePreferencesBySession(): SftpExplorerBrowsePreferencesBySession {
+  const rawValue = readStorageItem(SFTP_EXPLORER_BROWSE_PREFERENCES_STORAGE_KEY);
+  if (!rawValue) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    const normalizedEntries = Object.entries(parsed as Record<string, unknown>)
+      .filter(([sessionId]) => sessionId.trim().length > 0)
+      .slice(-160)
+      .map(([sessionId, preferences]) => [
+        sessionId.slice(0, 256),
+        normalizeSftpExplorerBrowsePreferences(preferences)
+      ] as const);
+    return Object.fromEntries(normalizedEntries);
+  } catch {
+    return {};
+  }
+}
+
+export function writeSftpExplorerBrowsePreferencesBySession(
+  value: SftpExplorerBrowsePreferencesBySession
+): void {
+  const normalizedEntries = Object.entries(value)
+    .filter(([sessionId]) => sessionId.trim().length > 0)
+    .slice(-160)
+    .map(([sessionId, preferences]) => [
+      sessionId.slice(0, 256),
+      normalizeSftpExplorerBrowsePreferences(preferences)
+    ] as const);
+  writeStorageItem(
+    SFTP_EXPLORER_BROWSE_PREFERENCES_STORAGE_KEY,
+    JSON.stringify(Object.fromEntries(normalizedEntries))
+  );
 }
 
 export function readUiAccentId(): UiAccentId {

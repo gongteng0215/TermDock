@@ -473,6 +473,30 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "Go Up": "向上",
   "Refresh directory": "刷新目录",
   "SFTP actions": "SFTP 操作",
+  "Remote directory path": "远程目录路径",
+  "Selected path": "所选路径",
+  "Selected paths": "所选路径",
+  "Clear Selection": "清除选择",
+  "Copy Selected Paths": "复制所选路径",
+  "1 item selected": "已选择 1 项",
+  "Current folder": "当前目录",
+  "Filter SFTP entries": "筛选 SFTP 条目",
+  "Filter files and folders": "筛选文件和文件夹",
+  "Filter SFTP entry type": "筛选 SFTP 条目类型",
+  "All types": "全部类型",
+  "Files": "文件",
+  "Folders": "文件夹",
+  "Sort SFTP entries": "排序 SFTP 条目",
+  "Size": "大小",
+  "Modified": "修改时间",
+  "Sort ascending": "升序排列",
+  "Sort descending": "降序排列",
+  "Ascending": "升序",
+  "Descending": "降序",
+  "Select All Results": "选择全部结果",
+  "All Results Selected": "已选择全部结果",
+  "This directory is empty.": "此目录为空。",
+  "No entries match the current filters.": "没有条目符合当前筛选条件。",
   "Loading remote directory...": "正在加载远程目录...",
   "Folder": "文件夹",
   "Open a terminal tab first. SFTP panel reuses the active tab SSH connection.": "请先打开终端标签页。SFTP 面板会复用活动标签页的 SSH 连接。",
@@ -1291,6 +1315,18 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
 };
 
 const SIMPLIFIED_CHINESE_REPLACEMENTS: TextReplacement[] = [
+  {
+    pattern: /^Showing (\d+) of (\d+)$/u,
+    replace: (_match, visible, total) => `显示 ${visible} / ${total}`
+  },
+  {
+    pattern: /^(\d+) items selected$/u,
+    replace: (_match, count) => `已选择 ${count} 项`
+  },
+  {
+    pattern: /^\+ (\d+) more$/u,
+    replace: (_match, count) => `+ 另外 ${count} 项`
+  },
   {
     pattern: /^Group: (.+)$/u,
     replace: (_match, name) => `分组：${name}`

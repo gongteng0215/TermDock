@@ -18,13 +18,15 @@ export interface SftpToolbarMenuState {
 
 interface UseSftpContextMenusArgs {
   hasActiveTerminalTab: boolean;
-  setSelectedSftpPath: (path: string | null) => void;
+  selectOnlySftpPath: (path: string | null) => void;
+  selectedSftpPaths: string[];
   sftpEntryPaths: string[];
 }
 
 export function useSftpContextMenus({
   hasActiveTerminalTab,
-  setSelectedSftpPath,
+  selectOnlySftpPath,
+  selectedSftpPaths,
   sftpEntryPaths
 }: UseSftpContextMenusArgs) {
   const [sftpContextMenu, setSftpContextMenu] = useState<SftpContextMenuState | null>(null);
@@ -45,8 +47,8 @@ export function useSftpContextMenus({
       event.preventDefault();
       event.stopPropagation();
       closeSftpToolbarMenu();
-      if (entry) {
-        setSelectedSftpPath(entry.path);
+      if (entry && !selectedSftpPaths.includes(entry.path)) {
+        selectOnlySftpPath(entry.path);
       }
       setSftpContextMenu({
         x: event.clientX,
@@ -54,7 +56,7 @@ export function useSftpContextMenus({
         entryPath: entry?.path ?? null
       });
     },
-    [closeSftpToolbarMenu, setSelectedSftpPath]
+    [closeSftpToolbarMenu, selectOnlySftpPath, selectedSftpPaths]
   );
 
   const toggleSftpToolbarMenu = useCallback(

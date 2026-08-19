@@ -21,6 +21,7 @@ import "./styles.css";
 import "./styles/workbench-shell.css";
 import "./styles/cockpit-shell.css";
 import "./styles/terminal.css";
+import "./styles/cockpit-industrial.css";
 
 applyUiThemeToDocument(readUiThemeId());
 applyUiAccentToDocument(readUiAccentId());

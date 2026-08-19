@@ -1043,6 +1043,39 @@
   line-height: 1.05;
 }
 
+.cockpit-module .sftp-browser-controls {
+  gap: 2px;
+}
+
+.cockpit-module .sftp-browser-controls__search {
+  height: 17px;
+  min-height: 17px;
+  padding: 0 4px;
+  font-size: 9px;
+}
+
+.cockpit-module .sftp-browser-controls__options {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 20px;
+  gap: 2px;
+}
+
+.cockpit-module .sftp-browser-controls__options select,
+.cockpit-module .sftp-browser-controls__direction {
+  height: 17px;
+  min-height: 17px;
+  font-size: 9px;
+}
+
+.cockpit-module .sftp-browser-controls__direction {
+  width: 20px;
+  min-width: 20px;
+}
+
+.cockpit-module .sftp-result-actions,
+.cockpit-module .sftp-result-actions__button {
+  font-size: 8px;
+}
+
 .cockpit-module .sftp-list__item,
 .cockpit-module .sftp-list__item--compact,
 .cockpit-module .sftp-list__item--details {

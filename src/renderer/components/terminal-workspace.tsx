@@ -109,6 +109,11 @@ interface TerminalWorkspaceProps {
   requestDangerousCommandApproval?: (request: DangerousCommandApprovalRequest) => Promise<boolean>;
   onCommandHistoryChange?: (entries: TerminalCommandHistoryEntry[]) => void;
   onActiveEditorModeChange?: (isEditorMode: boolean) => void;
+  emptyStateAction?: {
+    hint: string;
+    label: string;
+    onClick: () => void;
+  };
 }
 
 interface TerminalInstance {
@@ -445,7 +450,8 @@ export function TerminalWorkspace({
   getDangerousCommandSessionGroupName,
   requestDangerousCommandApproval,
   onCommandHistoryChange,
-  onActiveEditorModeChange
+  onActiveEditorModeChange,
+  emptyStateAction
 }: TerminalWorkspaceProps) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -2347,7 +2353,18 @@ export function TerminalWorkspace({
           <div className="terminal-empty">
             <UiIcon name="terminal" />
             <p className="terminal-empty__title">Terminal workspace ready</p>
-            <p className="hint terminal-empty__hint">Open a session tab from the left to start.</p>
+            <p className="hint terminal-empty__hint">
+              {emptyStateAction?.hint ?? "Open a session tab from the left to start."}
+            </p>
+            {emptyStateAction ? (
+              <button
+                className="secondary-button terminal-empty__action"
+                onClick={emptyStateAction.onClick}
+                type="button"
+              >
+                {emptyStateAction.label}
+              </button>
+            ) : null}
           </div>
         ) : null}
         {tabs.map((tab) => {

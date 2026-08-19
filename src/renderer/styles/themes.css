@@ -178,38 +178,120 @@
   --ui-divider-strong: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 16%, transparent);
 }
 
-html[data-ui-theme="tech"],
-html[data-ui-theme="tech"] body,
-html[data-ui-theme="tech"] #root {
+:root[data-ui-theme="industrial"] {
+  --cockpit-cyan: #35c6cf;
+  --cockpit-cyan-soft: #a1e0e4;
+  --cockpit-green: #4ad58b;
+  --cockpit-amber: #f2b94b;
+  --cockpit-panel: rgb(5, 16, 22);
+  --cockpit-line: color-mix(in srgb, #78939b 22%, transparent);
+  --cockpit-muted: #91a5ae;
+  --cockpit-mono:
+    "JetBrains Mono",
+    "Cascadia Mono",
+    "SF Mono",
+    Consolas,
+    monospace;
+  --theme-bg-deep: #03080d;
+  --theme-bg-mid: #071018;
+  --theme-bg-app: #050b11;
+  --theme-bg-elevated: #09151c;
+  --theme-bg-sidebar: #071118;
+  --theme-bg-panel: #0a171e;
+  --theme-bg-panel-2: #0d1b23;
+  --theme-bg-panel-hover: #11252e;
+  --theme-bg-panel-active: #163039;
+  --theme-bg-terminal: #02090e;
+  --theme-border-base: #22363e;
+  --theme-border-soft: #1a2c33;
+  --theme-border-strong: #314b54;
+  --theme-glow: 0 0 16px color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 7%, transparent);
+  --theme-panel-blur: 0;
+  --theme-radius-sm: 6px;
+  --theme-radius-md: 10px;
+  --theme-radius-lg: 14px;
+  --theme-radius-panel: 10px;
+  --theme-radius-control: 6px;
+  --theme-font-ui:
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+  --theme-letter-spacing: 0.01em;
+  --theme-brand-text: #d8e6eb;
+  --theme-heading-strong: #a1e0e4;
+  --theme-status-dot: var(--cockpit-green);
+  --theme-status-dot-ring: rgba(53, 233, 128, 0.28);
+  --theme-meta-muted: #91a5ae;
+  --theme-meta-warn: var(--cockpit-amber);
+  --theme-danger-border: rgba(255, 181, 27, 0.45);
+  --theme-danger-bg: rgba(255, 181, 27, 0.06);
+  --theme-danger-text: #ffd49f;
+  --theme-danger-border-hover: rgba(255, 181, 27, 0.7);
+  --theme-danger-bg-hover: rgba(255, 181, 27, 0.12);
+  --theme-form-label: #b2c2c8;
+  --theme-inspector-tab-idle: #94a8b0;
+  --theme-drop-bg: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 12%, transparent);
+  --theme-drop-ring: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 48%, transparent);
+  --theme-panel-edge: rgba(0, 4, 10, 0.92);
+  --theme-panel-inset-left: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 6%, transparent);
+  --theme-panel-inset-right: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 8%, transparent);
+  --theme-panel-sheen: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 4%, transparent);
+  --theme-topbar-inset: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 8%, transparent);
+  --theme-topbar-ring: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 10%, transparent);
+  --theme-profile-border: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 28%, transparent);
+  --theme-profile-bg: color-mix(in srgb, var(--accent-muted) 40%, var(--theme-bg-panel));
+  --theme-profile-text: var(--theme-heading-strong);
+  --text-main: #d8e5e9;
+  --text-soft: #a8bac2;
+  --text-faint: #8c9fa7;
+  --ui-title: #a1e0e4;
+  --ui-title-muted: #86cbd1;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.34);
+  --shadow-md: 0 10px 24px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.48);
+  --ui-selected-shadow:
+    inset 2px 0 0 color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 78%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 12%, transparent);
+  --ui-hover-shadow: inset 1px 0 0 color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 28%, transparent);
+  --ui-surface-highlight: inset 0 1px 0 color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 10%, transparent);
+  --ui-divider: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 10%, transparent);
+  --ui-divider-strong: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 16%, transparent);
+}
+
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]),
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) body,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) #root {
   /* Prefer clear stage; opaque fallback only when the window is not transparent. */
   background-color: transparent;
   background-image: none;
 }
 
-/* Tech + transparent Electron window: clear the stage so desktop shows
+/* Cockpit + transparent Electron window: clear the stage so desktop shows
    between floating panels (red-box gaps). */
-html[data-ui-theme="tech"][data-cockpit-transparent="1"],
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] body,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] #root,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .app,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .app.app--cockpit,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .app.app--cockpit > .app__shell,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .cockpit-shell,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .cockpit-stage,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .cockpit-rail,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .cockpit-center,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] .cockpit-top-hud {
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"],
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] body,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] #root,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .app,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .app.app--cockpit,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .app.app--cockpit > .app__shell,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .cockpit-shell,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .cockpit-stage,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .cockpit-rail,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .cockpit-center,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] .cockpit-top-hud {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
 }
 
 /* Fallback scene when the OS window is not transparent. */
-html[data-ui-theme="tech"]:not([data-window-transparent="1"]) ,
-html[data-ui-theme="tech"]:not([data-window-transparent="1"]) body,
-html[data-ui-theme="tech"]:not([data-window-transparent="1"]) #root,
-html[data-ui-theme="tech"]:not([data-window-transparent="1"]) .app,
-html[data-ui-theme="tech"]:not([data-window-transparent="1"]) .app.app--cockpit {
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]):not([data-window-transparent="1"]),
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]):not([data-window-transparent="1"]) body,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]):not([data-window-transparent="1"]) #root,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]):not([data-window-transparent="1"]) .app,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]):not([data-window-transparent="1"]) .app.app--cockpit {
   background-color: #02070b;
   background-image: url("../assets/cockpit/cockpit-background.png");
   background-position: center;
@@ -217,8 +299,8 @@ html[data-ui-theme="tech"]:not([data-window-transparent="1"]) .app.app--cockpit 
   background-repeat: no-repeat;
 }
 
-html[data-ui-theme="tech"] .app.app--cockpit > .app__shell,
-html[data-ui-theme="tech"] .cockpit-shell {
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .app.app--cockpit > .app__shell,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .cockpit-shell {
   background: transparent;
 }
 
@@ -235,33 +317,33 @@ html[data-window-transparent="1"] .app--windows a {
   -webkit-app-region: no-drag;
 }
 
-:root[data-ui-theme="tech"] .modal-backdrop {
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .modal-backdrop {
   background:
     radial-gradient(circle at top, color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 14%, transparent) 0%, transparent 34%),
     rgba(0, 5, 9, 0.72);
 }
 
-:root[data-ui-theme="tech"] .modal,
-:root[data-ui-theme="tech"] .transfer-dock,
-:root[data-ui-theme="tech"] .error-bar,
-:root[data-ui-theme="tech"] .app-inline-hint-panel {
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .modal,
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .transfer-dock,
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .error-bar,
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .app-inline-hint-panel {
   box-shadow: var(--shadow-md);
 }
 
-:root[data-ui-theme="tech"] .modal {
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .modal {
   border-color: color-mix(in srgb, var(--accent, var(--cockpit-cyan)) 42%, var(--theme-border-strong));
   box-shadow: var(--shadow-lg), var(--theme-glow);
 }
 
-:root[data-ui-theme="tech"] .error-bar {
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .error-bar {
   border-color: color-mix(in srgb, var(--cockpit-amber) 55%, transparent);
 }
 
-:root[data-ui-theme="tech"] .topbar {
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .topbar {
   box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-:root[data-ui-theme="tech"] .panel--center {
+:root:is([data-ui-theme="tech"], [data-ui-theme="industrial"]) .panel--center {
   box-shadow:
     inset -1px 0 0 color-mix(in srgb, var(--accent) 18%, transparent),
     var(--theme-glow);

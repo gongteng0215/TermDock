@@ -1,4 +1,4 @@
-export type UiThemeId = "default" | "tech";
+export type UiThemeId = "default" | "tech" | "industrial";
 
 export interface UiThemeOption {
   id: UiThemeId;
@@ -17,6 +17,12 @@ const UI_THEME_OPTIONS_EN: readonly UiThemeOption[] = [
     label: "Tech",
     description:
       "Cockpit shell: floating neon panels with clear gaps that show the desktop behind the window."
+  },
+  {
+    id: "industrial",
+    label: "Industrial",
+    description:
+      "Restrained operations shell: quieter surfaces, compact navigation, and low-glow status chrome."
   }
 ] as const;
 
@@ -30,6 +36,11 @@ const UI_THEME_OPTIONS_ZH: readonly UiThemeOption[] = [
     id: "tech",
     label: "科技风",
     description: "Cockpit 浮动霓虹面板；面板外空隙透明，可透出桌面。"
+  },
+  {
+    id: "industrial",
+    label: "工业风",
+    description: "克制的运维控制台：低辉光实体面板、紧凑导航与更安静的状态层级。"
   }
 ] as const;
 
@@ -38,7 +49,11 @@ export const UI_THEME_OPTIONS = UI_THEME_OPTIONS_EN;
 export const DEFAULT_UI_THEME_ID: UiThemeId = "default";
 
 export function isUiThemeId(value: unknown): value is UiThemeId {
-  return value === "default" || value === "tech";
+  return value === "default" || value === "tech" || value === "industrial";
+}
+
+export function isCockpitUiThemeId(value: UiThemeId): boolean {
+  return value === "tech" || value === "industrial";
 }
 
 export function getUiThemeOptions(language: "en" | "zh"): readonly UiThemeOption[] {
@@ -55,8 +70,8 @@ export function applyUiThemeToDocument(themeId: UiThemeId): void {
     return;
   }
   document.documentElement.dataset.uiTheme = themeId;
-  // Tech gaps stay clear so the transparent Electron window can show the desktop.
-  if (themeId === "tech") {
+  // Cockpit gaps stay clear so the transparent Electron window can show the desktop.
+  if (isCockpitUiThemeId(themeId)) {
     document.documentElement.dataset.cockpitTransparent = "1";
   } else {
     delete document.documentElement.dataset.cockpitTransparent;

@@ -2,6 +2,7 @@ import {
   type Dispatch,
   DragEvent,
   FormEvent,
+  type MouseEvent as ReactMouseEvent,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -184,22 +185,27 @@ import {
   applyUiThemeToDocument,
   getUiThemeOption,
   getUiThemeOptions,
+  isCockpitUiThemeId,
   isUiThemeId,
   type UiThemeId
 } from "./ui-theme";
 import {
+  DEFAULT_SFTP_EXPLORER_BROWSE_PREFERENCES,
   readCommandHistoryInspectorCollapsed,
   readFirstRunOnboardingDismissed,
   readInspectorSidebarTabId,
+  readSftpExplorerBrowsePreferencesBySession,
   readSftpExplorerViewMode,
   readUiAccentId,
   readUiDensityId,
   readUiThemeId,
   type InspectorSidebarTabId,
+  type SftpExplorerBrowsePreferences,
   type SftpExplorerViewMode,
   writeCommandHistoryInspectorCollapsed,
   writeFirstRunOnboardingDismissed,
   writeInspectorSidebarTabId,
+  writeSftpExplorerBrowsePreferencesBySession,
   writeSftpExplorerViewMode,
   writeUiAccentId,
   writeUiDensityId,
@@ -312,6 +318,10 @@ const EMPTY_FORM: SessionCreateInput = {
   favorite: false,
   secret: ""
 };
+const SFTP_ENTRY_NAME_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base"
+});
 
 const CONNECTION_PREFERENCES_STORAGE_KEY = "termdock.connection-preferences.v1";
 const TERMINAL_EDITOR_FOCUS_PREFERENCES_STORAGE_KEY = "termdock.terminal-editor-focus.v1";
@@ -5258,11 +5268,15 @@ export function App() {
   const [sftpExplorerViewMode, setSftpExplorerViewMode] = useState<SftpExplorerViewMode>(
     () => readSftpExplorerViewMode()
   );
+  const [sftpExplorerBrowsePreferencesBySession, setSftpExplorerBrowsePreferencesBySession] =
+    useState(() => readSftpExplorerBrowsePreferencesBySession());
   const [sftpPath, setSftpPath] = useState(".");
   const [sftpLoading, setSftpLoading] = useState(false);
   const [sftpActionLoading, setSftpActionLoading] = useState(false);
   const [sftpDropActive, setSftpDropActive] = useState(false);
   const [selectedSftpPath, setSelectedSftpPath] = useState<string | null>(null);
+  const [selectedSftpPaths, setSelectedSftpPaths] = useState<string[]>([]);
+  const sftpSelectionAnchorPathRef = useRef<string | null>(null);
   const [sftpTransfers, setSftpTransfers] = useState<SftpTransferItem[]>([]);
   const [transferHistory, setTransferHistory] = useState<SftpTransferHistoryItem[]>(
     () => readSftpTransferHistory()
@@ -5959,6 +5973,75 @@ export function App() {
       ? transferDockNotice
       : null;
   const activeSessionId = activeTerminalTab?.sessionId ?? null;
+  const activeSftpBrowsePreferenceKey = activeSessionId ?? "__default__";
+  const activeSftpBrowsePreferences =
+    sftpExplorerBrowsePreferencesBySession[activeSftpBrowsePreferenceKey] ??
+    DEFAULT_SFTP_EXPLORER_BROWSE_PREFERENCES;
+  const updateActiveSftpBrowsePreferences = useCallback(
+    (patch: Partial<SftpExplorerBrowsePreferences>) => {
+      setSftpExplorerBrowsePreferencesBySession((previousPreferences) => ({
+        ...previousPreferences,
+        [activeSftpBrowsePreferenceKey]: {
+          ...DEFAULT_SFTP_EXPLORER_BROWSE_PREFERENCES,
+          ...previousPreferences[activeSftpBrowsePreferenceKey],
+          ...patch
+        }
+      }));
+    },
+    [activeSftpBrowsePreferenceKey]
+  );
+  const visibleSftpEntries = useMemo(() => {
+    const normalizedQuery = activeSftpBrowsePreferences.query.trim().toLocaleLowerCase();
+    const filteredEntries = (sftpDirectory?.entries ?? []).filter((entry) => {
+      if (
+        activeSftpBrowsePreferences.typeFilter === "files" &&
+        entry.kind !== "file"
+      ) {
+        return false;
+      }
+      if (
+        activeSftpBrowsePreferences.typeFilter === "directories" &&
+        entry.kind !== "directory"
+      ) {
+        return false;
+      }
+      if (!normalizedQuery) {
+        return true;
+      }
+      return `${entry.name}\n${entry.path}`.toLocaleLowerCase().includes(normalizedQuery);
+    });
+    const directionMultiplier = activeSftpBrowsePreferences.sortDirection === "desc" ? -1 : 1;
+    const modifiedAtTimestampByPath = new Map(
+      filteredEntries.map((entry) => {
+        const parsedTimestamp = entry.modifiedAt ? Date.parse(entry.modifiedAt) : 0;
+        return [entry.path, Number.isFinite(parsedTimestamp) ? parsedTimestamp : 0] as const;
+      })
+    );
+    return [...filteredEntries].sort((left, right) => {
+      const leftKindRank = left.kind === "directory" ? 0 : left.kind === "file" ? 1 : 2;
+      const rightKindRank = right.kind === "directory" ? 0 : right.kind === "file" ? 1 : 2;
+      if (leftKindRank !== rightKindRank) {
+        return leftKindRank - rightKindRank;
+      }
+
+      let comparison = 0;
+      if (activeSftpBrowsePreferences.sortKey === "size") {
+        comparison =
+          (Number.isFinite(left.size) ? left.size : 0) -
+          (Number.isFinite(right.size) ? right.size : 0);
+      } else if (activeSftpBrowsePreferences.sortKey === "modifiedAt") {
+        const leftTimestamp = modifiedAtTimestampByPath.get(left.path) ?? 0;
+        const rightTimestamp = modifiedAtTimestampByPath.get(right.path) ?? 0;
+        comparison = leftTimestamp - rightTimestamp;
+      } else {
+        comparison = SFTP_ENTRY_NAME_COLLATOR.compare(left.name, right.name);
+      }
+      if (comparison !== 0) {
+        return comparison * directionMultiplier;
+      }
+      return SFTP_ENTRY_NAME_COLLATOR.compare(left.path, right.path);
+    });
+  }, [activeSftpBrowsePreferences, sftpDirectory?.entries]);
   const handlePinnedMonitorChange = useCallback((monitor: PinnedMonitor) => {
     setPinnedMonitorSessionIds((previous) => {
       const next = new Set(previous);
@@ -6307,6 +6390,91 @@ export function App() {
     terminalApi,
     terminalTabsRef
   });
+  const clearSftpSelection = useCallback(() => {
+    sftpSelectionAnchorPathRef.current = null;
+    setSelectedSftpPath(null);
+    setSelectedSftpPaths([]);
+  }, []);
+  const selectAllVisibleSftpEntries = useCallback(() => {
+    const visiblePaths = visibleSftpEntries.map((entry) => entry.path);
+    if (visiblePaths.length === 0) {
+      clearSftpSelection();
+      return;
+    }
+    setSelectedSftpPaths(visiblePaths);
+    setSelectedSftpPath(visiblePaths.at(-1) ?? null);
+    sftpSelectionAnchorPathRef.current = visiblePaths[0] ?? null;
+  }, [clearSftpSelection, visibleSftpEntries]);
+  const selectOnlySftpPath = useCallback((path: string | null) => {
+    const normalizedPath = path?.trim() ?? "";
+    sftpSelectionAnchorPathRef.current = normalizedPath || null;
+    setSelectedSftpPath(normalizedPath || null);
+    setSelectedSftpPaths(normalizedPath ? [normalizedPath] : []);
+  }, []);
+  const selectSftpEntry = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>, entry: SftpEntry) => {
+      const entryPaths = visibleSftpEntries.map((candidate) => candidate.path);
+      const additive = event.ctrlKey || event.metaKey;
+      const anchorPath = sftpSelectionAnchorPathRef.current;
+
+      if (event.shiftKey && anchorPath) {
+        const anchorIndex = entryPaths.indexOf(anchorPath);
+        const entryIndex = entryPaths.indexOf(entry.path);
+        if (anchorIndex >= 0 && entryIndex >= 0) {
+          const rangeStart = Math.min(anchorIndex, entryIndex);
+          const rangeEnd = Math.max(anchorIndex, entryIndex);
+          const rangePaths = entryPaths.slice(rangeStart, rangeEnd + 1);
+          setSelectedSftpPaths(
+            additive
+              ? Array.from(new Set([...selectedSftpPaths, ...rangePaths]))
+              : rangePaths
+          );
+          setSelectedSftpPath(entry.path);
+          return;
+        }
+      }
+
+      if (additive) {
+        const removingEntry = selectedSftpPaths.includes(entry.path);
+        const nextPaths = removingEntry
+          ? selectedSftpPaths.filter((path) => path !== entry.path)
+          : [...selectedSftpPaths, entry.path];
+        setSelectedSftpPaths(nextPaths);
+        setSelectedSftpPath(
+          removingEntry
+            ? selectedSftpPath === entry.path
+              ? nextPaths.at(-1) ?? null
+              : selectedSftpPath
+            : entry.path
+        );
+        sftpSelectionAnchorPathRef.current = nextPaths.includes(entry.path)
+          ? entry.path
+          : nextPaths.at(-1) ?? null;
+        return;
+      }
+
+      selectOnlySftpPath(entry.path);
+    },
+    [selectOnlySftpPath, selectedSftpPath, selectedSftpPaths, visibleSftpEntries]
+  );
+  useEffect(() => {
+    if (selectedSftpPaths.length === 0) {
+      if (selectedSftpPath !== null) {
+        setSelectedSftpPath(null);
+      }
+      sftpSelectionAnchorPathRef.current = null;
+      return;
+    }
+    if (!selectedSftpPath || !selectedSftpPaths.includes(selectedSftpPath)) {
+      setSelectedSftpPath(selectedSftpPaths.at(-1) ?? null);
+    }
+    if (
+      !sftpSelectionAnchorPathRef.current ||
+      !selectedSftpPaths.includes(sftpSelectionAnchorPathRef.current)
+    ) {
+      sftpSelectionAnchorPathRef.current = selectedSftpPaths.at(-1) ?? null;
+    }
+  }, [selectedSftpPath, selectedSftpPaths]);
   const {
     closeSftpContextMenu,
     closeSftpToolbarMenu,
@@ -6318,7 +6486,8 @@ export function App() {
     toggleSftpToolbarMenu
   } = useSftpContextMenus({
     hasActiveTerminalTab: Boolean(activeTerminalTab),
-    setSelectedSftpPath,
+    selectOnlySftpPath,
+    selectedSftpPaths,
     sftpEntryPaths: sftpDirectory?.entries.map((entry) => entry.path) ?? []
   });
   const activeSessionTransferConflictStrategy = useMemo(() => {
@@ -8404,6 +8573,13 @@ export function App() {
     }
     return sftpDirectory.entries.find((entry) => entry.path === selectedSftpPath) ?? null;
   }, [selectedSftpPath, sftpDirectory]);
+  const selectedSftpEntries = useMemo<SftpEntry[]>(() => {
+    if (!sftpDirectory || selectedSftpPaths.length === 0) {
+      return [];
+    }
+    const selectedPathSet = new Set(selectedSftpPaths);
+    return sftpDirectory.entries.filter((entry) => selectedPathSet.has(entry.path));
+  }, [selectedSftpPaths, sftpDirectory]);
   const sftpContextEntry = useMemo<SftpEntry | null>(() => {
     if (!sftpDirectory || !sftpContextMenu?.entryPath) {
       return null;
@@ -8629,8 +8805,11 @@ export function App() {
     [retryCenterGroupedEntries]
   );
   const canDownloadSelectedSftpEntry =
-    !!selectedSftpEntry &&
-    (selectedSftpEntry.kind === "file" || selectedSftpEntry.kind === "directory");
+    selectedSftpEntries.length > 0 &&
+    selectedSftpEntries.every(
+      (entry) => entry.kind === "file" || entry.kind === "directory"
+    );
+  const canRenameSelectedSftpEntry = selectedSftpEntries.length === 1;
   const sftpSummary = useMemo(() => {
     const entries = sftpDirectory?.entries ?? [];
     let fileCount = 0;
@@ -9268,14 +9447,16 @@ export function App() {
         if (targetTabId === activeTabIdRef.current) {
           setSftpDirectory(result);
           setSftpPath(result.cwd);
-          setSelectedSftpPath((previousPath) => {
-            if (!previousPath) {
-              return null;
-            }
-            return result.entries.some((entry) => entry.path === previousPath)
-              ? previousPath
-              : null;
-          });
+          const availablePathSet = new Set(result.entries.map((entry) => entry.path));
+          setSelectedSftpPaths((previousPaths) =>
+            previousPaths.filter((selectedPath) => availablePathSet.has(selectedPath))
+          );
+          setSelectedSftpPath((previousPath) =>
+            previousPath && availablePathSet.has(previousPath) ? previousPath : null
+          );
+          if (!availablePathSet.has(sftpSelectionAnchorPathRef.current ?? "")) {
+            sftpSelectionAnchorPathRef.current = null;
+          }
         }
       } catch (caughtError) {
         if (requestGeneration !== sftpListGenerationRef.current) {
@@ -9572,6 +9753,12 @@ export function App() {
   useEffect(() => {
     writeSftpExplorerViewMode(sftpExplorerViewMode);
   }, [sftpExplorerViewMode]);
+
+  useEffect(() => {
+    writeSftpExplorerBrowsePreferencesBySession(
+      sftpExplorerBrowsePreferencesBySession
+    );
+  }, [sftpExplorerBrowsePreferencesBySession]);
 
   useEffect(() => {
     writeCommandHistoryInspectorCollapsed(isCommandHistoryInspectorCollapsed);
@@ -10746,7 +10933,7 @@ export function App() {
 
   useEffect(() => {
     setSftpDirectory(null);
-    setSelectedSftpPath(null);
+    clearSftpSelection();
     const nextPath = activeTabId ? sftpPathByTabRef.current[activeTabId] ?? "." : ".";
     setSftpPath(nextPath);
     if (!activeTabId || !sftpApi) {
@@ -10756,7 +10943,7 @@ export function App() {
       tabId: activeTabId,
       suppressDisconnectedError: true
     });
-  }, [activeTabId, loadSftpDirectory, sftpApi]);
+  }, [activeTabId, clearSftpSelection, loadSftpDirectory, sftpApi]);
 
   useEffect(() => {
     if (uploadQueueRetryTimerRef.current !== null) {
@@ -14449,8 +14636,8 @@ export function App() {
       appLanguageRef.current === "zh-CN" ? "zh" : "en"
     );
     setUiThemeIdState(nextTheme.id);
-    // Tech defaults to cyan; user can still change accent freely afterward.
-    if (nextTheme.id === "tech") {
+    // Cockpit themes default to cyan; user can still change accent freely afterward.
+    if (isCockpitUiThemeId(nextTheme.id)) {
       setUiAccentIdState(TECH_DEFAULT_UI_ACCENT_ID);
     }
     pushAppHintMessage(
@@ -16518,7 +16705,7 @@ export function App() {
     try {
       await sftpApi.renamePath(activeTabId, targetEntry.path, trimmedName);
       resetEnsuredRemoteDirectoryCacheForTab(activeTabId);
-      setSelectedSftpPath(null);
+      clearSftpSelection();
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
       setSftpError((caughtError as Error).message);
@@ -16565,12 +16752,97 @@ export function App() {
     try {
       await sftpApi.deletePath(activeTabId, targetEntry.path, targetEntry.kind);
       resetEnsuredRemoteDirectoryCacheForTab(activeTabId);
-      setSelectedSftpPath(null);
+      clearSftpSelection();
       await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
     } catch (caughtError) {
       const message = (caughtError as Error).message;
       if (!/delete canceled/i.test(message)) {
         setSftpError(message);
+      }
+    } finally {
+      setSftpDeleteProgress(null);
+      setSftpActionLoading(false);
+    }
+  };
+
+  const deleteSelectedSftpEntries = async () => {
+    if (selectedSftpEntries.length <= 1) {
+      await deleteSelectedSftpEntry(selectedSftpEntries[0] ?? null);
+      return;
+    }
+    if (!sftpApi) {
+      setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!activeTabId || !sftpDirectory) {
+      setSftpError("Open a terminal tab before managing SFTP files.");
+      return;
+    }
+
+    const targets = [...selectedSftpEntries];
+    const accepted = await showAppConfirm(
+      `Delete ${targets.length} selected entries? This cannot be undone.`,
+      {
+        title: "Delete Selected Entries",
+        confirmLabel: `Delete ${targets.length} Entries`,
+        danger: true,
+        detailText: targets.map((entry, index) => `${index + 1}. ${entry.path}`).join("\n")
+      }
+    );
+    if (!accepted) {
+      return;
+    }
+
+    const deletedPaths = new Set<string>();
+    const failedEntries: Array<{ entry: SftpEntry; message: string }> = [];
+    let canceled = false;
+    setSftpActionLoading(true);
+    setSftpError(null);
+    try {
+      for (let index = 0; index < targets.length; index += 1) {
+        const targetEntry = targets[index];
+        setSftpDeleteProgress({
+          name: `${index + 1}/${targets.length} ${targetEntry.name}`,
+          kind: targetEntry.kind,
+          path: targetEntry.path,
+          tabId: activeTabId
+        });
+        try {
+          await sftpApi.deletePath(activeTabId, targetEntry.path, targetEntry.kind);
+          deletedPaths.add(targetEntry.path);
+        } catch (caughtError) {
+          const message = (caughtError as Error).message;
+          if (/delete canceled/i.test(message)) {
+            canceled = true;
+            break;
+          }
+          failedEntries.push({ entry: targetEntry, message });
+        }
+      }
+
+      resetEnsuredRemoteDirectoryCacheForTab(activeTabId);
+      const remainingPaths = targets
+        .filter((entry) => !deletedPaths.has(entry.path))
+        .map((entry) => entry.path);
+      setSelectedSftpPaths(remainingPaths);
+      setSelectedSftpPath(remainingPaths.at(-1) ?? null);
+      sftpSelectionAnchorPathRef.current = remainingPaths.at(-1) ?? null;
+      await loadSftpDirectory(sftpDirectory.cwd, { tabId: activeTabId });
+
+      if (failedEntries.length > 0) {
+        await showAppAlert(
+          `Deleted ${deletedPaths.size} of ${targets.length} selected entries. ${failedEntries.length} failed.`,
+          {
+            title: "Batch Delete Incomplete",
+            detailText: failedEntries
+              .map(({ entry, message }, index) => `${index + 1}. ${entry.path}\n   ${message}`)
+              .join("\n")
+          }
+        );
+      } else if (canceled) {
+        setSftpError(
+          `Batch delete canceled after ${deletedPaths.size} of ${targets.length} entries.`
+        );
       }
     } finally {
       setSftpDeleteProgress(null);
@@ -17517,6 +17789,170 @@ export function App() {
     }
   };
 
+  const downloadSelectedSftpEntries = async () => {
+    if (selectedSftpEntries.length <= 1) {
+      await downloadSelectedSftpEntry(selectedSftpEntries[0] ?? null);
+      return;
+    }
+    if (!systemApi) {
+      setSftpError("System bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!sftpApi) {
+      setSftpError("SFTP bridge unavailable. Restart `pnpm dev`.");
+      return;
+    }
+    if (!activeTabId) {
+      setSftpError("Open a terminal tab before managing SFTP files.");
+      return;
+    }
+
+    const targets = selectedSftpEntries.filter(
+      (entry) => entry.kind === "file" || entry.kind === "directory"
+    );
+    if (targets.length === 0) {
+      setSftpError("Only files and directories can be downloaded.");
+      return;
+    }
+    const destinationDirectory = await systemApi.pickDownloadDirectory(
+      `${targets.length} TermDock items`
+    );
+    if (!destinationDirectory) {
+      return;
+    }
+
+    const batchId = `batch-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    canceledDownloadBatchIdsRef.current.delete(batchId);
+    setDownloadBatchByTab((previousBatches) => ({
+      ...previousBatches,
+      [activeTabId]: { batchId, total: 0 }
+    }));
+    setSftpActionLoading(true);
+    setSftpError(null);
+    let queuedFileCount = 0;
+    try {
+      const discoveredFileTargets: DownloadTargetEntry[] = [];
+      const directoryQueue: Array<{
+        remotePath: string;
+        localRelativePath: string;
+      }> = [];
+      let skippedEntries = 0;
+
+      for (const targetEntry of targets) {
+        const rootLocalName = sanitizeLocalPathSegment(targetEntry.name);
+        if (targetEntry.kind === "file") {
+          discoveredFileTargets.push({
+            name: targetEntry.name,
+            remotePath: targetEntry.path,
+            localPath: joinLocalPath(destinationDirectory, rootLocalName)
+          });
+        } else {
+          directoryQueue.push({
+            remotePath: targetEntry.path,
+            localRelativePath: rootLocalName
+          });
+        }
+      }
+
+      while (directoryQueue.length > 0) {
+        if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+          break;
+        }
+        const currentDirectory = directoryQueue.shift();
+        if (!currentDirectory) {
+          continue;
+        }
+        const listing = await sftpApi.listDirectory(activeTabId, currentDirectory.remotePath);
+        for (const childEntry of listing.entries) {
+          if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+            break;
+          }
+          const localName = sanitizeLocalPathSegment(childEntry.name);
+          const nextLocalRelativePath = joinRemotePath(
+            currentDirectory.localRelativePath,
+            localName
+          );
+          if (childEntry.kind === "directory") {
+            directoryQueue.push({
+              remotePath: childEntry.path,
+              localRelativePath: nextLocalRelativePath
+            });
+          } else if (childEntry.kind === "file") {
+            discoveredFileTargets.push({
+              name: childEntry.name,
+              remotePath: childEntry.path,
+              localPath: joinLocalPath(destinationDirectory, nextLocalRelativePath)
+            });
+          } else {
+            skippedEntries += 1;
+          }
+        }
+      }
+
+      if (canceledDownloadBatchIdsRef.current.has(batchId)) {
+        return;
+      }
+      if (discoveredFileTargets.length === 0) {
+        setDownloadBatchByTab((previousBatches) => {
+          const currentBatch = previousBatches[activeTabId];
+          if (!currentBatch || currentBatch.batchId !== batchId) {
+            return previousBatches;
+          }
+          const nextBatches = { ...previousBatches };
+          delete nextBatches[activeTabId];
+          return nextBatches;
+        });
+        await showAppAlert("No downloadable files were found in the selected entries.", {
+          title: "Download Selected"
+        });
+        return;
+      }
+
+      const resolvedTargets = await resolveDownloadTargetConflicts(discoveredFileTargets, {
+        tabId: activeTabId,
+        sessionId: activeSessionId ?? undefined
+      });
+      if (!resolvedTargets) {
+        return;
+      }
+      queuedFileCount = enqueueDownloadTargets(activeTabId, resolvedTargets, {
+        batchId,
+        incrementExistingBatchTotal: true,
+        suppressEmptyError: true
+      });
+      writeAppLog("info", "renderer:sftp-batch", "Queued multi-selection download batch.", {
+        tabId: activeTabId,
+        batchId,
+        selectedEntries: targets.length,
+        queuedFiles: queuedFileCount,
+        skippedEntries,
+        destinationDirectory
+      });
+      if (skippedEntries > 0) {
+        await showAppAlert(
+          `Queued ${queuedFileCount} files. Skipped ${skippedEntries} unsupported entries.`,
+          { title: "Download Selected" }
+        );
+      }
+    } catch (caughtError) {
+      setSftpError((caughtError as Error).message);
+    } finally {
+      if (queuedFileCount === 0) {
+        setDownloadBatchByTab((previousBatches) => {
+          const currentBatch = previousBatches[activeTabId];
+          if (!currentBatch || currentBatch.batchId !== batchId) {
+            return previousBatches;
+          }
+          const nextBatches = { ...previousBatches };
+          delete nextBatches[activeTabId];
+          return nextBatches;
+        });
+      }
+      canceledDownloadBatchIdsRef.current.delete(batchId);
+      setSftpActionLoading(false);
+    }
+  };
+
   const enqueueUploadTargets = useCallback(
     (
       tabId: string,
@@ -18262,7 +18698,7 @@ export function App() {
   );
   const cockpitChromeProps = useMemo(
     () =>
-      uiThemeId === "tech"
+      isCockpitUiThemeId(uiThemeId)
         ? {
             activeDock: cockpitActiveDock,
             autoReconnectEnabled: connectionPreferences.autoReconnect,
@@ -18510,23 +18946,33 @@ export function App() {
       viewSessionDetails
     },
     sftpEntry: {
+      canDownloadSelection: canDownloadSelectedSftpEntry,
       contextEntry: sftpContextEntry,
       currentDirectoryCwd: sftpDirectory?.cwd ?? null,
       currentPathInput: sftpPath,
       isActionDisabled: isSftpActionDisabled,
       menu: sftpContextMenu,
       onCopyPath: copySftpPathWithFallback,
+      onCopySelectedPaths: () => {
+        copySftpPathWithFallback(selectedSftpEntries.map((entry) => entry.path).join("\n"));
+      },
       onCreateDirectory: () => {
         void createSftpDirectory();
       },
       onDeleteEntry: (entry) => {
         void deleteSelectedSftpEntry(entry);
       },
+      onDeleteSelected: () => {
+        void deleteSelectedSftpEntries();
+      },
       onDownloadDirectory: (entry) => {
         void downloadSftpDirectory(entry);
       },
       onDownloadFile: (entry) => {
         void downloadSelectedSftpEntry(entry);
+      },
+      onDownloadSelected: () => {
+        void downloadSelectedSftpEntries();
       },
       onLoadDirectory: (path) => {
         void loadSftpDirectory(path);
@@ -18544,24 +18990,38 @@ export function App() {
       onUploadFile: () => {
         void uploadLocalFileToSftp();
       },
+      selectedEntryCount: selectedSftpEntries.length,
+      selectedPathsLabel:
+        selectedSftpEntries.length > 1
+          ? [
+              ...selectedSftpEntries.slice(0, 24).map((entry) => entry.path),
+              ...(selectedSftpEntries.length > 24
+                ? [`+ ${selectedSftpEntries.length - 24} more selected paths`]
+                : [])
+            ].join("\n")
+          : null,
       tr
     },
     sftpToolbar: {
       canDownloadSelectedEntry: canDownloadSelectedSftpEntry,
+      canRenameSelectedEntry: canRenameSelectedSftpEntry,
       currentDirectoryCwd: sftpDirectory?.cwd ?? null,
       currentDirectoryParent: sftpDirectory?.parent ?? null,
-      hasSelectedEntry: Boolean(selectedSftpEntry),
+      hasSelectedEntry: selectedSftpEntries.length > 0,
       inputPath: sftpPath,
       isActionDisabled: isSftpActionDisabled,
       menu: sftpToolbarMenu,
       onCreateDirectory: () => {
         void createSftpDirectory();
       },
+      onCopySelectedPaths: () => {
+        copySftpPathWithFallback(selectedSftpEntries.map((entry) => entry.path).join("\n"));
+      },
       onDeleteSelected: () => {
-        void deleteSelectedSftpEntry();
+        void deleteSelectedSftpEntries();
       },
       onDownloadSelected: () => {
-        void downloadSelectedSftpEntry();
+        void downloadSelectedSftpEntries();
       },
       onLoadDirectory: (path) => {
         void loadSftpDirectory(path);
@@ -18996,7 +19456,7 @@ export function App() {
         appClassName: [
           "app",
           isMacPlatform ? "app--mac" : "app--windows",
-          uiThemeId === "tech" ? "app--cockpit" : null
+          isCockpitUiThemeId(uiThemeId) ? "app--cockpit" : null
         ]
           .filter(Boolean)
           .join(" "),
@@ -19072,7 +19532,7 @@ export function App() {
       entries: inspectorTerminalCommandHistoryEntries,
       hiddenEntryCount: hiddenInspectorCommandHistoryCount,
       isCollapsed:
-        uiThemeId === "tech" ? false : isCommandHistoryInspectorCollapsed,
+        isCockpitUiThemeId(uiThemeId) ? false : isCommandHistoryInspectorCollapsed,
       onEntryContextMenu: openCommandHistoryContextMenu,
       onEntryDoubleClick: pasteTerminalCommandHistoryEntry,
       onOpenContextMenu: openCommandHistoryPanelContextMenu,
@@ -19174,8 +19634,11 @@ export function App() {
       onSftpDrop,
       openSftpContextMenu,
       openSftpEntryFile,
-      selectedSftpPath,
-      setSelectedSftpPath,
+      onClearSftpSelection: clearSftpSelection,
+      onSelectSftpEntry: selectSftpEntry,
+      onSelectAllVisibleSftpEntries: selectAllVisibleSftpEntries,
+      selectedSftpPaths,
+      sftpBrowsePreferences: activeSftpBrowsePreferences,
       setSftpExplorerViewMode,
       setSftpPath: setSftpPathForActiveTab,
       sftpActionLoading,
@@ -19188,6 +19651,8 @@ export function App() {
       sftpLoading,
       sftpPath,
       sftpSummary,
+      updateSftpBrowsePreferences: updateActiveSftpBrowsePreferences,
+      visibleSftpEntries,
       toggleSftpToolbarMenu
     }),
     terminalWorkspace: buildTerminalWorkspaceArgs({
@@ -19208,6 +19673,29 @@ export function App() {
         activeTabId,
         connectionPreferences,
         dangerousCommandGuardPreferences,
+        emptyStateAction:
+          uiThemeId === "industrial"
+            ? {
+                hint:
+                  sessions.length === 0
+                    ? "Create a session to start your first terminal."
+                    : "Choose a session from the right panel to start.",
+                label: sessions.length === 0 ? "Create Session" : "Choose Session",
+                onClick: () => {
+                  if (sessions.length === 0) {
+                    openCreateModal(activeSessionGroup?.groupName ?? "");
+                    return;
+                  }
+                  window.requestAnimationFrame(() => {
+                    const filterInput = document.querySelector<HTMLInputElement>(
+                      '[data-testid="cockpit-sessions"] .session-filter-input'
+                    );
+                    filterInput?.focus();
+                    filterInput?.select();
+                  });
+                }
+              }
+            : undefined,
         editorFocusCursorId: terminalEditorFocusPreferences.cursorId,
         editorFocusFontId: terminalEditorFocusPreferences.fontId,
         editorFocusModeEnabled:

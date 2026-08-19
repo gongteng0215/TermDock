@@ -1,0 +1,908 @@
+/* Industrial cockpit theme — quieter, denser alternative to the original Tech shell. */
+
+html[data-ui-theme="industrial"] .cockpit-shell {
+  background: #03080d;
+  background-color: #03080d;
+}
+
+html[data-ui-theme="industrial"] .cockpit-shell::before {
+  background:
+    linear-gradient(90deg, rgba(3, 8, 13, 0.62), rgba(3, 8, 13, 0.08) 28%, rgba(3, 8, 13, 0.08) 72%, rgba(3, 8, 13, 0.62)),
+    linear-gradient(180deg, rgba(3, 8, 13, 0.28), rgba(3, 8, 13, 0.72)),
+    url("../assets/cockpit/cockpit-background.png") center / cover no-repeat;
+  filter: saturate(0.72) brightness(0.72);
+}
+
+html[data-ui-theme="industrial"] .cockpit-top-hud {
+  height: 52px;
+  min-height: 52px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-top-hud__panel {
+  width: min(520px, 68%);
+  height: 52px;
+  min-height: 52px;
+  border: 1px solid rgba(87, 154, 164, 0.28);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: rgba(6, 17, 23, 0.97);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+}
+
+html[data-ui-theme="industrial"] .cockpit-top-hud__reconnect,
+html[data-ui-theme="industrial"] .cockpit-top-hud__danger {
+  gap: 8px;
+  height: 52px;
+  padding: 7px 18px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-top-hud__reconnect:disabled {
+  opacity: 0.78;
+}
+
+html[data-ui-theme="industrial"]
+  .cockpit-top-hud__reconnect:disabled
+  .cockpit-top-hud__copy
+  small {
+  color: var(--cockpit-muted);
+}
+
+html[data-ui-theme="industrial"] .cockpit-top-hud__danger {
+  padding-left: 20px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-top-hud__copy strong {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+html[data-ui-theme="industrial"] .cockpit-top-hud__copy small {
+  font: 400 10px/1.2 var(--cockpit-mono);
+}
+
+html[data-ui-theme="industrial"] .cockpit-stage {
+  grid-template-columns: clamp(216px, 17vw, 252px) minmax(0, 1fr) clamp(224px, 17vw, 252px);
+  gap: 10px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-rail {
+  gap: 10px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-rail--left {
+  padding: 10px 0;
+}
+
+html[data-ui-theme="industrial"] .cockpit-rail--right {
+  grid-template-rows: minmax(0, 1.6fr) minmax(0, 0.85fr) minmax(0, 0.85fr);
+  padding: 10px 0;
+}
+
+html[data-ui-theme="industrial"] .cockpit-center {
+  gap: 8px;
+  padding-top: 62px;
+}
+
+html[data-ui-theme="industrial"] :is(.cockpit-module, .cockpit-terminal, .cockpit-transfer) {
+  border: 1px solid rgba(88, 143, 151, 0.24);
+  background-color: rgb(5, 16, 22) !important;
+  background-image: linear-gradient(rgb(5, 16, 22), rgb(5, 16, 22)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(148, 205, 211, 0.025),
+    0 8px 20px rgba(0, 0, 0, 0.24);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module {
+  border-radius: 9px;
+  padding: 9px 10px 7px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module:not(.is-focus) {
+  border-color: rgba(112, 139, 146, 0.2);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module:not(.is-focus) .cockpit-module__title {
+  color: #91aab2;
+}
+
+html[data-ui-theme="industrial"]
+  :is(.cockpit-module.is-focus, .cockpit-terminal.is-focus, .cockpit-transfer.is-focus) {
+  border-color: rgba(53, 198, 207, 0.54);
+  box-shadow:
+    inset 2px 0 0 rgba(53, 198, 207, 0.5),
+    inset 0 1px 0 rgba(148, 205, 211, 0.035),
+    0 10px 24px rgba(0, 0, 0, 0.3);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module__header {
+  min-height: 26px;
+  padding: 0 2px 6px;
+  border-bottom-color: rgba(100, 150, 157, 0.16);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-title, #a1e0e4);
+  font: 700 12px/1.2 var(--cockpit-mono);
+  letter-spacing: 0.055em;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module__trailing {
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 5px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module__body,
+html[data-ui-theme="industrial"] .cockpit-module .hint {
+  color: #96aab2;
+}
+
+html[data-ui-theme="industrial"]
+  .cockpit-module:has(.session-filter-input:focus-visible) {
+  border-color: rgba(53, 198, 207, 0.5);
+  box-shadow:
+    inset 2px 0 0 rgba(53, 198, 207, 0.42),
+    0 8px 20px rgba(0, 0, 0, 0.26);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module__health-action {
+  height: 22px;
+  border: 1px solid rgba(92, 154, 162, 0.3);
+  border-radius: 6px;
+  background: rgba(10, 30, 38, 0.78);
+  color: #b4d8dc;
+  padding: 0 7px;
+  font: 600 10px/1 var(--cockpit-mono);
+  letter-spacing: 0.02em;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module__health-action:hover:not(:disabled),
+html[data-ui-theme="industrial"] .cockpit-module__health-action:focus-visible {
+  border-color: rgba(53, 198, 207, 0.64);
+  background: rgba(20, 57, 66, 0.78);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module__body > .panel__section,
+html[data-ui-theme="industrial"] .cockpit-module__body > section {
+  background-color: rgb(5, 16, 22) !important;
+  padding: 7px 7px 6px;
+  overflow-x: hidden;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .workbench-list-shell {
+  border-color: rgba(91, 131, 140, 0.2);
+  background: #071219;
+  box-shadow: inset 0 1px 0 rgba(163, 206, 213, 0.02);
+}
+
+html[data-ui-theme="industrial"]
+  .cockpit-module
+  :is(.session-folder-list__item, .session-list__item, .sftp-list__item).is-selected {
+  border-color: rgba(53, 198, 207, 0.28);
+  background: rgba(53, 198, 207, 0.1);
+  box-shadow: inset 2px 0 0 rgba(53, 198, 207, 0.72);
+}
+
+html[data-ui-theme="industrial"]
+  .cockpit-module
+  :is(.session-folder-list__item, .session-list__item, .sftp-list__item):hover {
+  background: rgba(92, 135, 144, 0.1);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .session-list__host {
+  color: #768b94;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .session-explorer__active-row,
+html[data-ui-theme="industrial"] .cockpit-module .command-history-panel__target-row {
+  border-color: rgba(91, 131, 140, 0.18);
+  background: #08161d;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .command-history-panel__list-shell {
+  width: 100%;
+  overflow-x: hidden;
+}
+
+html[data-ui-theme="industrial"]
+  .cockpit-module
+  :is(.command-history-panel__list, .command-history-panel__item, .command-history-panel__command) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .command-history-panel__command code {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .panel,
+html[data-ui-theme="industrial"] .cockpit-module .panel__section,
+html[data-ui-theme="industrial"] .cockpit-module .panel__section--sftp,
+html[data-ui-theme="industrial"] .cockpit-module .workbench-section,
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock,
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock__panel {
+  background-color: rgb(5, 16, 22) !important;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal {
+  border-radius: 9px;
+  background-color: rgb(2, 9, 14) !important;
+  background-image: linear-gradient(rgb(2, 9, 14), rgb(2, 9, 14)) !important;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal > .terminal-tabs {
+  background: #07141b !important;
+  border-bottom-color: rgba(91, 143, 151, 0.2);
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal > .terminal-stage,
+html[data-ui-theme="industrial"] .cockpit-terminal .panel--center,
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-workspace {
+  background-color: rgb(2, 9, 14) !important;
+  background-image: none !important;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-tabs > .hint {
+  color: #8da0a8;
+  font-size: 11px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-empty {
+  gap: 7px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-empty .ui-icon {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 4px;
+  color: #8cb0b8;
+  opacity: 0.9;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-empty__title {
+  color: #d1e1e5;
+  font-size: 15px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-empty__hint {
+  color: #9bafb7;
+  font-size: 11.5px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-empty__action {
+  min-width: 124px;
+  height: 28px;
+  margin-top: 5px;
+  border-color: #385860;
+  border-radius: 5px;
+  background: #0c2028;
+  color: #c0d8dd;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-empty__action:hover,
+html[data-ui-theme="industrial"] .cockpit-terminal .terminal-empty__action:focus-visible {
+  border-color: rgba(53, 198, 207, 0.66);
+  background: #12313a;
+  color: #e0f1f3;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer {
+  min-height: 58px;
+  border: 1px solid rgba(88, 143, 151, 0.26);
+  border-radius: 10px;
+  background-color: rgb(6, 17, 23) !important;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer.is-focus {
+  max-height: min(300px, 40vh);
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip {
+  height: 58px;
+  min-height: 58px;
+  padding: 5px 12px;
+  gap: 8px;
+  color: #9bb0b9;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip.is-expanded {
+  border-bottom-color: rgba(92, 145, 153, 0.18);
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__main {
+  height: 46px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__file strong {
+  color: #c0d2d8;
+  font-size: 12px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__file small {
+  color: #80939c;
+  font-size: 10px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__progress > i {
+  height: 3px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__progress > i::after {
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__progress small {
+  color: #94c6be;
+  font: 400 9px/1.1 var(--cockpit-mono);
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__count {
+  border-left-color: rgba(92, 145, 153, 0.18);
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__count small {
+  color: #82bfc5;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__count strong {
+  color: #c6dade;
+  font: 500 20px/1 var(--cockpit-mono);
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__count span {
+  color: #7f939b;
+  font: 400 9px/1.3 var(--cockpit-mono);
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer-strip__retry {
+  height: 28px;
+  border: 1px solid rgba(92, 145, 153, 0.25);
+  border-radius: 7px;
+  background: rgba(10, 29, 37, 0.72);
+  color: #9aadb5;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock__heading {
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 7px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock__heading h3 {
+  min-width: 74px;
+  font-size: 11px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock__heading-actions {
+  min-width: 0;
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock__heading-meta {
+  width: 132px;
+  min-width: 132px;
+  max-width: 132px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock__action-button {
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .transfer-dock__panel {
+  padding: 8px 9px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__title,
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__batch-progress,
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__concurrency-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__title {
+  font-size: 11px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__actions {
+  flex-wrap: nowrap;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__clear {
+  min-height: 22px;
+  height: 22px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-transfer .sftp-transfer-panel__concurrency-status {
+  margin-top: 1px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock {
+  width: min(720px, 92%);
+  max-width: 100%;
+  height: 58px;
+  min-height: 58px;
+  max-height: none;
+  aspect-ratio: auto;
+  padding: 5px;
+  border: 1px solid rgba(88, 143, 151, 0.28);
+  border-bottom-color: rgba(88, 143, 151, 0.18);
+  border-radius: 10px 10px 4px 4px;
+  overflow: hidden;
+  background: rgba(6, 17, 23, 0.97);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__terminal-mask,
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item::before {
+  display: none;
+  content: none;
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__hitgrid {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+  gap: 3px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item {
+  display: grid !important;
+  grid-template-rows: 22px auto;
+  visibility: visible;
+  padding: 3px 2px 2px;
+  border-radius: 6px;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  color: #8b9fa7;
+  opacity: 0.9;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item span,
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item svg {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: auto;
+  height: auto;
+  opacity: 1;
+  overflow: visible;
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item svg {
+  width: 18px;
+  height: 18px;
+  color: currentColor;
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item span {
+  color: currentColor;
+  font: 600 9px/1 var(--cockpit-mono);
+  letter-spacing: 0.025em;
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item.is-active,
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item:focus-visible {
+  outline: none;
+  background: rgba(53, 198, 207, 0.11);
+  color: #a1e0e4;
+  opacity: 1;
+  box-shadow: inset 0 2px 0 rgba(53, 198, 207, 0.72);
+}
+
+html[data-ui-theme="industrial"] .cockpit-bottom-dock__item:not(.is-active):hover {
+  background: rgba(79, 130, 139, 0.1);
+  color: #a8bbc2;
+  opacity: 1;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .server-health-card__label {
+  color: #82969f;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .server-health-card__value {
+  color: #d0e0e4;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .server-health-card {
+  width: 62px;
+  height: 62px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card {
+  gap: 8px;
+  padding: 9px;
+  border-color: rgba(91, 145, 153, 0.24);
+  background: #0a1921;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card__actions .primary-button {
+  grid-column: 1 / -1;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card__actions .secondary-button {
+  border-color: #29424b;
+  background: #0a1920;
+  color: #9db1b9;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card__steps {
+  display: none;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card__header strong {
+  color: #c7dce1;
+  font-size: 12px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card__header .hint,
+html[data-ui-theme="industrial"] .cockpit-module .first-run-card__steps span {
+  font-size: 10px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .session-filter-input,
+html[data-ui-theme="industrial"] .cockpit-module .session-filter-toggle {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-view-mode-toggle .secondary-button {
+  height: 22px;
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-toolbar__button {
+  min-width: 22px;
+  width: 22px;
+  height: 22px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-browser-controls__search,
+html[data-ui-theme="industrial"] .cockpit-module .sftp-browser-controls__options select {
+  border-color: #29434c;
+  background: #07161d;
+  color: #b9cbd0;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-browser-controls__search {
+  height: 19px;
+  min-height: 19px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-browser-controls__options select,
+html[data-ui-theme="industrial"] .cockpit-module .sftp-browser-controls__direction {
+  height: 19px;
+  min-height: 19px;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-result-actions__button {
+  color: #83aab3;
+}
+
+html[data-ui-theme="industrial"]
+  .cockpit-module
+  .sftp-result-actions__button:hover:not(:disabled),
+html[data-ui-theme="industrial"]
+  .cockpit-module
+  .sftp-result-actions__button:focus-visible {
+  color: #d5e2e5;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-summary__item {
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-selection-preview {
+  max-height: 96px;
+  border-color: rgba(91, 131, 140, 0.22);
+  background: #071219;
+  color: #81969e;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-selection-preview code {
+  color: #bfd1d6;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-selection-preview__clear {
+  color: #83aab3;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .sftp-selection-preview__clear:hover,
+html[data-ui-theme="industrial"] .cockpit-module .sftp-selection-preview__clear:focus-visible {
+  color: #d5e2e5;
+}
+
+html[data-ui-theme="industrial"] .sftp-context-menu__context {
+  border-bottom-color: #29434c;
+  color: #82979f;
+}
+
+html[data-ui-theme="industrial"] .sftp-context-menu {
+  border-color: #35515a;
+  border-radius: 8px;
+  background: #08171e;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.5);
+}
+
+html[data-ui-theme="industrial"] .sftp-context-menu__item {
+  color: #c0d0d5;
+}
+
+html[data-ui-theme="industrial"] .sftp-context-menu__item:hover:not(:disabled),
+html[data-ui-theme="industrial"] .sftp-context-menu__item:focus-visible {
+  border-color: rgba(53, 198, 207, 0.38);
+  background: #112831;
+  color: #e0edef;
+}
+
+html[data-ui-theme="industrial"] .sftp-context-menu__item:disabled {
+  color: #71858d;
+}
+
+html[data-ui-theme="industrial"] .sftp-context-menu__context code {
+  color: #d3e1e5;
+}
+
+/* Industrial dialogs and form chrome use neutral steel surfaces. Accent is
+   reserved for focus, selection, primary actions, and operational status. */
+html[data-ui-theme="industrial"] .modal-backdrop {
+  background: rgba(2, 7, 11, 0.84);
+  backdrop-filter: blur(3px);
+}
+
+html[data-ui-theme="industrial"] .modal {
+  border-color: #2b444c;
+  border-radius: 10px;
+  background: #08171e;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.5);
+}
+
+html[data-ui-theme="industrial"] .modal__header {
+  border-bottom-color: #20363e;
+}
+
+html[data-ui-theme="industrial"] .modal__header h3,
+html[data-ui-theme="industrial"] .settings-group__title {
+  color: #9ed3d7;
+}
+
+html[data-ui-theme="industrial"] .settings-nav {
+  border-right-color: #20343c;
+}
+
+html[data-ui-theme="industrial"] .settings-nav__button {
+  border-color: #293f47;
+  border-radius: 5px;
+  background: #0a1a21;
+  color: #a5b7be;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"] .settings-nav__button .ui-icon {
+  color: #7f9aa3;
+}
+
+html[data-ui-theme="industrial"] .settings-nav__button:hover {
+  border-color: #3b5962;
+  background: #10252d;
+  transform: none;
+}
+
+html[data-ui-theme="industrial"] .settings-nav__button.is-active {
+  border-color: rgba(53, 198, 207, 0.62);
+  background: #123039;
+  color: #d4e9ec;
+  box-shadow: inset 2px 0 0 rgba(53, 198, 207, 0.72);
+}
+
+html[data-ui-theme="industrial"]
+  :is(.settings-safety-preset, .settings-accent-preset) {
+  border-color: #294149;
+  border-radius: 6px;
+  background: #0a1a21;
+  color: #d2e0e4;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"]
+  :is(.settings-safety-preset, .settings-accent-preset):hover:not(:disabled) {
+  border-color: #42606a;
+  background: #10252d;
+}
+
+html[data-ui-theme="industrial"]
+  :is(.settings-safety-preset, .settings-accent-preset).is-active {
+  border-color: rgba(53, 198, 207, 0.68);
+  background: #112932;
+  box-shadow: inset 2px 0 0 rgba(53, 198, 207, 0.78);
+}
+
+html[data-ui-theme="industrial"] .modal :is(input, select, textarea) {
+  border-color: #2c454e;
+  border-radius: 5px;
+  background: #071219;
+  color: #d6e3e7;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"] .modal :is(input, select, textarea):focus {
+  border-color: rgba(53, 198, 207, 0.66);
+  box-shadow: 0 0 0 2px rgba(53, 198, 207, 0.1);
+}
+
+html[data-ui-theme="industrial"]
+  .modal
+  :is(.secondary-button, .field-row__action, .icon-button) {
+  border-color: #2e4851;
+  border-radius: 5px;
+  background: #0b1c23;
+  color: #b2c3c9;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"]
+  .modal
+  :is(.secondary-button, .field-row__action, .icon-button):hover:not(:disabled) {
+  border-color: #46646e;
+  background: #122832;
+}
+
+html[data-ui-theme="industrial"] .modal .primary-button {
+  border-color: #309ca4;
+  border-radius: 5px;
+  background: #167d85;
+  color: #f2fbfc;
+  box-shadow: none;
+}
+
+html[data-ui-theme="industrial"]
+  .modal
+  .primary-button.app-dialog__confirm--danger {
+  border-color: #8d4a59;
+  background: #5a2733;
+  color: #ffe0e6;
+}
+
+html[data-ui-theme="industrial"]
+  .modal
+  .primary-button.app-dialog__confirm--danger:hover:not(:disabled) {
+  border-color: #b45e73;
+  background: #703040;
+}
+
+html[data-ui-theme="industrial"] .modal :is(button, input, select, textarea):disabled {
+  color: #84979f;
+  opacity: 0.72;
+}
+
+@media (max-width: 1320px) {
+  html[data-ui-theme="industrial"] .cockpit-module__title {
+    font-size: 11px;
+    letter-spacing: 0.035em;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-module__health-action {
+    padding-inline: 6px;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-bottom-dock__item span {
+    font-size: 8px;
+    letter-spacing: 0;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-rail--left,
+  html[data-ui-theme="industrial"] .cockpit-rail--right {
+    padding: 10px 0;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-rail--right {
+    grid-template-rows: minmax(0, 1.6fr) minmax(0, 0.85fr) minmax(0, 0.85fr);
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-rail--right > .cockpit-module {
+    display: flex !important;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-top-hud,
+  html[data-ui-theme="industrial"] .cockpit-top-hud__panel {
+    height: 52px;
+    min-height: 52px;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-top-hud__panel {
+    width: min(520px, 76%);
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-top-hud__reconnect,
+  html[data-ui-theme="industrial"] .cockpit-top-hud__danger {
+    height: 52px;
+    padding: 7px 16px;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-center {
+    padding-top: 62px;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-bottom-dock {
+    width: min(680px, 96%);
+  }
+}
+
+@media (max-height: 860px) {
+  html[data-ui-theme="industrial"] .cockpit-rail--left,
+  html[data-ui-theme="industrial"] .cockpit-rail--right {
+    padding: 10px 0;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-center {
+    gap: 6px;
+    padding-top: 58px;
+  }
+
+  html[data-ui-theme="industrial"] .cockpit-bottom-dock {
+    width: min(660px, 94%);
+    height: 52px;
+    min-height: 52px;
+    padding: 4px;
+  }
+}
+
+@media (max-height: 860px) and (min-width: 1321px) {
+  html[data-ui-theme="industrial"] .cockpit-rail--right {
+    grid-template-rows: minmax(0, 1.6fr) minmax(0, 0.85fr) minmax(0, 0.85fr);
+  }
+}

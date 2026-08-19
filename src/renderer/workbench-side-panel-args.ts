@@ -105,8 +105,11 @@ interface BuildSftpExplorerArgsInput {
   onSftpDrop: SftpExplorerActionArgs["onSftpDrop"];
   openSftpContextMenu: SftpExplorerActionArgs["openSftpContextMenu"];
   openSftpEntryFile: SftpExplorerActionArgs["openSftpEntryFile"];
-  selectedSftpPath: string | null;
-  setSelectedSftpPath: SftpExplorerActionArgs["setSelectedSftpPath"];
+  onClearSftpSelection: SftpExplorerActionArgs["onClearSftpSelection"];
+  onSelectSftpEntry: SftpExplorerActionArgs["onSelectSftpEntry"];
+  onSelectAllVisibleSftpEntries: SftpExplorerActionArgs["onSelectAllVisibleSftpEntries"];
+  selectedSftpPaths: string[];
+  sftpBrowsePreferences: SftpExplorerValueArgs["sftpBrowsePreferences"];
   setSftpExplorerViewMode: SftpExplorerActionArgs["setSftpExplorerViewMode"];
   setSftpPath: SftpExplorerActionArgs["setSftpPath"];
   sftpActionLoading: boolean;
@@ -124,6 +127,8 @@ interface BuildSftpExplorerArgsInput {
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpExplorerValueArgs["sftpSummary"];
+  updateSftpBrowsePreferences: SftpExplorerValueArgs["updateSftpBrowsePreferences"];
+  visibleSftpEntries: SftpExplorerValueArgs["visibleSftpEntries"];
   toggleSftpToolbarMenu: SftpExplorerActionArgs["toggleSftpToolbarMenu"];
 }
 
@@ -260,8 +265,11 @@ export function buildSftpExplorerArgs({
   onSftpDrop,
   openSftpContextMenu,
   openSftpEntryFile,
-  selectedSftpPath,
-  setSelectedSftpPath,
+  onClearSftpSelection,
+  onSelectSftpEntry,
+  onSelectAllVisibleSftpEntries,
+  selectedSftpPaths,
+  sftpBrowsePreferences,
   setSftpExplorerViewMode,
   setSftpPath,
   sftpActionLoading,
@@ -274,6 +282,8 @@ export function buildSftpExplorerArgs({
   sftpLoading,
   sftpPath,
   sftpSummary,
+  updateSftpBrowsePreferences,
+  visibleSftpEntries,
   toggleSftpToolbarMenu
 }: BuildSftpExplorerArgsInput) {
   return buildSftpExplorerCompositeArgs({
@@ -284,7 +294,9 @@ export function buildSftpExplorerArgs({
       onSftpDrop,
       openSftpContextMenu,
       openSftpEntryFile,
-      setSelectedSftpPath,
+      onClearSftpSelection,
+      onSelectSftpEntry,
+      onSelectAllVisibleSftpEntries,
       setSftpExplorerViewMode,
       setSftpPath,
       toggleSftpToolbarMenu
@@ -296,7 +308,8 @@ export function buildSftpExplorerArgs({
       formatSftpMtimeForLs,
       formatSftpSizeForLs,
       formatTransferBytes,
-      selectedSftpPath,
+      selectedSftpPaths,
+      sftpBrowsePreferences,
       sftpActionLoading,
       sftpDeleteProgress,
       sftpDirectory,
@@ -306,7 +319,9 @@ export function buildSftpExplorerArgs({
       sftpExplorerViewMode,
       sftpLoading,
       sftpPath,
-      sftpSummary
+      sftpSummary,
+      updateSftpBrowsePreferences,
+      visibleSftpEntries
     }
   });
 }

@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef } from "react";
+import { memo, useCallback, useEffect, useRef } from "react";
 import type {
   ChangeEventHandler,
   DragEventHandler,
@@ -10,6 +10,7 @@ import type {
 } from "react";
 
 import { UiIcon } from "./ui-icon";
+import { VirtualRows } from "./virtual-rows";
 
 interface SessionsGroupView {
   key: string;
@@ -130,24 +131,29 @@ interface SftpExplorerEntryView {
   group: string;
   sizeLabel: string;
   isSelected: boolean;
-  onClick: MouseEventHandler<HTMLLIElement>;
-  onContextMenu: MouseEventHandler<HTMLLIElement>;
-  onDoubleClick: MouseEventHandler<HTMLLIElement>;
+  onClick: MouseEventHandler<HTMLDivElement>;
+  onContextMenu: MouseEventHandler<HTMLDivElement>;
+  onDoubleClick: MouseEventHandler<HTMLDivElement>;
   onOpenDirectory?: MouseEventHandler<HTMLButtonElement>;
 }
 
 interface SftpExplorerSectionProps {
+  allVisibleEntriesSelected: boolean;
   bindingTabTitle: string | null;
   deleteProgressLabel: string | null;
   directorySizeLabel: string;
   dropActive: boolean;
   entries: SftpExplorerEntryView[];
+  emptyStateLabel: string;
   entrySummaryLabel: string;
   errorMessage: string | null;
   errorRecovery?: ReactNode;
+  filterQuery: string;
   loading: boolean;
   onActionsMenu: MouseEventHandler<HTMLButtonElement>;
   onBodyContextMenu: MouseEventHandler<HTMLDivElement>;
+  onClearSelection: () => void;
+  onFilterQueryChange: ChangeEventHandler<HTMLInputElement>;
   onDragLeave: DragEventHandler<HTMLDivElement>;
   onDragOver: DragEventHandler<HTMLDivElement>;
   onDrop: DragEventHandler<HTMLDivElement>;
@@ -155,9 +161,18 @@ interface SftpExplorerSectionProps {
   onPathChange: ChangeEventHandler<HTMLInputElement>;
   onPathKeyDown: KeyboardEventHandler<HTMLInputElement>;
   onRefresh: () => void;
+  onSelectAllVisible: () => void;
+  onSortDirectionToggle: () => void;
+  onSortKeyChange: ChangeEventHandler<HTMLSelectElement>;
+  onTypeFilterChange: ChangeEventHandler<HTMLSelectElement>;
   pathValue: string;
   pathUpDisabled: boolean;
   refreshDisabled: boolean;
+  selectedPaths: string[];
+  sortDirection: "asc" | "desc";
+  sortKey: "name" | "size" | "modifiedAt";
+  typeFilter: "all" | "files" | "directories";
+  visibleEntrySummaryLabel: string;
   onViewModeChange: (mode: "compact" | "details") => void;
   viewMode: "compact" | "details";
 }
@@ -270,9 +285,9 @@ const SftpEntryRow = memo(function SftpEntryRow({
   isSelected: boolean;
   hasOpenDirectory: boolean;
   viewMode: "compact" | "details";
-  onRowClick: (event: MouseEvent<HTMLLIElement>, id: string) => void;
-  onRowContextMenu: (event: MouseEvent<HTMLLIElement>, id: string) => void;
-  onRowDoubleClick: (event: MouseEvent<HTMLLIElement>, id: string) => void;
+  onRowClick: (event: MouseEvent<HTMLDivElement>, id: string) => void;
+  onRowContextMenu: (event: MouseEvent<HTMLDivElement>, id: string) => void;
+  onRowDoubleClick: (event: MouseEvent<HTMLDivElement>, id: string) => void;
   onRowOpenDirectory: (event: MouseEvent<HTMLButtonElement>, id: string) => void;
 }) {
   const variantClass = viewMode === "compact" ? "sftp-list__item--compact" : "sftp-list__item--details";
@@ -292,7 +307,9 @@ const SftpEntryRow = memo(function SftpEntryRow({
   );
 
   return (
-    <li
+    <div
+      aria-label={`${kind}: ${path}`}
+      aria-selected={isSelected}
       className={
         isSelected
           ? `sftp-list__item ${variantClass} is-selected`
@@ -301,6 +318,8 @@ const SftpEntryRow = memo(function SftpEntryRow({
       onClick={(event) => onRowClick(event, id)}
       onContextMenu={(event) => onRowContextMenu(event, id)}
       onDoubleClick={(event) => onRowDoubleClick(event, id)}
+      role="option"
+      title={path}
     >
       {viewMode === "compact" ? (
         <>
@@ -321,7 +340,7 @@ const SftpEntryRow = memo(function SftpEntryRow({
           <span className="sftp-list__meta">{sizeLabel}</span>
         </>
       )}
-    </li>
+    </div>
   );
 });
 
@@ -535,17 +554,22 @@ export function SessionsInspectorSection({
 }
 
 export function SftpExplorerSection({
+  allVisibleEntriesSelected,
   bindingTabTitle,
   deleteProgressLabel,
   directorySizeLabel,
   dropActive,
   entries,
+  emptyStateLabel,
   entrySummaryLabel,
   errorMessage,
   errorRecovery = null,
+  filterQuery,
   loading,
   onActionsMenu,
   onBodyContextMenu,
+  onClearSelection,
+  onFilterQueryChange,
   onDragLeave,
   onDragOver,
   onDrop,
@@ -553,22 +577,33 @@ export function SftpExplorerSection({
   onPathChange,
   onPathKeyDown,
   onRefresh,
+  onSelectAllVisible,
+  onSortDirectionToggle,
+  onSortKeyChange,
+  onTypeFilterChange,
   pathValue,
   pathUpDisabled,
   refreshDisabled,
+  selectedPaths,
+  sortDirection,
+  sortKey,
+  typeFilter,
+  visibleEntrySummaryLabel,
   onViewModeChange,
   viewMode
 }: SftpExplorerSectionProps) {
   const entryMapRef = useRef(new Map<string, SftpExplorerEntryView>());
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   entryMapRef.current = new Map(entries.map((entry) => [entry.id, entry]));
+  const useVirtualRows = entries.length >= 160;
 
-  const handleEntryClick = useCallback((event: MouseEvent<HTMLLIElement>, id: string) => {
+  const handleEntryClick = useCallback((event: MouseEvent<HTMLDivElement>, id: string) => {
     entryMapRef.current.get(id)?.onClick(event);
   }, []);
-  const handleEntryContextMenu = useCallback((event: MouseEvent<HTMLLIElement>, id: string) => {
+  const handleEntryContextMenu = useCallback((event: MouseEvent<HTMLDivElement>, id: string) => {
     entryMapRef.current.get(id)?.onContextMenu(event);
   }, []);
-  const handleEntryDoubleClick = useCallback((event: MouseEvent<HTMLLIElement>, id: string) => {
+  const handleEntryDoubleClick = useCallback((event: MouseEvent<HTMLDivElement>, id: string) => {
     entryMapRef.current.get(id)?.onDoubleClick(event);
   }, []);
   const handleEntryOpenDirectory = useCallback(
@@ -576,6 +611,33 @@ export function SftpExplorerSection({
       entryMapRef.current.get(id)?.onOpenDirectory?.(event);
     },
     []
+  );
+  useEffect(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0 });
+  }, [filterQuery, pathValue, sortDirection, sortKey, typeFilter, viewMode]);
+
+  const renderEntryRow = (entry: SftpExplorerEntryView) => (
+    <SftpEntryRow
+      compactSizeLabel={entry.compactSizeLabel}
+      group={entry.group}
+      hasOpenDirectory={Boolean(entry.onOpenDirectory)}
+      id={entry.id}
+      isSelected={entry.isSelected}
+      key={entry.id}
+      kind={entry.kind}
+      linksLabel={entry.linksLabel}
+      modifiedAtLabel={entry.modifiedAtLabel}
+      name={entry.name}
+      onRowClick={handleEntryClick}
+      onRowContextMenu={handleEntryContextMenu}
+      onRowDoubleClick={handleEntryDoubleClick}
+      onRowOpenDirectory={handleEntryOpenDirectory}
+      owner={entry.owner}
+      path={entry.path}
+      permissions={entry.permissions}
+      sizeLabel={entry.sizeLabel}
+      viewMode={viewMode}
+    />
   );
 
   return (
@@ -615,7 +677,7 @@ export function SftpExplorerSection({
       {bindingTabTitle ? (
         <>
           <p className="hint sftp-binding">
-            Bound to tab: <strong>{bindingTabTitle}</strong>
+            Bound to tab: <strong title={bindingTabTitle}>{bindingTabTitle}</strong>
           </p>
           <div className="sftp-toolbar">
             <input
@@ -623,6 +685,8 @@ export function SftpExplorerSection({
               onChange={onPathChange}
               onKeyDown={onPathKeyDown}
               placeholder="/var/log"
+              aria-label="Remote directory path"
+              title={pathValue}
               value={pathValue}
             />
             <button
@@ -655,6 +719,65 @@ export function SftpExplorerSection({
               <UiIcon name="menu" />
             </button>
           </div>
+          <div className="sftp-browser-controls">
+            <input
+              aria-label="Filter SFTP entries"
+              className="sftp-browser-controls__search"
+              onChange={onFilterQueryChange}
+              placeholder="Filter files and folders"
+              type="search"
+              value={filterQuery}
+            />
+            <div className="sftp-browser-controls__options">
+              <select
+                aria-label="Filter SFTP entry type"
+                onChange={onTypeFilterChange}
+                value={typeFilter}
+              >
+                <option value="all">All types</option>
+                <option value="files">Files</option>
+                <option value="directories">Folders</option>
+              </select>
+              <select
+                aria-label="Sort SFTP entries"
+                onChange={onSortKeyChange}
+                value={sortKey}
+              >
+                <option value="name">Name</option>
+                <option value="size">Size</option>
+                <option value="modifiedAt">Modified</option>
+              </select>
+              <button
+                aria-label={sortDirection === "asc" ? "Sort ascending" : "Sort descending"}
+                className="secondary-button secondary-button--small sftp-browser-controls__direction"
+                onClick={onSortDirectionToggle}
+                title={sortDirection === "asc" ? "Ascending" : "Descending"}
+                type="button"
+              >
+                {sortDirection === "asc" ? "↑" : "↓"}
+              </button>
+            </div>
+          </div>
+          <div className="sftp-result-actions">
+            <span>{visibleEntrySummaryLabel}</span>
+            <button
+              className="sftp-result-actions__button"
+              disabled={entries.length === 0 || allVisibleEntriesSelected}
+              onClick={onSelectAllVisible}
+              type="button"
+            >
+              {allVisibleEntriesSelected ? "All Results Selected" : "Select All Results"}
+            </button>
+            {selectedPaths.length > 0 ? (
+              <button
+                className="sftp-result-actions__button"
+                onClick={onClearSelection}
+                type="button"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
           {errorMessage ? <p className="hint sftp-error">{errorMessage}</p> : null}
           {errorRecovery}
           {deleteProgressLabel ? (
@@ -671,34 +794,80 @@ export function SftpExplorerSection({
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
-            <div className="sftp-drop-zone__body" onContextMenu={onBodyContextMenu}>
-              <ul className={viewMode === "compact" ? "sftp-list sftp-list--compact" : "sftp-list sftp-list--details"}>
-                {entries.map((entry) => (
-                  <SftpEntryRow
-                    compactSizeLabel={entry.compactSizeLabel}
-                    group={entry.group}
-                    hasOpenDirectory={Boolean(entry.onOpenDirectory)}
-                    id={entry.id}
-                    isSelected={entry.isSelected}
-                    key={entry.id}
-                    kind={entry.kind}
-                    linksLabel={entry.linksLabel}
-                    modifiedAtLabel={entry.modifiedAtLabel}
-                    name={entry.name}
-                    onRowClick={handleEntryClick}
-                    onRowContextMenu={handleEntryContextMenu}
-                    onRowDoubleClick={handleEntryDoubleClick}
-                    onRowOpenDirectory={handleEntryOpenDirectory}
-                    owner={entry.owner}
-                    path={entry.path}
-                    permissions={entry.permissions}
-                    sizeLabel={entry.sizeLabel}
-                    viewMode={viewMode}
+            <div
+              className="sftp-drop-zone__body"
+              onContextMenu={onBodyContextMenu}
+              ref={scrollContainerRef}
+            >
+              {useVirtualRows ? (
+                <div aria-multiselectable="true" role="listbox">
+                  <VirtualRows
+                    className={
+                      viewMode === "compact"
+                        ? "sftp-list sftp-list--compact sftp-list--virtual"
+                        : "sftp-list sftp-list--details sftp-list--virtual"
+                    }
+                    count={entries.length}
+                    estimateSize={viewMode === "compact" ? 16 : 18}
+                    getKey={(index) => entries[index]?.id ?? `sftp-row-${index}`}
+                    overscan={16}
+                    renderRow={(index) => renderEntryRow(entries[index])}
+                    scrollRef={scrollContainerRef}
                   />
-                ))}
-              </ul>
+                </div>
+              ) : (
+                <div
+                  aria-multiselectable="true"
+                  className={
+                    viewMode === "compact"
+                      ? "sftp-list sftp-list--compact"
+                      : "sftp-list sftp-list--details"
+                  }
+                  role="listbox"
+                >
+                  {entries.map(renderEntryRow)}
+                </div>
+              )}
+              {!loading && entries.length === 0 ? (
+                <p className="hint sftp-list__empty">{emptyStateLabel}</p>
+              ) : null}
             </div>
           </div>
+          {selectedPaths.length > 0 ? (
+            <div
+              aria-live="polite"
+              className="sftp-selection-preview"
+              title={[
+                ...selectedPaths.slice(0, 40),
+                ...(selectedPaths.length > 40
+                  ? [`+ ${selectedPaths.length - 40} more selected paths`]
+                  : [])
+              ].join("\n")}
+            >
+              <div className="sftp-selection-preview__heading">
+                <span>
+                  {selectedPaths.length === 1
+                    ? "1 item selected"
+                    : `${selectedPaths.length} items selected`}
+                </span>
+                <button
+                  className="sftp-selection-preview__clear"
+                  onClick={onClearSelection}
+                  type="button"
+                >
+                  Clear Selection
+                </button>
+              </div>
+              <code>
+                {selectedPaths
+                  .slice(0, 4)
+                  .join("\n")}
+                {selectedPaths.length > 4
+                  ? `\n+ ${selectedPaths.length - 4} more`
+                  : ""}
+              </code>
+            </div>
+          ) : null}
           {loading && entries.length === 0 ? (
             <p className="hint sftp-loading-indicator" role="status" aria-live="polite">
               Loading remote directory...

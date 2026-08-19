@@ -298,9 +298,9 @@ body {
 }
 
 /* Tech transparent stage: don't re-paint an opaque veil after themes.css. */
-html[data-ui-theme="tech"][data-cockpit-transparent="1"],
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] body,
-html[data-ui-theme="tech"][data-cockpit-transparent="1"] #root {
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"],
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] body,
+html:is([data-ui-theme="tech"], [data-ui-theme="industrial"])[data-cockpit-transparent="1"] #root {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
@@ -1170,6 +1170,11 @@ body::before {
 .settings-shell-theme-preset__swatch[data-shell-theme="tech"] {
   background: linear-gradient(90deg, #03050a 0%, #0e1622 50%, #3d8cff 100%);
   box-shadow: 0 0 10px rgba(61, 140, 255, 0.35);
+}
+
+.settings-shell-theme-preset__swatch[data-shell-theme="industrial"] {
+  background: linear-gradient(90deg, #050b11 0%, #0d1b23 58%, #35c6cf 100%);
+  box-shadow: 0 0 8px rgba(53, 198, 207, 0.18);
 }
 
 .settings-terminal-theme-preset {
@@ -2315,6 +2320,7 @@ body::before {
 .sftp-context-menu {
   position: fixed;
   min-width: 156px;
+  max-width: min(420px, calc(100vw - 16px));
   border: 1px solid #3b5a77;
   border-radius: var(--radius-md);
   background: #122234;
@@ -2323,6 +2329,33 @@ body::before {
   display: grid;
   gap: 2px;
   z-index: 45;
+}
+
+.sftp-context-menu__context {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  margin: 0 0 3px;
+  padding: 5px 7px 7px;
+  border-bottom: 1px solid var(--ui-divider-strong);
+  color: var(--text-faint);
+}
+
+.sftp-context-menu__context span {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sftp-context-menu__context code {
+  max-height: 96px;
+  overflow: auto;
+  color: var(--text-main);
+  font: 11px/1.35 "SF Mono", Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+  user-select: text;
+  white-space: pre-wrap;
 }
 
 .sftp-context-menu__item {
@@ -2421,6 +2454,92 @@ body::before {
 .sftp-toolbar .sftp-path-input {
   flex: 1 1 170px;
   min-width: 0;
+}
+
+.sftp-browser-controls {
+  display: grid;
+  gap: 4px;
+}
+
+.sftp-browser-controls__search {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--ui-surface-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-field);
+  color: var(--text-main);
+  font: 10px/1.2 "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.sftp-browser-controls__options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 26px;
+  gap: 4px;
+}
+
+.sftp-browser-controls__options select {
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  min-height: 22px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  font: 10px/1.1 "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.sftp-browser-controls__direction {
+  width: 26px;
+  min-width: 26px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.sftp-result-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font: 9px/1.2 "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+.sftp-result-actions > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sftp-result-actions__button {
+  appearance: none;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font: 600 9px/1.2 "SF Mono", Menlo, Monaco, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.sftp-result-actions__button:hover:not(:disabled),
+.sftp-result-actions__button:focus-visible {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sftp-result-actions__button:disabled {
+  color: var(--text-faint);
+  cursor: default;
+  opacity: 0.7;
 }
 
 .sftp-error {
@@ -2607,6 +2726,62 @@ body::before {
   line-height: var(--density-transfer-progress-line-height);
 }
 
+.sftp-selection-preview {
+  min-width: 0;
+  max-height: 110px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid var(--ui-surface-border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-field);
+  color: var(--text-faint);
+}
+
+.sftp-selection-preview__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.sftp-selection-preview__heading span {
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.sftp-selection-preview__clear {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  cursor: pointer;
+  font: 600 9px/1.2 "SF Mono", Menlo, Monaco, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.sftp-selection-preview__clear:hover,
+.sftp-selection-preview__clear:focus-visible {
+  color: var(--text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sftp-selection-preview code {
+  min-width: 0;
+  color: var(--text-main);
+  font: 10px/1.35 "SF Mono", Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+  user-select: text;
+  white-space: pre-wrap;
+}
+
 .sftp-transfer-panel__concurrency-status {
   margin: calc(var(--space-1) * -0.5) 0 var(--space-1);
   color: var(--text-faint);
@@ -2733,6 +2908,18 @@ body::before {
   line-height: 1.05;
 }
 
+.sftp-list.sftp-list--virtual {
+  display: block;
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.sftp-list__empty {
+  margin: 6px;
+  color: var(--text-faint);
+  font: 10px/1.35 "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
 .sftp-list__header {
   display: none;
 }
@@ -2744,6 +2931,8 @@ body::before {
   padding: var(--density-list-item-padding-y) var(--space-1);
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .sftp-list--details {

@@ -31,6 +31,7 @@ export async function startSmokeSshFixture(options = {}) {
   const remoteRootPath = "/";
   const remoteSeedPath = posixPath.join(remoteRootPath, FIXTURE_SEED_FILE_NAME);
   const maxConcurrentSftpSessions = normalizePositiveInteger(options.maxConcurrentSftpSessions);
+  const writeDelayMs = normalizePositiveInteger(options.writeDelayMs);
   const transientMissingWriteDirectories = new Map(
     normalizeRemoteDirectoryList(options.transientMissingWriteDirectories).map((remoteDirectory) => [
       remoteDirectory,
@@ -118,6 +119,7 @@ export async function startSmokeSshFixture(options = {}) {
             const sftp = accept();
             attachSftpHandlers(sftp, rootDir, {
               transientMissingWriteDirectories,
+              writeDelayMs,
               onClose: () => {
                 activeSftpSessions = Math.max(0, activeSftpSessions - 1);
               }
@@ -447,6 +449,7 @@ function attachSftpHandlers(sftp, rootDir, options = {}) {
       ? options.transientMissingWriteDirectories
       : new Map();
   const onClose = typeof options.onClose === "function" ? options.onClose : null;
+  const writeDelayMs = normalizePositiveInteger(options.writeDelayMs);
   let nextHandleId = 1;
   let sessionClosed = false;
 
@@ -641,6 +644,9 @@ function attachSftpHandlers(sftp, rootDir, options = {}) {
       const resource = readHandle(handle);
       if (!resource || resource.type !== "file") {
         throw createStatusError(STATUS_CODE.FAILURE, "Invalid file handle.");
+      }
+      if (writeDelayMs) {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, writeDelayMs));
       }
       await resource.fileHandle.write(data, 0, data.length, Number(offset));
       sftp.status(reqid, STATUS_CODE.OK);

@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 
-import type { UiThemeId } from "../ui-theme";
+import { isCockpitUiThemeId, type UiThemeId } from "../ui-theme";
 import {
   CockpitWorkbenchShell,
   type CockpitChromeProps
@@ -52,7 +52,7 @@ export function WorkbenchAppShell({
   topbarProps,
   transferDockProps
 }: WorkbenchAppShellProps) {
-  if (shellThemeId === "tech" && cockpitChrome) {
+  if (isCockpitUiThemeId(shellThemeId) && cockpitChrome) {
     return (
       <CockpitWorkbenchShell
         appInlineHintPanelProps={appInlineHintPanelProps}

@@ -57,6 +57,8 @@ export function buildSftpToolbarContextMenuOverlayProps({
     actions: buildSftpToolbarActions(actionArgs).map((action) =>
       action.id === "delete-selected" ? { ...action, danger: true } : action
     ),
+    contextLabel: actionArgs.currentDirectoryCwd ?? actionArgs.inputPath,
+    contextLabelTitle: "Current folder",
     menu,
     onSelect,
     width: 236
@@ -67,18 +69,35 @@ interface BuildSftpEntryContextMenuOverlayPropsArgs
   extends SftpEntryContextMenuActionArgs {
   menu: WorkbenchContextMenuPosition | null;
   onSelect: (action: SftpContextAction) => void;
+  selectedPathsLabel: string | null;
 }
 
 export function buildSftpEntryContextMenuOverlayProps({
   menu,
   onSelect,
+  selectedPathsLabel,
   ...actionArgs
 }: BuildSftpEntryContextMenuOverlayPropsArgs): WorkbenchContextMenuProps | null {
   return buildActionWorkbenchContextMenuProps({
-    actions: buildSftpContextActions(actionArgs),
+    actions: buildSftpContextActions(actionArgs).map((action) =>
+      action.id === "delete-entry" || action.id === "delete-selected"
+        ? { ...action, danger: true }
+        : action
+    ),
+    contextLabel:
+      selectedPathsLabel ??
+      actionArgs.contextEntry?.path ??
+      actionArgs.currentDirectoryCwd ??
+      actionArgs.currentPathInput,
+    contextLabelTitle:
+      actionArgs.selectedEntryCount > 1
+        ? "Selected paths"
+        : actionArgs.contextEntry
+          ? "Selected path"
+          : "Current folder",
     menu,
     onSelect,
-    width: 196
+    width: 260
   });
 }
 

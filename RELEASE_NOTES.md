@@ -2,6 +2,28 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## v0.1.50 (2026-08-19)
+
+Release type: Stable
+
+### Highlights
+
+- Added the Industrial Cockpit theme as a quieter, denser alternative while preserving the existing Default and Tech themes.
+- Refined Cockpit chrome, panel hierarchy, navigation, and compact list rhythm for clearer day-to-day operations at desktop and narrow-window sizes.
+- SFTP now supports Ctrl/Cmd and Shift multi-selection with batch download, delete, and path-copy actions, plus project-styled destructive confirmations.
+- Long SFTP names and paths now stay readable through truncation-safe rows, complete hover labels, and context-menu path previews.
+- Added per-session SFTP search, file/folder filtering, name/size/modified sorting, and one-click selection of the current result set.
+- Large SFTP directories now use stable virtual rows while preserving the compact row height; targeted verification covers a 240-entry directory.
+
+### Validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run smoke:ui` passed: 52 passed, 0 failed.
+- `pnpm run smoke:ui:packaged` passed: 52 passed, 0 failed.
+- Industrial/SFTP targeted verification passed with 240 remote entries and no horizontal overflow at 1200px.
+- Windows packaging and GitHub Actions release artifacts are verified by the release workflow.
+
 ## v0.1.49 (2026-08-07)
 
 Release type: Stable

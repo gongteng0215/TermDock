@@ -15,7 +15,10 @@ import {
   SessionsInspectorSection,
   SftpExplorerSection
 } from "./components/workbench-panels";
-import type { SftpExplorerViewMode } from "./workbench-ui-preferences";
+import type {
+  SftpExplorerBrowsePreferences,
+  SftpExplorerViewMode
+} from "./workbench-ui-preferences";
 
 interface SessionGroupLike {
   key: string;
@@ -270,8 +273,11 @@ export interface BuildSftpExplorerSectionPropsArgs {
   onSftpDrop: ComponentProps<typeof SftpExplorerSection>["onDrop"];
   openSftpContextMenu: (event: MouseEvent<HTMLElement>, entry?: SftpEntry) => void;
   openSftpEntryFile: (entry?: SftpEntry | null) => Promise<void>;
-  selectedSftpPath: string | null;
-  setSelectedSftpPath: Dispatch<SetStateAction<string | null>>;
+  onClearSftpSelection: () => void;
+  onSelectSftpEntry: (event: MouseEvent<HTMLDivElement>, entry: SftpEntry) => void;
+  onSelectAllVisibleSftpEntries: () => void;
+  selectedSftpPaths: string[];
+  sftpBrowsePreferences: SftpExplorerBrowsePreferences;
   setSftpExplorerViewMode: (mode: SftpExplorerViewMode) => void;
   setSftpPath: Dispatch<SetStateAction<string>>;
   sftpActionLoading: boolean;
@@ -289,6 +295,8 @@ export interface BuildSftpExplorerSectionPropsArgs {
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpSummaryLike;
+  updateSftpBrowsePreferences: (patch: Partial<SftpExplorerBrowsePreferences>) => void;
+  visibleSftpEntries: SftpEntry[];
   toggleSftpToolbarMenu: ComponentProps<typeof SftpExplorerSection>["onActionsMenu"];
 }
 
@@ -305,8 +313,11 @@ export function buildSftpExplorerSectionProps({
   onSftpDrop,
   openSftpContextMenu,
   openSftpEntryFile,
-  selectedSftpPath,
-  setSelectedSftpPath,
+  onClearSftpSelection,
+  onSelectSftpEntry,
+  onSelectAllVisibleSftpEntries,
+  selectedSftpPaths,
+  sftpBrowsePreferences,
   setSftpExplorerViewMode,
   setSftpPath,
   sftpActionLoading,
@@ -319,8 +330,11 @@ export function buildSftpExplorerSectionProps({
   sftpLoading,
   sftpPath,
   sftpSummary,
+  updateSftpBrowsePreferences,
+  visibleSftpEntries,
   toggleSftpToolbarMenu
 }: BuildSftpExplorerSectionPropsArgs): ComponentProps<typeof SftpExplorerSection> {
+  const selectedPathSet = new Set(selectedSftpPaths);
   return {
     bindingTabTitle: activeTerminalTab?.title ?? null,
     deleteProgressLabel: sftpDeleteProgress
@@ -328,17 +342,21 @@ export function buildSftpExplorerSectionProps({
       : null,
     directorySizeLabel: `Current directory size: ${formatExactByteCount(sftpSummary.totalSize)} (${formatTransferBytes(sftpSummary.totalSize)})`,
     dropActive: sftpDropActive,
-    entries: (sftpDirectory?.entries ?? []).map((entry) => ({
+    emptyStateLabel:
+      sftpSummary.entryCount === 0
+        ? "This directory is empty."
+        : "No entries match the current filters.",
+    entries: visibleSftpEntries.map((entry) => ({
       compactSizeLabel: entry.kind === "directory" ? "Folder" : formatTransferBytes(entry.size),
       group: entry.group,
       id: `${entry.path}-${entry.modifiedAt ?? ""}`,
-      isSelected: selectedSftpPath === entry.path,
+      isSelected: selectedPathSet.has(entry.path),
       kind: entry.kind,
       linksLabel: formatSftpLinksForLs(entry.links ?? 1),
       modifiedAtLabel: formatSftpMtimeForLs(entry.modifiedAt),
       name: entry.name,
-      onClick: () => {
-        setSelectedSftpPath(entry.path);
+      onClick: (event) => {
+        onSelectSftpEntry(event, entry);
       },
       onContextMenu: (event) => openSftpContextMenu(event, entry),
       onDoubleClick: () => {
@@ -362,6 +380,11 @@ export function buildSftpExplorerSectionProps({
     errorMessage: sftpError,
     errorRecovery: sftpErrorRecovery,
     loading: sftpLoading,
+    filterQuery: sftpBrowsePreferences.query,
+    onFilterQueryChange: (event: ChangeEvent<HTMLInputElement>) =>
+      updateSftpBrowsePreferences({ query: event.target.value }),
+    onClearSelection: onClearSftpSelection,
+    onSelectAllVisible: onSelectAllVisibleSftpEntries,
     onActionsMenu: toggleSftpToolbarMenu,
     onBodyContextMenu: (event) => openSftpContextMenu(event),
     onDragLeave: onSftpDragLeave,
@@ -384,10 +407,30 @@ export function buildSftpExplorerSectionProps({
     onRefresh: () => {
       void loadSftpDirectory(sftpDirectory?.cwd ?? sftpPath);
     },
+    onSortDirectionToggle: () =>
+      updateSftpBrowsePreferences({
+        sortDirection: sftpBrowsePreferences.sortDirection === "asc" ? "desc" : "asc"
+      }),
+    onSortKeyChange: (event: ChangeEvent<HTMLSelectElement>) =>
+      updateSftpBrowsePreferences({
+        sortKey: event.target.value as SftpExplorerBrowsePreferences["sortKey"]
+      }),
+    onTypeFilterChange: (event: ChangeEvent<HTMLSelectElement>) =>
+      updateSftpBrowsePreferences({
+        typeFilter: event.target.value as SftpExplorerBrowsePreferences["typeFilter"]
+      }),
     onViewModeChange: setSftpExplorerViewMode,
     pathUpDisabled: sftpLoading || sftpActionLoading || !sftpDirectory?.parent,
     pathValue: sftpPath,
     refreshDisabled: sftpLoading || sftpActionLoading,
+    selectedPaths: selectedSftpPaths,
+    sortDirection: sftpBrowsePreferences.sortDirection,
+    sortKey: sftpBrowsePreferences.sortKey,
+    typeFilter: sftpBrowsePreferences.typeFilter,
+    visibleEntrySummaryLabel: `Showing ${visibleSftpEntries.length} of ${sftpSummary.entryCount}`,
+    allVisibleEntriesSelected:
+      visibleSftpEntries.length > 0 &&
+      visibleSftpEntries.every((entry) => selectedPathSet.has(entry.path)),
     viewMode: sftpExplorerViewMode
   };
 }

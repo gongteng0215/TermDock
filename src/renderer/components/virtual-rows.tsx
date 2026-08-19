@@ -31,6 +31,7 @@ export function VirtualRows({
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
+    getItemKey: getKey,
     estimateSize: () => estimateSize,
     overscan
   });

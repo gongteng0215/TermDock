@@ -90,6 +90,8 @@ interface BuildActionWorkbenchContextMenuPropsArgs<
   }
 > {
   actions: TAction[];
+  contextLabel?: string | null;
+  contextLabelTitle?: string;
   menu: WorkbenchContextMenuPosition | null;
   onSelect: (action: TAction) => void;
   width: number;
@@ -104,6 +106,8 @@ export function buildActionWorkbenchContextMenuProps<
   }
 >({
   actions,
+  contextLabel = null,
+  contextLabelTitle,
   menu,
   onSelect,
   width
@@ -119,7 +123,9 @@ export function buildActionWorkbenchContextMenuProps<
       label: action.label,
       onSelect: () => onSelect(action)
     })),
-    height: actions.length * 26 + 16,
+    contextLabel,
+    contextLabelTitle,
+    height: actions.length * 26 + 16 + (contextLabel ? 108 : 0),
     width,
     x: menu.x,
     y: menu.y

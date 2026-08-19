@@ -9,12 +9,14 @@ export interface SftpContextAction {
 
 interface BuildSftpToolbarActionsArgs {
   canDownloadSelectedEntry: boolean;
+  canRenameSelectedEntry: boolean;
   currentDirectoryCwd: string | null;
   currentDirectoryParent: string | null;
   hasSelectedEntry: boolean;
   inputPath: string;
   isActionDisabled: boolean;
   onCreateDirectory: () => void;
+  onCopySelectedPaths: () => void;
   onDeleteSelected: () => void;
   onDownloadSelected: () => void;
   onLoadDirectory: (path: string) => void;
@@ -24,31 +26,38 @@ interface BuildSftpToolbarActionsArgs {
 }
 
 interface BuildSftpContextActionsArgs {
+  canDownloadSelection: boolean;
   contextEntry: SftpEntry | null;
   currentDirectoryCwd: string | null;
   currentPathInput: string;
   isActionDisabled: boolean;
   onCopyPath: (path: string) => void;
+  onCopySelectedPaths: () => void;
   onCreateDirectory: () => void;
   onDeleteEntry: (entry?: SftpEntry | null) => void;
+  onDeleteSelected: () => void;
   onDownloadDirectory: (entry: SftpEntry) => void;
   onDownloadFile: (entry: SftpEntry) => void;
+  onDownloadSelected: () => void;
   onLoadDirectory: (path: string) => void;
   onOpenFile: (entry: SftpEntry) => void;
   onRefreshDirectory: (path: string) => void;
   onRenameEntry: (entry?: SftpEntry | null) => void;
   onUploadFile: () => void;
+  selectedEntryCount: number;
   tr: (value: string) => string;
 }
 
 export function buildSftpToolbarActions({
   canDownloadSelectedEntry,
+  canRenameSelectedEntry,
   currentDirectoryCwd,
   currentDirectoryParent,
   hasSelectedEntry,
   inputPath,
   isActionDisabled,
   onCreateDirectory,
+  onCopySelectedPaths,
   onDeleteSelected,
   onDownloadSelected,
   onLoadDirectory,
@@ -105,8 +114,14 @@ export function buildSftpToolbarActions({
     {
       id: "rename-selected",
       label: tr("Rename Selected"),
-      disabled: isActionDisabled || !hasSelectedEntry,
+      disabled: isActionDisabled || !canRenameSelectedEntry,
       run: onRenameSelected
+    },
+    {
+      id: "copy-selected-paths",
+      label: tr("Copy Selected Paths"),
+      disabled: !hasSelectedEntry,
+      run: onCopySelectedPaths
     },
     {
       id: "delete-selected",
@@ -118,25 +133,49 @@ export function buildSftpToolbarActions({
 }
 
 export function buildSftpContextActions({
+  canDownloadSelection,
   contextEntry,
   currentDirectoryCwd,
   currentPathInput,
   isActionDisabled,
   onCopyPath,
+  onCopySelectedPaths,
   onCreateDirectory,
   onDeleteEntry,
+  onDeleteSelected,
   onDownloadDirectory,
   onDownloadFile,
+  onDownloadSelected,
   onLoadDirectory,
   onOpenFile,
   onRefreshDirectory,
   onRenameEntry,
   onUploadFile,
+  selectedEntryCount,
   tr
 }: BuildSftpContextActionsArgs): SftpContextAction[] {
   const actions: SftpContextAction[] = [];
+  const hasMultiSelection = selectedEntryCount > 1;
 
-  if (contextEntry?.kind === "directory") {
+  if (hasMultiSelection) {
+    actions.push({
+      id: "download-selected",
+      label: tr("Download Selected"),
+      disabled: isActionDisabled || !canDownloadSelection,
+      run: onDownloadSelected
+    });
+    actions.push({
+      id: "delete-selected",
+      label: tr("Delete Selected"),
+      disabled: isActionDisabled,
+      run: onDeleteSelected
+    });
+    actions.push({
+      id: "copy-selected-paths",
+      label: tr("Copy Selected Paths"),
+      run: onCopySelectedPaths
+    });
+  } else if (contextEntry?.kind === "directory") {
     actions.push({
       id: "open-directory",
       label: tr("Open Directory"),
@@ -154,7 +193,7 @@ export function buildSftpContextActions({
     });
   }
 
-  if (contextEntry && contextEntry.kind !== "directory") {
+  if (!hasMultiSelection && contextEntry && contextEntry.kind !== "directory") {
     actions.push({
       id: "open-file",
       label: tr("Open File"),
@@ -194,7 +233,7 @@ export function buildSftpContextActions({
     }
   });
 
-  if (contextEntry) {
+  if (contextEntry && !hasMultiSelection) {
     actions.push({
       id: "rename-entry",
       label: tr("Rename"),
@@ -218,7 +257,7 @@ export function buildSftpContextActions({
         onCopyPath(contextEntry.path);
       }
     });
-  } else if (currentDirectoryCwd) {
+  } else if (!hasMultiSelection && currentDirectoryCwd) {
     actions.push({
       id: "copy-current-path",
       label: tr("Copy Current Path"),

@@ -11,7 +11,9 @@ type SftpExplorerActionArgs = Pick<
   | "onSftpDrop"
   | "openSftpContextMenu"
   | "openSftpEntryFile"
-  | "setSelectedSftpPath"
+  | "onClearSftpSelection"
+  | "onSelectSftpEntry"
+  | "onSelectAllVisibleSftpEntries"
   | "setSftpExplorerViewMode"
   | "setSftpPath"
   | "toggleSftpToolbarMenu"
@@ -31,7 +33,8 @@ type SftpExplorerValueArgs = {
   formatSftpMtimeForLs: (isoString?: string) => string;
   formatSftpSizeForLs: (size: number) => string;
   formatTransferBytes: (bytes: number) => string;
-  selectedSftpPath: string | null;
+  selectedSftpPaths: string[];
+  sftpBrowsePreferences: import("./workbench-ui-preferences").SftpExplorerBrowsePreferences;
   sftpActionLoading: boolean;
   sftpDeleteProgress:
     | {
@@ -47,6 +50,10 @@ type SftpExplorerValueArgs = {
   sftpLoading: boolean;
   sftpPath: string;
   sftpSummary: SftpSummaryLike;
+  updateSftpBrowsePreferences: (
+    patch: Partial<import("./workbench-ui-preferences").SftpExplorerBrowsePreferences>
+  ) => void;
+  visibleSftpEntries: SftpEntry[];
 };
 
 interface BuildSftpExplorerCompositeArgsInput {
