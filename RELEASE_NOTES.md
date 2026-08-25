@@ -2,6 +2,25 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## v0.1.51 (2026-08-25)
+
+### Highlights
+
+- Reworked Server Health into a compact diagnostic dashboard with fixed-scale CPU, memory, and disk meters plus load, network throughput, swap, uptime, and failed-service context.
+- Expanded Fleet Health with severity summary cards, readable 0–100% resource trends, separate load/network/service charts, exact hover values, and a wider scroll-safe Operations Hub layout.
+- Fleet probes now derive real interval CPU and network rates from persisted counters, retain richer raw observations, and aggregate the added metrics in SQLite schema v13.
+- Fixed the narrow Default inspector header, monitor-button typography, server context hierarchy, and truncated network telemetry across Default and Cockpit themes.
+- Added **Duplicate Tab** to the terminal-tab context menu; duplicates open an independent SSH connection beside the source tab and become active immediately.
+
+### Current validation
+
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run test:fleet-health-incidents` passed.
+- Targeted health-layout and Duplicate Tab interaction verification passed across Default, Tech, and Industrial themes at 1680px and 1200px widths.
+- `pnpm run smoke:ui` passed: 52 passed, 0 failed, 0 skipped.
+- `pnpm run smoke:ui:packaged` passed: 52 passed, 0 failed, 0 skipped.
+
 ## v0.1.50 (2026-08-19)
 
 Release type: Stable

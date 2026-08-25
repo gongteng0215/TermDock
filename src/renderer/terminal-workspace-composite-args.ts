@@ -14,6 +14,7 @@ type TerminalWorkspaceActionArgs = Pick<
   | "onCloseTabsLeft"
   | "onCloseTabsRight"
   | "onCommandHistoryChange"
+  | "onDuplicateTab"
   | "onError"
   | "onSelectTab"
   | "requestDangerousCommandApproval"

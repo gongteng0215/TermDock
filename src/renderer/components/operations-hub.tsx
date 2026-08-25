@@ -94,26 +94,193 @@ function fleetLabel(status: FleetFilter): string {
   return status === "needsAttention" ? "Needs manual connection" : status === "unmonitored" ? "Not monitored" : status[0].toUpperCase() + status.slice(1);
 }
 
-function trendCoordinates(points: HealthTrendPoint[], read: (point: HealthTrendPoint) => number): string {
-  if (points.length < 2) return "";
-  const values = points.map(read);
-  const max = Math.max(1, ...values);
-  return values.map((value, index) => `${(index / (values.length - 1)) * 100},${100 - (Math.max(0, value) / max) * 92}`).join(" ");
+const TREND_CHART_WIDTH = 640;
+const TREND_CHART_HEIGHT = 142;
+const TREND_PLOT_LEFT = 38;
+const TREND_PLOT_RIGHT = 630;
+const TREND_PLOT_TOP = 10;
+const TREND_PLOT_BOTTOM = 116;
+
+function finiteTrendValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
-function HealthTrendChart({ points }: { points: HealthTrendPoint[] }) {
+function formatTrendRate(bytesPerSecond: number): string {
+  const value = finiteTrendValue(bytesPerSecond);
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB/s`;
+  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MB/s`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB/s`;
+  return `${value.toFixed(0)} B/s`;
+}
+
+function formatTrendTime(value: string, range: HealthTrendRange): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return range === "24h"
+    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function trendPointX(index: number, count: number): number {
+  return count <= 1
+    ? TREND_PLOT_LEFT
+    : TREND_PLOT_LEFT + (index / (count - 1)) * (TREND_PLOT_RIGHT - TREND_PLOT_LEFT);
+}
+
+function trendPointY(value: number, maximum: number): number {
+  const bounded = Math.max(0, Math.min(maximum, finiteTrendValue(value)));
+  return TREND_PLOT_BOTTOM - (bounded / Math.max(1, maximum)) * (TREND_PLOT_BOTTOM - TREND_PLOT_TOP);
+}
+
+function trendSegments(
+  points: HealthTrendPoint[],
+  read: (point: HealthTrendPoint) => number,
+  maximum: number,
+  omitDegraded = false
+): string[] {
+  const segments: string[] = [];
+  let current: string[] = [];
+  points.forEach((point, index) => {
+    if (omitDegraded && point.unhealthySamples > 0) {
+      if (current.length > 1) segments.push(current.join(" "));
+      current = [];
+      return;
+    }
+    current.push(`${trendPointX(index, points.length)},${trendPointY(read(point), maximum)}`);
+  });
+  if (current.length > 1) segments.push(current.join(" "));
+  return segments;
+}
+
+function trendStats(points: HealthTrendPoint[], read: (point: HealthTrendPoint) => number) {
+  const values = points.map(read).map(finiteTrendValue);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return {
+    latest: values.at(-1) ?? 0,
+    average: values.length ? total / values.length : 0,
+    maximum: values.length ? Math.max(...values) : 0
+  };
+}
+
+interface TrendMiniCardProps {
+  className: string;
+  label: string;
+  maximum: number;
+  points: HealthTrendPoint[];
+  series: Array<{ className: string; read: (point: HealthTrendPoint) => number }>;
+  value: string;
+}
+
+function TrendMiniCard({ className, label, maximum, points, series, value }: TrendMiniCardProps) {
+  return (
+    <div className={`fleet-trend-mini ${className}`}>
+      <div><span>{label}</span><strong>{value}</strong></div>
+      <svg aria-hidden="true" preserveAspectRatio="none" viewBox={`0 0 ${TREND_CHART_WIDTH} ${TREND_CHART_HEIGHT}`}>
+        {series.flatMap((entry) =>
+          trendSegments(points, entry.read, maximum, true).map((coordinates, index) => (
+            <polyline className={entry.className} key={`${entry.className}-${index}`} points={coordinates} />
+          ))
+        )}
+      </svg>
+    </div>
+  );
+}
+
+function HealthTrendDashboard({
+  cpuCoreCount,
+  monitor,
+  points,
+  range
+}: {
+  cpuCoreCount?: number;
+  monitor?: PinnedMonitor;
+  points: HealthTrendPoint[];
+  range: HealthTrendRange;
+}) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   if (points.length < 2) return <p className="hint">Waiting for enough health samples to draw a trend.</p>;
+
+  const hovered = hoverIndex === null ? null : points[hoverIndex];
+  const cpuStats = trendStats(points, (point) => point.cpuUsagePercent);
+  const memoryStats = trendStats(points, (point) => point.memoryUsagePercent);
+  const diskStats = trendStats(points, (point) => point.diskUsagePercent);
+  const loadMaximum = Math.max(
+    1,
+    cpuCoreCount ?? 1,
+    ...points.flatMap((point) => [point.load1, point.load5 ?? 0, point.load15 ?? 0])
+  );
+  const networkMaximum = Math.max(
+    1,
+    ...points.flatMap((point) => [point.networkRxBytesPerSecond ?? 0, point.networkTxBytesPerSecond ?? 0])
+  );
+  const serviceMaximum = Math.max(1, ...points.map((point) => point.failedServices));
   const degradedSamples = points.reduce((count, point) => count + point.unhealthySamples, 0);
-  return <div className="fleet-trend" aria-label={`Health trend with ${points.length} samples`}>
-    <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none">
-      <polyline className="fleet-trend__cpu" points={trendCoordinates(points, (point) => point.cpuUsagePercent)} />
-      <polyline className="fleet-trend__memory" points={trendCoordinates(points, (point) => point.memoryUsagePercent)} />
-      <polyline className="fleet-trend__disk" points={trendCoordinates(points, (point) => point.diskUsagePercent)} />
-      <polyline className="fleet-trend__load" points={trendCoordinates(points, (point) => point.load1)} />
-      <polyline className="fleet-trend__services" points={trendCoordinates(points, (point) => point.failedServices)} />
-    </svg>
-    <span><i className="fleet-trend__key fleet-trend__key--cpu" />CPU <i className="fleet-trend__key fleet-trend__key--memory" />MEM <i className="fleet-trend__key fleet-trend__key--disk" />DISK <i className="fleet-trend__key fleet-trend__key--load" />LOAD <i className="fleet-trend__key fleet-trend__key--services" />SERVICES · {degradedSamples} degraded sample(s)</span>
-  </div>;
+  const warningThreshold = Math.min(
+    monitor?.cpuWarnPercent ?? 85,
+    monitor?.memoryWarnPercent ?? 85,
+    monitor?.diskWarnPercent ?? 85
+  );
+  const criticalThreshold = Math.min(
+    monitor?.cpuCriticalPercent ?? 95,
+    monitor?.memoryCriticalPercent ?? 95,
+    monitor?.diskCriticalPercent ?? 95
+  );
+  const latest = points.at(-1)!;
+
+  return (
+    <div className="fleet-trend-dashboard" aria-label={`Health trend with ${points.length} samples`}>
+      <div className="fleet-trend-resource">
+        <div className="fleet-trend-resource__heading">
+          <div><strong>Resource utilization</strong><span>Fixed 0–100% scale · gaps indicate unavailable samples</span></div>
+          <div className="fleet-trend-resource__legend"><span className="is-cpu">CPU</span><span className="is-memory">Memory</span><span className="is-disk">Disk</span></div>
+        </div>
+        <div className="fleet-trend-resource__plot">
+          <svg
+            aria-hidden="true"
+            onPointerLeave={() => setHoverIndex(null)}
+            onPointerMove={(event) => {
+              const bounds = event.currentTarget.getBoundingClientRect();
+              const plotStart = (TREND_PLOT_LEFT / TREND_CHART_WIDTH) * bounds.width;
+              const plotWidth = ((TREND_PLOT_RIGHT - TREND_PLOT_LEFT) / TREND_CHART_WIDTH) * bounds.width;
+              const ratio = Math.max(0, Math.min(1, (event.clientX - bounds.left - plotStart) / Math.max(1, plotWidth)));
+              setHoverIndex(Math.round(ratio * (points.length - 1)));
+            }}
+            preserveAspectRatio="none"
+            viewBox={`0 0 ${TREND_CHART_WIDTH} ${TREND_CHART_HEIGHT}`}
+          >
+            {[0, 25, 50, 75, 100].map((value) => <g key={value}><line className="fleet-trend__grid" x1={TREND_PLOT_LEFT} x2={TREND_PLOT_RIGHT} y1={trendPointY(value, 100)} y2={trendPointY(value, 100)} /><text x="2" y={trendPointY(value, 100) + 3}>{value}%</text></g>)}
+            <line className="fleet-trend__threshold fleet-trend__threshold--warning" x1={TREND_PLOT_LEFT} x2={TREND_PLOT_RIGHT} y1={trendPointY(warningThreshold, 100)} y2={trendPointY(warningThreshold, 100)} />
+            <line className="fleet-trend__threshold fleet-trend__threshold--critical" x1={TREND_PLOT_LEFT} x2={TREND_PLOT_RIGHT} y1={trendPointY(criticalThreshold, 100)} y2={trendPointY(criticalThreshold, 100)} />
+            {trendSegments(points, (point) => point.cpuUsagePercent, 100, true).map((coordinates, index) => <polyline className="fleet-trend__cpu" key={`cpu-${index}`} points={coordinates} />)}
+            {trendSegments(points, (point) => point.memoryUsagePercent, 100, true).map((coordinates, index) => <polyline className="fleet-trend__memory" key={`memory-${index}`} points={coordinates} />)}
+            {trendSegments(points, (point) => point.diskUsagePercent, 100, true).map((coordinates, index) => <polyline className="fleet-trend__disk" key={`disk-${index}`} points={coordinates} />)}
+            {hoverIndex !== null ? <line className="fleet-trend__crosshair" x1={trendPointX(hoverIndex, points.length)} x2={trendPointX(hoverIndex, points.length)} y1={TREND_PLOT_TOP} y2={TREND_PLOT_BOTTOM} /> : null}
+          </svg>
+          {hovered && hoverIndex !== null ? (
+            <div className="fleet-trend-tooltip" style={{ left: `${(trendPointX(hoverIndex, points.length) / TREND_CHART_WIDTH) * 100}%` }}>
+              <strong>{new Date(hovered.collectedAt).toLocaleString()}</strong>
+              <span>CPU {hovered.cpuUsagePercent.toFixed(1)}% · MEM {hovered.memoryUsagePercent.toFixed(1)}% · DISK {hovered.diskUsagePercent.toFixed(1)}%</span>
+              <span>Load {hovered.load1.toFixed(2)} / {(hovered.load5 ?? 0).toFixed(2)} / {(hovered.load15 ?? 0).toFixed(2)}</span>
+              <span>RX {formatTrendRate(hovered.networkRxBytesPerSecond ?? 0)} · TX {formatTrendRate(hovered.networkTxBytesPerSecond ?? 0)}</span>
+              <span>{hovered.failedServices} failed service(s){hovered.unhealthySamples > 0 ? " · connection degraded" : ""}</span>
+            </div>
+          ) : null}
+        </div>
+        <div className="fleet-trend__time-axis"><span>{formatTrendTime(points[0].collectedAt, range)}</span><span>{formatTrendTime(points[Math.floor((points.length - 1) / 2)].collectedAt, range)}</span><span>{formatTrendTime(latest.collectedAt, range)}</span></div>
+        <div className="fleet-trend-resource__stats">
+          <span><b>CPU</b> avg {cpuStats.average.toFixed(0)}% · max {cpuStats.maximum.toFixed(0)}%</span>
+          <span><b>MEM</b> avg {memoryStats.average.toFixed(0)}% · max {memoryStats.maximum.toFixed(0)}%</span>
+          <span><b>DISK</b> avg {diskStats.average.toFixed(0)}% · max {diskStats.maximum.toFixed(0)}%</span>
+        </div>
+      </div>
+      <div className="fleet-trend-secondary">
+        <TrendMiniCard className="fleet-trend-mini--load" label="Load 1 / 5 / 15" maximum={loadMaximum} points={points} series={[{ className: "fleet-trend__load1", read: (point) => point.load1 }, { className: "fleet-trend__load5", read: (point) => point.load5 ?? 0 }, { className: "fleet-trend__load15", read: (point) => point.load15 ?? 0 }]} value={`${latest.load1.toFixed(2)} / ${(latest.load5 ?? 0).toFixed(2)} / ${(latest.load15 ?? 0).toFixed(2)}`} />
+        <TrendMiniCard className="fleet-trend-mini--network" label="Network RX / TX" maximum={networkMaximum} points={points} series={[{ className: "fleet-trend__network-rx", read: (point) => point.networkRxBytesPerSecond ?? 0 }, { className: "fleet-trend__network-tx", read: (point) => point.networkTxBytesPerSecond ?? 0 }]} value={`${formatTrendRate(latest.networkRxBytesPerSecond ?? 0)} / ${formatTrendRate(latest.networkTxBytesPerSecond ?? 0)}`} />
+        <TrendMiniCard className="fleet-trend-mini--services" label="Failed services" maximum={serviceMaximum} points={points} series={[{ className: "fleet-trend__services", read: (point) => point.failedServices }]} value={`${latest.failedServices} current · ${serviceMaximum} peak`} />
+      </div>
+      <div className="fleet-trend-status"><div>{points.map((point, index) => <i className={point.unhealthySamples > 0 ? "is-degraded" : "is-healthy"} key={`${point.collectedAt}-${index}`} title={`${new Date(point.collectedAt).toLocaleString()} · ${point.unhealthySamples > 0 ? "degraded" : "healthy"}`} />)}</div><span>Connection timeline · {degradedSamples} degraded sample(s)</span></div>
+    </div>
+  );
 }
 
 export function OperationsHub({
@@ -144,6 +311,7 @@ export function OperationsHub({
   const [fleetOverview, setFleetOverview] = useState<FleetHealthOverviewItem[]>([]);
   const [healthIncidents, setHealthIncidents] = useState<HealthIncident[]>([]);
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
+  const [selectedFleetSessionId, setSelectedFleetSessionId] = useState<string | null>(null);
   const [selectedIncidentEvents, setSelectedIncidentEvents] = useState<HealthIncidentEvent[]>([]);
   const [trendRange, setTrendRange] = useState<HealthTrendRange>("24h");
   const [trendPoints, setTrendPoints] = useState<HealthTrendPoint[]>([]);
@@ -318,11 +486,41 @@ export function OperationsHub({
     }).filter((item) => fleetFilter === "all" || item.severity === fleetFilter)
       .sort((left, right) => fleetRank(left.severity) - fleetRank(right.severity) || new Date(right.overview?.lastObservation?.collectedAt ?? 0).getTime() - new Date(left.overview?.lastObservation?.collectedAt ?? 0).getTime());
   }, [fleetFilter, fleetOverview, sessions]);
+  const fleetSummaryCounts = useMemo(() => {
+    const counts: Record<Exclude<FleetFilter, "all">, number> = {
+      critical: 0,
+      warning: 0,
+      healthy: 0,
+      needsAttention: 0,
+      unmonitored: 0
+    };
+    const bySession = new Map(fleetOverview.map((item) => [item.sessionId, item.severity]));
+    sessions.forEach((session) => {
+      const severity = bySession.get(session.id) ?? "unmonitored";
+      counts[severity] += 1;
+    });
+    return counts;
+  }, [fleetOverview, sessions]);
 
   const selectedIncident = useMemo(
     () => healthIncidents.find((incident) => incident.id === selectedIncidentId) ?? null,
     [healthIncidents, selectedIncidentId]
   );
+  const selectedFleetSession = useMemo(
+    () => sessions.find((session) => session.id === selectedFleetSessionId) ?? null,
+    [selectedFleetSessionId, sessions]
+  );
+  const selectedFleetOverview = useMemo(
+    () => fleetOverview.find((item) => item.sessionId === selectedFleetSessionId),
+    [fleetOverview, selectedFleetSessionId]
+  );
+  const selectedFleetObservation = selectedFleetSessionId
+    ? selectedFleetOverview?.lastObservation ?? healthBySession[selectedFleetSessionId]
+    : undefined;
+
+  useEffect(() => {
+    if (selectedIncident) setSelectedFleetSessionId(selectedIncident.sessionId);
+  }, [selectedIncident]);
 
   const refresh = async () => {
     if (!operations) return;
@@ -629,19 +827,20 @@ export function OperationsHub({
   };
 
   useEffect(() => {
-    if (!operations || !selectedIncidentId) {
+    const trendSessionId = selectedFleetSessionId ?? selectedIncident?.sessionId ?? "";
+    if (!operations || !trendSessionId) {
       setSelectedIncidentEvents([]);
       setTrendPoints([]);
       return;
     }
     void Promise.all([
-      operations.listHealthIncidentEvents(selectedIncidentId),
-      operations.listHealthTrend(healthIncidents.find((incident) => incident.id === selectedIncidentId)?.sessionId ?? "", trendRange)
+      selectedIncidentId ? operations.listHealthIncidentEvents(selectedIncidentId) : Promise.resolve([]),
+      operations.listHealthTrend(trendSessionId, trendRange)
     ]).then(([events, points]) => {
       setSelectedIncidentEvents(events);
       setTrendPoints(points);
-    }).catch((error) => onError(`Could not load Fleet Health incident details. ${toMessage(error)}`));
-  }, [healthIncidents, onError, operations, selectedIncidentId, trendRange]);
+    }).catch((error) => onError(`Could not load Fleet Health details. ${toMessage(error)}`));
+  }, [onError, operations, selectedFleetSessionId, selectedIncident, selectedIncidentId, trendRange]);
 
   const acknowledgeIncident = async (incidentId: string) => {
     if (!operations) return;
@@ -960,7 +1159,8 @@ export function OperationsHub({
         ) : null}
 
         {section === "fleet" ? (
-          <section className="operations-hub__section operations-hub__list">
+          <section className="operations-hub__section operations-hub__fleet">
+            <div className="operations-hub__list">
             <div className="operations-hub__heading">
               <div><h4>Fleet overview</h4><span className="hint">Controlled short connections · max 8 parallel · busy transfers slow polling</span></div>
               <div className="operations-hub__actions fleet-overview__filters">
@@ -968,6 +1168,13 @@ export function OperationsHub({
                   <button className={`secondary-button secondary-button--small ${fleetFilter === item ? "is-active" : ""}`} key={item} onClick={() => setFleetFilter(item)} type="button">{item === "all" ? "All" : fleetLabel(item)}</button>
                 ))}
               </div>
+            </div>
+            <div className="fleet-overview__summary-cards" aria-label="Fleet status summary">
+              {(["critical", "warning", "healthy", "needsAttention", "unmonitored"] as const).map((severity) => (
+                <button className={`fleet-overview__summary-card fleet-overview__summary-card--${severity} ${fleetFilter === severity ? "is-active" : ""}`} key={severity} onClick={() => setFleetFilter(fleetFilter === severity ? "all" : severity)} type="button">
+                  <strong>{fleetSummaryCounts[severity]}</strong><span>{fleetLabel(severity)}</span>
+                </button>
+              ))}
             </div>
             {pinnedSessionIds.size === 0 ? (
               <div className="fleet-empty-state" role="status">
@@ -978,19 +1185,22 @@ export function OperationsHub({
             {fleetRows.map(({ session, severity, overview }) => {
               const observation = overview?.lastObservation ?? healthBySession[session.id];
               return <div className="operations-hub__trust fleet-overview__row" key={session.id}>
-                <button className="fleet-overview__summary" onClick={() => { if (overview?.activeIncident) setSelectedIncidentId(overview.activeIncident.id); else void collectPinnedHealth(session.id); }} type="button">
+                <button className="fleet-overview__summary" onClick={() => { setSelectedFleetSessionId(session.id); setSelectedIncidentId(overview?.activeIncident?.id ?? null); }} type="button">
                   <strong>{session.name}<em className={`fleet-status fleet-status--${severity}`}>{fleetLabel(severity)}</em></strong>
-                  <span>{observation ? `CPU ${observation.cpuUsagePercent.toFixed(0)}% · MEM ${observation.memoryUsagePercent.toFixed(0)}% · DISK ${observation.diskUsagePercent.toFixed(0)}% · services ${observation.failedServices}` : severity === "unmonitored" ? "Pin this session to begin controlled health checks." : "Waiting for the first sample."}</span>
+                  {observation ? <>
+                    <div className="fleet-overview__resource-bars">
+                      {([ ["CPU", observation.cpuUsagePercent], ["MEM", observation.memoryUsagePercent], ["DISK", observation.diskUsagePercent] ] as Array<[string, number]>).map(([label, value]) => <span key={label}><i>{label}</i><b><em style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></b><strong>{value.toFixed(0)}%</strong></span>)}
+                    </div>
+                    <span>Load {observation.load1.toFixed(2)} / {(observation.load5 ?? 0).toFixed(2)} / {(observation.load15 ?? 0).toFixed(2)} · RX {formatTrendRate(observation.networkRxBytesPerSecond ?? 0)} · TX {formatTrendRate(observation.networkTxBytesPerSecond ?? 0)} · services {observation.failedServices} · {new Date(observation.collectedAt).toLocaleTimeString()}</span>
+                  </> : <span>{severity === "unmonitored" ? "Pin this session to begin controlled health checks." : "Waiting for the first sample."}</span>}
                 </button>
                 <div className="operations-hub__actions"><button className="secondary-button secondary-button--small" onClick={() => onOpenSession(session)} type="button">Open</button><button className="secondary-button secondary-button--small" onClick={() => void togglePinnedMonitor(session.id)} type="button">{pinnedSessionIds.has(session.id) ? "Unpin" : "Pin"}</button>{pinnedSessionIds.has(session.id) ? <button className="secondary-button secondary-button--small" onClick={() => void collectPinnedHealth(session.id)} type="button">Check</button> : null}</div>
               </div>;
             })}
             {fleetRows.length === 0 ? <p className="hint">No sessions match this Fleet Health filter.</p> : null}
-          </section>
-        ) : null}
+            </div>
 
-        {section === "fleet" ? (
-          <section className="operations-hub__section operations-hub__list">
+            <div className="operations-hub__list">
             <h4>Monitor rules and recommended Runbooks</h4>
             <p className="hint">Warning preserves the existing threshold. Critical is a stronger local alert; every recommended Runbook still requires preview and confirmation.</p>
             {sessions.filter((session) => pinnedSessionIds.has(session.id)).map((session) => {
@@ -1009,27 +1219,28 @@ export function OperationsHub({
               </div>;
             })}
             {pinnedSessionIds.size === 0 ? <p className="hint">Pin a session above to configure thresholds and recommended response Runbooks.</p> : null}
-          </section>
-        ) : null}
+            </div>
 
-        {section === "fleet" ? (
-          <section className="operations-hub__section operations-hub__split fleet-incidents">
+            <div className="operations-hub__split fleet-incidents">
             <div className="operations-hub__list">
               <div className="operations-hub__heading"><h4>Incident queue</h4><span className="hint">Open and acknowledged incidents first</span></div>
-              {healthIncidents.filter((incident) => incident.status !== "resolved").map((incident) => <button className={`operations-hub__row ${selectedIncidentId === incident.id ? "is-selected" : ""}`} key={incident.id} onClick={() => setSelectedIncidentId(incident.id)} type="button"><strong>{sessions.find((session) => session.id === incident.sessionId)?.name ?? incident.sessionId}<em className={`fleet-status fleet-status--${incident.severity}`}>{incident.severity}</em></strong><span>{incident.conditionKeys.join(", ")} · {incident.status} · {new Date(incident.lastDetectedAt).toLocaleString()}</span></button>)}
+              {healthIncidents.filter((incident) => incident.status !== "resolved").map((incident) => <button className={`operations-hub__row ${selectedIncidentId === incident.id ? "is-selected" : ""}`} key={incident.id} onClick={() => { setSelectedIncidentId(incident.id); setSelectedFleetSessionId(incident.sessionId); }} type="button"><strong>{sessions.find((session) => session.id === incident.sessionId)?.name ?? incident.sessionId}<em className={`fleet-status fleet-status--${incident.severity}`}>{incident.severity}</em></strong><span>{incident.conditionKeys.join(", ")} · {incident.status} · {new Date(incident.lastDetectedAt).toLocaleString()}</span></button>)}
               {healthIncidents.every((incident) => incident.status === "resolved") ? <p className="hint">No active incidents. Resolved history remains in the local evidence store.</p> : null}
             </div>
             <div className="operations-hub__editor fleet-incident-detail">
-              {selectedIncident ? <>
-                <div className="operations-hub__heading"><div><h4>{sessions.find((session) => session.id === selectedIncident.sessionId)?.name ?? selectedIncident.sessionId}</h4><span className="hint">{selectedIncident.conditionKeys.join(", ")} · since {new Date(selectedIncident.firstDetectedAt).toLocaleString()}</span></div><div className="operations-hub__actions">{selectedIncident.status === "open" ? <button className="secondary-button secondary-button--small" onClick={() => void acknowledgeIncident(selectedIncident.id)} type="button">Acknowledge</button> : null}<button className="secondary-button secondary-button--small" onClick={() => void exportIncidentEvidence(selectedIncident.id)} type="button">Export evidence</button></div></div>
+              {selectedFleetSession ? <>
+                <div className="operations-hub__heading"><div><h4>{selectedFleetSession.name}</h4><span className="hint">{selectedIncident ? `${selectedIncident.conditionKeys.join(", ")} · since ${new Date(selectedIncident.firstDetectedAt).toLocaleString()}` : selectedFleetObservation ? `Latest check ${new Date(selectedFleetObservation.collectedAt).toLocaleString()}` : "Waiting for the first monitor sample."}</span></div>{selectedIncident ? <div className="operations-hub__actions">{selectedIncident.status === "open" ? <button className="secondary-button secondary-button--small" onClick={() => void acknowledgeIncident(selectedIncident.id)} type="button">Acknowledge</button> : null}<button className="secondary-button secondary-button--small" onClick={() => void exportIncidentEvidence(selectedIncident.id)} type="button">Export evidence</button></div> : null}</div>
                 <div className="fleet-incident-detail__range">{(["24h", "7d", "30d"] as HealthTrendRange[]).map((range) => <button className={`secondary-button secondary-button--small ${trendRange === range ? "is-active" : ""}`} key={range} onClick={() => setTrendRange(range)} type="button">{range}</button>)}</div>
-                <HealthTrendChart points={trendPoints} />
-                <div className="fleet-incident-detail__metrics"><span>Load {selectedIncident.latestObservation.load1.toFixed(2)}</span><span>Failed services {selectedIncident.latestObservation.failedServices}</span><span>{selectedIncident.status}</span></div>
-                <h4>Recommended response</h4>
-                <div className="operations-hub__actions">{(pinnedMonitorsBySession[selectedIncident.sessionId]?.recommendedRunbookIds ?? []).map((runbookId) => runbooks.find((runbook) => runbook.id === runbookId)).filter((runbook): runbook is Runbook => Boolean(runbook)).map((runbook) => <button className="primary-button" disabled={runbookBusy} key={runbook.id} onClick={() => void runIncidentRunbook(selectedIncident, runbook)} type="button">Preview {runbook.name}</button>)}{(pinnedMonitorsBySession[selectedIncident.sessionId]?.recommendedRunbookIds ?? []).length === 0 ? <p className="hint">No response Runbook is linked to this monitor.</p> : null}</div>
-                <h4>Timeline</h4>
-                <div className="fleet-incident-detail__timeline">{selectedIncidentEvents.map((event) => <div key={event.id}><strong>{event.type}</strong><span>{event.detail}</span><small>{new Date(event.createdAt).toLocaleString()}</small></div>)}</div>
-              </> : <p className="hint">Select an active incident to inspect its trend, acknowledgement and recommended response.</p>}
+                <HealthTrendDashboard cpuCoreCount={selectedFleetObservation?.cpuCoreCount} monitor={pinnedMonitorsBySession[selectedFleetSession.id]} points={trendPoints} range={trendRange} />
+                {selectedFleetObservation ? <div className="fleet-incident-detail__metrics"><span>Load {selectedFleetObservation.load1.toFixed(2)} / {(selectedFleetObservation.load5 ?? 0).toFixed(2)} / {(selectedFleetObservation.load15 ?? 0).toFixed(2)}</span><span>Swap {(selectedFleetObservation.swapUsagePercent ?? 0).toFixed(0)}%</span><span>RX {formatTrendRate(selectedFleetObservation.networkRxBytesPerSecond ?? 0)} · TX {formatTrendRate(selectedFleetObservation.networkTxBytesPerSecond ?? 0)}</span><span>Failed services {selectedFleetObservation.failedServices}</span><span>{selectedIncident?.status ?? selectedFleetOverview?.severity ?? "healthy"}</span></div> : null}
+                {selectedIncident ? <>
+                  <h4>Recommended response</h4>
+                  <div className="operations-hub__actions">{(pinnedMonitorsBySession[selectedIncident.sessionId]?.recommendedRunbookIds ?? []).map((runbookId) => runbooks.find((runbook) => runbook.id === runbookId)).filter((runbook): runbook is Runbook => Boolean(runbook)).map((runbook) => <button className="primary-button" disabled={runbookBusy} key={runbook.id} onClick={() => void runIncidentRunbook(selectedIncident, runbook)} type="button">Preview {runbook.name}</button>)}{(pinnedMonitorsBySession[selectedIncident.sessionId]?.recommendedRunbookIds ?? []).length === 0 ? <p className="hint">No response Runbook is linked to this monitor.</p> : null}</div>
+                  <h4>Timeline</h4>
+                  <div className="fleet-incident-detail__timeline">{selectedIncidentEvents.map((event) => <div key={event.id}><strong>{event.type}</strong><span>{event.detail}</span><small>{new Date(event.createdAt).toLocaleString()}</small></div>)}</div>
+                </> : <p className="hint">No open incident for this server. The charts remain available for routine inspection.</p>}
+              </> : <p className="hint">Select any monitored server above, or choose an active incident, to inspect its trends.</p>}
+            </div>
             </div>
           </section>
         ) : null}

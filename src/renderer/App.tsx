@@ -13596,6 +13596,7 @@ export function App() {
       options?: {
         startupCommands?: string[];
         forceNewTab?: boolean;
+        insertAfterTabId?: string;
       }
     ): string | null => {
       if (!terminalApi) {
@@ -13628,13 +13629,39 @@ export function App() {
           title,
           instance: nextInstance
         };
-        return [...prev, nextTab];
+        const insertAfterIndex = options?.insertAfterTabId
+          ? prev.findIndex((tab) => tab.id === options.insertAfterTabId)
+          : -1;
+        return insertAfterIndex >= 0
+          ? [
+              ...prev.slice(0, insertAfterIndex + 1),
+              nextTab,
+              ...prev.slice(insertAfterIndex + 1)
+            ]
+          : [...prev, nextTab];
       });
       setActiveTabId(id);
       queueStartupCommandsForTab(id, startupCommands);
       return id;
     },
     [queueStartupCommandsForTab, terminalApi]
+  );
+
+  const duplicateTerminalTab = useCallback(
+    (tabId: string): void => {
+      const sourceTab = terminalTabsRef.current.find((tab) => tab.id === tabId);
+      if (!sourceTab) {
+        setError("The terminal tab is no longer available.");
+        return;
+      }
+      const session = sessionsRef.current.find((entry) => entry.id === sourceTab.sessionId);
+      if (!session) {
+        setError("The session for this terminal tab is no longer available.");
+        return;
+      }
+      openTerminalTab(session, { forceNewTab: true, insertAfterTabId: sourceTab.id });
+    },
+    [openTerminalTab]
   );
 
   const saveSessionAssetFields = useCallback(
@@ -19473,11 +19500,21 @@ export function App() {
             },
         formatPercent,
         formatTransferBytes,
+        formatUptime: formatServerUptime,
+        failedServices:
+          serverProcessSnapshot?.failedServices.length ??
+          activeFleetMonitorOverview?.lastObservation?.failedServices ??
+          null,
         isConnected: isActiveTabConnected,
         loading: serverHealthLoading,
         metrics: serverHealthMetrics,
         serverHealth,
         serverHealthError,
+        thresholds: {
+          cpuWarnPercent: serverHealthAlertPreferences.cpuWarnPercent,
+          memoryWarnPercent: serverHealthAlertPreferences.memoryWarnPercent,
+          diskWarnPercent: serverHealthAlertPreferences.diskWarnPercent
+        },
         updatedLabel: serverHealthUpdatedLabel
       }),
       serverHealthInspectorSection: buildServerHealthInspectorSectionArgs({
@@ -19665,6 +19702,7 @@ export function App() {
         onCloseTabsLeft: closeTabsLeft,
         onCloseTabsRight: closeTabsRight,
         onCommandHistoryChange: setTerminalCommandHistoryEntries,
+        onDuplicateTab: duplicateTerminalTab,
         onError: setError,
         onSelectTab: setActiveTabId,
         requestDangerousCommandApproval

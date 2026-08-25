@@ -88,6 +88,7 @@ interface TerminalWorkspaceProps {
   tabs: TerminalTab[];
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
+  onDuplicateTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onCloseTabsLeft: (tabId: string) => void;
   onCloseTabsRight: (tabId: string) => void;
@@ -430,6 +431,7 @@ export function TerminalWorkspace({
   tabs,
   activeTabId,
   onSelectTab,
+  onDuplicateTab,
   onCloseTab,
   onCloseTabsLeft,
   onCloseTabsRight,
@@ -1607,6 +1609,14 @@ export function TerminalWorkspace({
   const tabContextActions = useMemo<TabContextAction[]>(
     () => [
       {
+        id: "tab-duplicate",
+        label: "Duplicate Tab",
+        run: (tabId: string) => {
+          onDuplicateTab(tabId);
+        },
+        isDisabled: (tabId: string) => !tabsByIdRef.current.has(tabId)
+      },
+      {
         id: "tab-close",
         label: "Close Tab",
         run: (tabId: string) => {
@@ -1659,6 +1669,7 @@ export function TerminalWorkspace({
       onCloseTab,
       onCloseTabsLeft,
       onCloseTabsRight,
+      onDuplicateTab,
       tabs
     ]
   );

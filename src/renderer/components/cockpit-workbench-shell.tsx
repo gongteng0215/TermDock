@@ -402,7 +402,7 @@ export function CockpitWorkbenchShell({
                     title="Show server health details"
                     type="button"
                   >
-                    Details
+                    Info
                   </button>
                 ) : null}
                 {serverHealthInspectorSectionProps.isMonitorPinned ? (
@@ -444,7 +444,7 @@ export function CockpitWorkbenchShell({
                   {serverHealthInspectorSectionProps.monitorPinBusy
                     ? "Pinning..."
                     : serverHealthInspectorSectionProps.isMonitorPinned
-                      ? "Pinned"
+                      ? "Fleet"
                       : "Pin"}
                 </button>
               </>

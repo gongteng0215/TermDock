@@ -1333,25 +1333,75 @@ export class TerminalService {
         ]);
         const health = parseServerHealthOutput(healthRaw);
         const processes = parseServerProcessOutput(processRaw);
+        const previousObservation = this.operationsStore
+          .listHealthObservations(session.id, 1)
+          .at(-1);
+        const elapsedSeconds = previousObservation
+          ? Math.max(
+              0,
+              (new Date(collectedAt).getTime() -
+                new Date(previousObservation.collectedAt).getTime()) /
+                1_000
+            )
+          : 0;
+        const totalTicksDelta =
+          previousObservation?.cpuTotalTicks !== undefined
+            ? health.cpuTotalTicks - previousObservation.cpuTotalTicks
+            : 0;
+        const idleTicksDelta =
+          previousObservation?.cpuIdleTicks !== undefined
+            ? health.cpuIdleTicks - previousObservation.cpuIdleTicks
+            : 0;
+        const cpuUsagePercent =
+          totalTicksDelta > 0 && idleTicksDelta >= 0
+            ? ((totalTicksDelta - idleTicksDelta) / totalTicksDelta) * 100
+            : health.cpuCoreCount && health.cpuCoreCount > 0
+              ? (health.load1 / health.cpuCoreCount) * 100
+              : 0;
+        const networkRate = (current: number, previous: number | undefined): number =>
+          elapsedSeconds > 0 && previous !== undefined && current >= previous
+            ? (current - previous) / elapsedSeconds
+            : 0;
+        const busiestFilesystem = (health.filesystems ?? [])
+          .filter((entry) => Number.isFinite(entry.usePercent))
+          .sort((left, right) => right.usePercent - left.usePercent)[0];
+        const diskUsagePercent = busiestFilesystem?.usePercent ??
+          (health.diskTotalBytes > 0 ? (health.diskUsedBytes / health.diskTotalBytes) * 100 : 0);
         const observation: HealthObservation = {
           sessionId: session.id,
           collectedAt,
-          // A short probe has no preceding CPU-tick sample. Load/core is a
-          // stable, bounded proxy until the next persisted observation.
-          cpuUsagePercent: toBoundedPercent(
-            health.cpuCoreCount && health.cpuCoreCount > 0
-              ? (health.load1 / health.cpuCoreCount) * 100
-              : 0
-          ),
+          // The first short probe falls back to load/core; subsequent probes
+          // use persisted CPU ticks for real interval utilization.
+          cpuUsagePercent: toBoundedPercent(cpuUsagePercent),
           memoryUsagePercent: toBoundedPercent(
             health.memoryTotalBytes > 0
               ? (health.memoryUsedBytes / health.memoryTotalBytes) * 100
               : 0
           ),
-          diskUsagePercent: toBoundedPercent(
-            health.diskTotalBytes > 0 ? (health.diskUsedBytes / health.diskTotalBytes) * 100 : 0
-          ),
+          diskUsagePercent: toBoundedPercent(diskUsagePercent),
+          diskPath: busiestFilesystem?.path ?? health.diskPath,
+          cpuCoreCount: health.cpuCoreCount ?? 0,
+          cpuTotalTicks: health.cpuTotalTicks,
+          cpuIdleTicks: health.cpuIdleTicks,
           load1: Number.isFinite(health.load1) ? Math.max(0, health.load1) : 0,
+          load5: Number.isFinite(health.load5) ? Math.max(0, health.load5) : 0,
+          load15: Number.isFinite(health.load15) ? Math.max(0, health.load15) : 0,
+          swapUsagePercent: toBoundedPercent(
+            health.swapTotalBytes && health.swapTotalBytes > 0
+              ? ((health.swapUsedBytes ?? 0) / health.swapTotalBytes) * 100
+              : 0
+          ),
+          networkRxBytes: health.networkRxBytes,
+          networkTxBytes: health.networkTxBytes,
+          networkRxBytesPerSecond: networkRate(
+            health.networkRxBytes,
+            previousObservation?.networkRxBytes
+          ),
+          networkTxBytesPerSecond: networkRate(
+            health.networkTxBytes,
+            previousObservation?.networkTxBytes
+          ),
+          uptimeSeconds: health.uptimeSeconds,
           failedServices: processes.failedServices.length,
           connectionState: "healthy"
         };

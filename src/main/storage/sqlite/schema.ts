@@ -11,7 +11,7 @@
 import type Database from "better-sqlite3";
 
 /** Current schema version; bump when adding forward migrations. */
-export const SQLITE_SCHEMA_VERSION = 12;
+export const SQLITE_SCHEMA_VERSION = 13;
 
 /** Where session secrets are stored; never written into SQLite rows. */
 export const SQLITE_SECRET_STORAGE_OWNER = "keytar" as const;
@@ -278,6 +278,15 @@ CREATE INDEX IF NOT EXISTS idx_health_incident_events_incident_time
   ON health_incident_events (incident_id, created_at ASC);
 `.trim();
 
+/** v13: richer Fleet trend aggregates without increasing the monitor sampling rate. */
+export const SQLITE_SCHEMA_DDL_V13 = [
+  "ALTER TABLE health_observation_aggregates ADD COLUMN load5_sum REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE health_observation_aggregates ADD COLUMN load15_sum REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE health_observation_aggregates ADD COLUMN swap_sum REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE health_observation_aggregates ADD COLUMN network_rx_rate_sum REAL NOT NULL DEFAULT 0",
+  "ALTER TABLE health_observation_aggregates ADD COLUMN network_tx_rate_sum REAL NOT NULL DEFAULT 0"
+] as const;
+
 /** @deprecated Use migrateSqliteSchema(); kept for docs / dual-write test imports. */
 export const SQLITE_SCHEMA_DDL = SQLITE_SCHEMA_DDL_V1;
 
@@ -348,6 +357,17 @@ export function migrateSqliteSchema(db: Database.Database): void {
   }
   if (userVersion < 12) {
     db.exec(SQLITE_SCHEMA_DDL_V12);
+  }
+  if (userVersion < 13) {
+    for (const statement of SQLITE_SCHEMA_DDL_V13) {
+      try {
+        db.exec(statement);
+      } catch (error) {
+        if (!String(error).includes("duplicate column name")) {
+          throw error;
+        }
+      }
+    }
   }
   db.pragma(`user_version = ${SQLITE_SCHEMA_VERSION}`);
   db.prepare(

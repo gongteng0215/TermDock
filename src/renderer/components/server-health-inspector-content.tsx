@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { ServerHealthSnapshot } from "../../shared/terminal";
 import type { ServerHealthDerivedMetrics } from "../use-server-health-monitor";
@@ -17,9 +17,52 @@ interface ServerHealthInspectorContentProps {
   isConnected: boolean;
   loading: boolean;
   metrics: ServerHealthDerivedMetrics | null;
+  failedServices: number | null;
+  formatUptime: (seconds: number) => string;
   serverHealth: ServerHealthSnapshot | null;
   serverHealthError: string | null;
+  thresholds: {
+    cpuWarnPercent: number;
+    memoryWarnPercent: number;
+    diskWarnPercent: number;
+  };
   updatedLabel: string;
+}
+
+type ResourceMetricKey = "cpuUsagePercent" | "memoryUsagePercent" | "diskUsagePercent";
+
+interface ResourceMeterProps {
+  alert: boolean;
+  delta: number;
+  label: string;
+  percent: number;
+  threshold: number;
+}
+
+function ResourceMeter({ alert, delta, label, percent, threshold }: ResourceMeterProps) {
+  const safePercent = Math.max(0, Math.min(100, percent));
+  const trend = Math.abs(delta) < 0.5 ? "steady" : delta > 0 ? "up" : "down";
+  return (
+    <div className={`server-health-meter${alert ? " is-alert" : ""}`}>
+      <div className="server-health-meter__heading">
+        <span>{label}</span>
+        <strong>{safePercent.toFixed(0)}%</strong>
+        <em className={`server-health-meter__trend is-${trend}`} title={`${delta >= 0 ? "+" : ""}${delta.toFixed(1)} percentage points since the previous sample`}>
+          {trend === "up" ? "↑" : trend === "down" ? "↓" : "—"}
+        </em>
+      </div>
+      <div
+        className="server-health-meter__track"
+        style={{
+          "--health-meter-pct": `${safePercent}%`,
+          "--health-threshold-pct": `${Math.max(0, Math.min(100, threshold))}%`
+        } as CSSProperties}
+      >
+        <span className="server-health-meter__fill" />
+        <i className="server-health-meter__threshold" title={`Warning threshold ${threshold}%`} />
+      </div>
+    </div>
+  );
 }
 
 export function ServerHealthInspectorContent({
@@ -29,10 +72,44 @@ export function ServerHealthInspectorContent({
   isConnected,
   loading,
   metrics,
+  failedServices,
+  formatUptime,
   serverHealth,
   serverHealthError,
+  thresholds,
   updatedLabel
 }: ServerHealthInspectorContentProps) {
+  const previousMetricsRef = useRef<ServerHealthDerivedMetrics | null>(null);
+  const previousTabIdRef = useRef<string | null>(null);
+  const [resourceDeltas, setResourceDeltas] = useState<Record<ResourceMetricKey, number>>({
+    cpuUsagePercent: 0,
+    memoryUsagePercent: 0,
+    diskUsagePercent: 0
+  });
+
+  useEffect(() => {
+    if (!metrics || !serverHealth) {
+      previousMetricsRef.current = null;
+      previousTabIdRef.current = null;
+      setResourceDeltas({ cpuUsagePercent: 0, memoryUsagePercent: 0, diskUsagePercent: 0 });
+      return;
+    }
+    const previous =
+      previousTabIdRef.current === serverHealth.tabId ? previousMetricsRef.current : null;
+    setResourceDeltas({
+      cpuUsagePercent: previous ? metrics.cpuUsagePercent - previous.cpuUsagePercent : 0,
+      memoryUsagePercent: previous ? metrics.memoryUsagePercent - previous.memoryUsagePercent : 0,
+      diskUsagePercent: previous ? metrics.diskUsagePercent - previous.diskUsagePercent : 0
+    });
+    previousMetricsRef.current = metrics;
+    previousTabIdRef.current = serverHealth.tabId;
+  }, [metrics, serverHealth]);
+
+  const swapUsagePercent =
+    serverHealth?.swapTotalBytes && serverHealth.swapTotalBytes > 0
+      ? ((serverHealth.swapUsedBytes ?? 0) / serverHealth.swapTotalBytes) * 100
+      : 0;
+
   return (
     <>
       {!isConnected ? (
@@ -54,64 +131,18 @@ export function ServerHealthInspectorContent({
       ) : null}
       {serverHealth && isConnected ? (
         <>
-          <div className="server-health-grid">
-            <div
-              className={
-                alertStatus.cpuHigh
-                  ? "server-health-card server-health-card--cpu is-alert"
-                  : "server-health-card server-health-card--cpu"
-              }
-              data-gauge={Math.round(metrics?.cpuUsagePercent ?? 0)}
-              style={
-                {
-                  "--gauge-pct": `${Math.max(0, Math.min(100, metrics?.cpuUsagePercent ?? 0))}`
-                } as CSSProperties
-              }
-            >
-              <span className="server-health-card__label">CPU</span>
-              <strong className="server-health-card__value">
-                {formatPercent(metrics?.cpuUsagePercent ?? 0)}
-              </strong>
+          <div className="server-health-dashboard">
+            <div className="server-health-dashboard__resources">
+              <ResourceMeter alert={alertStatus.cpuHigh} delta={resourceDeltas.cpuUsagePercent} label="CPU" percent={metrics?.cpuUsagePercent ?? 0} threshold={thresholds.cpuWarnPercent} />
+              <ResourceMeter alert={alertStatus.memoryHigh} delta={resourceDeltas.memoryUsagePercent} label="Memory" percent={metrics?.memoryUsagePercent ?? 0} threshold={thresholds.memoryWarnPercent} />
+              <ResourceMeter alert={alertStatus.diskHigh} delta={resourceDeltas.diskUsagePercent} label={`Disk ${serverHealth.diskPath || "/"}`} percent={metrics?.diskUsagePercent ?? 0} threshold={thresholds.diskWarnPercent} />
             </div>
-            <div
-              className={
-                alertStatus.memoryHigh
-                  ? "server-health-card server-health-card--memory is-alert"
-                  : "server-health-card server-health-card--memory"
-              }
-              data-gauge={Math.round(metrics?.memoryUsagePercent ?? 0)}
-              style={
-                {
-                  "--gauge-pct": `${Math.max(0, Math.min(100, metrics?.memoryUsagePercent ?? 0))}`
-                } as CSSProperties
-              }
-            >
-              <span className="server-health-card__label">Memory</span>
-              <strong className="server-health-card__value">
-                {formatPercent(metrics?.memoryUsagePercent ?? 0)}
-              </strong>
-              <span className="server-health-card__meta">
-                {formatTransferBytes(serverHealth.memoryUsedBytes)}/
-                {formatTransferBytes(serverHealth.memoryTotalBytes)}
-              </span>
-            </div>
-            <div
-              className={
-                alertStatus.diskHigh
-                  ? "server-health-card server-health-card--disk is-alert"
-                  : "server-health-card server-health-card--disk"
-              }
-              data-gauge={Math.round(metrics?.diskUsagePercent ?? 0)}
-              style={
-                {
-                  "--gauge-pct": `${Math.max(0, Math.min(100, metrics?.diskUsagePercent ?? 0))}`
-                } as CSSProperties
-              }
-            >
-              <span className="server-health-card__label">Disk</span>
-              <strong className="server-health-card__value">
-                {formatPercent(metrics?.diskUsagePercent ?? 0)}
-              </strong>
+            <div className="server-health-dashboard__facts">
+              <div><span>Load 1/5/15</span><strong>{serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} / {serverHealth.load15.toFixed(2)}</strong></div>
+              <div><span>Network</span><strong>↓ {formatTransferBytes(metrics?.rxBytesPerSecond ?? 0)}/s · ↑ {formatTransferBytes(metrics?.txBytesPerSecond ?? 0)}/s</strong></div>
+              <div><span>Swap</span><strong>{serverHealth.swapTotalBytes ? formatPercent(swapUsagePercent) : "Not configured"}</strong></div>
+              <div><span>Uptime</span><strong>{formatUptime(serverHealth.uptimeSeconds)}</strong></div>
+              <div className={failedServices && failedServices > 0 ? "is-alert" : ""}><span>Failed services</span><strong>{failedServices ?? "—"}</strong></div>
             </div>
           </div>
           <p className="hint server-health__footnote">

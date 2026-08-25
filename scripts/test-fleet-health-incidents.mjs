@@ -15,7 +15,15 @@ const observation = (overrides = {}) => ({
   cpuUsagePercent: 20,
   memoryUsagePercent: 20,
   diskUsagePercent: 20,
+  diskPath: "/",
+  cpuCoreCount: 4,
   load1: 0.2,
+  load5: 0.15,
+  load15: 0.1,
+  swapUsagePercent: 12,
+  networkRxBytesPerSecond: 1024,
+  networkTxBytesPerSecond: 2048,
+  uptimeSeconds: 86_400,
   failedServices: 0,
   connectionState: "healthy",
   ...overrides
@@ -68,6 +76,16 @@ try {
   const aggregatedTrend = store.listHealthTrend(sessionId, "7d");
   assert.ok(rawTrend.length >= 6);
   assert.ok(aggregatedTrend.length >= 1);
+  assert.equal(rawTrend.at(-1).load5, 0.15);
+  assert.equal(rawTrend.at(-1).swapUsagePercent, 12);
+  assert.equal(rawTrend.at(-1).networkTxBytesPerSecond, 2048);
+  assert.ok(aggregatedTrend[0].networkRxBytesPerSecond > 0);
+  assert.ok(aggregatedTrend[0].sampleCount >= 1);
+  const aggregateColumns = new Set(
+    db.prepare("PRAGMA table_info(health_observation_aggregates)").all().map((column) => column.name)
+  );
+  assert.ok(aggregateColumns.has("load5_sum"));
+  assert.ok(aggregateColumns.has("network_rx_rate_sum"));
 
   const run = {
     id: "run-1", runbookId: "runbook-1", runbookName: "Restart API", command: "systemctl restart api", incidentId: reopened.id,

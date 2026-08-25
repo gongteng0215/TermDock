@@ -109,6 +109,48 @@ function parsePayload<T>(value: string, fallback: T): T {
   }
 }
 
+function finiteHealthMetric(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeHealthObservation(
+  input: Partial<HealthObservation>,
+  fallbackSessionId = ""
+): HealthObservation {
+  const connectionState =
+    input.connectionState === "healthy" ||
+    input.connectionState === "unreachable" ||
+    input.connectionState === "needsAttention"
+      ? input.connectionState
+      : "needsAttention";
+  const percent = (value: unknown) => Math.max(0, Math.min(100, finiteHealthMetric(value)));
+  const positive = (value: unknown) => Math.max(0, finiteHealthMetric(value));
+  return {
+    sessionId: input.sessionId?.trim() || fallbackSessionId,
+    collectedAt: input.collectedAt || new Date().toISOString(),
+    cpuUsagePercent: percent(input.cpuUsagePercent),
+    memoryUsagePercent: percent(input.memoryUsagePercent),
+    diskUsagePercent: percent(input.diskUsagePercent),
+    ...(input.diskPath?.trim() ? { diskPath: input.diskPath.trim() } : {}),
+    ...(input.cpuCoreCount !== undefined
+      ? { cpuCoreCount: Math.max(0, Math.round(positive(input.cpuCoreCount))) }
+      : {}),
+    ...(input.cpuTotalTicks !== undefined ? { cpuTotalTicks: positive(input.cpuTotalTicks) } : {}),
+    ...(input.cpuIdleTicks !== undefined ? { cpuIdleTicks: positive(input.cpuIdleTicks) } : {}),
+    load1: positive(input.load1),
+    load5: positive(input.load5),
+    load15: positive(input.load15),
+    swapUsagePercent: percent(input.swapUsagePercent),
+    ...(input.networkRxBytes !== undefined ? { networkRxBytes: positive(input.networkRxBytes) } : {}),
+    ...(input.networkTxBytes !== undefined ? { networkTxBytes: positive(input.networkTxBytes) } : {}),
+    networkRxBytesPerSecond: positive(input.networkRxBytesPerSecond),
+    networkTxBytesPerSecond: positive(input.networkTxBytesPerSecond),
+    uptimeSeconds: positive(input.uptimeSeconds),
+    failedServices: Math.max(0, Math.round(positive(input.failedServices))),
+    connectionState
+  };
+}
+
 function normalizeRunbook(input: Partial<Runbook>): Runbook {
   const now = new Date().toISOString();
   const variables = Array.isArray(input.variables)
@@ -340,35 +382,48 @@ export class SqliteOperationsStore {
   removePinnedMonitor(sessionId: string): void { this.db.prepare("DELETE FROM pinned_monitors WHERE session_id = ?").run(sessionId); }
 
   appendHealthObservation(observation: HealthObservation): void {
-    const collectedAt = new Date(observation.collectedAt).getTime() || Date.now();
+    const normalized = normalizeHealthObservation(observation, observation.sessionId);
+    const collectedAt = new Date(normalized.collectedAt).getTime() || Date.now();
     this.db.prepare("INSERT INTO health_observations (session_id, collected_at, payload_json) VALUES (?, ?, ?)")
-      .run(observation.sessionId, collectedAt, JSON.stringify(observation));
+      .run(normalized.sessionId, collectedAt, JSON.stringify(normalized));
     this.db.prepare("DELETE FROM health_observations WHERE collected_at < ?")
       .run(Date.now() - 24 * 60 * 60 * 1000);
     this.db.prepare(`DELETE FROM health_observations WHERE id IN (
       SELECT id FROM health_observations WHERE session_id = ? ORDER BY collected_at DESC LIMIT -1 OFFSET ?
-    )`).run(observation.sessionId, MAX_HEALTH_OBSERVATIONS_PER_SESSION);
+    )`).run(normalized.sessionId, MAX_HEALTH_OBSERVATIONS_PER_SESSION);
     const bucketAt = Math.floor(collectedAt / (5 * 60 * 1000)) * 5 * 60 * 1000;
-    const unhealthy = observation.connectionState !== "healthy" ? 1 : 0;
+    const unhealthy = normalized.connectionState !== "healthy" ? 1 : 0;
     this.db.prepare(`INSERT INTO health_observation_aggregates (
-      session_id, bucket_at, sample_count, cpu_sum, memory_sum, disk_sum, load1_sum, failed_services_max, unhealthy_count
-    ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+      session_id, bucket_at, sample_count, cpu_sum, memory_sum, disk_sum, load1_sum,
+      load5_sum, load15_sum, swap_sum, network_rx_rate_sum, network_tx_rate_sum,
+      failed_services_max, unhealthy_count
+    ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(session_id, bucket_at) DO UPDATE SET
       sample_count = sample_count + 1,
       cpu_sum = cpu_sum + excluded.cpu_sum,
       memory_sum = memory_sum + excluded.memory_sum,
       disk_sum = disk_sum + excluded.disk_sum,
       load1_sum = load1_sum + excluded.load1_sum,
+      load5_sum = load5_sum + excluded.load5_sum,
+      load15_sum = load15_sum + excluded.load15_sum,
+      swap_sum = swap_sum + excluded.swap_sum,
+      network_rx_rate_sum = network_rx_rate_sum + excluded.network_rx_rate_sum,
+      network_tx_rate_sum = network_tx_rate_sum + excluded.network_tx_rate_sum,
       failed_services_max = MAX(failed_services_max, excluded.failed_services_max),
       unhealthy_count = unhealthy_count + excluded.unhealthy_count`)
       .run(
-        observation.sessionId,
+        normalized.sessionId,
         bucketAt,
-        observation.cpuUsagePercent,
-        observation.memoryUsagePercent,
-        observation.diskUsagePercent,
-        observation.load1,
-        observation.failedServices,
+        normalized.cpuUsagePercent,
+        normalized.memoryUsagePercent,
+        normalized.diskUsagePercent,
+        normalized.load1,
+        normalized.load5 ?? 0,
+        normalized.load15 ?? 0,
+        normalized.swapUsagePercent ?? 0,
+        normalized.networkRxBytesPerSecond ?? 0,
+        normalized.networkTxBytesPerSecond ?? 0,
+        normalized.failedServices,
         unhealthy
       );
     this.db.prepare("DELETE FROM health_observation_aggregates WHERE bucket_at < ?")
@@ -376,11 +431,12 @@ export class SqliteOperationsStore {
   }
 
   listHealthObservations(sessionId: string, limit = 720): HealthObservation[] {
-    return (this.db.prepare("SELECT payload_json FROM health_observations WHERE session_id = ? ORDER BY collected_at DESC LIMIT ?").all(sessionId, Math.max(1, Math.min(limit, 8640))) as Array<{ payload_json: string }>).map((row) => parsePayload<HealthObservation>(row.payload_json, { sessionId, collectedAt: "", cpuUsagePercent: 0, memoryUsagePercent: 0, diskUsagePercent: 0, load1: 0, failedServices: 0, connectionState: "needsAttention" })).reverse();
+    return (this.db.prepare("SELECT payload_json FROM health_observations WHERE session_id = ? ORDER BY collected_at DESC LIMIT ?").all(sessionId, Math.max(1, Math.min(limit, 8640))) as Array<{ payload_json: string }>).map((row) => normalizeHealthObservation(parsePayload<Partial<HealthObservation>>(row.payload_json, {}), sessionId)).reverse();
   }
 
   /** Records a sample and advances the durable incident state for a pinned monitor. */
   recordHealthObservation(observation: HealthObservation): HealthIncident | null {
+    observation = normalizeHealthObservation(observation, observation.sessionId);
     this.appendHealthObservation(observation);
     const monitor = this.getPinnedMonitor(observation.sessionId);
     if (!monitor?.enabled || observation.connectionState === "needsAttention") return null;
@@ -457,27 +513,41 @@ export class SqliteOperationsStore {
     const periodMs = range === "24h" ? 24 * 60 * 60 * 1_000 : range === "7d" ? 7 * 24 * 60 * 60 * 1_000 : 30 * 24 * 60 * 60 * 1_000;
     if (range === "24h") {
       return (this.db.prepare("SELECT payload_json FROM health_observations WHERE session_id = ? AND collected_at >= ? ORDER BY collected_at ASC").all(sessionId, now - periodMs) as Array<{ payload_json: string }>).map((row) => {
-        const observation = parsePayload<HealthObservation>(row.payload_json, { sessionId, collectedAt: "", cpuUsagePercent: 0, memoryUsagePercent: 0, diskUsagePercent: 0, load1: 0, failedServices: 0, connectionState: "needsAttention" });
+        const observation = normalizeHealthObservation(parsePayload<Partial<HealthObservation>>(row.payload_json, {}), sessionId);
         return {
           collectedAt: observation.collectedAt,
           cpuUsagePercent: observation.cpuUsagePercent,
           memoryUsagePercent: observation.memoryUsagePercent,
           diskUsagePercent: observation.diskUsagePercent,
           load1: observation.load1,
+          load5: observation.load5 ?? 0,
+          load15: observation.load15 ?? 0,
+          swapUsagePercent: observation.swapUsagePercent ?? 0,
+          networkRxBytesPerSecond: observation.networkRxBytesPerSecond ?? 0,
+          networkTxBytesPerSecond: observation.networkTxBytesPerSecond ?? 0,
           failedServices: observation.failedServices,
-          unhealthySamples: observation.connectionState === "healthy" ? 0 : 1
+          unhealthySamples: observation.connectionState === "healthy" ? 0 : 1,
+          sampleCount: 1
         };
       });
     }
-    return (this.db.prepare(`SELECT bucket_at, sample_count, cpu_sum, memory_sum, disk_sum, load1_sum, failed_services_max, unhealthy_count
+    return (this.db.prepare(`SELECT bucket_at, sample_count, cpu_sum, memory_sum, disk_sum, load1_sum,
+      load5_sum, load15_sum, swap_sum, network_rx_rate_sum, network_tx_rate_sum,
+      failed_services_max, unhealthy_count
       FROM health_observation_aggregates WHERE session_id = ? AND bucket_at >= ? ORDER BY bucket_at ASC`).all(sessionId, now - periodMs) as Array<Record<string, number>>).map((row) => ({
       collectedAt: new Date(row.bucket_at).toISOString(),
       cpuUsagePercent: row.cpu_sum / Math.max(1, row.sample_count),
       memoryUsagePercent: row.memory_sum / Math.max(1, row.sample_count),
       diskUsagePercent: row.disk_sum / Math.max(1, row.sample_count),
       load1: row.load1_sum / Math.max(1, row.sample_count),
+      load5: row.load5_sum / Math.max(1, row.sample_count),
+      load15: row.load15_sum / Math.max(1, row.sample_count),
+      swapUsagePercent: row.swap_sum / Math.max(1, row.sample_count),
+      networkRxBytesPerSecond: row.network_rx_rate_sum / Math.max(1, row.sample_count),
+      networkTxBytesPerSecond: row.network_tx_rate_sum / Math.max(1, row.sample_count),
       failedServices: row.failed_services_max,
-      unhealthySamples: row.unhealthy_count
+      unhealthySamples: row.unhealthy_count,
+      sampleCount: row.sample_count
     }));
   }
 

@@ -549,6 +549,20 @@ html[data-ui-theme="industrial"] .cockpit-module .server-health-card {
   height: 62px;
 }
 
+html[data-ui-theme="industrial"] .cockpit-module .server-health-meter__track {
+  border-color: rgba(83, 154, 163, 0.24);
+  background: #10242c;
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .server-health-meter__fill {
+  background: linear-gradient(90deg, #397e87, #66b7bd);
+}
+
+html[data-ui-theme="industrial"] .cockpit-module .server-health-dashboard__facts > div {
+  border-color: rgba(91, 145, 153, 0.2);
+  background: #0a1921;
+}
+
 html[data-ui-theme="industrial"] .cockpit-module .first-run-card {
   gap: 8px;
   padding: 9px;

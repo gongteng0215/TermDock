@@ -2,6 +2,25 @@
 
 [English](RELEASE_NOTES.md)
 
+## v0.1.51 (2026-08-25)
+
+### 主要变化
+
+- Server Health 改为紧凑诊断仪表盘，统一展示固定刻度的 CPU、内存和磁盘资源条，并补充负载、网络吞吐、Swap、运行时间及失败服务信息。
+- Fleet Health 新增严重度汇总卡、清晰的 0–100% 资源趋势、独立负载/网络/服务图表、精确悬停值，以及更宽且滚动安全的 Operations Hub 布局。
+- Fleet 巡检基于持久化计数器计算真实区间 CPU 与网络速率；SQLite schema v13 保存更丰富的原始采样与聚合指标。
+- 修复 Default 窄侧栏的健康标题、监控按钮字号、服务器上下文层级和网络数据截断，并同步兼容 Cockpit 主题。
+- 终端标签右键菜单新增“复制窗口”；复制项在原标签右侧建立独立 SSH 连接并立即激活。
+
+### 当前验证
+
+- `pnpm run typecheck` 已通过。
+- `pnpm run build` 已通过。
+- `pnpm run test:fleet-health-incidents` 已通过。
+- Default、Tech、Industrial 三种主题在 1680px 与 1200px 宽度下的健康布局及“复制窗口”定向交互验证均已通过。
+- `pnpm run smoke:ui` 已通过：52 项通过，0 项失败，0 项跳过。
+- `pnpm run smoke:ui:packaged` 已通过：52 项通过，0 项失败，0 项跳过。
+
 ## v0.1.50 (2026-08-19)
 
 发布类型：稳定版

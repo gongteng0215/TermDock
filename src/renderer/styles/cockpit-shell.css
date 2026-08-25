@@ -895,6 +895,53 @@
 }
 
 /* Tech health cards → single-ring circular gauges */
+.cockpit-module .server-health-dashboard {
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.cockpit-module .server-health-dashboard__resources {
+  gap: 4px;
+}
+
+.cockpit-module .server-health-meter__heading {
+  color: rgba(124, 182, 190, 0.76);
+  font: 500 8px/1 var(--cockpit-mono);
+  letter-spacing: 0.04em;
+}
+
+.cockpit-module .server-health-meter__heading strong {
+  color: #b8eef0;
+  font: 600 9px/1 var(--cockpit-mono);
+}
+
+.cockpit-module .server-health-meter__track {
+  height: 4px;
+  border-color: rgba(0, 217, 230, 0.22);
+  background: #09232c;
+}
+
+.cockpit-module .server-health-dashboard__facts {
+  gap: 3px;
+}
+
+.cockpit-module .server-health-dashboard__facts > div {
+  border-color: rgba(0, 217, 230, 0.16);
+  background: rgba(3, 20, 27, 0.8);
+  padding: 3px 4px;
+}
+
+.cockpit-module .server-health-dashboard__facts span {
+  color: rgba(112, 163, 174, 0.72);
+  font: 500 7px/1 var(--cockpit-mono);
+  letter-spacing: 0.05em;
+}
+
+.cockpit-module .server-health-dashboard__facts strong {
+  color: #a8d8dc;
+  font: 500 8px/1.15 var(--cockpit-mono);
+}
+
 .cockpit-module .server-health-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

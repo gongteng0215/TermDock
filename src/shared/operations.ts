@@ -139,7 +139,21 @@ export interface HealthObservation {
   cpuUsagePercent: number;
   memoryUsagePercent: number;
   diskUsagePercent: number;
+  diskPath?: string;
+  cpuCoreCount?: number;
+  /** Raw CPU counters are retained locally so the next short probe can derive real utilization. */
+  cpuTotalTicks?: number;
+  cpuIdleTicks?: number;
   load1: number;
+  load5?: number;
+  load15?: number;
+  swapUsagePercent?: number;
+  /** Raw network counters are retained locally so subsequent probes can derive throughput. */
+  networkRxBytes?: number;
+  networkTxBytes?: number;
+  networkRxBytesPerSecond?: number;
+  networkTxBytesPerSecond?: number;
+  uptimeSeconds?: number;
   failedServices: number;
   connectionState: "healthy" | "unreachable" | "needsAttention";
 }
@@ -200,8 +214,14 @@ export interface HealthTrendPoint {
   memoryUsagePercent: number;
   diskUsagePercent: number;
   load1: number;
+  load5?: number;
+  load15?: number;
+  swapUsagePercent?: number;
+  networkRxBytesPerSecond?: number;
+  networkTxBytesPerSecond?: number;
   failedServices: number;
   unhealthySamples: number;
+  sampleCount?: number;
 }
 
 export interface HealthIncidentEvidence {

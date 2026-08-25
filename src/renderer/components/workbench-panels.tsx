@@ -912,11 +912,31 @@ export function ServerHealthInspectorSection({
   return (
     <section className="panel__section panel__section--server-health workbench-section workbench-section--server-health">
       <div className="panel__heading panel__heading--inspector">
-        <div className="panel__heading-main">
-          <h2>
-            <UiIcon name="health" />
-            Server Health
-          </h2>
+        <div className="panel__heading-main server-health__heading-main">
+          <div className="server-health__heading-title">
+            <h2>
+              <UiIcon name="health" />
+              Server Health
+            </h2>
+            <span
+              className={
+                hasAlert
+                  ? "server-health__state server-health__state--alert"
+                  : isConnected
+                    ? "server-health__state"
+                    : "server-health__state server-health__state--neutral"
+              }
+              title={
+                hasAlert
+                  ? "One or more metrics exceeded alert threshold."
+                  : isConnected
+                    ? "No alert triggered."
+                    : "Monitoring starts after the active terminal tab connects."
+              }
+            >
+              {hasAlert ? "ALERT" : healthyLabel}
+            </span>
+          </div>
           <div className="server-health__actions">
             <button
               aria-label="Open server health details"
@@ -972,24 +992,6 @@ export function ServerHealthInspectorSection({
             >
               {monitorPinBusy ? "Pinning…" : isMonitorPinned ? "Pinned" : "Pin monitor"}
             </button>
-            <span
-              className={
-                hasAlert
-                  ? "server-health__state server-health__state--alert"
-                  : isConnected
-                    ? "server-health__state"
-                    : "server-health__state server-health__state--neutral"
-              }
-              title={
-                hasAlert
-                  ? "One or more metrics exceeded alert threshold."
-                  : isConnected
-                    ? "No alert triggered."
-                    : "Monitoring starts after the active terminal tab connects."
-              }
-            >
-              {hasAlert ? "ALERT" : healthyLabel}
-            </span>
           </div>
         </div>
       </div>

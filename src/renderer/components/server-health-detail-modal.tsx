@@ -19,6 +19,7 @@ export type ServerHealthDetailTab =
 export interface ServerHealthDetailAlertStatus {
   cpuHigh: boolean;
   diskHigh: boolean;
+  hasAny: boolean;
   memoryHigh: boolean;
 }
 
@@ -129,6 +130,14 @@ export function ServerHealthDetailModal({
         {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
         {serverHealth ? (
           <div className="server-health-details">
+            <div className={`server-health-diagnosis${alertStatus.hasAny || (processSnapshot?.failedServices.length ?? 0) > 0 ? " is-alert" : ""}`}>
+              <div>
+                <span>Current assessment</span>
+                <strong>{alertStatus.hasAny || (processSnapshot?.failedServices.length ?? 0) > 0 ? "Attention required" : "No active threshold breach"}</strong>
+              </div>
+              <p>{alertStatus.hasAny ? `High ${[alertStatus.cpuHigh ? "CPU" : "", alertStatus.memoryHigh ? "memory" : "", alertStatus.diskHigh ? "disk" : ""].filter(Boolean).join(", ")}.` : "CPU, memory and disk remain below their configured warning levels."}{(processSnapshot?.failedServices.length ?? 0) > 0 ? ` ${processSnapshot?.failedServices.length} failed service(s) detected.` : " No failed services detected in the latest process check."}</p>
+              <div className="server-health-diagnosis__meta"><span>Collected {collectedAtLabel}</span><span>{cpuCoreLabel} CPU cores</span><span>Load/core {loadPerCore === null ? "—" : loadPerCore.toFixed(2)}</span><span>Swap {formatPercent(swapUsagePercent)}</span></div>
+            </div>
             <div className="server-health-grid server-health-grid--details">
               <div
                 className={

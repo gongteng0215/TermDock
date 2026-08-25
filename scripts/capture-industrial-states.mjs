@@ -12,7 +12,12 @@ const OUTPUT_DIR = resolve(
     join("artifacts", "industrial-audit", "populated")
 );
 const USER_DATA_DIR = join(OUTPUT_DIR, "user-data");
-const VIEWPORT = { width: 1680, height: 960 };
+const VIEWPORT = {
+  width: Number(process.env.TERMDOCK_CAPTURE_WIDTH ?? 1680),
+  height: Number(process.env.TERMDOCK_CAPTURE_HEIGHT ?? 960)
+};
+const CAPTURE_THEME = process.env.TERMDOCK_CAPTURE_SHELL_THEME ?? "industrial";
+const CAPTURE_HEALTH_ONLY = process.env.TERMDOCK_CAPTURE_HEALTH_ONLY === "1";
 const LONG_REMOTE_FILE_NAME =
   "production-api-gateway-configuration-with-a-very-long-release-and-region-name-2026-08-18.yaml";
 const MULTI_SELECT_REMOTE_FILE_NAMES = [
@@ -163,14 +168,14 @@ async function seedSessions(page, fixture) {
   );
 }
 
-async function setIndustrialPreferences(page) {
-  await page.evaluate(() => {
-    window.localStorage.setItem("termdock.ui-theme.v1", "industrial");
+async function setCapturePreferences(page) {
+  await page.evaluate((theme) => {
+    window.localStorage.setItem("termdock.ui-theme.v1", theme);
     window.localStorage.setItem("termdock.ui-density.v1", "compact");
     window.localStorage.setItem("termdock.sftp-explorer-view-mode.v1", "compact");
     window.localStorage.setItem("termdock.first-run-onboarding-dismissed.v1", "true");
     window.localStorage.setItem("termdock.command-history-inspector-collapsed.v1", "false");
-  });
+  }, CAPTURE_THEME);
 }
 
 async function openProductionSession(page) {
@@ -194,6 +199,32 @@ async function openProductionSession(page) {
     .waitFor({ state: "hidden", timeout: 20_000 });
 }
 
+async function verifyDuplicateTerminalTab(page) {
+  const tabs = page.locator(".terminal-tabs .tab");
+  const originalCount = await tabs.count();
+  const sourceTab = page.locator(".terminal-tabs .tab.is-active").first();
+  const sourceTabId = await sourceTab.getAttribute("data-tab-id");
+  await sourceTab.click({ button: "right" });
+  const duplicateAction = page.locator(".terminal-context-menu__item", { hasText: "Duplicate Tab" }).first();
+  await duplicateAction.waitFor({ state: "visible", timeout: 5_000 });
+  await capture(page, `00-tab-context-menu-${VIEWPORT.width}x${VIEWPORT.height}.png`);
+  await duplicateAction.click();
+  await waitForCondition(
+    async () => (await tabs.count()) === originalCount + 1,
+    { description: "duplicated terminal tab" }
+  );
+  const duplicateTab = page.locator(".terminal-tabs .tab.is-active").first();
+  const duplicateTabId = await duplicateTab.getAttribute("data-tab-id");
+  if (!sourceTabId || !duplicateTabId || duplicateTabId === sourceTabId) {
+    throw new Error("Duplicate Tab did not activate a distinct terminal tab.");
+  }
+  await duplicateTab.locator(".tab__close").click();
+  await waitForCondition(
+    async () => (await tabs.count()) === originalCount,
+    { description: "duplicated terminal tab cleanup" }
+  );
+}
+
 async function runTerminalCommand(page, command) {
   const canvas = page.locator(".terminal-pane.is-active .terminal-pane__canvas").first();
   await canvas.click();
@@ -214,13 +245,49 @@ async function populateHistoryAndHealth(page) {
   }
 
   await waitForCondition(
-    async () => (await page.locator(".server-health-card").count()) >= 3,
+    async () => (await page.locator(".server-health-meter").count()) >= 3,
     { timeout: 25_000, description: "server health metrics" }
   );
   await waitForCondition(
     async () => (await page.locator(".command-history-panel__item").count()) >= 3,
     { timeout: 12_000, description: "command history rows" }
   );
+}
+
+async function captureFleetHealthDashboard(page) {
+  await page.getByTitle("Pin this session for Fleet Health monitoring").first().click();
+  const checkButton = page.getByTitle("Run a Fleet Health check now").first();
+  await checkButton.waitFor({ state: "visible", timeout: 8_000 });
+  for (let sample = 0; sample < 2; sample += 1) {
+    await checkButton.click();
+    await page.waitForTimeout(500);
+    await waitForCondition(
+      async () => !(await checkButton.isDisabled()),
+      { timeout: 20_000, description: `Fleet Health sample ${sample + 1}` }
+    );
+  }
+  await page.getByTitle("Open Fleet Health for this fixed monitor").first().click();
+  const hub = page.getByRole("dialog", { name: "Operations Hub" });
+  await hub.waitFor({ state: "visible", timeout: 8_000 });
+  await hub.locator(".operations-hub__nav").getByRole("button", { name: "Fleet Health" }).click();
+  await hub.locator(".fleet-overview__summary", { hasText: "Production Gateway" }).click();
+  await hub.locator(".fleet-trend-dashboard").waitFor({ state: "visible", timeout: 8_000 });
+  const hubLayout = await hub.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth
+  }));
+  if (hubLayout.scrollWidth > hubLayout.clientWidth + 1) {
+    throw new Error(`Fleet Health dashboard overflowed horizontally: ${JSON.stringify(hubLayout)}`);
+  }
+  await capture(page, "00c-fleet-health-overview-1680x960.png");
+  await hub.locator(".operations-hub__fleet").evaluate((scroller) => {
+    const incidents = scroller.querySelector(".fleet-incidents");
+    if (incidents instanceof HTMLElement) {
+      scroller.scrollTop = Math.max(0, incidents.offsetTop - scroller.offsetTop - 8);
+    }
+  });
+  await capture(page, "00d-fleet-health-dashboard-1680x960.png");
+  await page.keyboard.press("Escape");
 }
 
 async function getActiveTabId(page) {
@@ -316,14 +383,66 @@ async function main() {
     const page = await app.firstWindow();
     await page.setViewportSize(VIEWPORT);
     await waitForAppMounted(page);
-    await setIndustrialPreferences(page);
+    await setCapturePreferences(page);
     await seedSessions(page, fixture);
     await page.reload();
     await waitForAppMounted(page);
     await page.waitForTimeout(1_000);
 
     await openProductionSession(page);
+    await verifyDuplicateTerminalTab(page);
     await populateHistoryAndHealth(page);
+    if (CAPTURE_HEALTH_ONLY) {
+      const healthPanel = page.locator(
+        CAPTURE_THEME === "default"
+          ? ".panel__section--server-health"
+          : "[data-testid='cockpit-health']"
+      ).first();
+      if (CAPTURE_THEME !== "default" && !(await healthPanel.isVisible())) {
+        const monitorDockAction = page.getByRole("button", { name: "Open monitor" }).first();
+        await monitorDockAction.waitFor({ state: "visible", timeout: 5_000 });
+        await monitorDockAction.click();
+      }
+      await healthPanel.waitFor({ state: "visible", timeout: 8_000 });
+      if (CAPTURE_THEME === "default") {
+        const regions = await healthPanel.evaluate((panel) => {
+          const selectors = [
+            ".server-health__heading-title",
+            ".server-health__actions",
+            ".server-health__target-row",
+            ".server-health-dashboard__resources",
+            ".server-health-dashboard__facts"
+          ];
+          return selectors.map((selector) => {
+            const element = panel.querySelector(selector);
+            if (!(element instanceof HTMLElement)) return null;
+            const rect = element.getBoundingClientRect();
+            return { selector, top: rect.top, bottom: rect.bottom, width: rect.width };
+          }).filter(Boolean);
+        });
+        for (let index = 1; index < regions.length; index += 1) {
+          if (regions[index].top < regions[index - 1].bottom - 1) {
+            throw new Error(`Server Health regions overlap: ${JSON.stringify(regions)}`);
+          }
+        }
+      } else {
+        const layout = await healthPanel.evaluate((panel) => ({
+          clientHeight: panel.clientHeight,
+          scrollHeight: panel.scrollHeight,
+          clientWidth: panel.clientWidth,
+          scrollWidth: panel.scrollWidth
+        }));
+        if (layout.scrollHeight > layout.clientHeight + 1 || layout.scrollWidth > layout.clientWidth + 1) {
+          throw new Error(`Cockpit Server Health overflowed: ${JSON.stringify(layout)}`);
+        }
+      }
+      await capture(
+        page,
+        `00-server-health-${CAPTURE_THEME}-${VIEWPORT.width}x${VIEWPORT.height}.png`
+      );
+      return;
+    }
+    await captureFleetHealthDashboard(page);
 
     const largeDirectoryEntry = page
       .locator(".sftp-list__name--directory", { hasText: LARGE_REMOTE_DIRECTORY_NAME })
