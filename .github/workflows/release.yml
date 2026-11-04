@@ -54,16 +54,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15-intel
             platform: mac-x64
+            arch: x64
             script: dist:mac:x64
             verify_platform: mac
-          - os: macos-14
+          - os: macos-15
             platform: mac-arm64
+            arch: arm64
             script: dist:mac:arm64
             verify_platform: mac
           - os: windows-2022
             platform: win
+            arch: x64
             script: dist:win
             verify_platform: win
 
@@ -86,6 +89,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify native build architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e "if (process.arch !== process.env.EXPECTED_ARCH) { throw new Error('Native build architecture mismatch'); } console.log('Native build architecture: ' + process.arch);"
 
       - name: Prepare release secrets
         env:
@@ -233,6 +241,12 @@ jobs:
         with:
           ref: refs/tags/${{ needs.meta.outputs.tag_name }}
 
+      - name: Checkout release workflow helpers
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: release-tools
+
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
@@ -245,7 +259,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets
           find downloaded-release-assets -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' -o -name '*.yaml' \) ! -name 'latest-mac.yml' -exec cp '{}' release-assets/ \;
-          node scripts/merge-mac-update-manifests.mjs \
+          node release-tools/scripts/merge-mac-update-manifests.mjs \
             release-assets/latest-mac.yml \
             downloaded-release-assets/release-mac-x64/latest-mac.yml \
             downloaded-release-assets/release-mac-arm64/latest-mac.yml
@@ -292,11 +306,11 @@ jobs:
           fi
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "${ASSETS[@]}" --clobber
             gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes-file "$RELEASE_NOTES_FILE" --draft=false
             if [ "$IS_PRERELEASE" = "true" ]; then
               gh release edit "$TAG_NAME" --prerelease
             fi
-            gh release upload "$TAG_NAME" "${ASSETS[@]}" --clobber
           else
             RELEASE_ARGS=(
               "$TAG_NAME"
