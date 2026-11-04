@@ -2,16 +2,16 @@
 
 [English](PROGRESS.md)
 
-Last updated: 2026-07-25
+Last updated: 2026-11-04
 
 ## 当前快照
 
 - 当前主分支：`master`
 - 远端：`origin/master`
-- 当前稳定版：`v0.1.43`
-- 当前方向：`v0.1.43` 之后继续 Tech Cockpit dogfood 打磨。
+- 当前发布版本：`v0.1.52`
+- 当前方向：终端输入可靠性、标签拖动与命名、GPU 健康详情。
 - 公开文档已经对齐到现有自动更新能力、本地优先信任模型和推荐下载包说明。
-- 最新验证（2026-07-25）：`pnpm run typecheck`、`pnpm run build` 已通过。
+- v0.1.52 仅执行生产构建与产物检查，本次跳过自动化运行时、UI 和安装冒烟测试。
 - `v0.1.43` 已落地：壳层主题 Default + Tech（Cockpit）、Windows Tech 空隙透桌面、更紧列表 / 单环健康环、加宽 SFTP 栏、更新应用图标。
 - `v0.1.42` 已落地：SFTP 去常驻提示、小文件上传打磨、`bench:transfer:small-files`。
 - `P0-E2` 下载侧现在也复用了每标签 SFTP 通道池，并保持与上传一致的 in-flight slot cap。

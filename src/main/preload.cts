@@ -28,6 +28,7 @@ import type {
   PortForwardRecord,
   ServerHealthSnapshot,
   ServerProcessSnapshot,
+  TerminalDimensions,
   TerminalEvent
 } from "../shared/terminal.js";
 import type {
@@ -257,8 +258,8 @@ const api = {
     }
   },
   terminal: {
-    connect: (tabId: string, sessionId: string) =>
-      ipcRenderer.invoke("terminal:connect", tabId, sessionId) as Promise<void>,
+    connect: (tabId: string, sessionId: string, dimensions?: TerminalDimensions) =>
+      ipcRenderer.invoke("terminal:connect", tabId, sessionId, dimensions) as Promise<void>,
     write: (tabId: string, data: string) =>
       ipcRenderer.invoke("terminal:write", tabId, data) as Promise<void>,
     respondHostKeyPrompt: (tabId: string, promptId: string, decision: "trust" | "replace" | "reject") =>

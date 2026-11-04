@@ -8,9 +8,12 @@ import type {
 import type { ServerHealthDerivedMetrics } from "../use-server-health-monitor";
 
 import { UiIcon } from "./ui-icon";
+import { HealthUsageMeter, ServerGpuDetails } from "./server-gpu-details";
+import "../styles/server-health-details.css";
 
 export type ServerHealthDetailTab =
   | "overview"
+  | "gpu"
   | "disk"
   | "network"
   | "processes"
@@ -60,6 +63,7 @@ const SERVER_HEALTH_DETAIL_TABS: Array<{
   label: string;
 }> = [
   { id: "overview", label: "Overview" },
+  { id: "gpu", label: "GPU" },
   { id: "disk", label: "Disk" },
   { id: "network", label: "Network" },
   { id: "processes", label: "Processes" },
@@ -100,6 +104,14 @@ export function ServerHealthDetailModal({
   if (!open) {
     return null;
   }
+  const gpus = serverHealth?.gpus ?? [];
+  const gpuUtilizations = gpus.flatMap((gpu) => gpu.utilizationPercent === undefined ? [] : [gpu.utilizationPercent]);
+  const peakGpuUsage = gpuUtilizations.length ? Math.max(...gpuUtilizations) : undefined;
+  const failedServices = processSnapshot?.failedServices.length ?? 0;
+  const needsAttention = alertStatus.hasAny || failedServices > 0;
+  const serviceAssessment = processError ? "Service status unavailable."
+    : !processSnapshot ? "Service status has not been collected."
+    : failedServices > 0 ? `${failedServices} failed service(s) detected.` : "No failed services detected.";
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -124,19 +136,20 @@ export function ServerHealthDetailModal({
             <UiIcon name="close" />
           </button>
         </div>
+        <div className="server-health-modal__body">
         {!isConnected ? (
           <p className="hint">Connect the active terminal tab to collect metrics.</p>
         ) : null}
         {serverHealthError ? <p className="hint sftp-error">{serverHealthError}</p> : null}
         {serverHealth ? (
           <div className="server-health-details">
-            <div className={`server-health-diagnosis${alertStatus.hasAny || (processSnapshot?.failedServices.length ?? 0) > 0 ? " is-alert" : ""}`}>
+            <div className={`server-health-diagnosis${needsAttention ? " is-alert" : ""}`}>
               <div>
                 <span>Current assessment</span>
-                <strong>{alertStatus.hasAny || (processSnapshot?.failedServices.length ?? 0) > 0 ? "Attention required" : "No active threshold breach"}</strong>
+                <strong>{needsAttention ? "Attention required" : "No active threshold breach"}</strong>
               </div>
-              <p>{alertStatus.hasAny ? `High ${[alertStatus.cpuHigh ? "CPU" : "", alertStatus.memoryHigh ? "memory" : "", alertStatus.diskHigh ? "disk" : ""].filter(Boolean).join(", ")}.` : "CPU, memory and disk remain below their configured warning levels."}{(processSnapshot?.failedServices.length ?? 0) > 0 ? ` ${processSnapshot?.failedServices.length} failed service(s) detected.` : " No failed services detected in the latest process check."}</p>
-              <div className="server-health-diagnosis__meta"><span>Collected {collectedAtLabel}</span><span>{cpuCoreLabel} CPU cores</span><span>Load/core {loadPerCore === null ? "—" : loadPerCore.toFixed(2)}</span><span>Swap {formatPercent(swapUsagePercent)}</span></div>
+              <p>{alertStatus.hasAny ? `High ${[alertStatus.cpuHigh ? "CPU" : "", alertStatus.memoryHigh ? "memory" : "", alertStatus.diskHigh ? "disk" : ""].filter(Boolean).join(", ")}.` : "CPU, memory and disk remain below their configured warning levels."} {serviceAssessment}</p>
+              <div className="server-health-diagnosis__meta"><span>{isConnected ? "Connected" : "Disconnected"}</span><span>Collected {collectedAtLabel}</span></div>
             </div>
             <div className="server-health-grid server-health-grid--details">
               <div
@@ -153,6 +166,7 @@ export function ServerHealthDetailModal({
                 <span className="server-health-card__meta">
                   <span>Cores</span> {cpuCoreLabel}
                 </span>
+                <HealthUsageMeter value={metrics?.cpuUsagePercent} label="CPU usage" />
               </div>
               <div
                 className={
@@ -169,6 +183,7 @@ export function ServerHealthDetailModal({
                   <span>Used</span> {formatTransferBytes(serverHealth.memoryUsedBytes)} ·{" "}
                   <span>Available</span> {formatTransferBytes(memoryAvailableBytes)}
                 </span>
+                <HealthUsageMeter value={metrics?.memoryUsagePercent} label="Memory usage" />
               </div>
               <div
                 className={
@@ -186,7 +201,14 @@ export function ServerHealthDetailModal({
                   {formatTransferBytes(serverHealth.diskAvailableBytes)} · <span>Total</span>{" "}
                   {formatTransferBytes(serverHealth.diskTotalBytes)}
                 </span>
+                <HealthUsageMeter value={metrics?.diskUsagePercent} label="Disk usage" />
               </div>
+              <button className="server-health-card server-health-card--gpu" type="button" onClick={() => onSelectTab("gpu")}>
+                <span className="server-health-card__label">GPU</span>
+                <strong className="server-health-card__value">{peakGpuUsage === undefined ? "—" : formatPercent(peakGpuUsage)}</strong>
+                <span className="server-health-card__meta">{gpus.length === 1 ? gpus[0].name : gpus.length ? <>{gpus.length} <span>GPUs</span> · <span>Peak utilization</span></> : "GPU metrics unavailable"}</span>
+                <HealthUsageMeter value={peakGpuUsage} label="Peak GPU utilization" />
+              </button>
               <div className="server-health-card server-health-card--network">
                 <span className="server-health-card__label">Network</span>
                 <strong className="server-health-card__value">
@@ -213,11 +235,19 @@ export function ServerHealthDetailModal({
                 </strong>
                 <span className="server-health-card__meta">{serverHealth.hostname}</span>
               </div>
+              <div className="server-health-card server-health-card--swap">
+                <span className="server-health-card__label">Swap</span>
+                <strong className="server-health-card__value">{formatPercent(swapUsagePercent)}</strong>
+                <span className="server-health-card__meta">{formatTransferBytes(serverHealth.swapUsedBytes ?? 0)} / {formatTransferBytes(serverHealth.swapTotalBytes ?? 0)}</span>
+                <HealthUsageMeter value={swapUsagePercent} label="Swap usage" />
+              </div>
             </div>
             <div className="server-health-detail-tabs" role="tablist" aria-label="Server health sections">
               {SERVER_HEALTH_DETAIL_TABS.map((tab) => (
                 <button
                   aria-selected={detailTab === tab.id}
+                  aria-controls={`server-health-panel-${tab.id}`}
+                  id={`server-health-tab-${tab.id}`}
                   className={
                     detailTab === tab.id
                       ? "server-health-detail-tab is-active"
@@ -228,11 +258,12 @@ export function ServerHealthDetailModal({
                   role="tab"
                   type="button"
                 >
-                  {tab.label}
+                  {tab.label}{tab.id === "gpu" && gpus.length > 0 ? ` (${gpus.length})` : ""}
                 </button>
               ))}
             </div>
-            <div className="server-health-detail-panel">
+            <div className="server-health-detail-panel" role="tabpanel" id={`server-health-panel-${detailTab}`} aria-labelledby={`server-health-tab-${detailTab}`}>
+              {detailTab === "gpu" ? <ServerGpuDetails snapshot={serverHealth} formatBytes={formatTransferBytes} formatPercent={formatPercent} /> : null}
               {detailTab === "overview" ? (
                 <div className="server-health-info-grid" aria-label="System information">
                   <div className="server-health-info-item">
@@ -254,8 +285,8 @@ export function ServerHealthDetailModal({
                     </strong>
                   </div>
                   <div className="server-health-info-item">
-                    <span className="server-health-info-item__label">CPU cores</span>
-                    <strong className="server-health-info-item__value">{cpuCoreLabel}</strong>
+                    <span className="server-health-info-item__label">Total memory</span>
+                    <strong className="server-health-info-item__value">{formatTransferBytes(serverHealth.memoryTotalBytes)}</strong>
                   </div>
                   <div className="server-health-info-item">
                     <span className="server-health-info-item__label">Load / core</span>
@@ -275,17 +306,6 @@ export function ServerHealthDetailModal({
                       {formatTransferBytes(serverHealth.memoryCachedBytes ?? 0)} /{" "}
                       {formatTransferBytes(serverHealth.memoryBufferBytes ?? 0)}
                     </strong>
-                  </div>
-                  <div className="server-health-info-item">
-                    <span className="server-health-info-item__label">Swap</span>
-                    <strong className="server-health-info-item__value">
-                      {formatPercent(swapUsagePercent)} · {formatTransferBytes(serverHealth.swapUsedBytes ?? 0)}/
-                      {formatTransferBytes(serverHealth.swapTotalBytes ?? 0)}
-                    </strong>
-                  </div>
-                  <div className="server-health-info-item">
-                    <span className="server-health-info-item__label">Collected</span>
-                    <strong className="server-health-info-item__value">{collectedAtLabel}</strong>
                   </div>
                 </div>
               ) : null}
@@ -442,7 +462,7 @@ export function ServerHealthDetailModal({
                       ))}
                     </ul>
                   ) : (
-                    <p className="hint">No failed services detected.</p>
+                    <p className="hint">{processError ? "Service status unavailable." : !processSnapshot ? "Service status has not been collected." : "No failed services detected."}</p>
                   )}
                 </div>
               ) : null}
@@ -451,6 +471,7 @@ export function ServerHealthDetailModal({
         ) : (
           <p className="hint">No server metrics collected yet.</p>
         )}
+        </div>
         <div className="modal__actions">
           <button className="secondary-button" disabled={!canRefresh} onClick={onRefresh} type="button">
             Refresh

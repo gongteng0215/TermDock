@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 import { FitAddon } from "@xterm/addon-fit";
@@ -89,6 +90,8 @@ interface TerminalWorkspaceProps {
   activeTabId: string | null;
   onSelectTab: (tabId: string) => void;
   onDuplicateTab: (tabId: string) => void;
+  onMoveTab: (tabId: string, targetTabId: string, position: "before" | "after") => void;
+  onRenameTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onCloseTabsLeft: (tabId: string) => void;
   onCloseTabsRight: (tabId: string) => void;
@@ -432,6 +435,8 @@ export function TerminalWorkspace({
   activeTabId,
   onSelectTab,
   onDuplicateTab,
+  onMoveTab,
+  onRenameTab,
   onCloseTab,
   onCloseTabsLeft,
   onCloseTabsRight,
@@ -458,6 +463,9 @@ export function TerminalWorkspace({
   const stageRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const tabMenuRef = useRef<HTMLDivElement | null>(null);
+  const draggedTabRef = useRef<string | null>(null);
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [tabDropTarget, setTabDropTarget] = useState<{ id: string; position: "before" | "after" } | null>(null);
   const searchDialogInputRef = useRef<HTMLInputElement | null>(null);
   const commandHistoryInputRef = useRef<HTMLInputElement | null>(null);
   const containerRefs = useRef(new Map<string, HTMLDivElement>());
@@ -898,7 +906,10 @@ export function TerminalWorkspace({
       }
       setTabStatus(tab.id, { status: "connecting" });
       void terminalApi
-        .connect(tab.id, tab.sessionId)
+        .connect(tab.id, tab.sessionId, {
+          cols: instance.terminal.cols,
+          rows: instance.terminal.rows
+        })
         .then(() => {
           clearReconnectState(tab.id);
           // A (re)connect creates a fresh PTY, so force the next fit to push
@@ -1183,11 +1194,14 @@ export function TerminalWorkspace({
       if (!terminalApi) {
         return;
       }
-      if (!terminalRefs.current.has(tabId)) {
+      const instance = terminalRefs.current.get(tabId);
+      if (!instance) {
         return;
       }
+      instance.terminal.clearSelection();
+      instance.terminal.scrollToBottom();
       void terminalApi.write(tabId, "\u0003");
-      terminalRefs.current.get(tabId)?.terminal.focus();
+      instance.terminal.focus();
     },
     [terminalApi]
   );
@@ -1609,6 +1623,32 @@ export function TerminalWorkspace({
   const tabContextActions = useMemo<TabContextAction[]>(
     () => [
       {
+        id: "tab-rename",
+        label: "Rename Tab...",
+        run: (tabId: string) => onRenameTab(tabId)
+      },
+      {
+        id: "tab-move-left",
+        label: "Move Tab Left",
+        run: (tabId: string) => {
+          const index = tabs.findIndex((tab) => tab.id === tabId);
+          if (index > 0) onMoveTab(tabId, tabs[index - 1].id, "before");
+        },
+        isDisabled: (tabId: string) => tabs.findIndex((tab) => tab.id === tabId) <= 0
+      },
+      {
+        id: "tab-move-right",
+        label: "Move Tab Right",
+        run: (tabId: string) => {
+          const index = tabs.findIndex((tab) => tab.id === tabId);
+          if (index >= 0 && index < tabs.length - 1) onMoveTab(tabId, tabs[index + 1].id, "after");
+        },
+        isDisabled: (tabId: string) => {
+          const index = tabs.findIndex((tab) => tab.id === tabId);
+          return index < 0 || index >= tabs.length - 1;
+        }
+      },
+      {
         id: "tab-duplicate",
         label: "Duplicate Tab",
         run: (tabId: string) => {
@@ -1670,6 +1710,8 @@ export function TerminalWorkspace({
       onCloseTabsLeft,
       onCloseTabsRight,
       onDuplicateTab,
+      onMoveTab,
+      onRenameTab,
       tabs
     ]
   );
@@ -1711,6 +1753,9 @@ export function TerminalWorkspace({
         }
         if (event.status === "connected") {
           clearReconnectState(event.tabId);
+          // Direct reconnect actions can create a new PTY without connectTab.
+          instance.lastSentCols = null;
+          instance.lastSentRows = null;
           fitTerminal(event.tabId);
           scheduleDeferredFit(event.tabId);
         }
@@ -1753,6 +1798,8 @@ export function TerminalWorkspace({
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         closeContextMenu();
       }
     };
@@ -1762,12 +1809,12 @@ export function TerminalWorkspace({
     };
 
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
+    window.addEventListener("keydown", onEscape, true);
     window.addEventListener("resize", onWindowResize);
     window.addEventListener("scroll", onWindowResize, true);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("keydown", onEscape, true);
       window.removeEventListener("resize", onWindowResize);
       window.removeEventListener("scroll", onWindowResize, true);
     };
@@ -1797,6 +1844,8 @@ export function TerminalWorkspace({
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         closeTabContextMenu();
       }
     };
@@ -1806,12 +1855,12 @@ export function TerminalWorkspace({
     };
 
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onEscape);
+    window.addEventListener("keydown", onEscape, true);
     window.addEventListener("resize", onWindowResize);
     window.addEventListener("scroll", onWindowResize, true);
     return () => {
       window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onEscape);
+      window.removeEventListener("keydown", onEscape, true);
       window.removeEventListener("resize", onWindowResize);
       window.removeEventListener("scroll", onWindowResize, true);
     };
@@ -1911,6 +1960,26 @@ export function TerminalWorkspace({
       if (isEditableTarget(event.target)) {
         return;
       }
+      const isInterruptKey =
+        event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey &&
+        normalizeEventHotkeyKey(event) === "c";
+      if (isInterruptKey) {
+        const instance = getActiveInstance();
+        const targetNode = event.target instanceof Node ? event.target : null;
+        const isTerminalFocused =
+          stageRef.current?.contains(targetNode) || stageRef.current?.contains(document.activeElement);
+        if (!instance || !isTerminalFocused) {
+          return;
+        }
+        // Ctrl+C always cancels, even with a selection. Claim the key before
+        // xterm handles it so a configured copy binding cannot send it twice.
+        event.preventDefault();
+        event.stopPropagation();
+        instance.terminal.clearSelection();
+        instance.terminal.scrollToBottom();
+        enqueueTerminalWriteTask(activeTabId, () => sendTerminalInput(activeTabId, "\u0003"));
+        return;
+      }
       const copyBinding = hotkeyPreferences.terminalCopy;
       const pasteBinding = hotkeyPreferences.terminalPaste;
       const searchBinding = hotkeyPreferences.terminalSearch;
@@ -1947,7 +2016,8 @@ export function TerminalWorkspace({
 
       if (copyMatches) {
         event.preventDefault();
-        void copySelectionOrSendInterrupt(shouldSendInterruptOnCopyHotkey(copyBinding));
+        event.stopPropagation();
+        void copySelectionOrSendInterrupt(false);
         return;
       }
       if (pasteMatches) {
@@ -1973,11 +2043,13 @@ export function TerminalWorkspace({
   }, [
     activeTabId,
     copySelectionOrSendInterrupt,
+    enqueueTerminalWriteTask,
     getActiveInstance,
     hotkeyPreferences,
     openCommandHistory,
     pasteClipboardToTerminal,
-    searchInTerminal
+    searchInTerminal,
+    sendTerminalInput
   ]);
 
   useEffect(() => {
@@ -2286,9 +2358,58 @@ export function TerminalWorkspace({
           return (
             <button
               key={tab.id}
-              className={tabClassName}
+              className={`${tabClassName}${draggedTabId === tab.id ? " is-dragging" : ""}${tabDropTarget?.id === tab.id ? ` is-drop-${tabDropTarget.position}` : ""}`}
               data-tab-id={tab.id}
+              draggable
+              title={`${tab.title} — ${_language === "zh-CN" ? "拖动排序；双击重命名" : "Drag to reorder; double-click to rename"}`}
               onClick={() => onSelectTab(tab.id)}
+              onDoubleClick={(event) => {
+                if ((event.target as HTMLElement).closest(".tab__close")) return;
+                onRenameTab(tab.id);
+              }}
+              onDragStart={(event) => {
+                if ((event.target as HTMLElement).closest(".tab__close")) {
+                  event.preventDefault();
+                  return;
+                }
+                draggedTabRef.current = tab.id;
+                setDraggedTabId(tab.id);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("application/x-termdock-tab", tab.id);
+                closeTabContextMenu();
+              }}
+              onDragOver={(event) => {
+                if (!draggedTabRef.current || draggedTabRef.current === tab.id) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                const bounds = event.currentTarget.getBoundingClientRect();
+                setTabDropTarget({ id: tab.id, position: event.clientX < bounds.left + bounds.width / 2 ? "before" : "after" });
+                const strip = event.currentTarget.closest(".terminal-tabs");
+                const stripBounds = strip?.getBoundingClientRect();
+                if (strip && stripBounds) {
+                  if (event.clientX < stripBounds.left + 36) strip.scrollBy(-24, 0);
+                  else if (event.clientX > stripBounds.right - 36) strip.scrollBy(24, 0);
+                }
+              }}
+              onDragLeave={(event) => {
+                if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+                setTabDropTarget((previous) => previous?.id === tab.id ? null : previous);
+              }}
+              onDrop={(event) => {
+                const sourceId = draggedTabRef.current;
+                if (!sourceId) return;
+                event.preventDefault();
+                const bounds = event.currentTarget.getBoundingClientRect();
+                onMoveTab(sourceId, tab.id, event.clientX < bounds.left + bounds.width / 2 ? "before" : "after");
+                draggedTabRef.current = null;
+                setDraggedTabId(null);
+                setTabDropTarget(null);
+              }}
+              onDragEnd={() => {
+                draggedTabRef.current = null;
+                setDraggedTabId(null);
+                setTabDropTarget(null);
+              }}
               onContextMenu={(event) => openTabContextMenu(event, tab.id)}
               onMouseDown={(event) => {
                 if (event.button !== 1) {
@@ -2323,7 +2444,8 @@ export function TerminalWorkspace({
           </button>
         </div>
       </div>
-      {tabContextMenu ? (
+      {/* Global overlays keep menus above the cockpit's isolated panels. */}
+      {tabContextMenu ? createPortal(
         <div
           className="terminal-context-menu"
           ref={tabMenuRef}
@@ -2349,7 +2471,8 @@ export function TerminalWorkspace({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.querySelector(".app__overlays") ?? document.body
       ) : null}
       <div
         className={isActiveEditorMode ? "terminal-stage is-editor-focus" : "terminal-stage"}
@@ -2422,7 +2545,7 @@ export function TerminalWorkspace({
             </div>
           );
         })}
-        {contextMenu ? (
+        {contextMenu ? createPortal(
           <div
             className="terminal-context-menu"
             ref={menuRef}
@@ -2448,7 +2571,8 @@ export function TerminalWorkspace({
                 </button>
               );
             })}
-          </div>
+          </div>,
+          document.querySelector(".app__overlays") ?? document.body
         ) : null}
       </div>
       {isCommandHistoryOpen ? (
@@ -2636,10 +2760,6 @@ function formatCommandHistoryTimestamp(timestamp: number): string {
     return "-";
   }
   return value.toLocaleString();
-}
-
-function shouldSendInterruptOnCopyHotkey(binding: HotkeyBindingPreference): boolean {
-  return binding.modifier === "primary" && normalizeHotkeyKey(binding.key) === "c";
 }
 
 function usesAltModifier(binding: HotkeyBindingPreference): boolean {

@@ -48,6 +48,7 @@ import type {
   PortForwardRecord,
   ServerHealthSnapshot,
   ServerProcessSnapshot,
+  TerminalDimensions,
   TerminalEvent
 } from "../shared/terminal";
 import type {
@@ -211,7 +212,7 @@ interface TermDockApi {
     getPathForDroppedFile: (file: File) => Promise<string | null>;
   };
   terminal: {
-    connect: (tabId: string, sessionId: string) => Promise<void>;
+    connect: (tabId: string, sessionId: string, dimensions?: TerminalDimensions) => Promise<void>;
     write: (tabId: string, data: string) => Promise<void>;
     respondHostKeyPrompt: (tabId: string, promptId: string, decision: "trust" | "replace" | "reject") => Promise<void>;
     respondKeyboardInteractivePrompt: (tabId: string, promptId: string, responses: string[]) => Promise<void>;

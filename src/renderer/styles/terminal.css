@@ -96,6 +96,32 @@
   text-align: left;
 }
 
+.terminal-tabs .tab[draggable="true"] {
+  position: relative;
+  cursor: grab;
+}
+
+.terminal-tabs .tab.is-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.terminal-tabs .tab.is-drop-before::before,
+.terminal-tabs .tab.is-drop-after::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.terminal-tabs .tab.is-drop-before::before { left: 0; }
+.terminal-tabs .tab.is-drop-after::after { right: 0; }
+
 .tab:hover {
   background: rgba(34, 41, 51, 0.92);
   color: var(--text-main);

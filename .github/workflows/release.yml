@@ -10,6 +10,11 @@ on:
         description: "Tag to release (e.g. v0.1.0 or v0.1.0-test.1)"
         required: true
         type: string
+      skip_install_smoke:
+        description: "Skip installer smoke tests for this manual release"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -93,6 +98,7 @@ jobs:
         shell: bash
         env:
           VERIFY_PLATFORM: ${{ matrix.verify_platform }}
+          SKIP_INSTALL_SMOKE: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_install_smoke || false }}
           HAS_MAC_CERT: ${{ startsWith(matrix.platform, 'mac') && secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' || false }}
           HAS_MAC_NOTARY: ${{ startsWith(matrix.platform, 'mac') && ((secrets.APPLE_API_KEY_B64 != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '') || (secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '') || (secrets.APPLE_KEYCHAIN != '' && secrets.APPLE_KEYCHAIN_PROFILE != '')) || false }}
           HAS_WIN_CERT: ${{ matrix.platform == 'win' && secrets.WIN_CSC_LINK != '' && secrets.WIN_CSC_KEY_PASSWORD != '' || false }}
@@ -100,14 +106,16 @@ jobs:
           PREFLIGHT_ARGS="--platform=$VERIFY_PLATFORM"
           VERIFY_ARGS="--platform=$VERIFY_PLATFORM"
 
-          if [ "$VERIFY_PLATFORM" = "mac" ]; then
+          if [ "$SKIP_INSTALL_SMOKE" != "true" ]; then
             VERIFY_ARGS="$VERIFY_ARGS --install-smoke"
+          fi
+
+          if [ "$VERIFY_PLATFORM" = "mac" ]; then
             if [ "$HAS_MAC_CERT" = "true" ] && [ "$HAS_MAC_NOTARY" = "true" ]; then
               PREFLIGHT_ARGS="$PREFLIGHT_ARGS --require-signing --require-notarization"
               VERIFY_ARGS="$VERIFY_ARGS --expect-signed --expect-notarized"
             fi
           else
-            VERIFY_ARGS="$VERIFY_ARGS --install-smoke"
             if [ "$HAS_WIN_CERT" = "true" ]; then
               PREFLIGHT_ARGS="$PREFLIGHT_ARGS --require-signing"
               VERIFY_ARGS="$VERIFY_ARGS --expect-signed"

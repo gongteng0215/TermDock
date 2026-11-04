@@ -10915,7 +10915,7 @@ export function App() {
         const sessionName =
           sessions.find((session) => session.id === tab.sessionId)?.name ??
           tab.title.replace(/\s*\(NaN\)\s*$/i, "");
-        const safeTitle = formatTabTitle(sessionName, safeInstance);
+        const safeTitle = tab.customTitle || formatTabTitle(sessionName, safeInstance);
 
         if (tab.instance !== safeInstance || tab.title !== safeTitle) {
           changed = true;
@@ -14430,6 +14430,34 @@ export function App() {
   const closeTerminalTab = useCallback((tabId: string) => {
     closeTerminalTabs([tabId]);
   }, [closeTerminalTabs]);
+
+  const moveTerminalTab = useCallback((tabId: string, targetTabId: string, position: "before" | "after") => {
+    if (tabId === targetTabId) return;
+    setTerminalTabs((previous) => {
+      const tab = previous.find((entry) => entry.id === tabId);
+      if (!tab || !previous.some((entry) => entry.id === targetTabId)) return previous;
+      const next = previous.filter((entry) => entry.id !== tabId);
+      const targetIndex = next.findIndex((entry) => entry.id === targetTabId);
+      next.splice(targetIndex + (position === "after" ? 1 : 0), 0, tab);
+      return next;
+    });
+  }, []);
+
+  const renameTerminalTab = useCallback(async (tabId: string) => {
+    const tab = terminalTabsRef.current.find((entry) => entry.id === tabId);
+    if (!tab) return;
+    const name = await showAppPrompt("Choose a name for this terminal tab. Leave blank to restore the session name.", tab.customTitle ?? tab.title, {
+      title: "Rename Terminal Tab",
+      confirmLabel: "Save"
+    }).catch(() => null);
+    if (name === null) return;
+    const customTitle = name.replace(/[\r\n\t]+/g, " ").trim().slice(0, 100) || undefined;
+    setTerminalTabs((previous) => previous.map((entry) => {
+      if (entry.id !== tabId) return entry;
+      const sessionName = sessionsRef.current.find((session) => session.id === entry.sessionId)?.name ?? "Terminal";
+      return { ...entry, customTitle, title: customTitle ?? formatTabTitle(sessionName, entry.instance) };
+    }));
+  }, [showAppPrompt]);
 
   const closeTabsLeft = useCallback(
     (tabId: string) => {
@@ -19703,6 +19731,8 @@ export function App() {
         onCloseTabsRight: closeTabsRight,
         onCommandHistoryChange: setTerminalCommandHistoryEntries,
         onDuplicateTab: duplicateTerminalTab,
+        onMoveTab: moveTerminalTab,
+        onRenameTab: renameTerminalTab,
         onError: setError,
         onSelectTab: setActiveTabId,
         requestDangerousCommandApproval

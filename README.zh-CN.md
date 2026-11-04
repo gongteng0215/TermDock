@@ -86,7 +86,7 @@ TermDock 当前主要面向 macOS 和 Windows 11。
 - 支持密码和私钥认证
 - 会话创建、编辑、删除、测试
 - 会话分组、搜索、收藏和最近使用排序
-- 多标签 xterm 终端和重连流程
+- 多标签 xterm 终端和重连流程，支持标签拖动排序与独立命名
 - 从 `~/.ssh/config` 导入 SSH 配置，支持预览、重复项处理和导入后直接打开
 - SSH 连接失败会显示更清晰的原因、下一步建议和原始错误
 - 会话模板和启动命令快捷配置
@@ -112,7 +112,7 @@ TermDock 当前主要面向 macOS 和 Windows 11。
 
 ### 运维工具
 
-- 服务器健康面板：CPU、内存、磁盘、网络、负载、运行时间、进程、失败服务
+- 服务器健康面板：CPU、内存、磁盘、网络、负载、运行时间、进程、失败服务，以及 NVIDIA / WSL GPU 详情（远端需提供 `nvidia-smi`）
 - 端口转发管理：Local (`-L`)、Remote (`-R`)、Dynamic SOCKS5 (`-D`)
 - Operation Center 汇总传输、删除、端口转发、诊断任务和重连动作
 - 诊断日志、断连报告和 bug report `.zip` 导出
@@ -172,8 +172,8 @@ docs/assets    README 截图和产品素材
 
 ## 当前状态
 
-- 最新验证：`pnpm run typecheck`、`pnpm run build`、`pnpm run smoke:ui` 均通过。
-- 最新 workspace smoke artifact：`artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`)。
+- v0.1.52 仅执行生产构建与发布产物检查，未运行自动化运行时、UI 和安装冒烟测试。
+- 历史验证结果见[更新记录](RELEASE_NOTES.zh-CN.md)。
 - 当前打包目标：macOS (`arm64`, `x64`) 和 Windows (`nsis`, `zip`)。
 
 更细的进度、验证和计划见：

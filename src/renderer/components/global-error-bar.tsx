@@ -1,4 +1,8 @@
+import { useEffect, useState } from "react";
+
 import { UiIcon } from "./ui-icon";
+
+const ERROR_AUTO_DISMISS_MS = 8_000;
 
 type ErrorSettingsAction =
   | "connection"
@@ -80,12 +84,41 @@ export function GlobalErrorBar({
   onReconnect,
   settingsAction
 }: GlobalErrorBarProps) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [hasFocus, setHasFocus] = useState(false);
+
+  useEffect(() => {
+    if (!error) {
+      setIsHovered(false);
+      setHasFocus(false);
+      return;
+    }
+    // Leave time to read the error and use its recovery actions. A new error
+    // or the end of an interaction starts a fresh countdown.
+    if (isHovered || hasFocus) {
+      return;
+    }
+    const timer = window.setTimeout(onDismiss, ERROR_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [error, hasFocus, isHovered, onDismiss]);
+
   if (!error) {
     return null;
   }
 
   return (
-    <div className="error-bar" role="status">
+    <div
+      className="error-bar"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setHasFocus(false);
+        }
+      }}
+      onFocus={() => setHasFocus(true)}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      role="status"
+    >
       <p className="error-bar__message">{error}</p>
       {hint ? <p className="hint error-bar__hint">{hint}</p> : null}
       <div className="error-bar__actions">

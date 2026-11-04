@@ -116,6 +116,16 @@ pnpm run release:verify -- --platform=mac --expect-signed --expect-notarized --i
 
 每次运行会在 `artifacts/release-verify/<timestamp>/` 写入报告。
 
+## 手动仅构建发布
+
+手动执行仅构建发布时，可向 Release 工作流传入 `skip_install_smoke=true`：
+
+```bash
+gh workflow run release.yml --ref master -f tag=v0.1.52 -F skip_install_smoke=true
+```
+
+该选项默认为 `false`；跳过安装冒烟测试时，仍会检查发布产物及已配置的签名。
+
 ## 当前缺口
 
 - GitHub Actions secrets provisioning 仍需完成。

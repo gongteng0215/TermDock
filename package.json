@@ -1,6 +1,6 @@
 {
   "name": "termdock",
-  "version": "0.1.51",
+  "version": "0.1.52",
   "description": "Cross-platform SSH + SFTP desktop client for developers and operators.",
   "packageManager": "pnpm@10.29.2",
   "main": "dist-electron/main/main.js",
@@ -34,6 +34,7 @@
     "test:fleet-health-incidents": "pnpm run build:main && node scripts/run-with-electron-node.mjs scripts/test-fleet-health-incidents.mjs",
     "test:main-auto-update": "node scripts/test-main-auto-update.mjs",
     "test:main-single-instance": "node scripts/test-main-single-instance.mjs",
+    "test:terminal-session": "pnpm run build:main && node scripts/test-terminal-session.mjs",
     "build": "pnpm run build:renderer && pnpm run build:main",
     "build:renderer": "vite build",
     "build:main": "tsc -p tsconfig.node.json",

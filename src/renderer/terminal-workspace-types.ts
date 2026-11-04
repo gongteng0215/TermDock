@@ -2,6 +2,7 @@ export interface TerminalTab {
   id: string;
   sessionId: string;
   title: string;
+  customTitle?: string;
   instance: number;
 }
 

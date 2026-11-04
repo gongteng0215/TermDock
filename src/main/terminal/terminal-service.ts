@@ -16,6 +16,8 @@ import { homedir } from "node:os";
 import { basename as basenamePath, dirname as dirnamePath, join as joinPath } from "node:path";
 import { posix as posixPath } from "node:path";
 import { finished } from "node:stream/promises";
+import { StringDecoder } from "node:string_decoder";
+import { parseServerGpuHealth, SERVER_GPU_HEALTH_COMMAND } from "./server-gpu-health.js";
 
 import type { WebContents } from "electron";
 import { Client } from "ssh2";
@@ -76,6 +78,7 @@ import type {
   ServerNetworkInterfaceUsage,
   ServerProcessEntry,
   ServerProcessSnapshot,
+  TerminalDimensions,
   TerminalEvent
 } from "../../shared/terminal.js";
 import type { CredentialStore } from "../security/credential-store.js";
@@ -100,6 +103,7 @@ interface Ssh2TerminalConnection extends BaseTerminalConnection {
   mode: "ssh2";
   client: Client;
   shell?: ClientChannel;
+  dimensions: TerminalDimensions;
   sftp?: SFTPWrapper;
   fallbackTried: boolean;
   jumpClient?: Client;
@@ -305,7 +309,12 @@ export class TerminalService {
     private readonly operationsStore: SqliteOperationsStore | null = null
   ) {}
 
-  async connect(tabId: string, sessionId: string, sender: WebContents): Promise<void> {
+  async connect(
+    tabId: string,
+    sessionId: string,
+    sender: WebContents,
+    dimensions?: TerminalDimensions
+  ): Promise<void> {
     await this.close(tabId);
 
     const session = await this.sessionStore.getById(sessionId);
@@ -319,13 +328,14 @@ export class TerminalService {
       status: "connecting"
     });
 
-    await this.connectViaSsh2(tabId, session, sender);
+    await this.connectViaSsh2(tabId, session, sender, dimensions);
   }
 
   private async connectViaSsh2(
     tabId: string,
     session: SessionRecord,
-    sender: WebContents
+    sender: WebContents,
+    dimensions?: TerminalDimensions
   ): Promise<void> {
     let jumpClient: Client | undefined;
     let connectConfig: ConnectConfig;
@@ -350,6 +360,7 @@ export class TerminalService {
       sender,
       mode: "ssh2",
       client,
+      dimensions: normalizeTerminalDimensions(dimensions) ?? { cols: 120, rows: 36 },
       closed: false,
       fallbackTried: false,
       jumpClient
@@ -361,13 +372,20 @@ export class TerminalService {
       if (this.connections.get(tabId) !== connection || connection.closed) {
         return;
       }
+      const shellDimensions = connection.dimensions;
       client.shell(
         {
           term: "xterm-256color",
-          cols: 120,
-          rows: 36
+          cols: shellDimensions.cols,
+          rows: shellDimensions.rows,
+          // Preserve interrupt signals without echoing them as printable ^C.
+          modes: { ECHOCTL: 0 }
         },
         (error, shell) => {
+          if (this.connections.get(tabId) !== connection || connection.closed) {
+            shell?.end();
+            return;
+          }
           if (error) {
             this.emit(sender, {
               tabId,
@@ -378,12 +396,11 @@ export class TerminalService {
             return;
           }
 
-          if (this.connections.get(tabId) !== connection || connection.closed) {
-            shell.end();
-            return;
-          }
-
           connection.shell = shell;
+          // A resize may arrive while the remote PTY/shell request is pending.
+          if (connection.dimensions !== shellDimensions) {
+            shell.setWindow(connection.dimensions.rows, connection.dimensions.cols, 0, 0);
+          }
 
           this.emit(sender, {
             tabId,
@@ -392,24 +409,21 @@ export class TerminalService {
           });
           void this.markSessionConnected(session.id);
 
-          shell.on("data", (chunk: Buffer) => {
-            this.emit(sender, {
-              tabId,
-              type: "output",
-              data: chunk.toString("utf-8")
-            });
-          });
-
-          shell.stderr.on("data", (chunk: Buffer) => {
-            this.emit(sender, {
-              tabId,
-              type: "output",
-              data: chunk.toString("utf-8")
-            });
-          });
+          const forwardOutput = (stream: NodeJS.ReadableStream) => {
+            const decoder = new StringDecoder("utf8");
+            const emitOutput = (data: string) => {
+              if (data) this.emit(sender, { tabId, type: "output", data });
+            };
+            stream.on("data", (chunk: Buffer) => emitOutput(decoder.write(chunk)));
+            stream.once("end", () => emitOutput(decoder.end()));
+          };
+          forwardOutput(shell);
+          forwardOutput(shell.stderr);
 
           shell.on("close", () => {
-            void this.close(tabId);
+            if (this.connections.get(tabId) === connection) {
+              void this.close(tabId);
+            }
           });
         }
       );
@@ -603,7 +617,13 @@ export class TerminalService {
     if (!connection || connection.closed || connection.mode !== "ssh2") {
       return;
     }
-    connection.shell?.setWindow(rows, cols, 0, 0);
+    const dimensions = normalizeTerminalDimensions({ cols, rows });
+    if (!dimensions) {
+      return;
+    }
+    // Retain dimensions before shell creation instead of silently losing them.
+    connection.dimensions = dimensions;
+    connection.shell?.setWindow(dimensions.rows, dimensions.cols, 0, 0);
   }
 
   async close(tabId: string): Promise<void> {
@@ -1469,12 +1489,17 @@ export class TerminalService {
 
   async getServerHealth(tabId: string): Promise<ServerHealthSnapshot> {
     const connection = this.getConnectedSsh2Connection(tabId, "Server monitor");
-    const rawOutput = await this.executeRemoteCommand(connection.client, SERVER_HEALTH_COMMAND, 10_000);
+    const [rawOutput, gpuOutput] = await Promise.all([
+      this.executeRemoteCommand(connection.client, SERVER_HEALTH_COMMAND, 10_000),
+      this.executeRemoteCommand(connection.client, SERVER_GPU_HEALTH_COMMAND, 2_500)
+        .catch(() => "__TD_GPU_ERROR__")
+    ]);
     const parsed = parseServerHealthOutput(rawOutput);
     return {
       tabId,
       collectedAt: new Date().toISOString(),
-      ...parsed
+      ...parsed,
+      ...parseServerGpuHealth(gpuOutput.replaceAll("\r", "").split("\n"))
     };
   }
 
@@ -4386,6 +4411,16 @@ type NormalizedCreatePortForwardInput =
       bindHost: string;
       bindPort: number;
     };
+
+function normalizeTerminalDimensions(dimensions?: TerminalDimensions): TerminalDimensions | undefined {
+  if (!dimensions || !Number.isFinite(dimensions.cols) || !Number.isFinite(dimensions.rows)) {
+    return undefined;
+  }
+  return {
+    cols: Math.max(2, Math.min(65_535, Math.floor(dimensions.cols))),
+    rows: Math.max(2, Math.min(65_535, Math.floor(dimensions.rows)))
+  };
+}
 
 function normalizePortForwardInput(input: CreatePortForwardInput): NormalizedCreatePortForwardInput {
   const type = normalizePortForwardType(input.type);

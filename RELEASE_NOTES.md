@@ -2,6 +2,24 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## v0.1.52 (2026-11-04)
+
+### Highlights
+
+- Reorder terminal tabs by dragging or using Move Tab Left/Right. Double-click or use Rename Tab to set a per-tab name; leave it blank to restore the session name.
+- Compact Server Health details with clearer metric cards, less duplicated information, a scrolling content area, and visible footer actions.
+- Added a GPU summary and dedicated details tab for NVIDIA devices, including compatible WSL sessions. Multi-GPU utilization, VRAM, temperature, power, and driver readings use the remote host's `nvidia-smi`; unavailable values appear as `—`.
+- GPU queries have a separate timeout, so GPU collection failures preserve ordinary server metrics.
+- Fixed PTY dimensions lost before or during SSH shell creation, improving long-command pasting, wrapping, and cursor editing. Streaming UTF-8 decoding preserves Chinese characters and emoji split across SSH packets.
+- Ctrl+C sends one interrupt and returns to the bottom of terminal history regardless of selection. SSH PTYs request disabled control-character echo to avoid displaying `^C`.
+- Terminal and tab context menus now use the global overlay layer to stay above the transfer strip and dock; Escape closes them while the terminal has focus.
+- Global errors dismiss after eight seconds, with dismissal paused during hover or keyboard interaction.
+
+### Release notes
+
+- This release uses production builds and release-artifact checks only. Automated runtime, UI, and installer smoke tests were not run.
+- Windows installer/ZIP and macOS Intel/Apple Silicon DMG/ZIP packages are provided.
+
 ## v0.1.51 (2026-08-25)
 
 ### Highlights

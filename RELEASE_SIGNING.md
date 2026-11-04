@@ -156,6 +156,16 @@ Current behavior:
 - uploads `artifacts/release-verify/**` as workflow artifacts
 - publishes GitHub release assets only after build/verify jobs succeed
 
+## Manual Build-only Releases
+
+For a manual build-only release, the Release workflow accepts `skip_install_smoke=true`:
+
+```bash
+gh workflow run release.yml --ref master -f tag=v0.1.52 -F skip_install_smoke=true
+```
+
+The option defaults to `false`; artifact-presence and configured signing checks still run when installer smoke is skipped.
+
 ## Current Gap
 
 - Secret provisioning still needs to be completed in GitHub Actions

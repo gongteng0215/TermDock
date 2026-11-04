@@ -1,13 +1,13 @@
 import { ipcMain } from "electron";
 
-import type { CreatePortForwardInput } from "../../shared/terminal.js";
+import type { CreatePortForwardInput, TerminalDimensions } from "../../shared/terminal.js";
 import { TerminalService } from "../terminal/terminal-service.js";
 
 export function registerTerminalHandlers(terminalService: TerminalService): void {
   ipcMain.handle(
     "terminal:connect",
-    async (event, tabId: string, sessionId: string) =>
-      terminalService.connect(tabId, sessionId, event.sender)
+    async (event, tabId: string, sessionId: string, dimensions?: TerminalDimensions) =>
+      terminalService.connect(tabId, sessionId, event.sender, dimensions)
   );
   ipcMain.handle("terminal:write", async (_event, tabId: string, data: string) =>
     terminalService.write(tabId, data)

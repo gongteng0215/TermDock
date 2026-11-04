@@ -86,7 +86,7 @@ If the app cannot be installed or opened, see [Install And Launch Troubleshootin
 - Password and private-key authentication
 - Session create/edit/delete/test
 - Folder-style session grouping, search, favorites, and recency sorting
-- Multi-tab xterm terminal with reconnect flow
+- Multi-tab xterm terminal with reconnect flow, drag-to-reorder tabs, and per-tab names
 - SSH config import from `~/.ssh/config` with preview, duplicate handling, and post-import open action
 - SSH connection errors include a plain-language reason, next-step suggestion, and raw error
 - Session templates and quick startup command profiles
@@ -112,7 +112,7 @@ If the app cannot be installed or opened, see [Install And Launch Troubleshootin
 
 ### Operations Tooling
 
-- Server health panel for CPU, memory, disk, network, load, uptime, processes, and failed services
+- Server health panel for CPU, memory, disk, network, load, uptime, processes, failed services, and NVIDIA / WSL GPU details (requires remote `nvidia-smi`)
 - Port forwarding manager for Local (`-L`), Remote (`-R`), and Dynamic SOCKS5 (`-D`) forwards
 - Operation Center for active transfers, deletes, port forwards, diagnostics jobs, and reconnect actions
 - Diagnostics logs, disconnect reports, and bug report `.zip` export
@@ -172,8 +172,8 @@ docs/assets    README screenshots and product assets
 
 ## Status
 
-- Current validation: `pnpm run typecheck`, `pnpm run build`, and `pnpm run smoke:ui` passed.
-- Latest workspace smoke artifact: `artifacts/smoke/2026-05-14T06-14-31-419Z/summary.json` (`PASS 48 / FAIL 0 / SKIP 0`).
+- The v0.1.52 release uses production builds and artifact checks; automated runtime, UI, and installer smoke tests were skipped.
+- Historical validation results are recorded in [Release Notes](RELEASE_NOTES.md).
 - Current packaging targets: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`).
 
 For detailed progress, release validation, and planning notes, see:

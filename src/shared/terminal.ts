@@ -1,5 +1,10 @@
 export type TerminalConnectionStatus = "connecting" | "connected" | "closed";
 
+export interface TerminalDimensions {
+  cols: number;
+  rows: number;
+}
+
 export type PortForwardType = "local" | "remote" | "dynamic";
 export type PortForwardStatus = "active" | "degraded";
 export type PortForwardEventLevel = "info" | "error";
@@ -84,6 +89,21 @@ export interface ServerHealthSnapshot {
   networkRxBytes: number;
   networkTxBytes: number;
   networkInterfaces?: ServerNetworkInterfaceUsage[];
+  gpus?: ServerGpuSnapshot[];
+  gpuStatus?: "available" | "unavailable" | "error";
+}
+
+export interface ServerGpuSnapshot {
+  id: string;
+  index: number;
+  name: string;
+  utilizationPercent?: number;
+  memoryTotalBytes?: number;
+  memoryUsedBytes?: number;
+  temperatureCelsius?: number;
+  powerDrawWatts?: number;
+  powerLimitWatts?: number;
+  driverVersion?: string;
 }
 
 export interface ServerProcessEntry {
