@@ -93,7 +93,8 @@ jobs:
       - name: Verify native build architecture
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
-        run: node -e "if (process.arch !== process.env.EXPECTED_ARCH) { throw new Error('Native build architecture mismatch'); } console.log('Native build architecture: ' + process.arch);"
+        run: |
+          node -e "if (process.arch !== process.env.EXPECTED_ARCH) { throw new Error('Native build architecture mismatch'); } console.log('Native build architecture: ' + process.arch);"
 
       - name: Prepare release secrets
         env:
