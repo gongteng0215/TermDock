@@ -18,6 +18,7 @@ import { posix as posixPath } from "node:path";
 import { finished } from "node:stream/promises";
 import { StringDecoder } from "node:string_decoder";
 import { parseServerGpuHealth, SERVER_GPU_HEALTH_COMMAND } from "./server-gpu-health.js";
+import { TerminalActivityMonitor } from "./terminal-activity-monitor.js";
 
 import type { WebContents } from "electron";
 import { Client } from "ssh2";
@@ -107,6 +108,7 @@ interface Ssh2TerminalConnection extends BaseTerminalConnection {
   sftp?: SFTPWrapper;
   fallbackTried: boolean;
   jumpClient?: Client;
+  activityMonitor?: TerminalActivityMonitor;
 }
 
 interface NativeTerminalConnection extends BaseTerminalConnection {
@@ -420,6 +422,13 @@ export class TerminalService {
           forwardOutput(shell);
           forwardOutput(shell.stderr);
 
+          connection.activityMonitor = new TerminalActivityMonitor(
+            client,
+            () => this.connections.get(tabId) === connection && !connection.closed && !sender.isDestroyed(),
+            (activity) => this.emit(sender, { tabId, type: "activity", activity })
+          );
+          connection.activityMonitor.start();
+
           shell.on("close", () => {
             if (this.connections.get(tabId) === connection) {
               void this.close(tabId);
@@ -485,6 +494,7 @@ export class TerminalService {
       return;
     }
     connection.fallbackTried = true;
+    connection.activityMonitor?.stop();
     connection.closed = true;
     this.emit(connection.sender, {
       tabId: connection.tabId,
@@ -559,6 +569,7 @@ export class TerminalService {
       type: "status",
       status: "connected"
     });
+    this.emit(sender, { tabId, type: "activity", activity: { status: "unknown" } });
     void this.markSessionConnected(session.id);
 
     process.stdout.on("data", (chunk: Buffer) => {
@@ -649,6 +660,7 @@ export class TerminalService {
       }
     }
     if (connection.mode === "ssh2") {
+      connection.activityMonitor?.stop();
       connection.shell?.end();
       connection.sftp?.end();
       this.clearReusableUploadSftp(connection.tabId);
@@ -4379,6 +4391,7 @@ export class TerminalService {
   }
 
   private emitClosed(connection: TerminalConnection): void {
+    if (connection.mode === "ssh2") connection.activityMonitor?.stop();
     if (connection.closed) {
       return;
     }

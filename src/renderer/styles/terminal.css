@@ -87,6 +87,7 @@
 }
 
 .tab__label {
+  flex: 1 1 auto;
   min-width: 0;
   max-width: 198px;
   overflow: hidden;
@@ -94,6 +95,47 @@
   white-space: nowrap;
   line-height: 1.1;
   text-align: left;
+}
+
+.tab__activity {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.tab__activity-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tab__activity.is-busy { color: #e6b85c; }
+.tab__activity.is-idle { color: var(--success-text); }
+.tab__activity.is-error { color: var(--danger-text); }
+.tab__activity.is-connecting,
+.tab__activity.is-checking { color: var(--accent-strong); }
+
+.tab__activity.is-busy .tab__activity-dot {
+  animation: terminal-tab-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes terminal-tab-busy {
+  50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab__activity.is-busy .tab__activity-dot { animation: none; }
 }
 
 .terminal-tabs .tab[draggable="true"] {
@@ -163,8 +205,8 @@
 }
 
 .terminal-tabs.is-editor-focus .tab.is-editor-collapsed {
-  max-width: 82px;
-  min-width: 44px;
+  max-width: 150px;
+  min-width: 80px;
   justify-content: center;
   padding: 0 7px;
   border-radius: 0;
@@ -205,18 +247,19 @@
 }
 
 .terminal-tabs.is-editor-focus[data-editor-typography="compact"] .tab.is-editor-collapsed {
-  max-width: 84px;
-  min-width: 48px;
+  max-width: 140px;
+  min-width: 80px;
   padding: 0 6px;
 }
 
 .terminal-tabs.is-editor-focus[data-editor-typography="reading"] .tab.is-editor-collapsed {
-  max-width: 96px;
-  min-width: 56px;
+  max-width: 160px;
+  min-width: 88px;
   padding: 0 8px;
 }
 
 .tab__close {
+  flex-shrink: 0;
   color: var(--text-faint);
   display: inline-flex;
   align-items: center;

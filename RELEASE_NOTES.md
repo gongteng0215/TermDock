@@ -2,6 +2,22 @@
 
 [中文](RELEASE_NOTES.zh-CN.md)
 
+## v0.1.53 (2026-11-06)
+
+### Highlights
+
+- Terminal tabs now show Busy, Idle, Checking, Unknown, and connection states with colored indicators. Hover a busy tab to see the detected program name.
+- Task status is sampled about every two seconds through a separate SSH channel, so a quiet script can remain busy without writing monitoring commands into the user's terminal or changing shell startup files. Unsupported process queries show Unknown; monitoring stops when the tab disconnects or closes.
+- Added GPU names, utilization, and used/total VRAM directly to the Server Health sidebar, including multi-GPU support. Missing readings remain `—`, and unavailable GPU collection shows a visible explanation.
+- Status badges remain visible on inactive tabs in editor focus mode.
+- Release packaging keeps Intel and Apple Silicon native modules on matching macOS runners and includes both architectures in update metadata.
+
+### Release notes
+
+- Task detection requires a compatible remote process listing and SSH server process hierarchy. GPU monitoring requires NVIDIA devices and remote `nvidia-smi`, including compatible WSL sessions.
+- This release uses compiler checks, production builds, and release-artifact checks only. Automated runtime, UI, and installer smoke tests were not run.
+- Windows installer/ZIP and macOS Intel/Apple Silicon DMG/ZIP packages are provided.
+
 ## v0.1.52 (2026-11-04)
 
 ### Highlights

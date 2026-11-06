@@ -32,35 +32,40 @@ interface ServerHealthInspectorContentProps {
 type ResourceMetricKey = "cpuUsagePercent" | "memoryUsagePercent" | "diskUsagePercent";
 
 interface ResourceMeterProps {
-  alert: boolean;
-  delta: number;
+  alert?: boolean;
+  delta?: number;
+  detail?: string;
   label: string;
-  percent: number;
-  threshold: number;
+  percent?: number;
+  threshold?: number;
 }
 
-function ResourceMeter({ alert, delta, label, percent, threshold }: ResourceMeterProps) {
-  const safePercent = Math.max(0, Math.min(100, percent));
-  const trend = Math.abs(delta) < 0.5 ? "steady" : delta > 0 ? "up" : "down";
+function ResourceMeter({ alert, delta, detail, label, percent, threshold }: ResourceMeterProps) {
+  const available = percent !== undefined && Number.isFinite(percent);
+  const safePercent = available ? Math.max(0, Math.min(100, percent)) : 0;
+  const trend = delta === undefined || Math.abs(delta) < 0.5 ? "steady" : delta > 0 ? "up" : "down";
   return (
-    <div className={`server-health-meter${alert ? " is-alert" : ""}`}>
+    <div className={`server-health-meter${alert ? " is-alert" : ""}${available ? "" : " is-unavailable"}`}>
       <div className="server-health-meter__heading">
         <span>{label}</span>
-        <strong>{safePercent.toFixed(0)}%</strong>
-        <em className={`server-health-meter__trend is-${trend}`} title={`${delta >= 0 ? "+" : ""}${delta.toFixed(1)} percentage points since the previous sample`}>
-          {trend === "up" ? "↑" : trend === "down" ? "↓" : "—"}
-        </em>
+        <strong>{available ? `${safePercent.toFixed(0)}%` : "—"}</strong>
+        {delta !== undefined ? (
+          <em className={`server-health-meter__trend is-${trend}`} title={`${delta >= 0 ? "+" : ""}${delta.toFixed(1)} percentage points since the previous sample`}>
+            {trend === "up" ? "↑" : trend === "down" ? "↓" : "—"}
+          </em>
+        ) : null}
       </div>
       <div
         className="server-health-meter__track"
         style={{
           "--health-meter-pct": `${safePercent}%`,
-          "--health-threshold-pct": `${Math.max(0, Math.min(100, threshold))}%`
+          "--health-threshold-pct": threshold === undefined ? undefined : `${Math.max(0, Math.min(100, threshold))}%`
         } as CSSProperties}
       >
         <span className="server-health-meter__fill" />
-        <i className="server-health-meter__threshold" title={`Warning threshold ${threshold}%`} />
+        {threshold !== undefined ? <i className="server-health-meter__threshold" title={`Warning threshold ${threshold}%`} /> : null}
       </div>
+      {detail ? <span className="server-health-meter__detail" title={detail}>{detail}</span> : null}
     </div>
   );
 }
@@ -136,6 +141,36 @@ export function ServerHealthInspectorContent({
               <ResourceMeter alert={alertStatus.cpuHigh} delta={resourceDeltas.cpuUsagePercent} label="CPU" percent={metrics?.cpuUsagePercent ?? 0} threshold={thresholds.cpuWarnPercent} />
               <ResourceMeter alert={alertStatus.memoryHigh} delta={resourceDeltas.memoryUsagePercent} label="Memory" percent={metrics?.memoryUsagePercent ?? 0} threshold={thresholds.memoryWarnPercent} />
               <ResourceMeter alert={alertStatus.diskHigh} delta={resourceDeltas.diskUsagePercent} label={`Disk ${serverHealth.diskPath || "/"}`} percent={metrics?.diskUsagePercent ?? 0} threshold={thresholds.diskWarnPercent} />
+            </div>
+            <div className="server-health-dashboard__gpus">
+              {serverHealth.gpus?.length ? serverHealth.gpus.map((gpu) => {
+                const memoryPercent = gpu.memoryTotalBytes && gpu.memoryTotalBytes > 0 && gpu.memoryUsedBytes !== undefined
+                  ? gpu.memoryUsedBytes / gpu.memoryTotalBytes * 100
+                  : undefined;
+                const memoryDetail = `${gpu.memoryUsedBytes === undefined ? "—" : formatTransferBytes(gpu.memoryUsedBytes)} / ${gpu.memoryTotalBytes === undefined ? "—" : formatTransferBytes(gpu.memoryTotalBytes)}`;
+                return (
+                  <section className="server-health-gpu-summary" key={gpu.id} aria-label={gpu.name}>
+                    <div className="server-health-gpu-summary__heading">
+                      <span>GPU {gpu.index}</span>
+                      <strong title={gpu.name}>{gpu.name}</strong>
+                    </div>
+                    <ResourceMeter label="GPU utilization" percent={gpu.utilizationPercent} />
+                    <ResourceMeter label="VRAM" percent={memoryPercent} detail={memoryDetail} />
+                  </section>
+                );
+              }) : (
+                <div className="server-health-gpu-summary">
+                  <ResourceMeter label="GPU" />
+                  <p className="server-health-gpu-summary__status" role="status">
+                    {serverHealth.gpuStatus === "error" ? "GPU collection failed" : "GPU metrics unavailable"}
+                  </p>
+                  <p className="server-health-gpu-summary__status">
+                    {serverHealth.gpuStatus === "error"
+                      ? "Open Info for GPU collection details."
+                      : "Requires NVIDIA and remote nvidia-smi."}
+                  </p>
+                </div>
+              )}
             </div>
             <div className="server-health-dashboard__facts">
               <div><span>Load 1/5/15</span><strong>{serverHealth.load1.toFixed(2)} / {serverHealth.load5.toFixed(2)} / {serverHealth.load15.toFixed(2)}</strong></div>

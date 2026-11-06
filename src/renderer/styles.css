@@ -3451,6 +3451,49 @@ body::before {
   gap: 6px;
 }
 
+.server-health-dashboard__gpus {
+  display: grid;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--ui-card-border);
+}
+
+.server-health-gpu-summary {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.server-health-gpu-summary__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.server-health-gpu-summary__heading > span {
+  flex-shrink: 0;
+}
+
+.server-health-gpu-summary__heading > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.server-health-meter__detail,
+.server-health-gpu-summary__status {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 .server-health-meter {
   display: grid;
   gap: 3px;

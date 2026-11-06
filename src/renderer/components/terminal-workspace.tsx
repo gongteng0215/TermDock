@@ -6,7 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { IDisposable, ITheme } from "@xterm/xterm";
 
-import type { TerminalConnectionStatus } from "../../shared/terminal";
+import type { TerminalActivity, TerminalConnectionStatus } from "../../shared/terminal";
 import { formatSshConnectionError } from "../../shared/ssh-error-diagnostics";
 import type { AppLanguage } from "../i18n";
 import {
@@ -273,7 +273,43 @@ function getTerminalEditorFocusCursor(cursorId: TerminalEditorFocusCursorId) {
 type TabUiStatus = {
   status: TerminalConnectionStatus | "error";
   message?: string;
+  activity?: TerminalActivity;
 };
+
+function getTabActivityBadge(state: TabUiStatus | undefined, language: AppLanguage) {
+  const status = state?.status === "connected"
+    ? state.activity?.status ?? "checking"
+    : state?.status ?? "connecting";
+  const chinese = language === "zh-CN";
+  const labels = chinese
+    ? { busy: "忙碌中", idle: "空闲", unknown: "未知", checking: "检测中", connecting: "连接中", closed: "已断开", error: "连接异常" }
+    : { busy: "Busy", idle: "Idle", unknown: "Unknown", checking: "Checking", connecting: "Connecting", closed: "Disconnected", error: "Error" };
+  const descriptions = chinese
+    ? {
+      busy: "此终端仍有任务在运行",
+      idle: "此终端的 Shell 空闲，正在等待输入",
+      unknown: "无法读取此终端的进程状态",
+      checking: "正在读取终端任务状态",
+      connecting: "正在建立连接",
+      closed: "终端连接已断开",
+      error: "终端连接出现异常"
+    }
+    : {
+      busy: "A task is still running in this terminal",
+      idle: "The shell is idle and waiting for input",
+      unknown: "Process state is unavailable for this terminal",
+      checking: "Reading terminal task status",
+      connecting: "Establishing the connection",
+      closed: "The terminal is disconnected",
+      error: "The terminal connection encountered an error"
+    };
+  const command = status === "busy" ? state?.activity?.command : undefined;
+  return {
+    status,
+    label: labels[status],
+    description: `${descriptions[status]}${command ? ` (${command})` : ""}`
+  };
+}
 
 interface TerminalContextAction {
   id: string;
@@ -1744,6 +1780,16 @@ export function TerminalWorkspace({
         return;
       }
 
+      if (event.type === "activity") {
+        setTabStatuses((previous) => {
+          const current = previous[event.tabId];
+          if (!current || current.status !== "connected") return previous;
+          if (current.activity?.status === event.activity.status && current.activity?.command === event.activity.command) return previous;
+          return { ...previous, [event.tabId]: { ...current, activity: event.activity } };
+        });
+        return;
+      }
+
       if (event.type === "status") {
         setTabStatus(event.tabId, { status: event.status });
         if (event.status === "closed") {
@@ -2348,6 +2394,7 @@ export function TerminalWorkspace({
         ) : null}
         {tabs.map((tab) => {
           const isActiveTab = activeTabId === tab.id;
+          const activityBadge = getTabActivityBadge(tabStatuses[tab.id], _language);
           const tabClassName = isActiveEditorMode
             ? isActiveTab
               ? "tab is-active is-editor-primary"
@@ -2360,8 +2407,10 @@ export function TerminalWorkspace({
               key={tab.id}
               className={`${tabClassName}${draggedTabId === tab.id ? " is-dragging" : ""}${tabDropTarget?.id === tab.id ? ` is-drop-${tabDropTarget.position}` : ""}`}
               data-tab-id={tab.id}
+              data-activity={activityBadge.status}
               draggable
-              title={`${tab.title} — ${_language === "zh-CN" ? "拖动排序；双击重命名" : "Drag to reorder; double-click to rename"}`}
+              aria-label={`${tab.title} — ${activityBadge.label}`}
+              title={`${tab.title} — ${activityBadge.description}\n${_language === "zh-CN" ? "拖动排序；双击重命名" : "Drag to reorder; double-click to rename"}`}
               onClick={() => onSelectTab(tab.id)}
               onDoubleClick={(event) => {
                 if ((event.target as HTMLElement).closest(".tab__close")) return;
@@ -2421,6 +2470,10 @@ export function TerminalWorkspace({
               type="button"
             >
               <span className="tab__label">{tab.title}</span>
+              <span className={`tab__activity is-${activityBadge.status}`} title={activityBadge.description}>
+                <i aria-hidden="true" className="tab__activity-dot" />
+                <span>{activityBadge.label}</span>
+              </span>
               <span
                 className="tab__close"
                 onClick={(event) => {

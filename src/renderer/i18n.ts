@@ -849,6 +849,8 @@ const SIMPLIFIED_CHINESE_TEXT: Record<string, string> = {
   "GPUs": "块 GPU",
   "GPU metrics unavailable": "GPU 数据不可用",
   "GPU collection failed": "GPU 采集失败",
+  "Open Info for GPU collection details.": "点击 Info 查看 GPU 采集详情。",
+  "Requires NVIDIA and remote nvidia-smi.": "需要 NVIDIA 显卡，且远程主机提供 nvidia-smi。",
   "GPU utilization": "GPU 利用率",
   "Peak utilization": "最高利用率",
   "VRAM": "显存",

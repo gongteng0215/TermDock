@@ -172,7 +172,7 @@ docs/assets    README screenshots and product assets
 
 ## Status
 
-- The v0.1.52 release uses production builds and artifact checks; automated runtime, UI, and installer smoke tests were skipped.
+- The v0.1.53 release adds terminal-tab task status and sidebar GPU/VRAM readings. It uses compiler, production-build, and artifact checks; automated runtime, UI, and installer smoke tests were skipped.
 - Historical validation results are recorded in [Release Notes](RELEASE_NOTES.md).
 - Current packaging targets: macOS (`arm64`, `x64`) and Windows (`nsis`, `zip`).
 

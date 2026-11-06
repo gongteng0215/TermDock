@@ -1,5 +1,10 @@
 export type TerminalConnectionStatus = "connecting" | "connected" | "closed";
 
+export interface TerminalActivity {
+  status: "busy" | "idle" | "unknown";
+  command?: string;
+}
+
 export interface TerminalDimensions {
   cols: number;
   rows: number;
@@ -152,6 +157,11 @@ export interface ServerProcessSnapshot {
 }
 
 export type TerminalEvent =
+  | {
+      tabId: string;
+      type: "activity";
+      activity: TerminalActivity;
+    }
   | {
       tabId: string;
       type: "output";
